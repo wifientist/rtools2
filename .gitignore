@@ -1,0 +1,34 @@
+.DS_Store
+/node_modules/
+
+# React Router
+/.react-router/
+/build/
+
+.venv
+.env
+.env.local
+.env.development
+.env.production
+
+/api/alembic.ini
+/api/.env
+/api/__pycache__
+/api/.venv
+/api/migrations/
+/api/migrations/versions
+/api/migrations/__pycache__
+/api/routers/__pycache__
+/api/crud/__pycache__
+
+# Dependency directories
+/node_modules/
+/pnpm-store/
+/public/
+/build/
+/.pnp/
+.pnp.js
+
+# Optional npm cache directory
+.npm
+
