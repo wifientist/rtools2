@@ -21,6 +21,9 @@
 /api/routers/__pycache__
 /api/crud/__pycache__
 
+#npm build directory
+/dist
+
 # Dependency directories
 /node_modules/
 /pnpm-store/

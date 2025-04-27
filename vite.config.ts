@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0', // This allows external access
       proxy: {
         "/api": {
-          target: process.env.API_BASE_URL || "http://localhost:5174",
+          target: process.env.API_BASE_URL || "http://localhost:4174",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ""),
         },
