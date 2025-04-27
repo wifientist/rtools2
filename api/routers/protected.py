@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from models import User
+from models.user import User
 from security import require_role, require_admin_company
 from dependencies import get_current_user
 

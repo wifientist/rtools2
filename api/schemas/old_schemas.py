@@ -13,7 +13,7 @@ class UserBase(BaseModel):
     role: str = "user"  # Default role
 
 class UserCreate(UserBase):
-    password: str  # Only used when creating a user
+    email: EmailStr
 
 class UserResponse(UserBase):
     id: int

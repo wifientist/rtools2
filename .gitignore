@@ -17,12 +17,12 @@
 /api/.venv
 /api/migrations/
 /api/migrations/versions
-/api/migrations/__pycache__
-/api/routers/__pycache__
-/api/crud/__pycache__
+/api/__pycache__
+/api/*/__pycache__
 
 #npm build directory
 /dist
+/api/alembic
 
 # Dependency directories
 /node_modules/

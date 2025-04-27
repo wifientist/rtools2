@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from dependencies import get_current_user
-from models import User
+from models.user import User
 import os
 from dotenv import load_dotenv
 load_dotenv() 
@@ -38,13 +38,13 @@ def decode_access_token(token: str):
     except JWTError:
         return None
 
-### 🔐 Hash Password
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+# ### 🔐 Hash Password
+# def get_password_hash(password: str) -> str:
+#     return pwd_context.hash(password)
 
-### 🔐 Verify Password
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+# ### 🔐 Verify Password
+# def verify_password(plain_password: str, hashed_password: str) -> bool:
+#     return pwd_context.verify(plain_password, hashed_password)
 
 ### 🔐 Verify Access Token
 def verify_access_token(token: str) -> dict:

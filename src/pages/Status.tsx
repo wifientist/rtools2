@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
-console.log('Environment variables:', import.meta.env);
+//console.log('Environment variables:', import.meta.env);
 
 const Status = () => {
   const [status, setStatus] = useState<string | null>(null);
@@ -24,7 +24,7 @@ const Status = () => {
 
   return (
     <div className="text-center">
-      <h2 className="text-2xl font-bold">Marketplace API Status</h2>
+      <h2 className="text-2xl font-bold">Ruckus Tools API Status</h2>
       <p className="mt-4 text-sm">
         API Status: <span className="font-bold">{status || "checking..."}</span>
       </p>

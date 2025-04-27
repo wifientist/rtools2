@@ -28,33 +28,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/status`, {
-          method: "GET",
-          credentials: "include",
-        });
+  const checkAuth = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/status`, {
+        method: "GET",
+        credentials: "include",
+      });
 
-        if (!response.ok) {
-          setIsAuthenticated(false);
-          setUserRole(null);
-          setUserId(null);
-          return;
-        }
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.warn("Auth check failed:", errorData.error);
 
-        const data = await response.json();
-
-        setIsAuthenticated(true);
-        setUserRole(data.role);
-        setUserId(data.id);
-      } catch (error) {
         setIsAuthenticated(false);
         setUserRole(null);
         setUserId(null);
+        return;
       }
-    };
 
+      const data = await response.json();
+
+      setIsAuthenticated(true);
+      setUserRole(data.role);
+      setUserId(data.id);
+    } catch (error) {
+      console.error("Auth check error:", error);
+
+      setIsAuthenticated(false);
+      setUserRole(null);
+      setUserId(null);
+    }
+  };
+
+  useEffect(() => {
     checkAuth();
   }, []);
 
@@ -65,9 +70,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         credentials: "include",
       });
 
-      setIsAuthenticated(false);
-      setUserRole(null);
-      setUserId(null);
+      // setIsAuthenticated(false);
+      // setUserRole(null);
+      // setUserId(null);
+
+      await checkAuth();      
+      
     } catch (error) {
       console.error("Logout failed", error);
     }
@@ -75,7 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, userId, userRole, logout }}>
-      {isAuthenticated === null ? <div>Loading...</div> : children}
+      {isAuthenticated === null ? <div className="text-center p-4">Checking session...</div> : children}
     </AuthContext.Provider>
   );
 };

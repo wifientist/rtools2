@@ -1,8 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import traceback
+
 from database import engine
 import models
 from routers import status, proposals, bids, users, auth, protected, company
+
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -21,7 +27,7 @@ app.add_middleware(
 )
 
 # Ensure tables exist
-models.Base.metadata.create_all(bind=engine)
+models.user.Base.metadata.create_all(bind=engine)
 
 # 🚀 Include Routers
 app.include_router(status.router)
@@ -36,3 +42,28 @@ app.include_router(bids.router)
 # from fastapi.routing import APIRoute
 # for route in app.routes:
 #     print(route.path)
+
+# 🔥 Handle normal FastAPI HTTPExceptions (like 404, 400, 401, etc.)
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail},
+    )
+
+# 🔥 Handle request validation errors (e.g., invalid payload schema)
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Validation error", "details": exc.errors()},
+    )
+
+# 🔥 Handle unexpected server errors (500s, coding bugs)
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    print("Unexpected error:", traceback.format_exc())  # 📋 Optional: log full traceback in console
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error"},
+    )

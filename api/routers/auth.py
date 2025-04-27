@@ -3,12 +3,95 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import timedelta
-from models import User, Company
-from schemas import TokenResponse, UserCreate
-from security import create_access_token, get_password_hash, verify_password, verify_access_token
+from models.user import User, Company
+from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema
+from security import create_access_token, verify_access_token #, get_password_hash, verify_password, 
 from dependencies import get_db, get_current_user
+from services.auth_service import generate_and_send_otp, verify_otp_and_login
+from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
+from utils.email import send_otp_email_via_api
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# request OTP for existing users
+@router.post("/request-otp")
+async def request_otp(payload: RequestOtpSchema, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+
+    if not user:
+        raise HTTPException(status_code=400, detail="Email not registered. Please sign up.")
+
+    otp = generate_and_send_otp(payload.email, db)
+    return {"message": "OTP sent"}
+
+# login OTP for existing users
+@router.post("/login-otp")
+async def login_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
+    try:
+        token = verify_otp_and_login(payload.email, payload.otp_code, db)
+
+        response = JSONResponse(content={"message": "Login successful"})
+        response.set_cookie(
+            key="session",
+            value=token,
+            httponly=True,
+            secure=False,  # 🔥 Remember to set True in prod
+            samesite="Strict",
+        )
+
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+# new user signup OTP
+@router.post("/signup-request-otp")
+async def signup_request_otp(payload: RequestOtpSchema, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.email == payload.email).first()
+
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User already exists.")
+
+    otp = generate_and_store_signup_otp(payload.email, db)
+
+    # Send OTP to the user's email
+    send_otp_email_via_api(payload.email, otp)
+
+    return {"message": "Signup OTP sent"}
+
+# Verify OTP for new user signup
+@router.post("/signup-verify-otp")
+async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
+    if not verify_signup_otp(payload.email, payload.otp_code, db):
+        raise HTTPException(status_code=401, detail="Invalid or expired OTP")
+
+    # Now create user
+    new_user = User(
+        email=payload.email,
+        company_id=-1  # Default unassigned company
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    # Issue login token immediately after signup
+    access_token = create_access_token({
+        "sub": new_user.email,
+        "id": new_user.id,
+        "role": new_user.role,
+        "company_id": new_user.company_id
+    })
+
+    response = JSONResponse(content={"message": "Signup and login successful"})
+    response.set_cookie(
+        key="session",
+        value=access_token,
+        httponly=True,
+        secure=False,  # Set to True in prod
+        samesite="Strict",
+    )
+
+    return response
 
 @router.get("/status")
 def auth_status(request: Request):
@@ -37,8 +120,8 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     #if not company:
     #    raise HTTPException(status_code=404, detail="Invalid company ID")
 
-    hashed_password = get_password_hash(user_data.password)
-    new_user = User(email=user_data.email, hashed_password=hashed_password)
+    #hashed_password = get_password_hash(user_data.password)
+    new_user = User(email=user_data.email) #, hashed_password=hashed_password)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -59,26 +142,26 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     return response
 
 
-@router.post("/token", response_model=TokenResponse)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == form_data.username).first()
+# @router.post("/token", response_model=TokenResponse)
+# def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+#     user = db.query(User).filter(User.email == form_data.username).first()
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        print(f'NO USER, OR NO Verify_Password')
-        raise HTTPException(status_code=400, detail="Invalid email or password")
+#     if not user or not verify_password(form_data.password, user.hashed_password):
+#         print(f'NO USER, OR NO Verify_Password')
+#         raise HTTPException(status_code=400, detail="Invalid email or password")
     
-    access_token = create_access_token({"sub": user.email, "id": user.id, "role": user.role, "company_id": user.company_id})
+#     access_token = create_access_token({"sub": user.email, "id": user.id, "role": user.role, "company_id": user.company_id})
 
-    response = JSONResponse(content={"message": "Login successful"})
-    response.set_cookie(
-        key="session",
-        value=access_token,
-        httponly=True,  # ✅ Prevents access via JavaScript
-        secure=False,    # ✅ Only send over HTTPS  TODO change to True for production!!
-        samesite="Strict",  # ✅ Protects against CSRF attacks
-    )
-    return response
-    #return {"access_token": access_token, "token_type": "bearer"}
+#     response = JSONResponse(content={"message": "Login successful"})
+#     response.set_cookie(
+#         key="session",
+#         value=access_token,
+#         httponly=True,  # ✅ Prevents access via JavaScript
+#         secure=False,    # ✅ Only send over HTTPS  TODO change to True for production!!
+#         samesite="Strict",  # ✅ Protects against CSRF attacks
+#     )
+#     return response
+#     #return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/logout")
