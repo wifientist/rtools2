@@ -3,7 +3,9 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import timedelta
-from models.user import User, Company
+from models.user import User
+from models.company import Company
+from models.tenant import Tenant
 from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema
 from security import create_access_token, verify_access_token #, get_password_hash, verify_password, 
 from dependencies import get_db, get_current_user
@@ -103,7 +105,15 @@ def auth_status(request: Request):
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    return JSONResponse(content={"message": "Authenticated", "user": payload.get("sub"), "id":payload.get("id"), "role": payload.get("role"), "company_id": payload.get("company_id")})
+    return JSONResponse(content={
+        "message": "Authenticated", 
+        "user": payload.get("sub"), 
+        "id":payload.get("id"), 
+        "role": payload.get("role"), 
+        "company_id": payload.get("company_id"),
+        "active_tenant_id": payload.get("active_tenant_id"), 
+        "active_tenant_name": payload.get("active_tenant_name") 
+        })
 
 
 ### 🚀 Signup Route
@@ -129,7 +139,14 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     #access_token = create_access_token({"sub": new_user.email})
     #return {"access_token": access_token, "token_type": "bearer"}
     
-    access_token = create_access_token({"sub": new_user.email, "id": new_user.id, "role": new_user.role, "company_id": new_user.company_id})
+    access_token = create_access_token({
+        "sub": new_user.email, 
+        "id": new_user.id, 
+        "role": new_user.role, 
+        "company_id": new_user.company_id, 
+        "active_tenant_id": new_user.active_tenant_id, 
+        "active_tenant_instance_name": new_user.active_tenant.instance_name if new_user.active_tenant_id else None
+    })
     response = JSONResponse(content={"message": "Signup successful"})
     response.set_cookie(
         key="session",
@@ -140,29 +157,6 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     )
 
     return response
-
-
-# @router.post("/token", response_model=TokenResponse)
-# def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-#     user = db.query(User).filter(User.email == form_data.username).first()
-
-#     if not user or not verify_password(form_data.password, user.hashed_password):
-#         print(f'NO USER, OR NO Verify_Password')
-#         raise HTTPException(status_code=400, detail="Invalid email or password")
-    
-#     access_token = create_access_token({"sub": user.email, "id": user.id, "role": user.role, "company_id": user.company_id})
-
-#     response = JSONResponse(content={"message": "Login successful"})
-#     response.set_cookie(
-#         key="session",
-#         value=access_token,
-#         httponly=True,  # ✅ Prevents access via JavaScript
-#         secure=False,    # ✅ Only send over HTTPS  TODO change to True for production!!
-#         samesite="Strict",  # ✅ Protects against CSRF attacks
-#     )
-#     return response
-#     #return {"access_token": access_token, "token_type": "bearer"}
-
 
 @router.post("/logout")
 def logout():

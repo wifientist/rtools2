@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from models.user import Company, User
+from models.user import User
+from models.company import Company
 from schemas.auth import CompanyCreate, CompanyResponse
 from dependencies import get_db, get_current_user
 from security import require_same_company

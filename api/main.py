@@ -7,7 +7,8 @@ import traceback
 
 from database import engine
 import models
-from routers import status, proposals, bids, users, auth, protected, company
+from routers import status, users, auth, protected, company, tenants
+from routers.r1.r1_router import router as r1_router
 
 import os
 from dotenv import load_dotenv
@@ -32,11 +33,11 @@ models.user.Base.metadata.create_all(bind=engine)
 # 🚀 Include Routers
 app.include_router(status.router)
 app.include_router(users.router)
+app.include_router(tenants.router)
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
 app.include_router(protected.router, tags=["Protected"])
-app.include_router(proposals.router)
-app.include_router(bids.router)
+app.include_router(r1_router)
 
 
 # from fastapi.routing import APIRoute

@@ -36,6 +36,3 @@ class CompanyResponse(CompanyBase):
 
     class Config:
         from_attributes = True
-
-
-

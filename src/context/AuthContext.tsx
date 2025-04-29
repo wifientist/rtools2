@@ -7,6 +7,12 @@ interface AuthContextType {
   isAuthenticated: boolean | null;
   userRole: string | null;
   userId: number | null;
+  activeTenantId: number | null;
+  activeTenantName: string | null;
+  tenants: { id: number; name: string }[];
+  setActiveTenantId: (id: number) => void;
+  setActiveTenantName: (name: string) => void;
+  checkAuth: () => Promise<void>;
   logout: () => void;
 }
 
@@ -27,6 +33,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
+  const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
+  const [activeTenantId, setActiveTenantId] = useState<number | null>(null);
+  const [activeTenantName, setActiveTenantName] = useState<string | null>(null);
 
   const checkAuth = async () => {
     try {
@@ -42,6 +51,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsAuthenticated(false);
         setUserRole(null);
         setUserId(null);
+        setTenants([]); // 🔥 clear tenants on auth fail
+        setActiveTenantId(null);
+        setActiveTenantName(null);
         return;
       }
 
@@ -50,12 +62,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setUserRole(data.role);
       setUserId(data.id);
+      setActiveTenantId(data.active_tenant_id || null);
+      
+      // 🔥 New: Fetch tenants when auth succeeds
+      const tenantsResponse = await fetch(`${API_BASE_URL}/tenants/mine`, {
+        method: "GET",
+        credentials: "include",
+      });
+      if (tenantsResponse.ok) {
+        const tenantsData = await tenantsResponse.json();
+        setTenants(tenantsData); // [{ id, instance_name }]
+        const activeTenant = tenantsData.find(t => t.id === data.active_tenant_id);
+        setActiveTenantName(activeTenant ? activeTenant.name : null);
+      } else {
+        console.error("Failed to fetch tenants");
+        setTenants([]);
+        setActiveTenantName(null); // Clear name if tenant fetch failed
+      }
+
     } catch (error) {
       console.error("Auth check error:", error);
 
       setIsAuthenticated(false);
       setUserRole(null);
       setUserId(null);
+      setActiveTenantId(null);
+      setActiveTenantName(null);
+      setTenants([]);
     }
   };
 
@@ -82,7 +115,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userId, userRole, logout }}>
+    <AuthContext.Provider value={{
+      isAuthenticated,
+      userId,
+      userRole,
+      activeTenantId,
+      activeTenantName,
+      tenants,
+      setActiveTenantId,
+      setActiveTenantName,
+      checkAuth,
+      logout
+    }}>
       {isAuthenticated === null ? <div className="text-center p-4">Checking session...</div> : children}
     </AuthContext.Provider>
   );

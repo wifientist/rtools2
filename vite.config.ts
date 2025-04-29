@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '0.0.0.0', // This allows external access
+      port: 4173,
       proxy: {
         "/api": {
           target: process.env.API_BASE_URL || "http://localhost:4174",
