@@ -45,7 +45,7 @@ export default function TenantManager() {
         body: JSON.stringify(formData),
       });
       setShowForm(false);
-      setFormData({ name: "", client_id: "", shared_secret: "" });
+      setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "" });
 
       // ⚡ After adding, re-check auth to refresh tenants list in context
       await checkAuth(); // <- assuming you import `checkAuth` from useAuth

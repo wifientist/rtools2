@@ -14,14 +14,15 @@ import Signup from "@/pages/Signup";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Tenants from "@/pages/Tenants";
+import Layout from "@/components/Layout";
 
 const App = () => {
   
   return (
     <AuthProvider>
     <Router>
-      <Navbar />
-      <div className="container mx-auto p-6">
+      <Layout>
+        {/*<div className="container mx-auto p-6">*/}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/status" element={<Status />} />
@@ -32,7 +33,8 @@ const App = () => {
           <Route path="/tenants" element={<Tenants />} />
           <Route path="*" element={<Navigate to="/" />} /> 
         </Routes>
-      </div>
+      {/*</div>*/}
+      </Layout>
     </Router>
     </AuthProvider>
   );

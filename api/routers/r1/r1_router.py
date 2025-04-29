@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from .msp_router import router as msp_router
 #from .venues_router import router as venues_router
-#from .networks_router import router as networks_router
+from .networks_router import router as networks_router
 #from .security_router import router as security_router
 
 router = APIRouter(
@@ -13,6 +13,6 @@ router = APIRouter(
 # Mount your sub-routers
 router.include_router(msp_router)
 #router.include_router(venues_router)
-#router.include_router(networks_router)
+router.include_router(networks_router)
 #router.include_router(security_router)
 

@@ -1,8 +1,9 @@
 import requests
 import time
+from r1api.token_cache import get_cached_token, store_token
 from r1api.services.msp import MspService
 # from r1api.services.venues import VenuesService
-# from r1api.services.networks import NetworksService
+from r1api.services.networks import NetworksService
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, region=None):
@@ -22,11 +23,15 @@ class R1Client:
         self.client_id = client_id
         self.shared_secret = shared_secret
 
-        self._authenticate()
-
+        token = get_cached_token(tenant_id)
+        if token:
+            self.token = token
+        else:
+            self._authenticate()
+        
         # ⚡ Attach modular services
         self.msp = MspService(self)
-        # self.networks = NetworkService(self)
+        self.networks = NetworksService(self)
         # self.venues = VenueService(self)
 
     def _authenticate(self):
@@ -45,8 +50,11 @@ class R1Client:
 
         data = response.json()
         self.token = data.get('access_token') or data.get('token')
+        expires_in = data.get('expires_in', 3600)  # default to 1hr if not specified
+        store_token(self.tenant_id, self.token, expires_in)
 
         print(f"Authentication successful: {self.token[:8]}...")
+        print(f'Token expiry: {data.get("expires_in", "N/A")} seconds')
 
     def _request(self, method, path, payload=None, params=None, override_tenant_id=None):
         """General request wrapper."""

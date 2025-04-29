@@ -19,4 +19,4 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_INSTALLER', 'MSP_INTEGRATOR']}
         }
-        return self.client.post("/mspecs/query", payload=body).json()
+        return self.client.post("/msptechpartners/query", payload=body).json()

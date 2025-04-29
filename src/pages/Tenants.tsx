@@ -9,8 +9,8 @@ export default function TenantPage() {
   async function handleLoginToExternalApi() {
     setLoading(true);
     try {
-      const response = await fetch(`/r1api/login`, {
-        method: "POST",
+      const response = await fetch(`/api/r1/mspEntitlements`, {
+        method: "GET",
         credentials: "include", // if you need cookies/session
         headers: {
           "Content-Type": "application/json",
@@ -47,7 +47,7 @@ export default function TenantPage() {
           disabled={loading}
           className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
         >
-          {loading ? "Connecting..." : "Connect to External API"}
+          {loading ? "Connecting..." : "get MSP Entitlements"}
         </button>
       </div>
 

@@ -17,3 +17,8 @@ async def list_msp_ecs(r1_client: R1Client = Depends(get_r1_client)):
 async def get_entitlements(r1_client: R1Client = Depends(get_r1_client)):
     response = r1_client.get("/entitlements")  #no need for function, just passing in the path here
     return response.json()
+
+@router.get("/mspEntitlements")
+async def get_msp_entitlements(r1_client: R1Client = Depends(get_r1_client)):
+    response = r1_client.get("/mspEntitlements")
+    return response.json()

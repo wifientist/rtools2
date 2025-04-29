@@ -2,7 +2,7 @@ import { useAuth } from "@/context/AuthContext";
 const { checkAuth } = useAuth();
 
 const handleSelectTenant = async (tenantId: number) => {
-  const response = await fetch(`${API_BASE_URL}/auth/set-active-tenant`, {
+  const response = await fetch(`/api/auth/set-active-tenant`, {
     method: "POST",
     credentials: "include",
     headers: {
