@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api/, ""),
         },
       },
+      allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',') || [], // Read from env
     },
     build: {
       sourcemap: false,
