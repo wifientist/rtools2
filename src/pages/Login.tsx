@@ -97,6 +97,10 @@ const Login = () => {
                     </button>
                 </form>
             )}
+            <p className="mt-4">
+                Don't have an account?{" "}
+                <a href="/signup" className="text-blue-500">Sign Up</a>
+            </p>
         </div>
     );
 };

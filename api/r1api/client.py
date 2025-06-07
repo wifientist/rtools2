@@ -2,7 +2,7 @@ import requests
 import time
 from r1api.token_cache import get_cached_token, store_token
 from r1api.services.msp import MspService
-# from r1api.services.venues import VenuesService
+from r1api.services.venues import VenueService
 from r1api.services.networks import NetworksService
 
 class R1Client:
@@ -32,7 +32,7 @@ class R1Client:
         # ⚡ Attach modular services
         self.msp = MspService(self)
         self.networks = NetworksService(self)
-        # self.venues = VenueService(self)
+        self.venues = VenueService(self)
 
     def _authenticate(self):
         """Authenticate with R1 API using client_id and shared_secret."""

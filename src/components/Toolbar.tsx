@@ -25,8 +25,7 @@ const Toolbar = () => {
           </>
           : (
           <>
-            <a href="/login" className="text-sm text-blue-500 hover:underline">Login</a>
-            <a href="/signup" className="text-sm text-blue-500 hover:underline">Signup</a>
+            <a href="/login" className="text-sm text-gray-100 hover:bg-gray-800 space-x-3 p-2 rounded">Login</a>
           </>
         )}
       </div>

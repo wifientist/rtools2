@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from dependencies import get_current_user
 from models.user import User
+from constants.roles import role_hierarchy
 import os
 from dotenv import load_dotenv
 load_dotenv() 
@@ -54,12 +55,26 @@ def verify_access_token(token: str) -> dict:
     except JWTError:
         return None
 
-### 🔒 Require Specific Role (RBAC)
-def require_role(required_role: str):
-    def role_checker(user: User = Depends(get_current_user)): #dict = Depends(get_current_user)):
-        if user.role != required_role:
+### 🔒 Require Specific Role (RBAC) - old version, just requiring role explicitly
+# def require_role(required_role: str):
+#     def role_checker(user: User = Depends(get_current_user)): #dict = Depends(get_current_user)):
+#         if user.role != required_role:
+#             logging.warning(f"User {user.email} does not have the required role {required_role}")
+#             raise HTTPException(status_code=403, detail="Insufficient permissions")
+#         return user
+#     return role_checker
+
+def require_role(required_role: str):  #new version, pulling constants role heirarchy and allowing role or better
+    def role_checker(user: User = Depends(get_current_user)):
+        user_level = role_hierarchy.get(user.role, 0)
+        required_level = role_hierarchy.get(required_role, 0)
+        if user_level < required_level:
+            import logging
             logging.warning(f"User {user.email} does not have the required role {required_role}")
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
         return user
     return role_checker
 

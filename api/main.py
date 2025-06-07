@@ -9,6 +9,7 @@ from database import engine
 import models
 from routers import status, users, auth, protected, company, tenants
 from routers.r1.r1_router import router as r1_router
+from routers.fer1agg.fer1_router import router as fer1agg_router
 
 import os
 from dotenv import load_dotenv
@@ -38,6 +39,7 @@ app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
 app.include_router(protected.router, tags=["Protected"])
 app.include_router(r1_router)
+app.include_router(fer1agg_router, tags=["FE_R1_Aggregator"])
 
 
 # from fastapi.routing import APIRoute

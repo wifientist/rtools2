@@ -1,36 +1,65 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, Wifi, Settings, ChevronRight, ChevronLeft } from "lucide-react";
+import { Home, Info, Users, CloudCog, Camera, Settings, GitCompareArrows, ChevronRight, ChevronLeft } from "lucide-react";
 import { useState } from "react";
 
 const Sidebar = () => {
-  const { isAuthenticated, userRole } = useAuth();
+  const { isAuthenticated, userRole, roleHierarchy } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-
+  
   const navItems = [
-    { to: "/", icon: <Home size={22} />, label: "Dashboard" },
-    { to: "/tenants", icon: <Users size={22} />, label: "Tenants" },
-    { to: "/status", icon: <Wifi size={22} />, label: "Tools" },
+    { to: "/", icon: <Home size={22} />, label: "Dashboard", requiresAuth: false },
+    { to: "/about", icon: <Info size={22} />, label: "About", requiresAuth: false },
+    { to: "/tenants", icon: <Users size={22} />, label: "Tenants", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/snapshot", icon: <Camera size={22} />, label: "Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["user","admin"] },
   ];
 
   if (userRole === "admin") {
-    navItems.push({ to: "/admin", icon: <Settings size={22} />, label: "Admin" });
+    navItems.push({ to: "/admin", icon: <Settings size={22} />, label: "Admin", requiresAuth: true });
   }
+
+  function canAccess(
+    itemRoles: string[] | undefined,
+    userRole: string | null,
+    roleHierarchy: { [key: string]: number }
+  ) {
+    if (!itemRoles) return true;
+    if (!userRole) return false;
+  
+    // 🚨 Protect against roleHierarchy not yet loaded
+    if (!roleHierarchy || Object.keys(roleHierarchy).length === 0) return false;
+  
+    const userLevel = roleHierarchy[userRole] || 0;
+    return itemRoles.some(role => userLevel >= (roleHierarchy[role] || 0));
+  }
+  
+
+  // const visibleNavItems = navItems.filter(
+  //   item => !item.requiresAuth || isAuthenticated
+  // ); 
+  const visibleNavItems = navItems.filter(item => {
+    if (!item.requiresAuth) return true;
+    if (!isAuthenticated) return false;
+    return canAccess(item.rolesAllowed, userRole, roleHierarchy);
+  });
+   
 
   return (
     <aside
-          className={`relative flex flex-col justify-between bg-white shadow-lg transition-all duration-300
+          className={`relative flex flex-col justify-between bg-gray-700 shadow-lg transition-all duration-300
             ${collapsed ? "w-16" : "w-48"} 
             h-full bg-gray-700 text-gray-100`}
         >
 
       {/* Navigation */}
       <nav className="flex flex-col p-2 space-y-2 text-gray-200">
-        {navItems.map(({ to, icon, label }) => (
+        {visibleNavItems.map(({ to, icon, label }) => (
           <Link
             key={to}
             to={to}
-            className="group flex items-center space-x-3 hover:text-blue-600 p-2 rounded hover:bg-gray-100 relative"
+            className="group flex items-center space-x-3 hover:text-gray-200 p-2 rounded hover:bg-gray-800 relative"
           >
             {icon}
             {/* Only show label if not collapsed */}

@@ -5,11 +5,11 @@ from dependencies import get_db
 from r1api.client import R1Client
 
 router = APIRouter(
-    prefix="/msp",
+    prefix="/networks",
     tags=["r1-networks"],
 )
 
 @router.get("/networks/{tenant_id}")
-async def list_msp_ecs(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
+async def get_tenant_networks(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
     response = r1_client.get("/networks", override_tenant_id=tenant_id)  #no function, just a GET endpoint
     return response.json()

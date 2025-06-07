@@ -8,9 +8,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
     "lucide-react": "^0.503.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "react-json-view": "^1.21.3",
     "react-router-dom": "^7.3.0"
   },
   "devDependencies": {

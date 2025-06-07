@@ -10,6 +10,7 @@ interface AuthContextType {
   activeTenantId: number | null;
   activeTenantName: string | null;
   tenants: { id: number; name: string }[];
+  roleHierarchy: { [key: string]: number };
   setActiveTenantId: (id: number) => void;
   setActiveTenantName: (name: string) => void;
   checkAuth: () => Promise<void>;
@@ -36,6 +37,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<number | null>(null);
   const [activeTenantName, setActiveTenantName] = useState<string | null>(null);
+  const [roleHierarchy, setRoleHierarchy] = useState<{ [key: string]: number }>({});
+
 
   const checkAuth = async () => {
     try {
@@ -54,6 +57,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setTenants([]); // 🔥 clear tenants on auth fail
         setActiveTenantId(null);
         setActiveTenantName(null);
+        setRoleHierarchy({});
         return;
       }
 
@@ -80,6 +84,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setActiveTenantName(null); // Clear name if tenant fetch failed
       }
 
+      const rolesResponse = await fetch(`${API_BASE_URL}/auth/roles`);
+      if (rolesResponse.ok) {
+        const rolesData = await rolesResponse.json();
+        setRoleHierarchy(rolesData.hierarchy);
+      } else {
+        console.warn("Failed to fetch role hierarchy");
+        setRoleHierarchy({});
+      }
+
     } catch (error) {
       console.error("Auth check error:", error);
 
@@ -89,6 +102,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setActiveTenantId(null);
       setActiveTenantName(null);
       setTenants([]);
+      setRoleHierarchy({});
+
     }
   };
 
@@ -122,6 +137,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       activeTenantId,
       activeTenantName,
       tenants,
+      roleHierarchy,
       setActiveTenantId,
       setActiveTenantName,
       checkAuth,

@@ -36,7 +36,7 @@ def create_tenant(tenant: TenantCreate, db: Session = Depends(get_db), current_u
     )
 
     new_tenant.set_client_id(tenant.client_id)
-    new_tenant.set_client_secret(tenant.shared_secret)
+    new_tenant.set_shared_secret(tenant.shared_secret)
 
     db.add(new_tenant)
     db.commit()

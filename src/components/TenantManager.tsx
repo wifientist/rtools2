@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/context/AuthContext"; // ✅
 
 export default function TenantManager() {
-  const { tenants, activeTenantId, checkAuth } = useAuth(); // ✅ Grab everything you need from context
+  const { tenants, activeTenantId, activeTenantName, checkAuth } = useAuth(); // ✅ Grab everything you need from context
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -56,11 +56,13 @@ export default function TenantManager() {
 
   return (
     <div className="p-6">
-      <h2 className="text-2xl font-bold mb-6">Manage R1 Tenants</h2>
+      <h2 className="text-2xl font-bold mb-6">Manage R1 MSP Tenants</h2>
 
       {tenants.length === 0 ? (
         <p className="mb-6 text-gray-600">No tenants found.</p>
       ) : (
+        <>
+        <div className="p-2 mb-4"><strong>Active Tenant: </strong> {activeTenantName}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           {tenants.map((tenant) => (
             <div
@@ -76,6 +78,7 @@ export default function TenantManager() {
             </div>
           ))}
         </div>
+        </>
       )}
 
       {!showForm ? (

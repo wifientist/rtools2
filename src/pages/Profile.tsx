@@ -3,9 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/context/AuthContext";
 
-import TenantManager from "@/components/TenantManager"; 
-
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const Profile = () => {
@@ -81,10 +78,7 @@ const Profile = () => {
             ) : (
                 <p>Loading profile...</p>
             )}
-            {/* ✅ Insert Tenant Manager Here */}
-            <div>
-                <TenantManager />
-            </div>
+            
         </div>
     );
 };

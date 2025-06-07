@@ -12,8 +12,16 @@ from dependencies import get_db, get_current_user
 from services.auth_service import generate_and_send_otp, verify_otp_and_login
 from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
 from utils.email import send_otp_email_via_api
+from constants.roles import role_hierarchy
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+@router.get("/roles")
+def get_role_hierarchy():
+    """ Statically serve the role hierarchy """
+    return {
+        'hierarchy': role_hierarchy
+    }
 
 # request OTP for existing users
 @router.post("/request-otp")

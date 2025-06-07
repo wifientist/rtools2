@@ -25,7 +25,7 @@ class Tenant(Base):
     def set_client_id(self, raw_client_id: str):
         self.encrypted_client_id = encrypt_value(raw_client_id)
 
-    def set_shared_secret(self, raw_client_secret: str):
+    def set_shared_secret(self, raw_shared_secret: str):
         self.encrypted_shared_secret = encrypt_value(raw_shared_secret)
 
     def get_client_id(self) -> str:
