@@ -13,6 +13,7 @@ const Sidebar = () => {
     { to: "/tenants", icon: <Users size={22} />, label: "Tenants", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/snapshot", icon: <Camera size={22} />, label: "Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/migrate", icon: <GitCompareArrows size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["user","admin"] },
   ];
 

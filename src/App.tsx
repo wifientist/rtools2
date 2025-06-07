@@ -16,6 +16,7 @@ import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Tenants from "@/pages/Tenants";
 import Diff from "@/pages/Diff";
+import Migrate from "@/pages/Migrate";
 import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
 
@@ -36,6 +37,7 @@ const App = () => {
           <Route path="/admin" element={<AdminRoute element={<Admin />} />} />
           <Route path="/tenants" element={<Tenants />} />
           <Route path="/diff" element={<Diff />} />
+          <Route path="/migrate" element={<Migrate />} />
           <Route path="/snapshot" element={<Snapshot />} />
           <Route path="*" element={<Navigate to="/" />} /> 
         </Routes>

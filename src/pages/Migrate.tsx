@@ -4,7 +4,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 //console.log('Environment variables:', import.meta.env);
 
-const Diff = () => {
+const Migrate = () => {
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,10 +24,10 @@ const Diff = () => {
 
   return (
     <div className="text-center">
-      <h2 className="text-2xl font-bold">Difference(s) between two Tenants</h2>
+      <h2 className="text-2xl font-bold">AP Migration Tool</h2>
       
     </div>
   );
 };
 
-export default Diff;
+export default Migrate;
