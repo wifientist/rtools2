@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       proxy: {
         "/api": {
-          target: process.env.API_BASE_URL || "http://localhost:4174",
+          target: process.env.API_BASE_URL || "http://127.0.0.1:4174",
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ""),
         },

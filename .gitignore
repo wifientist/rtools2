@@ -11,7 +11,6 @@
 .env.development
 .env.production
 
-/api/alembic.ini
 /api/.env
 /api/__pycache__
 /api/.venv
@@ -22,7 +21,6 @@
 
 #npm build directory
 /dist
-/api/alembic
 
 # Dependency directories
 /node_modules/
