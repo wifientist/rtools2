@@ -120,7 +120,9 @@ def auth_status(request: Request):
         "role": payload.get("role"), 
         "company_id": payload.get("company_id"),
         "active_tenant_id": payload.get("active_tenant_id"), 
-        "active_tenant_name": payload.get("active_tenant_name") 
+        "active_tenant_name": payload.get("active_tenant_name"),
+        "secondary_tenant_id": payload.get("secondary_tenant_id"),
+        "secondary_tenant_name": payload.get("secondary_tenant_name"),
         })
 
 
@@ -152,8 +154,10 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
         "id": new_user.id, 
         "role": new_user.role, 
         "company_id": new_user.company_id, 
-        "active_tenant_id": new_user.active_tenant_id, 
-        "active_tenant_instance_name": new_user.active_tenant.instance_name if new_user.active_tenant_id else None
+        # "active_tenant_id": new_user.active_tenant_id, 
+        # "active_tenant_instance_name": new_user.active_tenant.instance_name if new_user.active_tenant_id else None,
+        # "secondary_tenant_id": new_user.secondary_tenant_id, 
+        # "secondary_tenant_instance_name": new_user.secondary_tenant.instance_name if new_user.secondary_tenant_id else None,
     })
     response = JSONResponse(content={"message": "Signup successful"})
     response.set_cookie(

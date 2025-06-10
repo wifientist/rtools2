@@ -1,8 +1,22 @@
 import { useState } from "react";
-import { useAuth } from "@/context/AuthContext"; // ✅
+import { useAuth } from "@/context/AuthContext";
+import { useEffect } from "react";
 
 export default function TenantManager() {
-  const { tenants, activeTenantId, activeTenantName, checkAuth } = useAuth(); // ✅ Grab everything you need from context
+  const { tenants, activeTenantId, secondaryTenantId, checkAuth } = useAuth();
+
+  useEffect(() => {
+    checkAuth(); // initial load
+    console.log("Running checkAuth on mount...");
+  
+    // const interval = setInterval(() => {
+    //   checkAuth(); // check every 15 seconds
+    //   console.log("Running checkAuth every 10 seconds...");
+    // }, 10000);
+  
+    // return () => clearInterval(interval);
+  }, []);
+
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -11,23 +25,47 @@ export default function TenantManager() {
     shared_secret: "",
   });
 
-  async function handleTenantSelect(tenantId: number) {
+  async function handleActiveTenantSelect(tenantId: number) {
     try {
       await fetch("/api/tenants/set-active-tenant", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ tenant_id: tenantId }),
       });
-  
-      await checkAuth(); // ✅ re-check auth to reload fresh tenant state (important after new session cookie)
+      await checkAuth();
     } catch (error) {
       console.error("Failed to switch tenant", error);
     }
   }
-  
+
+  async function handleSecondaryTenantSelect(tenantId: number) {
+    try {
+      await fetch("/api/tenants/set-secondary-tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ tenant_id: tenantId }),
+      });
+      await checkAuth();
+    } catch (error) {
+      console.error("Failed to switch tenant", error);
+    }
+  }
+
+  async function handleDeleteTenant(tenantId: number) {
+    if (!confirm("Are you sure you want to delete this tenant?")) return;
+
+    try {
+      await fetch(`/api/tenants/${tenantId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      await checkAuth();
+    } catch (error) {
+      console.error("Failed to delete tenant", error);
+    }
+  }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     setFormData(prev => ({
@@ -46,126 +84,112 @@ export default function TenantManager() {
       });
       setShowForm(false);
       setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "" });
-
-      // ⚡ After adding, re-check auth to refresh tenants list in context
-      await checkAuth(); // <- assuming you import `checkAuth` from useAuth
+      await checkAuth();
     } catch (error) {
       console.error("Failed to add tenant", error);
     }
   }
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-6">Manage R1 MSP Tenants</h2>
+    <div className="p-6 max-w-4xl mx-auto">
+      <h2 className="text-2xl font-bold mb-4">Manage Tenants</h2>
 
-      {tenants.length === 0 ? (
-        <p className="mb-6 text-gray-600">No tenants found.</p>
-      ) : (
-        <>
-        <div className="p-2 mb-4"><strong>Active Tenant: </strong> {activeTenantName}</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {tenants.map((tenant) => (
-            <div
-              key={tenant.id}
-              className={`p-4 rounded-lg border shadow-sm transition cursor-pointer ${
-                tenant.id === activeTenantId
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200 hover:bg-gray-50"
-              }`}
-              onClick={() => handleTenantSelect(tenant.id)}
-            >
-              <h3 className="text-lg font-semibold mb-1">{tenant.name}</h3>
-            </div>
-          ))}
+      <button
+        onClick={() => setShowForm(prev => !prev)}
+        className="mb-6 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+      >
+        {showForm ? "Cancel" : "Add New Tenant"}
+      </button>
+
+      {showForm && (
+        <div className="bg-gray-100 p-4 rounded-lg mb-6 space-y-3 shadow-inner">
+          <input
+            className="w-full border p-2 rounded"
+            placeholder="Tenant Name"
+            name="name"
+            value={formData.name}
+            onChange={handleInputChange}
+          />
+          <input
+            className="w-full border p-2 rounded"
+            placeholder="Tenant ID"
+            name="tenant_id"
+            value={formData.tenant_id}
+            onChange={handleInputChange}
+          />
+          <input
+            className="w-full border p-2 rounded"
+            placeholder="Client ID"
+            name="client_id"
+            value={formData.client_id}
+            onChange={handleInputChange}
+          />
+          <input
+            className="w-full border p-2 rounded"
+            placeholder="Shared Secret"
+            name="shared_secret"
+            value={formData.shared_secret}
+            onChange={handleInputChange}
+          />
+          <button
+            onClick={handleAddTenant}
+            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Save Tenant
+          </button>
         </div>
-        </>
       )}
 
-      {!showForm ? (
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-        >
-          Add a R1 Tenant
-        </button>
+      {tenants.length === 0 ? (
+        <p className="text-gray-600">No tenants found.</p>
       ) : (
-        <div className="bg-gray-100 p-6 rounded-lg shadow-sm">
-          <h3 className="text-xl font-semibold mb-4">Add New R1 Tenant</h3>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1" htmlFor="name">
-              Tenant Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleInputChange}
-              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1" htmlFor="tenant_id">
-              Tenant ID
-            </label>
-            <input
-              type="text"
-              id="tenant_id"
-              name="tenant_id"
-              value={formData.tenant_id}
-              onChange={handleInputChange}
-              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1" htmlFor="client_id">
-              Client ID
-            </label>
-            <input
-              type="text"
-              id="client_id"
-              name="client_id"
-              value={formData.client_id}
-              onChange={handleInputChange}
-              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1" htmlFor="shared_secret">
-              Shared Secret
-            </label>
-            <input
-              type="text"
-              id="shared_secret"
-              name="shared_secret"
-              value={formData.shared_secret}
-              onChange={handleInputChange}
-              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-
-          <div className="mb-6">
-            <p className="text-sm text-gray-500 italic">Instructions TBD</p>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleAddTenant}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {tenants.map(tenant => (
+            <div
+              key={tenant.id}
+              className={`p-4 border rounded-lg shadow-sm transition-all ${
+                tenant.id === activeTenantId
+                  ? "border-blue-500 bg-blue-50"
+                  : tenant.id === secondaryTenantId
+                  ? "border-green-500 bg-green-50"
+                  : "border-gray-200 hover:bg-gray-100"
+              }`}
             >
-              Submit
-            </button>
-            <button
-              onClick={() => setShowForm(false)}
-              className="px-6 py-2 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition"
-            >
-              Cancel
-            </button>
-          </div>
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h3 className="text-lg font-semibold">{tenant.name}</h3>
+                  <p className="text-xs text-gray-600">Tenant ID: {tenant.tenant_id}</p>
+                </div>
+                {tenant.id === activeTenantId && (
+                  <span className="text-xs text-blue-600 font-semibold">Active</span>
+                )}
+                {tenant.id === secondaryTenantId && (
+                  <span className="text-xs text-green-600 font-semibold ml-2">Secondary</span>
+)}
+
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => handleActiveTenantSelect(tenant.id)}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  Set Active
+                </button>
+                <button
+                  onClick={() => handleSecondaryTenantSelect(tenant.id)}
+                  className="text-sm text-green-600 hover:underline"
+                >
+                  Set Secondary
+                </button>
+                <button
+                  onClick={() => handleDeleteTenant(tenant.id)}
+                  className="text-sm text-red-600 hover:underline"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

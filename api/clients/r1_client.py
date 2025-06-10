@@ -32,6 +32,20 @@ def create_r1_client_from_tenant(tenant_pk: int, db: Session) -> R1Client:
         region=region
     )
 
+# def get_r1_client(
+#     current_user: User = Depends(get_current_user),
+#     db: Session = Depends(get_db),
+#     tenant_id: str = None
+# ):
+#     """Get an R1Client using the user's chosen tenant."""
+#     if tenant_id is None:
+#         tenant_id = current_user.active_tenant_id
+#         if tenant_id is None:
+#             raise HTTPException(status_code=400, detail="No active tenant selected.")
+    
+#     # Fetch the tenant using the provided tenant_id
+#     return create_r1_client_from_tenant(tenant_id, db)
+
 def get_r1_client(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -41,3 +55,14 @@ def get_r1_client(
         raise HTTPException(status_code=400, detail="No active tenant selected.")
 
     return create_r1_client_from_tenant(tenant_id, db)
+
+# def get_secondary_r1_client(
+#     current_user: User = Depends(get_current_user),
+#     db: Session = Depends(get_db),
+# ):
+#     """Get a secondary R1Client using the tenant's primary key."""
+#     tenant_id = current_user.secondary_tenant_id   
+#     if tenant_id is None:
+#         raise HTTPException(status_code=400, detail="No secondary tenant selected.")
+
+#     return create_r1_client_from_tenant(tenant_id, db)

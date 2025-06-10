@@ -4,6 +4,7 @@ from r1api.token_cache import get_cached_token, store_token
 from r1api.services.msp import MspService
 from r1api.services.venues import VenueService
 from r1api.services.networks import NetworksService
+from r1api.services.tenant import TenantService
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, region=None):
@@ -29,10 +30,11 @@ class R1Client:
         else:
             self._authenticate()
         
-        # ⚡ Attach modular services
+        # Attach modular services
         self.msp = MspService(self)
         self.networks = NetworksService(self)
         self.venues = VenueService(self)
+        self.tenant = TenantService(self)
 
     def _authenticate(self):
         """Authenticate with R1 API using client_id and shared_secret."""
@@ -67,6 +69,20 @@ class R1Client:
         }
         if override_tenant_id:
             headers["x-rks-tenantid"] = override_tenant_id
+
+        print("--- R1Client Request ---")
+        print(f'client_id: {self.client_id}, tenant_id: {self.tenant_id}, host (region): {self.host}')
+        print("Preparing _request:")
+        print(f"Method: {method.upper()}")
+        print(f"URL: {url}")
+        # if payload is None:
+        #     payload = {}
+        # if params is None:
+        #     params = {}
+        print("Payload, Params:")
+        # print(headers)
+        print(payload)
+        print(params)
 
         response = self.session.request(
             method,

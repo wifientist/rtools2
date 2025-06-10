@@ -5,17 +5,19 @@ from clients.r1_client import get_r1_client
 from r1api.client import R1Client
 
 router = APIRouter(
-    prefix="/venue",
+    prefix="/tenant",
     tags=["fer1agg"],
 )
 
 @router.get("/fulldetails")
-async def get_venue_details(tenant_id: str, venue_id: str, r1_client: R1Client = Depends(get_r1_client)):
+async def get_tenant_details(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
     
-    aps = await r1_client.venues.get_venue_aps(tenant_id=tenant_id, venue_id=venue_id)
+    venues = await r1_client.tenant.get_tenant_venues(tenant_id)
+    aps = await r1_client.tenant.get_tenant_aps(tenant_id)
     
     answer =  {
-         "aps": aps,
+         "venues": venues,
+        "aps": aps,
     }
     print(answer)
     return {'status': 'success', 'data': answer}

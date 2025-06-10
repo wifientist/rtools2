@@ -1,33 +1,94 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useDualMspEcs } from "@/hooks/useDualMspEcs";
+import DoubleECSelect from "@/components/DoubleECSelect";
+import ECComparisonTable from "@/components/ECComparisonTable";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-//console.log('Environment variables:', import.meta.env);
+function Diff() {
+  const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
+  const [selectedSource, setSelectedSource] = useState(null);
+  const [selectedDestination, setSelectedDestination] = useState(null);
+  const [sourceDetails, setSourceDetails] = useState(null);
+  const [destinationDetails, setDestinationDetails] = useState(null);
 
-const Diff = () => {
-  const [status, setStatus] = useState<string | null>(null);
+  const handleSelectionChange = (sourceId, destinationId) => {
+    setSelectedSource(sourceId);
+    setSelectedDestination(destinationId);
+    setSourceDetails(null);
+    setDestinationDetails(null);
+  };
 
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/status`); // Update with your API URL
-        const data = await response.json();
-        setStatus(data.status);
-      } catch (error) {
-        console.error("API status check failed:", error);
-        setStatus("error");
+    const fetchDetails = async () => {
+      if (selectedSource && selectedDestination && selectedSource !== selectedDestination) {
+        try {
+          const [srcRes, destRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/fer1agg/tenant/fulldetails?tenant_id=${selectedSource}`),
+            fetch(`${API_BASE_URL}/fer1agg/tenant/fulldetails?tenant_id=${selectedDestination}`),
+          ]);
+          const [srcData, destData] = await Promise.all([
+            srcRes.json(),
+            destRes.json(),
+          ]);
+          setSourceDetails(srcData);
+          setDestinationDetails(destData);
+        } catch (error) {
+          console.error("Error fetching EC details:", error);
+        }
       }
     };
 
-    checkStatus();
-  }, []);
+    fetchDetails();
+  }, [selectedSource, selectedDestination]);
+
+  if (loadingEcs) return <p className="p-4">Loading End Customers...</p>;
+  if (errorEcs) return <p className="p-4 text-red-500">Failed to load ECs: {errorEcs}</p>;
 
   return (
-    <div className="text-center">
-      <h2 className="text-2xl font-bold">Difference(s) between two Tenants</h2>
-      
+    <div className="p-4 max-w-6xl mx-auto">
+      <h2 className="text-3xl font-bold mb-4">Compare End Customers</h2>
+
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <DoubleECSelect
+          sourceEcData={activeEcData}
+          destinationEcData={secondaryEcData}
+          onSelectionChange={handleSelectionChange}
+          initialSource={selectedSource}
+          initialDestination={selectedDestination}
+          showActions={false}
+          disabled={false}
+        />
+      </div>
+
+      {selectedSource && selectedDestination && selectedSource === selectedDestination && (
+        <p className="text-red-500 mb-4">Source and destination cannot be the same EC.</p>
+      )}
+
+      {sourceDetails && destinationDetails && (
+        <ECComparisonTable source={sourceDetails} destination={destinationDetails} />
+      )}
+
+      {sourceDetails && destinationDetails && (
+        <div className="columns mt-6">
+                <p>Raw ecData:</p>
+
+          <div className="column has-background-light p-4 rounded">
+            <h3 className="font-semibold text-lg mb-2">Source EC Details</h3>
+            <pre className="text-xs text-left overflow-auto">
+              {JSON.stringify(sourceDetails, null, 2)}
+            </pre>
+          </div>
+          <div className="column has-background-light p-4 rounded">
+            <h3 className="font-semibold text-lg mb-2">Destination EC Details</h3>
+            <pre className="text-xs text-left overflow-auto">
+              {JSON.stringify(destinationDetails, null, 2)}
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
+}
 
 export default Diff;

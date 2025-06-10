@@ -19,11 +19,24 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_INSTALLER', 'MSP_INTEGRATOR']}
         }
-        return self.client.post("/msptechpartners/query", payload=body).json()
+        return self.client.post("/techpartners/mspecs/query", payload=body).json()
 
     async def get_msp_labels(self): #, r1_client: R1Client = None):
         #r1_client = r1_client or get_r1_client()
-        return self.client.get("/mspLabels").json()
+        print("Fetching MSP labels")
+        #return self.client.get("/mspLabels").json()
+        response = self.client.get("/mspLabels")
+        print(f"Response content: {response.content}")
+
+        if response.ok:
+            try:
+                return response.json()
+            except ValueError:
+                print("Failed to decode JSON")
+                return None
+        else:
+            print(f"Failed to fetch labels: {response.status_code}")
+            return None
 
     async def get_entitlements(self): #, r1_client: R1Client = None):
         #r1_client = r1_client or get_r1_client()

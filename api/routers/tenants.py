@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from models.user import User
 from models.tenant import Tenant
 from dependencies import get_db, get_current_user
-from schemas.tenant import TenantCreate, SetActiveTenantRequest
+from schemas.tenant import TenantCreate, SetActiveTenantRequest, SetSecondaryTenantRequest
 from security import create_access_token
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
@@ -75,6 +75,48 @@ def set_active_tenant(
         "role": current_user.role,
         "company_id": current_user.company_id,
         "active_tenant_id": current_user.active_tenant_id,
+        "secondary_tenant_id": current_user.secondary_tenant_id,
+    })
+
+    # Return new token as cookie
+    response = JSONResponse(content={"message": "Active tenant updated"})
+    response.set_cookie(
+        key="session",
+        value=access_token,
+        httponly=True,
+        secure=False,  # Set to True in production!
+        samesite="Strict",
+    )
+
+    return response
+
+
+@router.post("/set-secondary-tenant")
+def set_secondary_tenant(
+    payload: SetSecondaryTenantRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    tenant_id = payload.tenant_id
+
+    # Fetch the requested API key and make sure it belongs to the current user
+    tenant = db.query(Tenant).filter_by(id=tenant_id, user_id=current_user.id).first()
+
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found or not owned by user.")
+
+    current_user.secondary_tenant_id = tenant.id
+    db.commit()
+    db.refresh(current_user)
+
+    # Create a new token with the updated active tenant info
+    access_token = create_access_token({
+        "sub": current_user.email,
+        "id": current_user.id,
+        "role": current_user.role,
+        "company_id": current_user.company_id,
+        "active_tenant_id": current_user.active_tenant_id,
+        "secondary_tenant_id": current_user.secondary_tenant_id,
     })
 
     # Return new token as cookie

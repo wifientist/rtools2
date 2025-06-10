@@ -9,12 +9,11 @@ router = APIRouter(
     tags=["r1-venues"],
 )
 
-@router.get("/venues/{tenant_id}")
-async def get_tenant_venues(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
-    response = r1_client.get("/venues", override_tenant_id=tenant_id)
-    return response.json()
+@router.get("/{tenant_id}")
+async def get_venues(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
+    return await r1_client.venues.get_venues(tenant_id)  # Use the R1Client's venues method to get venues
 
+@router.get("/{tenant_id}/aps/{venue_id}")
+async def get_venue_aps(tenant_id: str, venue_id: str, r1_client: R1Client = Depends(get_r1_client)):
+    return await r1_client.venues.get_venue_aps(tenant_id, venue_id)  # Use the R1Client's venues method to get aps
 
-@router.get("/venues/{tenant_id}/aps")
-async def get_tenant_aps(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
-    response = r1_client.post(f"/venues/{tenant_id}/aps", override_tenant_id=tenant_id)

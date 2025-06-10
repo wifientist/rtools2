@@ -1,18 +1,21 @@
-# Welcome to React Router!
+# Welcome to the new Ruckus Tools
 
-A modern, production-ready template for building full-stack React applications using React Router.
+Frontend built with Vite using React Router.
+Backend built with FastAPI using Python.  
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
-
-## Features
+## Frontend Features
 
 - 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
 - 🔒 TypeScript by default
 - 🎉 TailwindCSS for styling
 - 📖 [React Router docs](https://reactrouter.com/)
+
+## Backend Features
+
+- 1️⃣ OTP based logins
+- 🔐 JWT auth for user session and management
+- 💿 postgresql database
+- ↔️ Direct access to R1 API via services heirarchy
 
 ## Getting Started
 
@@ -24,64 +27,53 @@ Install the dependencies:
 npm install
 ```
 
-### Development
+Note: may get warnings about dependencies, especially for react-json-view.  Just --force the install per the notes you will see and use at your own peril.  
 
-Start the development server with HMR:
+Create a python virtual environment and install dependencies:
+```bash
+cd /api
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Define local .env variables per the .env.example provided.
+Check vite.config.js for frontend variables as well.  
+Define local /api/.env variables per the .env.example provided.
+
+### Database
+
+Project uses a postgresql database on the backend.  
+Managed via alembic for migrations.
+
+### Development Locally
+
+Start the development server:
 
 ```bash
 npm run dev
 ```
 
-Your application will be available at `http://localhost:5173`.
+Start the API:
+
+```bash
+cd /api
+source .venv/bin/activate
+uvicorn --host 0.0.0.0 --port 4174
+```
+
+Your application will be available at `http://localhost:4173` and your IP available at `http://localhost:4174/docs`. 
 
 ## Building for Production
-
-Create a production build:
-
-```bash
-npm run build
-```
-
-## Deployment
-
-### Docker Deployment
-
-To build and run using Docker:
-
-```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
-```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
 
 If you're familiar with deploying Node applications, the built-in app server is production-ready.
 
 Make sure to deploy the output of `npm run build`
 
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
+From there, use Caddy (or similar options) to serve the more efficient/static build. 
+
+Again, refer to the .env files for setting behavior appropriately.  
 
 ## Styling
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+This project uses [Tailwind CSS](https://tailwindcss.com/) for a simple default styling experience. You can use whatever CSS framework you prefer.

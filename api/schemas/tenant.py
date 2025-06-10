@@ -13,3 +13,11 @@ class SetActiveTenantResponse(BaseModel):
     id: int
     name: str
     tenant_id: str
+
+class SetSecondaryTenantRequest(BaseModel):
+    tenant_id: int
+
+class SetSecondaryTenantResponse(BaseModel):
+    id: int
+    name: str
+    tenant_id: str

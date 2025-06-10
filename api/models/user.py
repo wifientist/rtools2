@@ -27,6 +27,7 @@ class User(Base):
 
     # 🔹 Track the active R1 instance
     active_tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    secondary_tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
 
     # Relationships
     #proposals = relationship("Proposal", back_populates="creator", cascade="all, delete")

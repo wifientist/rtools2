@@ -39,7 +39,7 @@ app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
 app.include_router(protected.router, tags=["Protected"])
 app.include_router(r1_router)
-app.include_router(fer1agg_router, tags=["FE_R1_Aggregator"])
+app.include_router(fer1agg_router)
 
 
 # from fastapi.routing import APIRoute

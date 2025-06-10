@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Bell, UserCircle } from "lucide-react";
 
 const Toolbar = () => {
-  const { isAuthenticated, activeTenantName, logout } = useAuth();
+  const { isAuthenticated, activeTenantName, secondaryTenantName, logout } = useAuth();
 
   return (
     <header className="h-16 bg-gray-700 text-gray-100 flex items-center justify-between px-6 shadow-sm">
@@ -12,6 +12,9 @@ const Toolbar = () => {
       </div>
       <div className="text-sm">
         Active Tenant: <span className="font-semibold">{activeTenantName || "None"}</span>
+      </div>
+      <div className="text-sm">
+        Secondary Tenant: <span className="font-semibold">{secondaryTenantName || "None"}</span>
       </div>
       <div className="flex items-center space-x-4">
         <Bell className="w-5 h-5 text-gray-100 cursor-pointer" />

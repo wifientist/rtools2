@@ -9,10 +9,14 @@ interface AuthContextType {
   userId: number | null;
   activeTenantId: number | null;
   activeTenantName: string | null;
+  secondaryTenantId: number | null;
+  secondaryTenantName: string | null;
   tenants: { id: number; name: string }[];
   roleHierarchy: { [key: string]: number };
   setActiveTenantId: (id: number) => void;
   setActiveTenantName: (name: string) => void;
+  setSecondaryTenantId: (id: number) => void;
+  setSecondaryTenantName: (name: string) => void;
   checkAuth: () => Promise<void>;
   logout: () => void;
 }
@@ -37,6 +41,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<number | null>(null);
   const [activeTenantName, setActiveTenantName] = useState<string | null>(null);
+  const [secondaryTenantId, setSecondaryTenantId] = useState<number | null>(null);
+  const [secondaryTenantName, setSecondaryTenantName] = useState<string | null>(null);
   const [roleHierarchy, setRoleHierarchy] = useState<{ [key: string]: number }>({});
 
 
@@ -45,6 +51,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const response = await fetch(`${API_BASE_URL}/auth/status`, {
         method: "GET",
         credentials: "include",
+        headers: {
+          "Cache-Control": "no-store",
+        },
       });
 
       if (!response.ok) {
@@ -57,31 +66,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setTenants([]); // 🔥 clear tenants on auth fail
         setActiveTenantId(null);
         setActiveTenantName(null);
+        setSecondaryTenantId(null);
+        setSecondaryTenantName(null);
         setRoleHierarchy({});
         return;
       }
 
       const data = await response.json();
+      //console.log("Auth check success:", data);
 
       setIsAuthenticated(true);
       setUserRole(data.role);
       setUserId(data.id);
       setActiveTenantId(data.active_tenant_id || null);
+      setSecondaryTenantId(data.secondary_tenant_id || null);
+      //console.log("Updated activeTenantId to", data.active_tenant_id);
+      //console.log("Updated secondaryTenantId to", data.secondary_tenant_id);
       
       // 🔥 New: Fetch tenants when auth succeeds
       const tenantsResponse = await fetch(`${API_BASE_URL}/tenants/mine`, {
         method: "GET",
         credentials: "include",
+        headers: {
+          "Cache-Control": "no-store",
+        },
       });
       if (tenantsResponse.ok) {
         const tenantsData = await tenantsResponse.json();
         setTenants(tenantsData); // [{ id, instance_name }]
         const activeTenant = tenantsData.find(t => t.id === data.active_tenant_id);
         setActiveTenantName(activeTenant ? activeTenant.name : null);
+        const secondaryTenant = tenantsData.find(ts => ts.id === data.secondary_tenant_id);
+        setSecondaryTenantName(secondaryTenant ? secondaryTenant.name : null);
       } else {
         console.error("Failed to fetch tenants");
         setTenants([]);
         setActiveTenantName(null); // Clear name if tenant fetch failed
+        setSecondaryTenantName(null); // Clear name if tenant fetch failed
       }
 
       const rolesResponse = await fetch(`${API_BASE_URL}/auth/roles`);
@@ -101,6 +122,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserId(null);
       setActiveTenantId(null);
       setActiveTenantName(null);
+      setSecondaryTenantId(null);
+      setSecondaryTenantName(null);
       setTenants([]);
       setRoleHierarchy({});
 
@@ -136,10 +159,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       userRole,
       activeTenantId,
       activeTenantName,
+      secondaryTenantId,
+      secondaryTenantName,
       tenants,
       roleHierarchy,
       setActiveTenantId,
       setActiveTenantName,
+      setSecondaryTenantId,
+      setSecondaryTenantName,
       checkAuth,
       logout
     }}>

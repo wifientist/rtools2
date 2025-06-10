@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Info, Users, CloudCog, Camera, Settings, GitCompareArrows, ChevronRight, ChevronLeft } from "lucide-react";
+import { Home, Info, Users, CloudCog, Camera, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine } from "lucide-react";
 import { useState } from "react";
 
 const Sidebar = () => {
@@ -11,10 +11,11 @@ const Sidebar = () => {
     { to: "/", icon: <Home size={22} />, label: "Dashboard", requiresAuth: false },
     { to: "/about", icon: <Info size={22} />, label: "About", requiresAuth: false },
     { to: "/tenants", icon: <Users size={22} />, label: "Tenants", requiresAuth: true, rolesAllowed: ["user","admin"] },
-    { to: "/snapshot", icon: <Camera size={22} />, label: "Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/snapshot", icon: <Camera size={22} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"] },
-    { to: "/migrate", icon: <GitCompareArrows size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/super", icon: <Settings size={22} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
   ];
 
   if (userRole === "admin") {

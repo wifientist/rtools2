@@ -21,18 +21,18 @@ async def get_msp_tech_partners(r1_client: R1Client = Depends(get_r1_client)):
 
 @router.get("/entitlements")
 async def get_entitlements(r1_client: R1Client = Depends(get_r1_client)):
-    return await r1_client.get_msp_entitlements()
+    return await r1_client.msp.get_entitlements()  #adding .msp. here (did i need it?)
 
 @router.get("/mspEntitlements")
 async def get_msp_entitlements(r1_client: R1Client = Depends(get_r1_client)):
-    return await r1_client.get_msp_entitlements()
+    return await r1_client.msp.get_msp_entitlements() #here too
 
 @router.get("/mspAdmins")
 async def get_msp_admins(r1_client: R1Client = Depends(get_r1_client)):
-    return await r1_client.get_msp_admins()
+    return await r1_client.msp.get_msp_admins()  #here too
 
 @router.get("/mspCustomers/{tenant_id}/admins")
 async def get_msp_customer_admins(tenant_id: str, r1_client: R1Client = Depends(get_r1_client)):
-    return await r1_client.get_msp_customer_admins(tenant_id)
+    return await r1_client.msp.get_msp_customer_admins(tenant_id)  #here too
 
 
