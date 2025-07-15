@@ -10,8 +10,8 @@ export function useDualMspEcs() {
     async function fetchBoth() {
       try {
         const [activeRes, secondaryRes] = await Promise.all([
-          fetch("/api/r1/msp/mspEcs", { credentials: "include" }),
-          fetch("/api/r1/msp/mspEcs", { credentials: "include" })
+          fetch("/api/fer1agg/ec/active", { credentials: "include" }),
+          fetch("/api/fer1agg/ec/secondary", { credentials: "include" })
         ]);
         const [activeJson, secondaryJson] = await Promise.all([
           activeRes.json(),

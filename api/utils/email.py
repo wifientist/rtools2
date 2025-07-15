@@ -45,7 +45,6 @@ The Ruckus Tools Team
 
 
 
-import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
@@ -65,4 +64,8 @@ def send_otp_email_via_api(to_email: str, otp_code: str):
         print(response.body)
         print(response.headers)
     except Exception as e:
-        print(e.message)
+        print(f"SendGrid error: {str(e)}")
+        try:
+            send_otp_email_via_snmp(to_email, otp_code)
+        except Exception as smtp_e:
+            print(f"SMTP fallback failed too: {smtp_e}")

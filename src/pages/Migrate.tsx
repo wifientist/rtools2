@@ -1,34 +1,67 @@
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useDualMspEcs } from "@/hooks/useDualMspEcs";
-import DoubleECSelect from "@/components/DoubleECSelect";
+
+//import { useDualMspEcs } from "@/hooks/useDualMspEcs";
+import { useVenueDetails } from "@/hooks/useVenueDetails";
+//import DoubleECSelect from "@/components/DoubleECSelect";
+import DoubleEc from "@/components/DoubleEc";
+//import { useDualEc } from "@/hooks/useDualEc";
+import VenueSelectPanel from "@/components/VenueSelectPanel";
 import SimpleAPSelect from "@/components/SimpleAPSelect";
 
 function Migrate() {
     const { activeTenantName } = useAuth();
     //const { ecData, loading: loadingEcs, error: errorEcs } = useMspEcs();
-    const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
+    //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
+    //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualEc();
     
     const [selectedSource, setSelectedSource] = useState(null);
     const [selectedDestination, setSelectedDestination] = useState(null);
+    const [selectedSourceName, setSelectedSourceName] = useState(null);
+    const [selectedDestinationName, setSelectedDestinationName] = useState(null);
+    const [selectedSourceEc, setSelectedSourceEc] = useState(null);
+    const [selectedDestinationEc, setSelectedDestinationEc] = useState(null);
     const [selectedAPs, setSelectedAPs] = useState([]);
     const [showAPSelect, setShowAPSelect] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [resetKey, setResetKey] = useState(0); // Key to force component reset
+    const [selectedSourceVenues, setSelectedSourceVenues] = useState([]); // list of venues
+    const [selectedDestinationVenue, setSelectedDestinationVenue] = useState(null); // single ID or object
+    const {
+        sourceVenueData,
+        destinationVenueData,
+        loadingVenues,
+        errorVenues
+      } = useVenueDetails(selectedSource, selectedDestination);
 
-    const handleSelectionChange = (sourceId, destinationId) => {
-        setSelectedSource(sourceId);
-        setSelectedDestination(destinationId);
+
+    //const handleSelectionChange = (sourceId, destinationId) => {
+    //    setSelectedSource(sourceId);
+    //    setSelectedDestination(destinationId);
         
         // Clear selected APs when EC selection changes
-        setSelectedAPs([]);
+    //    setSelectedAPs([]);
         
         // Log for debugging
-        console.log("Selection changed:", {
-            source: sourceId,
-            destination: destinationId
-        });
+    //    console.log("Selection changed:", {
+    //        source: sourceId,
+    //        destination: destinationId
+    //    });
+    //};
+
+    const handleSelectionChange = (sourceId, destinationId, sourceEc, destinationEc) => {
+        setSelectedSource(sourceId);
+        setSelectedDestination(destinationId);
+        setSelectedSourceName(sourceEc?.name || null);
+        setSelectedDestinationName(destinationEc?.name || null);
+        setSelectedSourceEc(sourceEc || null);
+        setSelectedDestinationEc(destinationEc || null);
+        setSelectedSourceVenues([]);
+        setSelectedDestinationVenue(null);
+        setSelectedAPs([]);
+        //console.log("[migrate] Selection changed:", { sourceId, destinationId, sourceEc, destinationEc });
     };
+    
 
     const handleSelectAPClick = () => {
         if (!selectedSource || !selectedDestination) {
@@ -68,18 +101,21 @@ function Migrate() {
         setIsLoading(true);
         
         try {
-            const sourceEc = activeEcData.find(ec => ec.id === selectedSource);
-            const destinationEc = secondaryEcData.find(ec => ec.id === selectedDestination);
+            //const sourceEc = activeEcData.find(ec => ec.id === selectedSource);
+            //const destinationEc = secondaryEcData.find(ec => ec.id === selectedDestination);
             
             console.log("Starting migration:", {
-                source: sourceEc,
-                destination: destinationEc,
+                //source: sourceEc,
+                //destination: destinationEc,
+                source: selectedSourceName,
+                destination: selectedDestinationName,
                 aps: apsToMigrate
             });
+              
 
             // TODO: Step 1:  Create a BACKUP of the selected APs and ALL their data.  
-            //       Step 2:  Store that into redis or some db? 
-            //       Step 3:  Add historical migrations to teh uer's profile somehow???  aka Audit logs
+            //       Step 2:  Store that into redis or my pqql  db? 
+            //       Step 3:  Add historical migrations to teh uer's profile somehow aka Audit logs
 
             // TODO: Replace with your actual migration API calls
             // const result = await migrationService.migrateAPs(
@@ -91,7 +127,9 @@ function Migrate() {
             // Simulate API call for now
             await new Promise(resolve => setTimeout(resolve, 3000));
             
-            alert(`Migration completed! ${apsToMigrate.length} Access Points migrated from ${sourceEc.name} to ${destinationEc.name}.`);
+            //alert(`Migration completed! ${apsToMigrate.length} Access Points migrated from ${sourceEc.name} to ${destinationEc.name}.`);
+            alert(`Migration completed! ${apsToMigrate.length} Access Points migrated from ${selectedSourceName} to ${selectedDestinationName}.`);
+
 
             // TODO: Add a confirmation step perhaps???
             
@@ -110,8 +148,8 @@ function Migrate() {
     };
 
     // Loading and error states
-    if (loadingEcs) return <p className="p-4">Loading End Customers...</p>;
-    if (errorEcs) return <p className="p-4">Error loading End Customers: {errorEcs}</p>;
+    //if (loadingEcs) return <p className="p-4">Loading End Customers...</p>;
+    //if (errorEcs) return <p className="p-4">Error loading End Customers: {errorEcs}</p>;
 
     const isReadyToSelectAPs = selectedSource && selectedDestination && selectedSource !== selectedDestination;
     const isReadyToMigrate = isReadyToSelectAPs && selectedAPs.length > 0;
@@ -126,15 +164,21 @@ function Migrate() {
             </div>
 
             <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <DoubleECSelect
-                    key={resetKey} // Force reset when key changes
-                    sourceEcData={activeEcData}
-                    destinationEcData={secondaryEcData}
+                <DoubleEc
                     onSelectionChange={handleSelectionChange}
                     initialSource={selectedSource}
                     initialDestination={selectedDestination}
-                    showActions={true}
-                    disabled={isLoading}
+                    showActions={false}
+                    disabled={false}
+                />
+            </div>
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
+                <VenueSelectPanel
+                sourceVenues={sourceVenueData}
+                destinationVenues={destinationVenueData}
+                defaultDestinationAddress={selectedDestination?.address || ""}
+                onSourceChange={setSelectedSourceVenues}
+                onDestinationChange={setSelectedDestinationVenue}
                 />
             </div>
 
@@ -144,11 +188,12 @@ function Migrate() {
                     <h3 className="font-semibold text-blue-900 mb-2">Migration Summary</h3>
                     <div className="text-sm text-blue-800 space-y-1">
                         <div>
-                            Source: <span className="font-medium">{activeEcData.find(ec => ec.id === selectedSource)?.name}</span>
+                            Source: <span className="font-medium">{selectedSourceName || 'Not selected'}</span>
                         </div>
                         <div>
-                            Destination: <span className="font-medium">{secondaryEcData.find(ec => ec.id === selectedDestination)?.name}</span>
+                            Destination: <span className="font-medium">{selectedDestinationName || 'Not selected'}</span>
                         </div>
+
                         {selectedAPs.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-blue-300">
                                 <span className="font-medium text-green-700">
@@ -211,8 +256,7 @@ function Migrate() {
                 <div className="mt-8 p-4 bg-yellow-50 rounded-lg">
                     <h3 className="font-medium mb-2">Debug Info</h3>
                     <div className="text-sm space-y-1">
-                        <p>Total Source ECs loaded: {activeEcData?.length || 0}</p>
-                        <p>Total Destination ECs loaded: {secondaryEcData?.length || 0}</p>
+                        
                         <p>Selected Source ID: {selectedSource || 'None'}</p>
                         <p>Selected Destination ID: {selectedDestination || 'None'}</p>
                         <p>Selected APs: {selectedAPs.length}</p>
@@ -227,6 +271,8 @@ function Migrate() {
                 <SimpleAPSelect
                     sourceId={selectedSource}
                     destinationId={selectedDestination}
+                    sourceVenueData={sourceVenueData}
+                    destinationVenueData={destinationVenueData}
                     onClose={handleAPSelectClose}
                     onConfirm={handleAPSelectConfirm}
                 />

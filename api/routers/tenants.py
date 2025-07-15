@@ -33,6 +33,7 @@ def create_tenant(tenant: TenantCreate, db: Session = Depends(get_db), current_u
         name=tenant.name,
         user_id=current_user.id,
         tenant_id=tenant.tenant_id,
+        ec_type=tenant.ec_type, # returns None if not provided
     )
 
     new_tenant.set_client_id(tenant.client_id)
@@ -109,7 +110,7 @@ def set_secondary_tenant(
     db.commit()
     db.refresh(current_user)
 
-    # Create a new token with the updated active tenant info
+    # Create a new token with the updated secondary tenant info
     access_token = create_access_token({
         "sub": current_user.email,
         "id": current_user.id,
@@ -120,7 +121,7 @@ def set_secondary_tenant(
     })
 
     # Return new token as cookie
-    response = JSONResponse(content={"message": "Active tenant updated"})
+    response = JSONResponse(content={"message": "Secondary tenant updated"})
     response.set_cookie(
         key="session",
         value=access_token,

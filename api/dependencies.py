@@ -2,6 +2,7 @@ from fastapi import Request, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 #import security
+#from clients.r1_client import get_r1_clients
 from models.user import User
 from jose import JWTError, jwt
 import os
@@ -57,4 +58,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):  #token: 
 #         raise HTTPException(status_code=404, detail="User not found")
 
 #     return user
+
+
+# # Scoped R1Client Dependency
+# def get_scoped_r1_client(selector: str):
+#     async def _get_client(r1_clients=Depends(get_r1_clients)):
+#         client = r1_clients[selector]
+#         if getattr(client, "auth_failed", False):
+#             raise HTTPException(status_code=401, detail="R1Client authentication failed")
+#         return client
+#     return _get_client
 

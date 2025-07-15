@@ -16,6 +16,8 @@ const Sidebar = () => {
     { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/super", icon: <Settings size={22} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
+    { to: "/testcalls", icon: <Camera size={22} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/option43", icon: <Camera size={22} />, label: "Option 43 Calculator", requiresAuth: false },
   ];
 
   if (userRole === "admin") {

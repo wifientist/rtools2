@@ -7,7 +7,7 @@ export default function TenantManager() {
 
   useEffect(() => {
     checkAuth(); // initial load
-    console.log("Running checkAuth on mount...");
+    //console.log("Running checkAuth on mount...");
   
     // const interval = setInterval(() => {
     //   checkAuth(); // check every 15 seconds

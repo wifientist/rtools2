@@ -20,6 +20,8 @@ import Diff from "@/pages/Diff";
 import Migrate from "@/pages/Migrate";
 import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
+import TestCalls from "@/pages/TestCalls";
+import Option43Calculator from "@/pages/Option43Calculator";
 
 const App = () => {
   
@@ -41,6 +43,10 @@ const App = () => {
           <Route path="/diff" element={<Diff />} />
           <Route path="/migrate" element={<Migrate />} />
           <Route path="/snapshot" element={<Snapshot />} />
+          <Route path="/testcalls" element={<TestCalls />} />
+          <Route path="/option43" element={<Option43Calculator />} />
+          
+          {/* Protected routes */}
           <Route path="*" element={<Navigate to="/" />} /> 
         </Routes>
       {/*</div>*/}

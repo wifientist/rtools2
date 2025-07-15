@@ -7,9 +7,11 @@ import traceback
 
 from database import engine
 import models
-from routers import status, users, auth, protected, company, tenants
-from routers.r1.r1_router import router as r1_router
-from routers.fer1agg.fer1_router import router as fer1agg_router
+from routers import status, users, auth, protected, company, tenants, opt43
+#from routers.r1.r1_router import router as r1_router
+from routers.r1.r1_router import router_a, router_b
+#from routers.fer1agg.fer1_router import router as fer1agg_router
+from routers.fer1agg.fer1_router import fe_router_a, fe_router_b
 
 import os
 from dotenv import load_dotenv
@@ -33,14 +35,18 @@ models.user.Base.metadata.create_all(bind=engine)
 
 # 🚀 Include Routers
 app.include_router(status.router)
+app.include_router(opt43.router)
 app.include_router(users.router)
 app.include_router(tenants.router)
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
 app.include_router(protected.router, tags=["Protected"])
-app.include_router(r1_router)
-app.include_router(fer1agg_router)
-
+#app.include_router(r1_router)
+app.include_router(router_a)
+app.include_router(router_b)
+#app.include_router(fer1agg_router)
+app.include_router(fe_router_a)
+app.include_router(fe_router_b)
 
 # from fastapi.routing import APIRoute
 # for route in app.routes:

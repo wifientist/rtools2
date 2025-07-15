@@ -5,6 +5,7 @@ import datetime
 from database import Base
 from utils.encryption import encrypt_value, decrypt_value
 
+
 class Tenant(Base):
     __tablename__ = 'tenants'
     __table_args__ = (
@@ -19,6 +20,7 @@ class Tenant(Base):
     encrypted_shared_secret = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    ec_type = Column(String, nullable=True)
 
     user = relationship("User", back_populates="tenants", foreign_keys="[Tenant.user_id]")
 

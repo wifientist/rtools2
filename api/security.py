@@ -15,7 +15,7 @@ load_dotenv()
 load_dotenv()
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 1 day
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440 * 7  # 7 day
 
 # 🔑 Password hashing setup
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

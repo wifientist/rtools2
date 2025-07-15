@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 
 class TenantCreate(BaseModel):
@@ -5,6 +6,7 @@ class TenantCreate(BaseModel):
     tenant_id: str
     client_id: str
     shared_secret: str
+    ec_type: Optional[str] = None
 
 class SetActiveTenantRequest(BaseModel):
     tenant_id: int

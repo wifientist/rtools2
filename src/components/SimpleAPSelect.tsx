@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Search, Check, X } from 'lucide-react';
 
-const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
+const SimpleAPSelect = ({ sourceId, destinationId, sourceVenueData, destinationVenueData, onClose, onConfirm }) => {
   const [viewMode, setViewMode] = useState('source'); // 'source' or 'destination'
   const [sourceAPs, setSourceAPs] = useState([]);
   const [destinationAPs, setDestinationAPs] = useState([]);
@@ -10,6 +10,13 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
   const [destinationFilter, setDestinationFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const sourceVenueMap = Object.fromEntries(
+    (sourceVenueData || []).map(v => [v.id, v.name])
+  );
+  const destinationVenueMap = Object.fromEntries(
+    (destinationVenueData || []).map(v => [v.id, v.name])
+  );
+  
 
   // Fetch AP data for both source and destination
   useEffect(() => {
@@ -19,21 +26,36 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
       
       try {
         const [sourceResponse, destinationResponse] = await Promise.all([
-          fetch(`/api/r1/tenant/${sourceId}/aps`),
-          fetch(`/api/r1/tenant/${destinationId}/aps`)
+          fetch(`/api/r1a/tenant/${sourceId}/aps`),
+          fetch(`/api/r1b/tenant/${destinationId}/aps`)
         ]);
 
         if (!sourceResponse.ok || !destinationResponse.ok) {
           throw new Error('Failed to fetch AP data');
         }
 
-        console.log(sourceResponse, destinationResponse);
+        //console.log(sourceResponse, destinationResponse);
 
         const sourceData = await sourceResponse.json();
         const destinationData = await destinationResponse.json();
 
-        setSourceAPs(sourceData.data || []);
-        setDestinationAPs(destinationData.data || []);
+        console.log(sourceData, destinationData);
+
+        //setSourceAPs(sourceData.data || []);
+        //setDestinationAPs(destinationData.data || []);
+        // this will add the venueName for filtering purposes
+        setSourceAPs(
+          (sourceData.data || []).map(ap => ({
+            ...ap,
+            venueName: sourceVenueMap[ap.venueId] || ap.venueId || null,
+          }))
+        );
+        setDestinationAPs(
+          (destinationData.data || []).map(ap => ({
+            ...ap,
+            venueName: destinationVenueMap[ap.venueId] || ap.venueId || null,
+          }))
+        );
       } catch (err) {
         setError(err.message);
       } finally {
@@ -51,6 +73,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
     if (!filter) return aps;
     return aps.filter(ap => 
       ap.name?.toLowerCase().includes(filter.toLowerCase()) ||
+      ap.venueName?.toLowerCase().includes(filter.toLowerCase()) ||
       ap.serialNumber?.toLowerCase().includes(filter.toLowerCase()) ||
       ap.model?.toLowerCase().includes(filter.toLowerCase())
     );
@@ -179,7 +202,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Filter by name, serial number, or model..."
+                      placeholder="Filter by name, venue, serial number, or model..."
                       value={sourceFilter}
                       onChange={(e) => setSourceFilter(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -223,6 +246,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
                         />
                       </th>
                       <th className="px-4 py-3 text-left font-medium text-gray-900">Name</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-900">Venue</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-900">Serial Number</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-900">Model</th>
                     </tr>
@@ -244,6 +268,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
                           />
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900">{ap.name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{sourceVenueMap[ap.venueId] || ap.venueId || 'N/A'}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 font-mono">{ap.serialNumber}</td>
                         <td className="px-4 py-3 text-sm text-gray-900">{ap.model || 'N/A'}</td>
                       </tr>
@@ -278,7 +303,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Filter by name, serial number, or model..."
+                    placeholder="Filter by name, venue, serial number, or model..."
                     value={destinationFilter}
                     onChange={(e) => setDestinationFilter(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -292,6 +317,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
                       <th className="px-4 py-3 text-left font-medium text-gray-900">Name</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-900">Venue</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-900">Serial Number</th>
                       <th className="px-4 py-3 text-left font-medium text-gray-900">Model</th>
                     </tr>
@@ -300,6 +326,7 @@ const SimpleAPSelect = ({ sourceId, destinationId, onClose, onConfirm }) => {
                     {filteredDestinationAPs.map((ap) => (
                       <tr key={ap.serialNumber} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-900">{ap.name || 'N/A'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{destinationVenueMap[ap.venueId] || ap.venueId || 'N/A'}</td>
                         <td className="px-4 py-3 text-sm text-gray-900 font-mono">{ap.serialNumber}</td>
                         <td className="px-4 py-3 text-sm text-gray-900">{ap.model || 'N/A'}</td>
                       </tr>

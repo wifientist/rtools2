@@ -18,7 +18,7 @@ export function useMspDetails() {
         setLoading(true);
 
         //fetch(`/api/fer1agg/msp/fulldetails/${activeTenantId}`, {
-        fetch(`/api/fer1agg/msp/fulldetails`, {
+        fetch(`/api/fer1agga/msp/fulldetails`, {
                 method: "GET",
             credentials: "include",
             signal: controller.signal

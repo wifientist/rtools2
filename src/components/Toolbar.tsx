@@ -10,12 +10,16 @@ const Toolbar = () => {
       <div className="h-16 flex items-center justify-center font-bold text-lg">
         RUCKUS.Tools
       </div>
-      <div className="text-sm">
-        Active Tenant: <span className="font-semibold">{activeTenantName || "None"}</span>
-      </div>
-      <div className="text-sm">
-        Secondary Tenant: <span className="font-semibold">{secondaryTenantName || "None"}</span>
-      </div>
+      {isAuthenticated && (
+        <>
+        <div className="text-sm">
+          Active Tenant: <span className="font-semibold">{activeTenantName || "None"}</span>
+        </div>
+        <div className="text-sm">
+          Secondary Tenant: <span className="font-semibold">{secondaryTenantName || "None"}</span>
+        </div>
+        </>
+        )}
       <div className="flex items-center space-x-4">
         <Bell className="w-5 h-5 text-gray-100 cursor-pointer" />
         

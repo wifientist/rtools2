@@ -18,6 +18,12 @@
 /api/migrations/versions
 /api/__pycache__
 /api/*/__pycache__
+/api/*/*/__pycache__
+*/__pycache__
+/api/routers/r1/__pycache__
+/api/routers/fer1agg/__pycache__
+/api/r1api/services/__pycache__
+
 
 #npm build directory
 /dist
