@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 
@@ -21,9 +22,20 @@ app = FastAPI(
     title="Ruckus.Tools API",  # Add a proper title
     version="1.0.2",
     openapi_version="3.1.0",  # Explicitly set OpenAPI version
-    description="Backend API endpoints for the ruckus tools ecosystem"  # Optional but recommended
+    description="Backend API endpoints for the ruckus tools ecosystem",  # Optional but recommended
+    root_path="/api"
 )
 #app = FastAPI()
+
+# Add this middleware to auto-detect the root path
+# @app.middleware("http")
+# async def add_root_path(request: Request, call_next):
+#     # If behind a proxy with X-Forwarded-Prefix header
+#     forwarded_prefix = request.headers.get("X-Forwarded-Prefix")
+#     if forwarded_prefix:
+#         request.scope["root_path"] = forwarded_prefix
+#     response = await call_next(request)
+#     return response
 
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
 
@@ -54,9 +66,11 @@ app.include_router(router_b)
 app.include_router(fe_router_a)
 app.include_router(fe_router_b)
 
-# from fastapi.routing import APIRoute
-# for route in app.routes:
-#     print(route.path)
+# Debug: Print all routes to check for conflicts
+print("=== ALL ROUTES ===")
+for route in app.routes:
+    print(f"Path: {route.path}")
+print("=== END ROUTES ===")
 
 # 🔥 Handle normal FastAPI HTTPExceptions (like 404, 400, 401, etc.)
 @app.exception_handler(StarletteHTTPException)
