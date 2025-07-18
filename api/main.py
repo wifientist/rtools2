@@ -17,13 +17,13 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# app = FastAPI(
-#     title="Ruckus.Tools API",  # Add a proper title
-#     version="1.0.1",
-#     openapi_version="3.0.2",  # Explicitly set OpenAPI version
-#     description="Backend API endpoints for the ruckus tools ecosystem"  # Optional but recommended
-# )
-app = FastAPI()
+app = FastAPI(
+    title="Ruckus.Tools API",  # Add a proper title
+    version="1.0.2",
+    openapi_version="3.1.0",  # Explicitly set OpenAPI version
+    description="Backend API endpoints for the ruckus tools ecosystem"  # Optional but recommended
+)
+#app = FastAPI()
 
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
 
