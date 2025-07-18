@@ -1,6 +1,6 @@
 import smtplib
 from email.mime.text import MIMEText
-
+import requests
 import os
 from dotenv import load_dotenv
 load_dotenv() 
@@ -12,6 +12,9 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL")
 
 WEBAPI_KEY = os.getenv("WEBAPI_KEY")
+
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
+MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
 
 def send_otp_email_via_snmp(to_email: str, otp_code: str):
 
@@ -44,11 +47,40 @@ The Ruckus Tools Team
         server.sendmail(FROM_EMAIL, [to_email], message.as_string())
 
 
+def send_otp_email_via_api(to_email: str, otp_code: str):
+    print(f'Emailing {to_email} with OTP {otp_code} via Mailgun API')
+
+    url = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
+
+    data = {
+        "from": FROM_EMAIL,
+        "to": to_email,
+        "subject": f"{otp_code} ruckus.tools OTP Code",
+        "text": f"Your OTP is: {otp_code}\n\nThis code will expire in 15 minutes.\n\nhttps://ruckus.tools",
+        "html": f"Your OTP is: <strong>{otp_code}</strong><br><br>This code will expire in 15 minutes.<br><br><a href='https://ruckus.tools'>https://ruckus.tools</a>",
+    }
+
+    try:
+        response = requests.post(
+            url,
+            auth=("api", MAILGUN_API_KEY),
+            data=data
+        )
+        if response.status_code != 200:
+            raise Exception(f"Mailgun error: {response.status_code} {response.text}")
+        print("✅ Email sent via Mailgun.")
+    except Exception as e:
+        print(f"❌ Mailgun failed: {e}")
+        try:
+            send_otp_email_via_snmp(to_email, otp_code)
+        except Exception as smtp_e:
+            print(f"❌ SMTP fallback failed too: {smtp_e}")
+
 
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
-def send_otp_email_via_api(to_email: str, otp_code: str):
+def SENDGRID_send_otp_email_via_api(to_email: str, otp_code: str):
 
     print(f'Emailing {to_email} with OTP {otp_code}')
 

@@ -17,7 +17,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(version="1.0.1")
 
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
 
