@@ -12,6 +12,8 @@ const About = () => {
           <li>Bulk SW moves (AP already being worked)</li>
           <li>Export AP list to CSV - edit CSV - upload to apply setting changes</li>
           <li>Per Unit SSID generator</li>
+          <li>SZ firmware/AP compatibility matrix and upgrade path tool</li>
+          <li>PoE vs AP Model functionality based on data sheet power notes</li>
         </ul>
       </div>
     );

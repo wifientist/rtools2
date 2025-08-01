@@ -23,7 +23,7 @@
 /api/routers/r1/__pycache__
 /api/routers/fer1agg/__pycache__
 /api/r1api/services/__pycache__
-
+*.pyc
 
 #npm build directory
 /dist
