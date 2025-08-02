@@ -11,7 +11,7 @@ export function useDualEc() {
   useEffect(() => {
     async function fetchCombined() {
       try {
-        const res = await fetch("/api/fer1agga/ec/dual", { credentials: "include" });
+        const res = await fetch("/api/fer1agg/ec/dual", { credentials: "include" });
         const json = await res.json();
 
         const active = json.data?.active || {};

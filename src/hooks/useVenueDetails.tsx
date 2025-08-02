@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/context/AuthContext"; // Update path as needed
 
 export function useVenueDetails(sourceEcId?: string | number, destinationEcId?: string | number) {
+  const { activeTenantId, secondaryTenantId } = useAuth();
+
   const [sourceVenueData, setSourceVenueData] = useState([]);
   const [destinationVenueData, setDestinationVenueData] = useState([]);
   const [loadingVenues, setLoading] = useState(true);
@@ -23,8 +26,8 @@ export function useVenueDetails(sourceEcId?: string | number, destinationEcId?: 
       setLoading(true);
       try {
         const [activeRes, secondaryRes] = await Promise.all([
-            fetch(`/api/r1a/venues/${sourceEcId}`, { credentials: "include" }),
-            fetch(`/api/r1b/venues/${destinationEcId}`, { credentials: "include" })
+            fetch(`/api/r1/${activeTenantId}/venues/${sourceEcId}`, { credentials: "include" }),
+            fetch(`/api/r1/${secondaryTenantId}/venues/${destinationEcId}`, { credentials: "include" })
         ]);
         const [activeJson, secondaryJson] = await Promise.all([
           activeRes.json(),

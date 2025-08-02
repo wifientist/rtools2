@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Search, Check, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext'; 
 
 const SimpleAPSelect = ({ sourceId, destinationId, sourceVenueData, destinationVenueData, onClose, onConfirm }) => {
+  const { activeTenantId, secondaryTenantId } = useAuth();
+
   const [viewMode, setViewMode] = useState('source'); // 'source' or 'destination'
   const [sourceAPs, setSourceAPs] = useState([]);
   const [destinationAPs, setDestinationAPs] = useState([]);
@@ -26,8 +29,8 @@ const SimpleAPSelect = ({ sourceId, destinationId, sourceVenueData, destinationV
       
       try {
         const [sourceResponse, destinationResponse] = await Promise.all([
-          fetch(`/api/r1a/tenant/${sourceId}/aps`),
-          fetch(`/api/r1b/tenant/${destinationId}/aps`)
+          fetch(`/api/r1/${activeTenantId}/tenant/${sourceId}/aps`),
+          fetch(`/api/r1/${secondaryTenantId}/tenant/${destinationId}/aps`)
         ]);
 
         if (!sourceResponse.ok || !destinationResponse.ok) {

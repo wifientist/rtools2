@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext"; // Update path as needed
 
 export function useTenantDetails(tenantId: number | null) {
-    //const { activeTenantId } = useAuth();
+    const { activeTenantId } = useAuth();
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -18,7 +18,7 @@ export function useTenantDetails(tenantId: number | null) {
         setLoading(true);
 
         //fetch(`/api/fer1agg/msp/fulldetails/${activeTenantId}`, {
-        fetch(`/api/fer1agg/msp/fulldetails`, {
+        fetch(`/api/fer1agg/${activeTenantId}/msp/fulldetails`, {
                 method: "GET",
             credentials: "include",
             signal: controller.signal

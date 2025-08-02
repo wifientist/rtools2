@@ -1,3 +1,8 @@
+# api/routers/tenants.py (additional endpoints for tenant management)
+
+from typing import List
+from pydantic import BaseModel
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -6,6 +11,7 @@ from models.tenant import Tenant
 from dependencies import get_db, get_current_user
 from schemas.tenant import TenantCreate, SetActiveTenantRequest, SetSecondaryTenantRequest
 from security import create_access_token
+
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
@@ -131,3 +137,105 @@ def set_secondary_tenant(
     )
 
     return response
+
+
+class TenantResponse(BaseModel):
+    id: int
+    tenant_id: str
+    name: str
+    region: str = None
+    
+    class Config:
+        from_attributes = True
+
+class UserTenantInfo(BaseModel):
+    tenant_id: str
+    name: str
+    is_active: bool
+    is_secondary: bool
+
+@router.get("/available", response_model=List[UserTenantInfo])
+async def get_user_available_tenants(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all tenants that the current user has access to.
+    This helps the frontend know which tenant_ids are valid for dynamic routing.
+    """
+    user_tenants = []
+    
+    # Get active tenant
+    if current_user.active_tenant_id:
+        active_tenant = db.query(Tenant).filter(Tenant.id == current_user.active_tenant_id).first()
+        if active_tenant:
+            user_tenants.append(UserTenantInfo(
+                tenant_id=active_tenant.tenant_id,
+                name=active_tenant.name,
+                is_active=True,
+                is_secondary=False
+            ))
+    
+    # Get secondary tenant
+    if current_user.secondary_tenant_id:
+        secondary_tenant = db.query(Tenant).filter(Tenant.id == current_user.secondary_tenant_id).first()
+        if secondary_tenant:
+            user_tenants.append(UserTenantInfo(
+                tenant_id=secondary_tenant.tenant_id,
+                name=secondary_tenant.name,
+                is_active=False,
+                is_secondary=True
+            ))
+    
+    # You might want to add logic here to get other tenants the user has access to
+    # based on company membership, permissions, etc.
+    
+    return user_tenants
+
+@router.get("/validate/{tenant_id}")
+async def validate_tenant_access(
+    tenant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Validate if the current user has access to a specific tenant.
+    Useful for frontend validation before making API calls.
+    """
+    from clients.r1_client import validate_tenant_access
+    
+    try:
+        tenant = validate_tenant_access(tenant_id, current_user, db)
+        return {
+            "valid": True,
+            "tenant_id": tenant.tenant_id,
+            "tenant_name": tenant.name,
+            "message": f"Access granted to tenant '{tenant_id}'"
+        }
+    except HTTPException as e:
+        return {
+            "valid": False,
+            "tenant_id": tenant_id,
+            "message": e.detail
+        }
+
+@router.get("/{tenant_id}/info", response_model=TenantResponse)
+async def get_tenant_info(
+    tenant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get basic information about a specific tenant.
+    Requires user to have access to the tenant.
+    """
+    from clients.r1_client import validate_tenant_access
+    
+    tenant = validate_tenant_access(tenant_id, current_user, db)
+    
+    return TenantResponse(
+        id=tenant.id,
+        tenant_id=tenant.tenant_id,
+        name=tenant.name,
+        region=getattr(tenant, 'region', None)
+    )

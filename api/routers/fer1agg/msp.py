@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from clients.r1_client import dynamic_r1_client
+from clients.r1_client import get_dynamic_r1_client
 from r1api.client import R1Client
 
 router = APIRouter(
@@ -10,7 +10,7 @@ router = APIRouter(
 )
 
 @router.get("/fulldetails")
-async def get_msp_details(r1_client: R1Client = Depends(dynamic_r1_client)):
+async def get_msp_details(r1_client: R1Client = Depends(get_dynamic_r1_client)):
     ecs = await r1_client.msp.get_msp_ecs()
     labels = await r1_client.msp.get_msp_labels()
     tech_partners = await r1_client.msp.get_msp_tech_partners()

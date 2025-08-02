@@ -9,40 +9,29 @@ import traceback
 from database import engine
 import models
 from routers import status, users, auth, protected, company, tenants, opt43
-#from routers.r1.r1_router import router as r1_router
-from routers.r1.r1_router import router_a, router_b
-#from routers.fer1agg.fer1_router import router as fer1agg_router
-from routers.fer1agg.fer1_router import fe_router_a, fe_router_b
+# Updated imports for R1 routers
+from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
+# Updated imports for FER1AGG routers (assuming similar pattern)
+from routers.fer1agg.fer1_router import dynamic_fe_router, feagg_ec_router #, fe_router_a, fe_router_b, # Legacy routers commented out for backward compatibility
 
 import os
 from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI(
-    title="Ruckus.Tools API",  # Add a proper title
+    title="Ruckus.Tools API",
     version="1.0.2",
-    openapi_version="3.1.0",  # Explicitly set OpenAPI version
-    description="Backend API endpoints for the ruckus tools ecosystem",  # Optional but recommended
+    openapi_version="3.1.0",
+    description="Backend API endpoints for the ruckus tools ecosystem",
     root_path="/api"
 )
-#app = FastAPI()
-
-# Add this middleware to auto-detect the root path
-# @app.middleware("http")
-# async def add_root_path(request: Request, call_next):
-#     # If behind a proxy with X-Forwarded-Prefix header
-#     forwarded_prefix = request.headers.get("X-Forwarded-Prefix")
-#     if forwarded_prefix:
-#         request.scope["root_path"] = forwarded_prefix
-#     response = await call_next(request)
-#     return response
 
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
 
-# 🚀 Configure CORS
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'], #origins,
+    allow_origins=['*'],  # origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,7 +40,7 @@ app.add_middleware(
 # Ensure tables exist
 models.user.Base.metadata.create_all(bind=engine)
 
-# 🚀 Include Routers
+# Include Routers
 app.include_router(status.router)
 app.include_router(opt43.router)
 app.include_router(users.router)
@@ -59,12 +48,23 @@ app.include_router(tenants.router)
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
 app.include_router(protected.router, tags=["Protected"])
-#app.include_router(r1_router)
-app.include_router(router_a)
-app.include_router(router_b)
-#app.include_router(fer1agg_router)
-app.include_router(fe_router_a)
-app.include_router(fe_router_b)
+
+# R1 Routers - Legacy (for backward compatibility)
+#app.include_router(router_a, tags=["R1 Legacy - Active"])
+#app.include_router(router_b, tags=["R1 Legacy - Secondary"])
+
+# R1 Router - New Dynamic (main implementation)
+app.include_router(dynamic_router)
+
+# FER1AGG Routers (legacy)
+#app.include_router(fe_router_a, tags=["FER1AGG Legacy - Active"])
+#app.include_router(fe_router_b, tags=["FER1AGG Legacy - Secondary"])
+
+# FER1AGG Router - New Dynamic (main implementation)
+app.include_router(dynamic_fe_router)
+
+# FER1AGG EC Router - new aggregation endpoint without tenant_pk dependency
+app.include_router(feagg_ec_router)
 
 # Debug: Print all routes to check for conflicts
 print("=== ALL ROUTES ===")
@@ -72,7 +72,7 @@ for route in app.routes:
     print(f"Path: {route.path}")
 print("=== END ROUTES ===")
 
-# 🔥 Handle normal FastAPI HTTPExceptions (like 404, 400, 401, etc.)
+# Exception handlers
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
@@ -80,7 +80,6 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         content={"error": exc.detail},
     )
 
-# 🔥 Handle request validation errors (e.g., invalid payload schema)
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
@@ -88,10 +87,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"error": "Validation error", "details": exc.errors()},
     )
 
-# 🔥 Handle unexpected server errors (500s, coding bugs)
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    print("Unexpected error:", traceback.format_exc())  # 📋 Optional: log full traceback in console
+    print("Unexpected error:", traceback.format_exc())
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error"},

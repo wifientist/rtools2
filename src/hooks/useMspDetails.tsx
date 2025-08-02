@@ -17,8 +17,8 @@ export function useMspDetails() {
         const controller = new AbortController();
         setLoading(true);
 
-        //fetch(`/api/fer1agg/msp/fulldetails/${activeTenantId}`, {
-        fetch(`/api/fer1agga/msp/fulldetails`, {
+        fetch(`/api/fer1agg/${activeTenantId}/msp/fulldetails`, {
+        //fetch(`/api/fer1agga/msp/fulldetails`, {
                 method: "GET",
             credentials: "include",
             signal: controller.signal

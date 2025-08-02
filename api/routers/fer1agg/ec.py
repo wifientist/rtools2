@@ -46,7 +46,7 @@ async def get_active_ec(
     return {'status': 'success', 'data': answer}
 
 @router.get("/secondary")
-async def get_active_ec(
+async def get_secondary_ec(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ): 
