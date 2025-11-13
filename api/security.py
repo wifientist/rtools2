@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 load_dotenv() 
 
 # 📌 Load environment variables
-load_dotenv()
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440 * 7  # 7 day

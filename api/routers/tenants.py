@@ -143,7 +143,7 @@ class TenantResponse(BaseModel):
     id: int
     tenant_id: str
     name: str
-    region: str = None
+    #region: str = None
     
     class Config:
         from_attributes = True
@@ -237,5 +237,5 @@ async def get_tenant_info(
         id=tenant.id,
         tenant_id=tenant.tenant_id,
         name=tenant.name,
-        region=getattr(tenant, 'region', None)
+        #region=getattr(tenant, 'region', None)
     )

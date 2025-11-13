@@ -75,10 +75,25 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
     if not verify_signup_otp(payload.email, payload.otp_code, db):
         raise HTTPException(status_code=401, detail="Invalid or expired OTP")
 
+    # Extract domain from email
+    email_domain = payload.email.split('@')[1]
+
+    # Find or create company based on email domain
+    company = db.query(Company).filter(Company.domain == email_domain).first()
+    if not company:
+        # Auto-create company from email domain
+        company = Company(
+            name=email_domain.split('.')[0].capitalize(),  # e.g., "aylic.com" -> "Aylic"
+            domain=email_domain
+        )
+        db.add(company)
+        db.commit()
+        db.refresh(company)
+
     # Now create user
     new_user = User(
         email=payload.email,
-        company_id=-1  # Default unassigned company
+        company_id=company.id
     )
     db.add(new_user)
     db.commit()

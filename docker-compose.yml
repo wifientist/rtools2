@@ -1,0 +1,90 @@
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: rtools-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rtools2
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rtools-network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: rtools-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:${DB_PASSWORD:-changeme}@db:5432/rtools2
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      AUTH_ALGORITHM: HS256
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      SMTP_SERVER: ${SMTP_SERVER}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      WEBAPI_KEY: ${WEBAPI_KEY}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      FROM_EMAIL: ${FROM_EMAIL}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY}
+      MAILGUN_SENDING_KEY: ${MAILGUN_SENDING_KEY}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN}
+      INTEGRATION_API_URL: ${INTEGRATION_API_URL}
+      FERNET_KEY: ${FERNET_KEY}
+    ports:
+      - "4174:4174"
+    volumes:
+      - ./api:/app
+      # Prevent overwriting installed packages
+      - /app/.venv
+    networks:
+      - rtools-network
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        python /app/wait-for-db.py &&
+        echo 'Running migrations...' &&
+        cd /app && alembic upgrade head &&
+        echo 'Starting uvicorn...' &&
+        uvicorn main:app --host 0.0.0.0 --port 4174 --reload
+      "
+
+  # React Frontend with Nginx
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: rtools-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    environment:
+      VITE_API_BASE_URL: /api
+    networks:
+      - rtools-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  rtools-network:
+    driver: bridge
