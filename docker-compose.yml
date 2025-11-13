@@ -5,9 +5,9 @@ services:
     container_name: rtools-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: rtools2
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -31,7 +31,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:${DB_PASSWORD:-changeme}@db:5432/rtools2
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${DB_PASSWORD}@db:5432/${POSTGRES_DB}
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
       AUTH_ALGORITHM: HS256
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
