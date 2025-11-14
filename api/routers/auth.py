@@ -81,16 +81,30 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
     # Find or create company based on email domain
     company = db.query(Company).filter(Company.domain == email_domain).first()
     if not company:
-        # Auto-create company from email domain
+        # Auto-create company from email domain (unapproved by default)
         company = Company(
             name=email_domain.split('.')[0].capitalize(),  # e.g., "aylic.com" -> "Aylic"
-            domain=email_domain
+            domain=email_domain,
+            is_approved=False  # SECURITY: New domains are NOT approved by default
         )
         db.add(company)
         db.commit()
         db.refresh(company)
 
-    # Now create user
+        # Block signup - company needs admin approval
+        raise HTTPException(
+            status_code=403,
+            detail=f"Domain '{email_domain}' is not approved for signup. Please contact an administrator."
+        )
+
+    # Check if company is approved
+    if not company.is_approved:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Domain '{email_domain}' is pending approval. Please contact an administrator."
+        )
+
+    # Company is approved - proceed with user creation
     new_user = User(
         email=payload.email,
         company_id=company.id

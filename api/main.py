@@ -8,7 +8,7 @@ import traceback
 
 from database import engine
 import models
-from routers import status, users, auth, protected, company, tenants, opt43
+from routers import status, users, auth, protected, company, tenants, opt43, admin_companies
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
 # Updated imports for FER1AGG routers (assuming similar pattern)
@@ -47,6 +47,7 @@ app.include_router(users.router)
 app.include_router(tenants.router)
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
+app.include_router(admin_companies.router, tags=["Admin"])
 app.include_router(protected.router, tags=["Protected"])
 
 # R1 Routers - Legacy (for backward compatibility)

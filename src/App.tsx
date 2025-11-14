@@ -22,6 +22,7 @@ import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
 import TestCalls from "@/pages/TestCalls";
 import Option43Calculator from "@/pages/Option43Calculator";
+import CompanyManager from "@/components/CompanyManager";
 
 const App = () => {
   
@@ -39,6 +40,7 @@ const App = () => {
           <Route path="/profile" element={<ProtectedRoute element={<Profile />} />} />
           <Route path="/admin" element={<AdminRoute element={<Admin />} />} />
           <Route path="/super" element={<AdminRoute element={<Super />} />} />
+          <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
           <Route path="/tenants" element={<Tenants />} />
           <Route path="/diff" element={<Diff />} />
           <Route path="/migrate" element={<Migrate />} />

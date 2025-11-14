@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: process.env.API_BASE_URL || "http://127.0.0.1:4174",
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ""),
+          // Don't rewrite - backend expects /api in the path
         },
       },
       allowedHosts: env.VITE_ALLOWED_HOSTS?.split(',') || [], // Read from env
