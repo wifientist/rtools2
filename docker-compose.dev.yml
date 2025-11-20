@@ -92,10 +92,49 @@ services:
     stdin_open: true
     tty: true
 
+  # fossFLOW Diagramming Tool
+  fossflow:
+    build:
+      context: ../fossFLOW
+      dockerfile: Dockerfile
+    container_name: rtools-fossflow-dev
+    restart: unless-stopped
+    ports:
+      - "3000:80"      # fossFLOW web UI
+      - "3001:3001"    # fossFLOW backend API
+    environment:
+      - NODE_ENV=development
+      - ENABLE_SERVER_STORAGE=true
+      - STORAGE_PATH=/data/diagrams
+      - ENABLE_GIT_BACKUP=false
+    volumes:
+      # Persistent storage for diagrams
+      - fossflow_diagrams:/data/diagrams
+    networks:
+      - rtools-network
+
+  # Nginx Reverse Proxy (routes all traffic)
+  nginx:
+    image: nginx:alpine
+    container_name: rtools-nginx-dev
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+      - fossflow
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - rtools-network
+
 volumes:
   postgres_data_dev:
     driver: local
   backend_venv:
+    driver: local
+  fossflow_diagrams:
     driver: local
 
 networks:

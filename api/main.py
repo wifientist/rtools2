@@ -47,7 +47,7 @@ app.include_router(users.router)
 app.include_router(tenants.router)
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(company.router)
-app.include_router(admin_companies.router, tags=["Admin"])
+app.include_router(admin_companies.router, tags=["Admin - Companies"])
 app.include_router(protected.router, tags=["Protected"])
 
 # R1 Routers - Legacy (for backward compatibility)

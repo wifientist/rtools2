@@ -8,7 +8,7 @@ from decorators import require_role
 from pydantic import BaseModel
 from datetime import datetime
 
-router = APIRouter(prefix="/admin/companies", tags=["Admin - Companies"])
+router = APIRouter(prefix="/admin/companies")
 
 
 # Pydantic schemas
