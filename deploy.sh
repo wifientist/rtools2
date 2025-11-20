@@ -54,7 +54,7 @@ echo "🔧 Building images..."
 docker compose --env-file .env.production build --pull
 
 echo "📦 Bringing up services..."
-docker compose --env-file .env.production up -d
+docker compose --env-file .env.production up -d --force-recreate
 
 # Clean up old images and containers to prevent disk bloat
 echo "🧹 Cleaning up old Docker resources..."
