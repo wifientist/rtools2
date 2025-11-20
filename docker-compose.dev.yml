@@ -14,6 +14,7 @@ services:
     ports:
       - "5435:5432"
     healthcheck:
+      disable: true
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
@@ -49,6 +50,12 @@ services:
       FERNET_KEY: ${FERNET_KEY}
     ports:
       - "4174:4174"
+    healthcheck:
+      disable: true
+      test: ["CMD-SHELL", "curl -f http://localhost:4174/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     volumes:
       # Mount source code for hot-reload
       - ./api:/app
