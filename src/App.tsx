@@ -34,7 +34,7 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/about" element={<About />} />
-          <Route path="/status" element={<Status />} />
+          <Route path="/status" element={<AdminRoute element={<Status />} />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/profile" element={<ProtectedRoute element={<Profile />} />} />
@@ -45,7 +45,7 @@ const App = () => {
           <Route path="/diff" element={<Diff />} />
           <Route path="/migrate" element={<Migrate />} />
           <Route path="/snapshot" element={<Snapshot />} />
-          <Route path="/testcalls" element={<TestCalls />} />
+          <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
           
           {/* Protected routes */}

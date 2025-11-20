@@ -44,6 +44,13 @@ const Signup = () => {
             });
 
             if (!response.ok) {
+                if (response.status === 403) {
+                    const errorData = await response.json();
+                    // Show domain approval message if that's the specific reason
+                    if (errorData.detail && errorData.detail.includes("approved")) {
+                        throw new Error(errorData.detail);
+                    }
+                }
                 throw new Error("OTP verification failed.");
             }
 
@@ -61,6 +68,10 @@ const Signup = () => {
             {/* Step 1: Request OTP */}
             {!otpSent && (
                 <form onSubmit={handleRequestOtp} className="bg-gray-100 p-6 rounded shadow-md w-80">
+                    <div className="bg-blue-50 border border-blue-200 text-blue-800 p-3 rounded mb-4 text-sm">
+                        <p className="font-semibold mb-1">Company Domain Approval Required</p>
+                        <p>Only users with approved company email domains can sign up. Contact an administrator if your domain needs approval.</p>
+                    </div>
                     {error && <p className="text-red-500">{error}</p>}
                     <input
                         type="email"

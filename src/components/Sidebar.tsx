@@ -14,9 +14,9 @@ const Sidebar = () => {
     { to: "/snapshot", icon: <Camera size={22} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
-    { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin"] },
     { to: "/super", icon: <Settings size={22} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
-    { to: "/testcalls", icon: <BookCheck size={22} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/testcalls", icon: <BookCheck size={22} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["admin"] },
     { to: "/option43", icon: <Camera size={22} />, label: "Option 43 Calculator", requiresAuth: false },
   ];
 
