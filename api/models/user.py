@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, Enum
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, Enum, Boolean
 from sqlalchemy.orm import relationship
 import datetime
 from database import Base
@@ -21,6 +21,9 @@ class User(Base):
     otp_code = Column(String, nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
     last_authenticated_at = Column(DateTime, nullable=True)
+
+    # Beta feature flag
+    beta_enabled = Column(Boolean, default=False, nullable=False)
 
     # 🔹 Add ForeignKey to link Users to Companies
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, default=-1)

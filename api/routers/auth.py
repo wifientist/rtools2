@@ -7,7 +7,7 @@ from models.user import User
 from models.company import Company
 from models.tenant import Tenant
 from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema
-from security import create_access_token, verify_access_token #, get_password_hash, verify_password, 
+from security import create_access_token, verify_access_token, create_user_token #, get_password_hash, verify_password, 
 from dependencies import get_db, get_current_user
 from services.auth_service import generate_and_send_otp, verify_otp_and_login
 from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
@@ -114,12 +114,7 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
     db.refresh(new_user)
 
     # Issue login token immediately after signup
-    access_token = create_access_token({
-        "sub": new_user.email,
-        "id": new_user.id,
-        "role": new_user.role,
-        "company_id": new_user.company_id
-    })
+    access_token = create_user_token(new_user)
 
     response = JSONResponse(content={"message": "Signup and login successful"})
     response.set_cookie(
@@ -143,12 +138,13 @@ def auth_status(request: Request):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return JSONResponse(content={
-        "message": "Authenticated", 
-        "user": payload.get("sub"), 
-        "id":payload.get("id"), 
-        "role": payload.get("role"), 
+        "message": "Authenticated",
+        "user": payload.get("sub"),
+        "id":payload.get("id"),
+        "role": payload.get("role"),
         "company_id": payload.get("company_id"),
-        "active_tenant_id": payload.get("active_tenant_id"), 
+        "beta_enabled": payload.get("beta_enabled", False),
+        "active_tenant_id": payload.get("active_tenant_id"),
         "active_tenant_name": payload.get("active_tenant_name"),
         "secondary_tenant_id": payload.get("secondary_tenant_id"),
         "secondary_tenant_name": payload.get("secondary_tenant_name"),

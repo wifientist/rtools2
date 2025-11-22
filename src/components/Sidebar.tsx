@@ -1,18 +1,19 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Info, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine } from "lucide-react";
+import { Home, Info, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi } from "lucide-react";
 import { useState } from "react";
 
 const Sidebar = () => {
-  const { isAuthenticated, userRole, roleHierarchy } = useAuth();
+  const { isAuthenticated, userRole, roleHierarchy, betaEnabled } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  
+
   const navItems = [
     { to: "/", icon: <Home size={22} />, label: "Dashboard", requiresAuth: false },
     { to: "/about", icon: <Info size={22} />, label: "About", requiresAuth: false },
     { to: "/tenants", icon: <Users size={22} />, label: "Tenants", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/snapshot", icon: <Camera size={22} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
-    { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+    { to: "/per-unit-ssid", icon: <Wifi size={22} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
     { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin"] },
     { to: "/super", icon: <Settings size={22} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
@@ -42,10 +43,15 @@ const Sidebar = () => {
 
   // const visibleNavItems = navItems.filter(
   //   item => !item.requiresAuth || isAuthenticated
-  // ); 
+  // );
   const visibleNavItems = navItems.filter(item => {
     if (!item.requiresAuth) return true;
     if (!isAuthenticated) return false;
+
+    // Check beta access
+    if (item.requiresBeta && !betaEnabled) return false;
+
+    // Check role access
     return canAccess(item.rolesAllowed, userRole, roleHierarchy);
   });
    

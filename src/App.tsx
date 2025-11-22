@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
+import BetaRoute from "@/components/BetaRoute";
 
 import { AuthProvider } from "@/context/AuthContext";
 
@@ -23,6 +24,7 @@ import Snapshot from "@/pages/Snapshot";
 import TestCalls from "@/pages/TestCalls";
 import Option43Calculator from "@/pages/Option43Calculator";
 import CompanyManager from "@/components/CompanyManager";
+import PerUnitSSID from "@/pages/PerUnitSSID";
 
 const App = () => {
   
@@ -42,7 +44,8 @@ const App = () => {
           <Route path="/super" element={<AdminRoute element={<Super />} />} />
           <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
           <Route path="/tenants" element={<Tenants />} />
-          <Route path="/diff" element={<Diff />} />
+          <Route path="/diff" element={<BetaRoute element={<Diff />} />} />
+          <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/migrate" element={<Migrate />} />
           <Route path="/snapshot" element={<Snapshot />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />

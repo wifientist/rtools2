@@ -7,7 +7,7 @@ from crud.crud_users import get_user_by_email
 from sqlalchemy.orm import Session
 from dependencies import get_db
 from fastapi import Depends
-from security import create_access_token
+from security import create_user_token
 
 def generate_and_send_otp(email: str, db: Session = Depends(get_db)):
 
@@ -40,12 +40,7 @@ def verify_otp_and_login(email: str, otp_code: str, db: Session = Depends(get_db
     user.otp_expires_at = None
     db.commit()
 
-    token = create_access_token({
-        "sub": user.email,
-        "id": user.id,
-        "role": user.role,
-        "company_id": user.company_id,
-    })
+    token = create_user_token(user)
 
     print(f"Verify login OTP: {email} : {otp_code} ==> {token}")
 

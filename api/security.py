@@ -30,6 +30,21 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
 
+
+### 🚀 Create JWT Token from User Object
+def create_user_token(user: User, expires_delta: timedelta | None = None):
+    """
+    Generate a JWT token from a User object with all necessary fields.
+    This centralizes token payload construction to ensure consistency.
+    """
+    return create_access_token({
+        "sub": user.email,
+        "id": user.id,
+        "role": user.role,
+        "company_id": user.company_id,
+        "beta_enabled": user.beta_enabled,
+    }, expires_delta)
+
 ### 🚀 Decode JWT Token
 def decode_access_token(token: str):
     try:

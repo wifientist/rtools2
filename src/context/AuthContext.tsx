@@ -7,6 +7,7 @@ interface AuthContextType {
   isAuthenticated: boolean | null;
   userRole: string | null;
   userId: number | null;
+  betaEnabled: boolean;
   activeTenantId: number | null;
   activeTenantName: string | null;
   secondaryTenantId: number | null;
@@ -17,6 +18,7 @@ interface AuthContextType {
   setActiveTenantName: (name: string) => void;
   setSecondaryTenantId: (id: number) => void;
   setSecondaryTenantName: (name: string) => void;
+  setBetaEnabled: (enabled: boolean) => void;
   checkAuth: () => Promise<void>;
   logout: () => void;
 }
@@ -38,6 +40,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
+  const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
   const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<number | null>(null);
   const [activeTenantName, setActiveTenantName] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsAuthenticated(false);
         setUserRole(null);
         setUserId(null);
+        setBetaEnabled(false);
         setTenants([]); // 🔥 clear tenants on auth fail
         setActiveTenantId(null);
         setActiveTenantName(null);
@@ -78,6 +82,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setUserRole(data.role);
       setUserId(data.id);
+      setBetaEnabled(data.beta_enabled || false);
       setActiveTenantId(data.active_tenant_id || null);
       setSecondaryTenantId(data.secondary_tenant_id || null);
       //console.log("Updated activeTenantId to", data.active_tenant_id);
@@ -120,6 +125,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(false);
       setUserRole(null);
       setUserId(null);
+      setBetaEnabled(false);
       setActiveTenantId(null);
       setActiveTenantName(null);
       setSecondaryTenantId(null);
@@ -157,6 +163,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isAuthenticated,
       userId,
       userRole,
+      betaEnabled,
       activeTenantId,
       activeTenantName,
       secondaryTenantId,
@@ -167,6 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setActiveTenantName,
       setSecondaryTenantId,
       setSecondaryTenantName,
+      setBetaEnabled,
       checkAuth,
       logout
     }}>

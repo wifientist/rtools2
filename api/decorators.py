@@ -63,3 +63,63 @@ def require_role(required_role: RoleEnum):
         return sync_wrapper
 
     return decorator
+
+
+def require_beta():
+    """
+    Decorator to require beta access for a feature.
+    Can be stacked with @require_role for additional protection.
+
+    Usage:
+        @router.get("/beta/feature")
+        @require_beta()
+        def beta_feature(current_user: User = Depends(get_current_user)):
+            ...
+
+        # Stack with role requirement:
+        @router.get("/admin/beta/feature")
+        @require_role(RoleEnum.admin)
+        @require_beta()
+        def admin_beta_feature(current_user: User = Depends(get_current_user)):
+            ...
+    """
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, current_user: User = None, **kwargs):
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+
+            if not current_user.beta_enabled:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Beta access required. Enable beta features in your profile to access this feature."
+                )
+
+            return await func(*args, current_user=current_user, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, current_user: User = None, **kwargs):
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+
+            if not current_user.beta_enabled:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Beta access required. Enable beta features in your profile to access this feature."
+                )
+
+            return func(*args, current_user=current_user, **kwargs)
+
+        # Return appropriate wrapper based on whether original function is async
+        import inspect
+        if inspect.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    return decorator
