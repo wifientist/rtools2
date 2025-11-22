@@ -20,23 +20,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create audit log table for tracking sensitive operations."""
-    op.create_table(
-        'audit_logs',
-        sa.Column('id', sa.Integer(), primary_key=True, index=True),
-        sa.Column('timestamp', sa.DateTime(), nullable=False),
-        sa.Column('action', sa.String(), nullable=False),  # e.g., 'role_change', 'token_revoked'
-        sa.Column('actor_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),  # Who performed action
-        sa.Column('target_user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),  # Who was affected
-        sa.Column('details', sa.JSON(), nullable=True),  # Additional context
-        sa.Column('ip_address', sa.String(), nullable=True),
-        sa.Column('user_agent', sa.String(), nullable=True),
-    )
+    # Check if table exists before creating
+    from sqlalchemy import inspect
+    bind = op.get_bind()
+    inspector = inspect(bind)
 
-    # Create indexes for common queries
-    op.create_index('ix_audit_logs_timestamp', 'audit_logs', ['timestamp'])
-    op.create_index('ix_audit_logs_action', 'audit_logs', ['action'])
-    op.create_index('ix_audit_logs_actor_id', 'audit_logs', ['actor_id'])
-    op.create_index('ix_audit_logs_target_user_id', 'audit_logs', ['target_user_id'])
+    if 'audit_logs' not in inspector.get_table_names():
+        op.create_table(
+            'audit_logs',
+            sa.Column('id', sa.Integer(), primary_key=True, index=True),
+            sa.Column('timestamp', sa.DateTime(), nullable=False),
+            sa.Column('action', sa.String(), nullable=False),  # e.g., 'role_change', 'token_revoked'
+            sa.Column('actor_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),  # Who performed action
+            sa.Column('target_user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),  # Who was affected
+            sa.Column('details', sa.JSON(), nullable=True),  # Additional context
+            sa.Column('ip_address', sa.String(), nullable=True),
+            sa.Column('user_agent', sa.String(), nullable=True),
+        )
+
+        # Create indexes for common queries
+        op.create_index('ix_audit_logs_timestamp', 'audit_logs', ['timestamp'])
+        op.create_index('ix_audit_logs_action', 'audit_logs', ['action'])
+        op.create_index('ix_audit_logs_actor_id', 'audit_logs', ['actor_id'])
+        op.create_index('ix_audit_logs_target_user_id', 'audit_logs', ['target_user_id'])
 
 
 def downgrade() -> None:
