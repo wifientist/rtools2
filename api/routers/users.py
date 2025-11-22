@@ -3,12 +3,23 @@ from sqlalchemy.orm import Session
 import schemas.auth
 from  crud.crud_users import get_user_by_email, get_user, create_user
 from dependencies import get_db, get_current_user
+from decorators import require_role
+from models.user import User, RoleEnum
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-### 🚀 Create New User
+### 🚀 Create New User (Admin Only)
 @router.post("/", response_model=schemas.auth.UserResponse)
-def create_user(user: schemas.auth.UserCreate, db: Session = Depends(get_db)):
+@require_role(RoleEnum.admin)
+def create_user_endpoint(
+    user: schemas.auth.UserCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    ADMIN ONLY: Manual user creation endpoint.
+    Normal users should use the /auth/signup-verify-otp flow instead.
+    """
     if get_user_by_email(db, user.email):
         raise HTTPException(status_code=400, detail="Email already registered")
 

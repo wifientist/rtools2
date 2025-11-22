@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from models.user import User
-from security import require_role, require_admin_company, create_user_token
+from models.user import User, RoleEnum
+from security import require_admin_company, create_user_token, is_production
 from dependencies import get_current_user, get_db
+from decorators import require_role
 
 router = APIRouter() #dependencies=[Depends(get_current_user)])
 
@@ -45,15 +46,16 @@ def toggle_beta(
         key="session",
         value=new_token,
         httponly=True,
-        secure=False,  # 🔥 Remember to set True in prod
+        secure=is_production(),
         samesite="Strict",
     )
 
     return response
 
 @router.get("/admin")
+@require_role(RoleEnum.admin)
 def admin_dashboard(
-    user: dict = Depends(require_role("admin")),
+    current_user: User = Depends(get_current_user),
     company: dict = Depends(require_admin_company(1))  #TODO i feel like this should be hard coded here
     ):
     return {"message": "Approved Admin!"}

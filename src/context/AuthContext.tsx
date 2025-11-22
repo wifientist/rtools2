@@ -49,6 +49,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [roleHierarchy, setRoleHierarchy] = useState<{ [key: string]: number }>({});
 
 
+  // Helper to refresh access token using refresh token
+  const refreshAccessToken = async (): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        console.log("Access token refreshed successfully");
+        return true;
+      } else {
+        console.warn("Failed to refresh access token");
+        return false;
+      }
+    } catch (error) {
+      console.error("Error refreshing token:", error);
+      return false;
+    }
+  };
+
   const checkAuth = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/status`, {
@@ -60,6 +81,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (!response.ok) {
+        // If auth check fails, try to refresh the access token
+        if (response.status === 401) {
+          console.log("Access token expired, attempting refresh...");
+          const refreshed = await refreshAccessToken();
+
+          if (refreshed) {
+            // Retry auth check with new access token
+            return checkAuth();
+          }
+        }
+
         const errorData = await response.json();
         console.warn("Auth check failed:", errorData.error);
 
@@ -139,6 +171,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  // Auto-refresh access token every 11 hours (before 12-hour expiry)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const refreshInterval = setInterval(() => {
+      console.log("Auto-refreshing access token...");
+      refreshAccessToken();
+    }, 11 * 60 * 60 * 1000); // 11 hours in milliseconds
+
+    return () => clearInterval(refreshInterval);
+  }, [isAuthenticated]);
 
   const logout = async () => {
     try {

@@ -13,14 +13,16 @@ class TokenResponse(BaseModel):
 
 class UserBase(BaseModel):
     email: EmailStr
-    role: str = "user"  # Default role
 
 class UserCreate(UserBase):
     email: EmailStr
+    # Note: role is NOT accepted from client input for security reasons
+    # New users are always assigned "user" role by default on the server side
 
 class UserResponse(UserBase):
     id: int
     email: EmailStr  # Ensure email is returned
+    role: str  # Include role in responses
 
     class Config:
         from_attributes = True  # Enables ORM conversion

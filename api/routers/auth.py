@@ -7,7 +7,7 @@ from models.user import User
 from models.company import Company
 from models.tenant import Tenant
 from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema
-from security import create_access_token, verify_access_token, create_user_token #, get_password_hash, verify_password, 
+from security import create_access_token, verify_access_token, create_user_token, is_production
 from dependencies import get_db, get_current_user
 from services.auth_service import generate_and_send_otp, verify_otp_and_login
 from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
@@ -38,15 +38,38 @@ async def request_otp(payload: RequestOtpSchema, db: Session = Depends(get_db)):
 @router.post("/login-otp")
 async def login_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
     try:
+        # Get user from OTP verification
+        user = db.query(User).filter(User.email == payload.email).first()
+        if not user:
+            raise HTTPException(status_code=400, detail="User not found")
+
+        # Verify OTP (this updates last_authenticated_at)
         token = verify_otp_and_login(payload.email, payload.otp_code, db)
 
+        # Generate both access and refresh tokens
+        from security import create_user_tokens
+        tokens = create_user_tokens(user)
+
         response = JSONResponse(content={"message": "Login successful"})
+
+        # Set access token (12 hours)
         response.set_cookie(
             key="session",
-            value=token,
+            value=tokens["access_token"],
             httponly=True,
-            secure=False,  # 🔥 Remember to set True in prod
+            secure=is_production(),
             samesite="Strict",
+            max_age=720 * 60  # 12 hours
+        )
+
+        # Set refresh token (7 days)
+        response.set_cookie(
+            key="refresh_token",
+            value=tokens["refresh_token"],
+            httponly=True,
+            secure=is_production(),
+            samesite="Strict",
+            max_age=7 * 24 * 60 * 60  # 7 days
         )
 
         return response
@@ -113,16 +136,30 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
     db.commit()
     db.refresh(new_user)
 
-    # Issue login token immediately after signup
-    access_token = create_user_token(new_user)
+    # Issue both access and refresh tokens immediately after signup
+    from security import create_user_tokens
+    tokens = create_user_tokens(new_user)
 
     response = JSONResponse(content={"message": "Signup and login successful"})
+
+    # Set access token (12 hours)
     response.set_cookie(
         key="session",
-        value=access_token,
+        value=tokens["access_token"],
         httponly=True,
-        secure=False,  # Set to True in prod
+        secure=is_production(),
         samesite="Strict",
+        max_age=720 * 60  # 12 hours
+    )
+
+    # Set refresh token (7 days)
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=is_production(),
+        samesite="Strict",
+        max_age=7 * 24 * 60 * 60  # 7 days
     )
 
     return response
@@ -189,14 +226,53 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
         key="session",
         value=access_token,
         httponly=True,
-        secure=False,  # Change to True in production
+        secure=is_production(),
         samesite="Strict",
     )
 
     return response
 
+@router.post("/refresh")
+def refresh_access_token(request: Request, db: Session = Depends(get_db)):
+    """
+    Use a valid refresh token to obtain a new access token.
+    Refresh token lasts 7 days, access token lasts 12 hours.
+    """
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token provided")
+
+    # Verify refresh token
+    payload = verify_access_token(refresh_token, db)
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    # Get user from database
+    user_id = payload.get("sub")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    # Generate new access token (refresh token stays the same)
+    from security import create_user_token
+    new_access_token = create_user_token(user)
+
+    response = JSONResponse(content={"message": "Access token refreshed"})
+    response.set_cookie(
+        key="session",
+        value=new_access_token,
+        httponly=True,
+        secure=is_production(),
+        samesite="Strict",
+        max_age=720 * 60  # 12 hours in seconds
+    )
+
+    return response
+
+
 @router.post("/logout")
 def logout():
     response = JSONResponse(content={"message": "Logged out"})
-    response.delete_cookie("session", path="/", domain=None) 
+    response.delete_cookie("session", path="/", domain=None)
+    response.delete_cookie("refresh_token", path="/", domain=None)
     return response

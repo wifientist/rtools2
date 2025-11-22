@@ -6,8 +6,9 @@ import enum
 
 
 class RoleEnum(str, enum.Enum):
-    admin = "admin"
     user = "user"
+    admin = "admin"
+    super = "super"
 
 
 class User(Base):
