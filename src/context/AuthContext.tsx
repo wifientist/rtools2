@@ -12,7 +12,7 @@ interface AuthContextType {
   activeTenantName: string | null;
   secondaryTenantId: number | null;
   secondaryTenantName: string | null;
-  tenants: { id: number; name: string }[];
+  tenants: { id: number; name: string; tenant_id: string; ec_type: string | null }[];
   roleHierarchy: { [key: string]: number };
   setActiveTenantId: (id: number) => void;
   setActiveTenantName: (name: string) => void;
@@ -41,7 +41,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
-  const [tenants, setTenants] = useState<{ id: number; name: string }[]>([]);
+  const [tenants, setTenants] = useState<{ id: number; name: string; tenant_id: string; ec_type: string | null }[]>([]);
   const [activeTenantId, setActiveTenantId] = useState<number | null>(null);
   const [activeTenantName, setActiveTenantName] = useState<string | null>(null);
   const [secondaryTenantId, setSecondaryTenantId] = useState<number | null>(null);

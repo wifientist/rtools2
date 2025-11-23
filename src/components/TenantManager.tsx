@@ -10,21 +10,23 @@ export default function TenantManager() {
   useEffect(() => {
     checkAuth(); // initial load
     //console.log("Running checkAuth on mount...");
-  
+
     // const interval = setInterval(() => {
     //   checkAuth(); // check every 15 seconds
     //   console.log("Running checkAuth every 10 seconds...");
     // }, 10000);
-  
+
     // return () => clearInterval(interval);
   }, []);
 
   const [showForm, setShowForm] = useState(false);
+  const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     tenant_id: "",
     client_id: "",
     shared_secret: "",
+    ec_type: "EC",
   });
 
   async function handleActiveTenantSelect(tenantId: number) {
@@ -85,11 +87,45 @@ export default function TenantManager() {
         body: JSON.stringify(formData),
       });
       setShowForm(false);
-      setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "" });
+      setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "", ec_type: "EC" });
       await checkAuth();
     } catch (error) {
       console.error("Failed to add tenant", error);
     }
+  }
+
+  function handleEditTenant(tenant: typeof tenants[0]) {
+    setEditingTenantId(tenant.id);
+    setFormData({
+      name: tenant.name,
+      tenant_id: tenant.tenant_id,
+      client_id: "",
+      shared_secret: "",
+      ec_type: tenant.ec_type || "EC",
+    });
+  }
+
+  async function handleUpdateTenant() {
+    if (!editingTenantId) return;
+
+    try {
+      await fetch(`${API_BASE_URL}/tenants/${editingTenantId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(formData),
+      });
+      setEditingTenantId(null);
+      setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "", ec_type: "EC" });
+      await checkAuth();
+    } catch (error) {
+      console.error("Failed to update tenant", error);
+    }
+  }
+
+  function handleCancelEdit() {
+    setEditingTenantId(null);
+    setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "", ec_type: "EC" });
   }
 
   return (
@@ -133,6 +169,22 @@ export default function TenantManager() {
             value={formData.shared_secret}
             onChange={handleInputChange}
           />
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="ec_type">
+              EC Type
+            </label>
+            <select
+              id="ec_type"
+              name="ec_type"
+              value={formData.ec_type}
+              onChange={(e) => setFormData(prev => ({ ...prev, ec_type: e.target.value }))}
+              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
+            >
+              <option value="EC">EC (Enterprise Controller)</option>
+              <option value="MSP">MSP (Managed Service Provider)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Select MSP for MSP tenant types with access to MSP-specific features</p>
+          </div>
           <button
             onClick={handleAddTenant}
             className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -157,39 +209,120 @@ export default function TenantManager() {
                   : "border-gray-200 hover:bg-gray-100"
               }`}
             >
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="text-lg font-semibold">{tenant.name}</h3>
-                  <p className="text-xs text-gray-600">Tenant ID: {tenant.tenant_id}</p>
+              {editingTenantId === tenant.id ? (
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold mb-3">Edit Tenant</h3>
+                  <input
+                    className="w-full border p-2 rounded"
+                    placeholder="Tenant Name"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                  />
+                  <input
+                    className="w-full border p-2 rounded"
+                    placeholder="Tenant ID"
+                    name="tenant_id"
+                    value={formData.tenant_id}
+                    onChange={handleInputChange}
+                  />
+                  <input
+                    className="w-full border p-2 rounded"
+                    placeholder="Client ID"
+                    name="client_id"
+                    value={formData.client_id}
+                    onChange={handleInputChange}
+                  />
+                  <input
+                    className="w-full border p-2 rounded"
+                    placeholder="Shared Secret"
+                    name="shared_secret"
+                    value={formData.shared_secret}
+                    onChange={handleInputChange}
+                  />
+                  <div>
+                    <label className="block text-sm font-medium mb-1" htmlFor={`ec_type_${tenant.id}`}>
+                      EC Type
+                    </label>
+                    <select
+                      id={`ec_type_${tenant.id}`}
+                      name="ec_type"
+                      value={formData.ec_type}
+                      onChange={(e) => setFormData(prev => ({ ...prev, ec_type: e.target.value }))}
+                      className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
+                    >
+                      <option value="EC">EC (Enterprise Controller)</option>
+                      <option value="MSP">MSP (Managed Service Provider)</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={handleUpdateTenant}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="px-4 py-2 bg-gray-400 text-white rounded hover:bg-gray-500"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                {tenant.id === activeTenantId && (
-                  <span className="text-xs text-blue-600 font-semibold">Active</span>
-                )}
-                {tenant.id === secondaryTenantId && (
-                  <span className="text-xs text-green-600 font-semibold ml-2">Secondary</span>
-)}
-
-              </div>
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => handleActiveTenantSelect(tenant.id)}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  Set Active
-                </button>
-                <button
-                  onClick={() => handleSecondaryTenantSelect(tenant.id)}
-                  className="text-sm text-green-600 hover:underline"
-                >
-                  Set Secondary
-                </button>
-                <button
-                  onClick={() => handleDeleteTenant(tenant.id)}
-                  className="text-sm text-red-600 hover:underline"
-                >
-                  Delete
-                </button>
-              </div>
+              ) : (
+                <>
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="text-lg font-semibold">{tenant.name}</h3>
+                      <p className="text-xs text-gray-600">Tenant ID: {tenant.tenant_id}</p>
+                      <div className="mt-1">
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          tenant.ec_type === 'MSP'
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {tenant.ec_type || 'EC'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      {tenant.id === activeTenantId && (
+                        <span className="text-xs text-blue-600 font-semibold">Active</span>
+                      )}
+                      {tenant.id === secondaryTenantId && (
+                        <span className="text-xs text-green-600 font-semibold">Secondary</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2 mt-4">
+                    <button
+                      onClick={() => handleEditTenant(tenant)}
+                      className="text-sm text-gray-600 hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleActiveTenantSelect(tenant.id)}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Set Active
+                    </button>
+                    <button
+                      onClick={() => handleSecondaryTenantSelect(tenant.id)}
+                      className="text-sm text-green-600 hover:underline"
+                    >
+                      Set Secondary
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTenant(tenant.id)}
+                      className="text-sm text-red-600 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>

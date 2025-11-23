@@ -11,6 +11,7 @@ export default function TenantCreator() {
     tenant_id: "",
     client_id: "",
     shared_secret: "",
+    ec_type: "EC",
   });
 
   // async function handleTenantSelect(tenantId: number) {
@@ -47,7 +48,7 @@ export default function TenantCreator() {
         body: JSON.stringify(formData),
       });
       setShowForm(false);
-      setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "" });
+      setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "", ec_type: "EC" });
 
       // ⚡ After adding, re-check auth to refresh tenants list in context
       await checkAuth();
@@ -124,6 +125,23 @@ export default function TenantCreator() {
               onChange={handleInputChange}
               className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
             />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1" htmlFor="ec_type">
+              EC Type
+            </label>
+            <select
+              id="ec_type"
+              name="ec_type"
+              value={formData.ec_type}
+              onChange={(e) => setFormData(prev => ({ ...prev, ec_type: e.target.value }))}
+              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
+            >
+              <option value="EC">EC (Enterprise Controller)</option>
+              <option value="MSP">MSP (Managed Service Provider)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Select MSP for MSP tenant types with access to MSP-specific features</p>
           </div>
 
           <div className="mb-6">

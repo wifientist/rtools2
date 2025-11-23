@@ -27,6 +27,8 @@ def get_my_tenants(
         {
             "id": tenant.id,
             "name": tenant.name,
+            "tenant_id": tenant.tenant_id,
+            "ec_type": tenant.ec_type,
         }
         for tenant in tenants
     ]
@@ -55,6 +57,69 @@ def create_tenant(tenant: TenantCreate, db: Session = Depends(get_db), current_u
         "name": new_tenant.name,
         "tenant_id": new_tenant.tenant_id,
     }
+
+
+@router.put("/{tenant_id}")
+def update_tenant(
+    tenant_id: int,
+    tenant_update: TenantCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update an existing tenant's details.
+    Users can only update their own tenants.
+    """
+    # Fetch the tenant and verify ownership
+    tenant = db.query(Tenant).filter_by(id=tenant_id, user_id=current_user.id).first()
+
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found or not owned by user.")
+
+    # Update fields
+    tenant.name = tenant_update.name
+    tenant.tenant_id = tenant_update.tenant_id
+    tenant.ec_type = tenant_update.ec_type
+    tenant.set_client_id(tenant_update.client_id)
+    tenant.set_shared_secret(tenant_update.shared_secret)
+
+    db.commit()
+    db.refresh(tenant)
+
+    return {
+        "status": "success",
+        "id": tenant.id,
+        "name": tenant.name,
+        "tenant_id": tenant.tenant_id,
+        "ec_type": tenant.ec_type,
+    }
+
+
+@router.delete("/{tenant_id}")
+def delete_tenant(
+    tenant_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a tenant. Users can only delete their own tenants.
+    """
+    # Fetch the tenant and verify ownership
+    tenant = db.query(Tenant).filter_by(id=tenant_id, user_id=current_user.id).first()
+
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found or not owned by user.")
+
+    # Clear active/secondary tenant references if they point to this tenant
+    if current_user.active_tenant_id == tenant_id:
+        current_user.active_tenant_id = None
+    if current_user.secondary_tenant_id == tenant_id:
+        current_user.secondary_tenant_id = None
+
+    db.delete(tenant)
+    db.commit()
+
+    return {"status": "success", "message": "Tenant deleted successfully"}
 
 
 @router.post("/set-active-tenant")
