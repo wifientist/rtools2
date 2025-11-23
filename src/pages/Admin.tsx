@@ -6,6 +6,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const Admin = () => {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [userRole, setUserRole] = useState<string>("admin");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,11 +24,12 @@ const Admin = () => {
 
         const data = await response.json();
         console.log(data);
-        if (data.role !== "admin") {
+        if (data.role !== "admin" && data.role !== "super") {
           navigate("/");
           return;
         }
 
+        setUserRole(data.role);
         setIsAdmin(true);
       } catch (error) {
         navigate("/login");
@@ -44,14 +46,18 @@ const Admin = () => {
   const adminFeatures = [
     {
       title: "Company Management",
-      description: "Manage company domains and approve signups",
+      description: userRole === "super"
+        ? "Manage all companies, domains, and approvals"
+        : "View and manage your company settings",
       icon: <Building2 size={48} />,
       link: "/companies",
       color: "bg-blue-500",
     },
     {
       title: "User Management",
-      description: "View and manage user accounts",
+      description: userRole === "super"
+        ? "Manage all users across all companies"
+        : "Manage users in your company",
       icon: <Users size={48} />,
       link: "/users",
       color: "bg-green-500",
@@ -78,8 +84,19 @@ const Admin = () => {
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
-        <p className="text-gray-600">Manage system settings and configurations</p>
+        <div className="flex items-center gap-3 mb-2">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          {userRole === "super" && (
+            <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full">
+              Super Admin
+            </span>
+          )}
+        </div>
+        <p className="text-gray-600">
+          {userRole === "super"
+            ? "Full system access - manage all companies and users"
+            : "Company-scoped access - manage your company and users"}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

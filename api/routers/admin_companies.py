@@ -44,10 +44,21 @@ def list_all_companies(
     db: Session = Depends(get_db)
 ):
     """
-    List all companies with their approval status and user count.
-    Requires admin role.
+    List companies with their approval status and user count.
+    - Super admins see ALL companies
+    - Regular admins see ONLY their own company
     """
-    companies = db.query(Company).all()
+    # Super admins can see all companies
+    if current_user.role == RoleEnum.super:
+        companies = db.query(Company).all()
+    else:
+        # Regular admins can only see their own company
+        if not current_user.company_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Admin users must be assigned to a company"
+            )
+        companies = db.query(Company).filter(Company.id == current_user.company_id).all()
 
     result = []
     for company in companies:
@@ -73,11 +84,19 @@ def get_company(
 ):
     """
     Get details of a specific company.
-    Requires admin role.
+    - Super admins can view any company
+    - Regular admins can only view their own company
     """
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    # Regular admins can only view their own company
+    if current_user.role != RoleEnum.super and current_user.company_id != company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own company"
+        )
 
     return CompanyListResponse(
         id=company.id,
@@ -89,9 +108,9 @@ def get_company(
     )
 
 
-# Create a new company (admin only)
+# Create a new company (super admin only)
 @router.post("", response_model=CompanyListResponse, status_code=status.HTTP_201_CREATED)
-@require_role(RoleEnum.admin)
+@require_role(RoleEnum.super)
 def create_company(
     company_data: CompanyCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -99,7 +118,7 @@ def create_company(
 ):
     """
     Manually create a new company (approved by default).
-    Requires admin role.
+    Requires SUPER admin role - regular admins cannot create companies.
     """
     # Check if domain already exists
     existing = db.query(Company).filter(Company.domain == company_data.domain).first()
@@ -141,11 +160,19 @@ def update_company(
 ):
     """
     Update company details including approval status.
-    Requires admin role.
+    - Super admins can update any company
+    - Regular admins can only update their own company
     """
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    # Regular admins can only update their own company
+    if current_user.role != RoleEnum.super and current_user.company_id != company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only update your own company"
+        )
 
     # Prevent modifying the Unassigned company's approval status
     if company.id == -1 and company_data.is_approved is False:
@@ -201,11 +228,19 @@ def approve_company(
 ):
     """
     Approve a company to allow user signups from this domain.
-    Requires admin role.
+    - Super admins can approve any company
+    - Regular admins can only approve their own company
     """
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    # Regular admins can only approve their own company
+    if current_user.role != RoleEnum.super and current_user.company_id != company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only approve your own company"
+        )
 
     company.is_approved = True
     db.commit()
@@ -231,11 +266,19 @@ def unapprove_company(
 ):
     """
     Revoke approval for a company. Existing users remain but new signups are blocked.
-    Requires admin role.
+    - Super admins can unapprove any company
+    - Regular admins can only unapprove their own company
     """
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    # Regular admins can only unapprove their own company
+    if current_user.role != RoleEnum.super and current_user.company_id != company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only unapprove your own company"
+        )
 
     # Prevent unapproving the Unassigned company
     if company.id == -1:
@@ -258,9 +301,9 @@ def unapprove_company(
     )
 
 
-# Delete a company (admin only) - with safety checks
+# Delete a company (super admin only) - with safety checks
 @router.delete("/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
-@require_role(RoleEnum.admin)
+@require_role(RoleEnum.super)
 def delete_company(
     company_id: int,
     current_user: User = Depends(get_current_user),
@@ -268,7 +311,7 @@ def delete_company(
 ):
     """
     Delete a company. Only allowed if no users are associated with it.
-    Requires admin role.
+    Requires SUPER admin role - regular admins cannot delete companies.
     """
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:

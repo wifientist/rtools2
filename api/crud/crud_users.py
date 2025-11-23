@@ -5,7 +5,14 @@ import models, schemas.auth
 ### 🚀 Create User
 def create_user(db: Session, user: schemas.auth.UserCreate):
     #hashed_pw = hash_password(user.password)
-    db_user = models.user.User(email=user.email) #, hashed_password=hashed_pw)
+    # Build user with provided fields
+    user_data = {"email": user.email}
+    if user.role is not None:
+        user_data["role"] = user.role
+    if user.beta_enabled is not None:
+        user_data["beta_enabled"] = user.beta_enabled
+
+    db_user = models.user.User(**user_data) #, hashed_password=hashed_pw)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)

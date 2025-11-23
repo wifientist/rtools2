@@ -16,6 +16,7 @@ export default function CompanyManager() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("admin");
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -46,8 +47,24 @@ export default function CompanyManager() {
     }
   };
 
+  // Fetch current user's role
+  const fetchCurrentUserRole = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/status`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUserRole(data.role || "admin");
+      }
+    } catch (err) {
+      console.error("Error fetching current user role:", err);
+    }
+  };
+
   useEffect(() => {
     fetchCompanies();
+    fetchCurrentUserRole();
   }, []);
 
   // Create new company
@@ -184,22 +201,24 @@ export default function CompanyManager() {
           <Building2 size={32} className="text-blue-600" />
           <h2 className="text-3xl font-bold">Company Management</h2>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
-        >
-          {showForm ? (
-            <>
-              <X size={18} />
-              Cancel
-            </>
-          ) : (
-            <>
-              <Plus size={18} />
-              Add Company
-            </>
-          )}
-        </button>
+        {currentUserRole === "super" && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+          >
+            {showForm ? (
+              <>
+                <X size={18} />
+                Cancel
+              </>
+            ) : (
+              <>
+                <Plus size={18} />
+                Add Company
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -348,22 +367,24 @@ export default function CompanyManager() {
                           <Check size={18} />
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDelete(company.id, company.name)}
-                        disabled={
-                          company.id === -1 || company.user_count > 0
-                        }
-                        className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
-                        title={
-                          company.id === -1
-                            ? "Cannot delete Unassigned company"
-                            : company.user_count > 0
-                            ? "Cannot delete company with users"
-                            : "Delete company"
-                        }
-                      >
-                        <Trash2 size={18} />
-                      </button>
+                      {currentUserRole === "super" && (
+                        <button
+                          onClick={() => handleDelete(company.id, company.name)}
+                          disabled={
+                            company.id === -1 || company.user_count > 0
+                          }
+                          className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                          title={
+                            company.id === -1
+                              ? "Cannot delete Unassigned company"
+                              : company.user_count > 0
+                              ? "Cannot delete company with users"
+                              : "Delete company"
+                          }
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

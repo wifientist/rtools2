@@ -23,6 +23,7 @@ export default function UserManager() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>("admin");
 
   // Form states
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -79,9 +80,25 @@ export default function UserManager() {
     }
   };
 
+  // Fetch current user's role
+  const fetchCurrentUserRole = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/status`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUserRole(data.role || "admin");
+      }
+    } catch (err) {
+      console.error("Error fetching current user role:", err);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchCompanies();
+    fetchCurrentUserRole();
   }, []);
 
   // Helper to get company name by ID
@@ -242,7 +259,7 @@ export default function UserManager() {
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
-                  <option value="super">Super Admin</option>
+                  {currentUserRole === "super" && <option value="super">Super Admin</option>}
                 </select>
               </div>
 
@@ -297,11 +314,15 @@ export default function UserManager() {
                   value={editFormData.role}
                   onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
                   className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  disabled={currentUserRole !== "super" && editingUser.role === "super"}
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
-                  <option value="super">Super Admin</option>
+                  {currentUserRole === "super" && <option value="super">Super Admin</option>}
                 </select>
+                {currentUserRole !== "super" && editingUser.role === "super" && (
+                  <p className="text-xs text-red-500 mt-1">Only super admins can modify super admin accounts</p>
+                )}
               </div>
 
               <div className="flex items-center">
@@ -386,15 +407,17 @@ export default function UserManager() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleEditClick(user)}
-                      className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded"
-                      title="Edit user"
+                      className="text-blue-600 hover:text-blue-800 p-1 hover:bg-blue-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={currentUserRole !== "super" && user.role === "super" ? "Only super admins can edit super admin accounts" : "Edit user"}
+                      disabled={currentUserRole !== "super" && user.role === "super"}
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteUser(user.id, user.email)}
-                      className="text-red-600 hover:text-red-800 p-1 hover:bg-red-50 rounded"
-                      title="Delete user"
+                      className="text-red-600 hover:text-red-800 p-1 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={currentUserRole !== "super" && user.role === "super" ? "Only super admins can delete super admin accounts" : "Delete user"}
+                      disabled={currentUserRole !== "super" && user.role === "super"}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

@@ -16,13 +16,17 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     email: EmailStr
-    # Note: role is NOT accepted from client input for security reasons
-    # New users are always assigned "user" role by default on the server side
+    role: str | None = None  # Optional: Only used by admin endpoints
+    beta_enabled: bool | None = None  # Optional: Only used by admin endpoints
+    # Note: For public signup, role is NOT accepted from client input
+    # New users from public signup are always assigned "user" role by default
 
 class UserResponse(UserBase):
     id: int
-    email: EmailStr  # Ensure email is returned
-    role: str  # Include role in responses
+    email: EmailStr
+    role: str
+    beta_enabled: bool
+    company_id: int | None
 
     class Config:
         from_attributes = True  # Enables ORM conversion

@@ -27,13 +27,43 @@ def create_user_endpoint(
     db: Session = Depends(get_db)
 ):
     """
-    ADMIN ONLY: Manual user creation endpoint.
-    Normal users should use the /auth/signup-verify-otp flow instead.
+    Create a new user manually (admin only).
+    - Super admins can create users in any company with any role
+    - Regular admins can only create users in their own company, cannot create super admins
     """
     if get_user_by_email(db, user.email):
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    return create_user(db, user)
+    # Validate role permissions
+    if user.role:
+        # Regular admins cannot create super admins
+        if current_user.role != RoleEnum.super and user.role == "super":
+            raise HTTPException(
+                status_code=403,
+                detail="Only super admins can create super admin accounts"
+            )
+
+        # Validate role exists
+        try:
+            RoleEnum(user.role)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid role: {user.role}")
+
+    # Create the user (company will be auto-assigned from email domain)
+    new_user = create_user(db, user)
+
+    # Regular admins can only create users in their own company
+    if current_user.role != RoleEnum.super:
+        if new_user.company_id != current_user.company_id:
+            # Rollback the creation
+            db.delete(new_user)
+            db.commit()
+            raise HTTPException(
+                status_code=403,
+                detail=f"You can only create users in your own company. User email domain does not match your company."
+            )
+
+    return new_user
 
 ### 🚀 Get User by ID
 @router.get("/{user_id}", response_model=schemas.auth.UserResponse)
@@ -52,9 +82,22 @@ def get_all_users(
     db: Session = Depends(get_db)
 ):
     """
-    ADMIN ONLY: Get all users in the system
+    Get users based on role:
+    - Super admins see ALL users across all companies
+    - Regular admins see ONLY users in their own company
     """
-    users = db.query(User).all()
+    if current_user.role == RoleEnum.super:
+        # Super admins can see all users
+        users = db.query(User).all()
+    else:
+        # Regular admins can only see users in their company
+        if not current_user.company_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Admin users must be assigned to a company"
+            )
+        users = db.query(User).filter(User.company_id == current_user.company_id).all()
+
     return users
 
 ### 🚀 Update User (Admin Only)
@@ -68,11 +111,20 @@ def update_user_endpoint(
     db: Session = Depends(get_db)
 ):
     """
-    ADMIN ONLY: Update user details including role and beta access
+    Update user details including role and beta access.
+    - Super admins can update any user across all companies
+    - Regular admins can only update users in their own company
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Regular admins can only update users in their company
+    if current_user.role != RoleEnum.super and user.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only update users in your own company"
+        )
 
     # Track changes for audit log
     changes = {}
@@ -89,16 +141,31 @@ def update_user_endpoint(
         # Validate role
         try:
             RoleEnum(user_update.role)
-            changes["role"] = {"from": user.role, "to": user_update.role}
-            user.role = user_update.role
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid role: {user_update.role}")
+
+        # Regular admins cannot create or modify super admins
+        if current_user.role != RoleEnum.super:
+            if user_update.role == "super" or user.role == "super":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only super admins can create or modify super admin accounts"
+                )
+
+        changes["role"] = {"from": user.role, "to": user_update.role}
+        user.role = user_update.role
 
     if user_update.beta_enabled is not None and user_update.beta_enabled != user.beta_enabled:
         changes["beta_enabled"] = {"from": user.beta_enabled, "to": user_update.beta_enabled}
         user.beta_enabled = user_update.beta_enabled
 
     if user_update.company_id is not None and user_update.company_id != user.company_id:
+        # Only super admins can change company assignments
+        if current_user.role != RoleEnum.super:
+            raise HTTPException(
+                status_code=403,
+                detail="Only super admins can change user company assignments"
+            )
         changes["company_id"] = {"from": user.company_id, "to": user_update.company_id}
         user.company_id = user_update.company_id
 
@@ -128,7 +195,9 @@ def delete_user_endpoint(
     db: Session = Depends(get_db)
 ):
     """
-    ADMIN ONLY: Delete a user
+    Delete a user.
+    - Super admins can delete any user across all companies
+    - Regular admins can only delete users in their own company
     """
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
@@ -136,6 +205,20 @@ def delete_user_endpoint(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Regular admins can only delete users in their company
+    if current_user.role != RoleEnum.super and user.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete users in your own company"
+        )
+
+    # Prevent deletion of super admins by regular admins
+    if current_user.role != RoleEnum.super and user.role == RoleEnum.super:
+        raise HTTPException(
+            status_code=403,
+            detail="Only super admins can delete super admin accounts"
+        )
 
     user_email = user.email
     db.delete(user)
