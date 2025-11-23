@@ -53,9 +53,9 @@ const Admin = () => {
       title: "User Management",
       description: "View and manage user accounts",
       icon: <Users size={48} />,
-      link: "#",
+      link: "/users",
       color: "bg-green-500",
-      disabled: true,
+      disabled: false,
     },
     {
       title: "System Settings",

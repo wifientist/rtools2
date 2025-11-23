@@ -24,6 +24,7 @@ import Snapshot from "@/pages/Snapshot";
 import TestCalls from "@/pages/TestCalls";
 import Option43Calculator from "@/pages/Option43Calculator";
 import CompanyManager from "@/components/CompanyManager";
+import Users from "@/pages/Users";
 import PerUnitSSID from "@/pages/PerUnitSSID";
 
 const App = () => {
@@ -43,6 +44,7 @@ const App = () => {
           <Route path="/admin" element={<AdminRoute element={<Admin />} />} />
           <Route path="/super" element={<AdminRoute element={<Super />} />} />
           <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
+          <Route path="/users" element={<AdminRoute element={<Users />} />} />
           <Route path="/tenants" element={<Tenants />} />
           <Route path="/diff" element={<BetaRoute element={<Diff />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
