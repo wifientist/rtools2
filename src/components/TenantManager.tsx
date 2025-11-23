@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect } from "react";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 export default function TenantManager() {
   const { tenants, activeTenantId, secondaryTenantId, checkAuth } = useAuth();
 
@@ -27,7 +29,7 @@ export default function TenantManager() {
 
   async function handleActiveTenantSelect(tenantId: number) {
     try {
-      await fetch("/api/tenants/set-active-tenant", {
+      await fetch(`${API_BASE_URL}/tenants/set-active-tenant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -41,7 +43,7 @@ export default function TenantManager() {
 
   async function handleSecondaryTenantSelect(tenantId: number) {
     try {
-      await fetch("/api/tenants/set-secondary-tenant", {
+      await fetch(`${API_BASE_URL}/tenants/set-secondary-tenant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -57,7 +59,7 @@ export default function TenantManager() {
     if (!confirm("Are you sure you want to delete this tenant?")) return;
 
     try {
-      await fetch(`/api/tenants/${tenantId}`, {
+      await fetch(`${API_BASE_URL}/tenants/${tenantId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -76,7 +78,7 @@ export default function TenantManager() {
 
   async function handleAddTenant() {
     try {
-      await fetch("/api/tenants/new", {
+      await fetch(`${API_BASE_URL}/tenants/new`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

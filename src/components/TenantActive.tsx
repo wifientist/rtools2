@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 export default function TenantManager() {
   const { tenants, activeTenantId, activeTenantName, checkAuth } = useAuth(); // ✅ Grab everything you need from context
   // const [showForm, setShowForm] = useState(false);
@@ -13,7 +15,7 @@ export default function TenantManager() {
 
   async function handleTenantSelect(tenantId: number) {
     try {
-      await fetch("/api/tenants/set-active-tenant", {
+      await fetch(`${API_BASE_URL}/tenants/set-active-tenant`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -21,7 +23,7 @@ export default function TenantManager() {
         credentials: "include",
         body: JSON.stringify({ tenant_id: tenantId }),
       });
-  
+
       await checkAuth(); // ✅ re-check auth to reload fresh tenant state (important after new session cookie)
     } catch (error) {
       console.error("Failed to switch tenant", error);

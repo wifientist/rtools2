@@ -45,8 +45,11 @@ const Sidebar = () => {
   //   item => !item.requiresAuth || isAuthenticated
   // );
   const visibleNavItems = navItems.filter(item => {
+    // Always show items that don't require auth
     if (!item.requiresAuth) return true;
-    if (!isAuthenticated) return false;
+
+    // Hide all protected items if not authenticated (includes null during loading)
+    if (isAuthenticated !== true) return false;
 
     // Check beta access
     if (item.requiresBeta && !betaEnabled) return false;

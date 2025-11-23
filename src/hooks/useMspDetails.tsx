@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext"; // Update path as needed
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 export function useMspDetails() {
     const { activeTenantId } = useAuth();
     const [data, setData] = useState<any>(null);
@@ -17,8 +19,8 @@ export function useMspDetails() {
         const controller = new AbortController();
         setLoading(true);
 
-        fetch(`/api/fer1agg/${activeTenantId}/msp/fulldetails`, {
-        //fetch(`/api/fer1agga/msp/fulldetails`, {
+        fetch(`${API_BASE_URL}/fer1agg/${activeTenantId}/msp/fulldetails`, {
+        //fetch(`${API_BASE_URL}/fer1agga/msp/fulldetails`, {
                 method: "GET",
             credentials: "include",
             signal: controller.signal

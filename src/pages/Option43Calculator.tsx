@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 interface Option43Response {
   option_43_hex: string;
   note: string;
@@ -26,7 +28,7 @@ export default function Option43Calculator() {
     }
 
     try {
-      const res = await fetch('/api/opt43/calculate', {
+      const res = await fetch(`${API_BASE_URL}/opt43/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vendor, ip_list: ipList }),

@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 export function useDualMspEcs() {
   const [activeEcData, setActiveEcData] = useState([]);
   const [secondaryEcData, setSecondaryEcData] = useState([]);
@@ -10,8 +12,8 @@ export function useDualMspEcs() {
     async function fetchBoth() {
       try {
         const [activeRes, secondaryRes] = await Promise.all([
-          fetch("/api/fer1agg/ec/active", { credentials: "include" }),
-          fetch("/api/fer1agg/ec/secondary", { credentials: "include" })
+          fetch(`${API_BASE_URL}/fer1agg/ec/active`, { credentials: "include" }),
+          fetch(`${API_BASE_URL}/fer1agg/ec/secondary`, { credentials: "include" })
         ]);
         const [activeJson, secondaryJson] = await Promise.all([
           activeRes.json(),

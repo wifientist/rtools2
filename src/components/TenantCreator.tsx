@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 export default function TenantCreator() {
-  // const { tenants, activeTenantId, activeTenantName, checkAuth } = useAuth(); // ✅ Grab everything you need from context
+  const { checkAuth } = useAuth(); // ✅ Grab checkAuth from context
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -38,7 +40,7 @@ export default function TenantCreator() {
 
   async function handleAddTenant() {
     try {
-      await fetch("/api/tenants/new", {
+      await fetch(`${API_BASE_URL}/tenants/new`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -48,7 +50,7 @@ export default function TenantCreator() {
       setFormData({ name: "", tenant_id: "", client_id: "", shared_secret: "" });
 
       // ⚡ After adding, re-check auth to refresh tenants list in context
-      await checkAuth(); // <- assuming you import `checkAuth` from useAuth
+      await checkAuth();
     } catch (error) {
       console.error("Failed to add tenant", error);
     }

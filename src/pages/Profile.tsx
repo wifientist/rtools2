@@ -37,7 +37,7 @@ const Profile = () => {
 
         const fetchCompany = async () => {
             try {
-                const response = await fetch("/api/companies/my", {
+                const response = await fetch(`${API_BASE_URL}/companies/my`, {
                     method: "GET",
                     credentials: "include",
                 });

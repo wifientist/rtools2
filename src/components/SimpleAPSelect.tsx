@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Search, Check, X } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext'; 
+import { useAuth } from '@/context/AuthContext';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 const SimpleAPSelect = ({ sourceId, destinationId, sourceVenueData, destinationVenueData, onClose, onConfirm }) => {
   const { activeTenantId, secondaryTenantId } = useAuth();
@@ -29,8 +31,8 @@ const SimpleAPSelect = ({ sourceId, destinationId, sourceVenueData, destinationV
       
       try {
         const [sourceResponse, destinationResponse] = await Promise.all([
-          fetch(`/api/r1/${activeTenantId}/tenant/${sourceId}/aps`),
-          fetch(`/api/r1/${secondaryTenantId}/tenant/${destinationId}/aps`)
+          fetch(`${API_BASE_URL}/r1/${activeTenantId}/tenant/${sourceId}/aps`),
+          fetch(`${API_BASE_URL}/r1/${secondaryTenantId}/tenant/${destinationId}/aps`)
         ]);
 
         if (!sourceResponse.ok || !destinationResponse.ok) {
