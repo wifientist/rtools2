@@ -8,7 +8,7 @@ import traceback
 
 from database import engine
 import models
-from routers import status, users, auth, protected, company, tenants, opt43, admin_companies, token_management
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, smartzone, migrate
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -48,7 +48,8 @@ models.user.Base.metadata.create_all(bind=engine)
 app.include_router(status.router)
 app.include_router(opt43.router)
 app.include_router(users.router)
-app.include_router(tenants.router)
+# app.include_router(tenants.router)  # DEPRECATED - Removed after migration to Controllers
+app.include_router(controllers.router, tags=["Controllers"])  # NEW - Controller management
 app.include_router(auth.router, tags=["Authentication"])
 app.include_router(token_management.router, tags=["Token Management"])
 app.include_router(company.router)
@@ -71,6 +72,12 @@ app.include_router(dynamic_fe_router)
 
 # FER1AGG EC Router - new aggregation endpoint without tenant_pk dependency
 app.include_router(feagg_ec_router)
+
+# SmartZone Router - for SZ controller management and migration
+app.include_router(smartzone.router, tags=["SmartZone"])
+
+# Migration Router - for SZ→R1 and R1→R1 migrations
+app.include_router(migrate.router, tags=["Migration"])
 
 # Debug: Print all routes to check for conflicts
 print("=== ALL ROUTES ===")

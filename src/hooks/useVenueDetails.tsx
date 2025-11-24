@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext"; // Update path as needed
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function useVenueDetails(sourceEcId?: string | number, destinationEcId?: string | number) {
-  const { activeTenantId, secondaryTenantId } = useAuth();
+  const { activeControllerId, secondaryControllerId } = useAuth();
 
   const [sourceVenueData, setSourceVenueData] = useState([]);
   const [destinationVenueData, setDestinationVenueData] = useState([]);
@@ -28,8 +28,8 @@ export function useVenueDetails(sourceEcId?: string | number, destinationEcId?: 
       setLoading(true);
       try {
         const [activeRes, secondaryRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/r1/${activeTenantId}/venues/${sourceEcId}`, { credentials: "include" }),
-            fetch(`${API_BASE_URL}/r1/${secondaryTenantId}/venues/${destinationEcId}`, { credentials: "include" })
+            fetch(`${API_BASE_URL}/r1/${activeControllerId}/venues/${sourceEcId}`, { credentials: "include" }),
+            fetch(`${API_BASE_URL}/r1/${secondaryControllerId}/venues/${destinationEcId}`, { credentials: "include" })
         ]);
         const [activeJson, secondaryJson] = await Promise.all([
           activeRes.json(),

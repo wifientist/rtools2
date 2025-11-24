@@ -16,9 +16,10 @@ import Signup from "@/pages/Signup";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Super from "@/pages/Super";
-import Tenants from "@/pages/Tenants";
+import Controllers from "@/pages/Controllers";
 import Diff from "@/pages/Diff";
 import Migrate from "@/pages/Migrate";
+import MigrateSzToR1 from "@/pages/MigrateSzToR1";
 import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
 import TestCalls from "@/pages/TestCalls";
@@ -45,10 +46,11 @@ const App = () => {
           <Route path="/super" element={<AdminRoute element={<Super />} />} />
           <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
           <Route path="/users" element={<AdminRoute element={<Users />} />} />
-          <Route path="/tenants" element={<Tenants />} />
+          <Route path="/controllers" element={<Controllers />} />
           <Route path="/diff" element={<BetaRoute element={<Diff />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/migrate" element={<Migrate />} />
+          <Route path="/migrate-sz-to-r1" element={<MigrateSzToR1 />} />
           <Route path="/snapshot" element={<Snapshot />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />

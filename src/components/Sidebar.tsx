@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Info, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi } from "lucide-react";
+import { Home, Info, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, ArrowLeftRight } from "lucide-react";
 import { useState } from "react";
 
 const Sidebar = () => {
@@ -10,20 +10,18 @@ const Sidebar = () => {
   const navItems = [
     { to: "/", icon: <Home size={22} />, label: "Dashboard", requiresAuth: false },
     { to: "/about", icon: <Info size={22} />, label: "About", requiresAuth: false },
-    { to: "/tenants", icon: <Users size={22} />, label: "Tenants", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/controllers", icon: <Users size={22} />, label: "Controllers", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/snapshot", icon: <Camera size={22} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
     { to: "/per-unit-ssid", icon: <Wifi size={22} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-    { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate", requiresAuth: true, rolesAllowed: ["user","admin"] },
-    { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin"] },
+    { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+    { to: "/migrate-sz-to-r1", icon: <ArrowLeftRight size={22} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+    { to: "/admin", icon: <Settings size={22} />, label: "Admin", requiresAuth: true, rolesAllowed: ["admin","super"] },
+    { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin","super"] },
     { to: "/super", icon: <Settings size={22} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
-    { to: "/testcalls", icon: <BookCheck size={22} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["admin"] },
+    { to: "/testcalls", icon: <BookCheck size={22} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["admin","super"] },
     { to: "/option43", icon: <Camera size={22} />, label: "Option 43 Calculator", requiresAuth: false },
   ];
-
-  if (userRole === "admin") {
-    navItems.push({ to: "/admin", icon: <Settings size={22} />, label: "Admin", requiresAuth: true });
-  }
 
   function canAccess(
     itemRoles: string[] | undefined,

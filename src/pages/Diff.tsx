@@ -9,7 +9,7 @@ import ECComparisonTable from "@/components/ECComparisonTable";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 function Diff() {
-  const { activeTenantId, secondaryTenantId } = useAuth();
+  const { activeControllerId, secondaryControllerId } = useAuth();
   //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
   const [selectedSource, setSelectedSource] = useState(null);
   const [selectedDestination, setSelectedDestination] = useState(null);
@@ -28,8 +28,8 @@ function Diff() {
       if (selectedSource && selectedDestination && selectedSource !== selectedDestination) {
         try {
           const [srcRes, destRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/fer1agg/${activeTenantId}/tenant/fulldetails?tenant_id=${selectedSource}`),
-            fetch(`${API_BASE_URL}/fer1agg/${secondaryTenantId}/tenant/fulldetails?tenant_id=${selectedDestination}`),
+            fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/tenant/fulldetails?tenant_id=${selectedSource}`),
+            fetch(`${API_BASE_URL}/fer1agg/${secondaryControllerId}/tenant/fulldetails?tenant_id=${selectedDestination}`),
           ]);
           const [srcData, destData] = await Promise.all([
             srcRes.json(),

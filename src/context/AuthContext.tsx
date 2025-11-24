@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -8,16 +8,18 @@ interface AuthContextType {
   userRole: string | null;
   userId: number | null;
   betaEnabled: boolean;
-  activeTenantId: number | null;
-  activeTenantName: string | null;
-  secondaryTenantId: number | null;
-  secondaryTenantName: string | null;
-  tenants: { id: number; name: string; tenant_id: string; ec_type: string | null }[];
+  activeControllerId: number | null;
+  activeControllerName: string | null;
+  activeControllerType: string | null;
+  secondaryControllerId: number | null;
+  secondaryControllerName: string | null;
+  secondaryControllerType: string | null;
+  controllers: { id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[];
   roleHierarchy: { [key: string]: number };
-  setActiveTenantId: (id: number) => void;
-  setActiveTenantName: (name: string) => void;
-  setSecondaryTenantId: (id: number) => void;
-  setSecondaryTenantName: (name: string) => void;
+  setActiveControllerId: (id: number) => void;
+  setActiveControllerName: (name: string) => void;
+  setSecondaryControllerId: (id: number) => void;
+  setSecondaryControllerName: (name: string) => void;
   setBetaEnabled: (enabled: boolean) => void;
   checkAuth: () => Promise<void>;
   logout: () => void;
@@ -41,11 +43,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
-  const [tenants, setTenants] = useState<{ id: number; name: string; tenant_id: string; ec_type: string | null }[]>([]);
-  const [activeTenantId, setActiveTenantId] = useState<number | null>(null);
-  const [activeTenantName, setActiveTenantName] = useState<string | null>(null);
-  const [secondaryTenantId, setSecondaryTenantId] = useState<number | null>(null);
-  const [secondaryTenantName, setSecondaryTenantName] = useState<string | null>(null);
+  const [controllers, setControllers] = useState<{ id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[]>([]);
+  const [activeControllerId, setActiveControllerId] = useState<number | null>(null);
+  const [activeControllerName, setActiveControllerName] = useState<string | null>(null);
+  const [secondaryControllerId, setSecondaryControllerId] = useState<number | null>(null);
+  const [secondaryControllerName, setSecondaryControllerName] = useState<string | null>(null);
   const [roleHierarchy, setRoleHierarchy] = useState<{ [key: string]: number }>({});
 
 
@@ -99,47 +101,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUserRole(null);
         setUserId(null);
         setBetaEnabled(false);
-        setTenants([]); // 🔥 clear tenants on auth fail
-        setActiveTenantId(null);
-        setActiveTenantName(null);
-        setSecondaryTenantId(null);
-        setSecondaryTenantName(null);
+        setControllers([]);
+        setActiveControllerId(null);
+        setActiveControllerName(null);
+        setSecondaryControllerId(null);
+        setSecondaryControllerName(null);
         setRoleHierarchy({});
         return;
       }
 
       const data = await response.json();
-      //console.log("Auth check success:", data);
 
       setIsAuthenticated(true);
       setUserRole(data.role);
       setUserId(data.id);
       setBetaEnabled(data.beta_enabled || false);
-      setActiveTenantId(data.active_tenant_id || null);
-      setSecondaryTenantId(data.secondary_tenant_id || null);
-      //console.log("Updated activeTenantId to", data.active_tenant_id);
-      //console.log("Updated secondaryTenantId to", data.secondary_tenant_id);
-      
-      // 🔥 New: Fetch tenants when auth succeeds
-      const tenantsResponse = await fetch(`${API_BASE_URL}/tenants/mine`, {
+      setActiveControllerId(data.active_controller_id || null);
+      setSecondaryControllerId(data.secondary_controller_id || null);
+
+      // Fetch controllers when auth succeeds
+      const controllersResponse = await fetch(`${API_BASE_URL}/controllers/mine`, {
         method: "GET",
         credentials: "include",
         headers: {
           "Cache-Control": "no-store",
         },
       });
-      if (tenantsResponse.ok) {
-        const tenantsData = await tenantsResponse.json();
-        setTenants(tenantsData); // [{ id, instance_name }]
-        const activeTenant = tenantsData.find(t => t.id === data.active_tenant_id);
-        setActiveTenantName(activeTenant ? activeTenant.name : null);
-        const secondaryTenant = tenantsData.find(ts => ts.id === data.secondary_tenant_id);
-        setSecondaryTenantName(secondaryTenant ? secondaryTenant.name : null);
+      if (controllersResponse.ok) {
+        const controllersData = await controllersResponse.json();
+        setControllers(controllersData);
+        const activeController = controllersData.find((c: any) => c.id === data.active_controller_id);
+        setActiveControllerName(activeController ? activeController.name : null);
+        const secondaryController = controllersData.find((c: any) => c.id === data.secondary_controller_id);
+        setSecondaryControllerName(secondaryController ? secondaryController.name : null);
       } else {
-        console.error("Failed to fetch tenants");
-        setTenants([]);
-        setActiveTenantName(null); // Clear name if tenant fetch failed
-        setSecondaryTenantName(null); // Clear name if tenant fetch failed
+        console.error("Failed to fetch controllers");
+        setControllers([]);
+        setActiveControllerName(null);
+        setSecondaryControllerName(null);
       }
 
       const rolesResponse = await fetch(`${API_BASE_URL}/auth/roles`);
@@ -158,11 +157,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserRole(null);
       setUserId(null);
       setBetaEnabled(false);
-      setActiveTenantId(null);
-      setActiveTenantName(null);
-      setSecondaryTenantId(null);
-      setSecondaryTenantName(null);
-      setTenants([]);
+      setActiveControllerId(null);
+      setActiveControllerName(null);
+      setSecondaryControllerId(null);
+      setSecondaryControllerName(null);
+      setControllers([]);
       setRoleHierarchy({});
 
     }
@@ -191,16 +190,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         credentials: "include",
       });
 
-      // setIsAuthenticated(false);
-      // setUserRole(null);
-      // setUserId(null);
+      await checkAuth();
 
-      await checkAuth();      
-      
     } catch (error) {
       console.error("Logout failed", error);
     }
   };
+
+  // Compute controller types from controllers array
+  const activeControllerType = activeControllerId
+    ? controllers.find(c => c.id === activeControllerId)?.controller_type || null
+    : null;
+
+  const secondaryControllerType = secondaryControllerId
+    ? controllers.find(c => c.id === secondaryControllerId)?.controller_type || null
+    : null;
 
   return (
     <AuthContext.Provider value={{
@@ -208,16 +212,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       userId,
       userRole,
       betaEnabled,
-      activeTenantId,
-      activeTenantName,
-      secondaryTenantId,
-      secondaryTenantName,
-      tenants,
+      activeControllerId,
+      activeControllerName,
+      activeControllerType,
+      secondaryControllerId,
+      secondaryControllerName,
+      secondaryControllerType,
+      controllers,
       roleHierarchy,
-      setActiveTenantId,
-      setActiveTenantName,
-      setSecondaryTenantId,
-      setSecondaryTenantName,
+      setActiveControllerId,
+      setActiveControllerName,
+      setSecondaryControllerId,
+      setSecondaryControllerName,
       setBetaEnabled,
       checkAuth,
       logout

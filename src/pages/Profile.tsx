@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const Profile = () => {
-    const { userId, userRole, activeTenantId, activeTenantName, tenants, betaEnabled, setBetaEnabled, checkAuth } = useAuth(); // ✅ Moved here inside Profile()
+    const { userRole, betaEnabled, setBetaEnabled, checkAuth } = useAuth();
 
     const [user, setUser] = useState<{ email: string; role: string; beta_enabled: boolean } | null>(null);
     const [company, setCompany] = useState<{ id: number; name: string } | null>(null);

@@ -32,7 +32,7 @@ subrouters = [msp_router, venues_router, networks_router, tenant_router]
 #     return router
 
 def create_dynamic_fer1_router() -> APIRouter:
-    prefix = "/fer1agg/{tenant_pk}"
+    prefix = "/fer1agg/{controller_id}"
     router = APIRouter(prefix=prefix)
 
     for sub in subrouters:
@@ -43,7 +43,7 @@ def create_dynamic_fer1_router() -> APIRouter:
 # fe_router_a = create_fer1_router("a")  # /fer1agga
 # fe_router_b = create_fer1_router("b")  # /fer1aggb
 
-dynamic_fe_router = create_dynamic_fer1_router()  # /fer1agg/{tenant_pk}
+dynamic_fe_router = create_dynamic_fer1_router()  # /fer1agg/{controller_id}
 
 feagg_ec_router = APIRouter(prefix="/fer1agg")
 feagg_ec_router.include_router(ec_router)

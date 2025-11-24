@@ -9,7 +9,7 @@ import ReactJson from 'react-json-view';
 
 
 function Snapshot() {
-    const { activeTenantName } = useAuth();
+    const { activeControllerName } = useAuth();
     const { data, loading, error } = useMspDetails();
     //const { ecData, loading: loadingEcs, error: errorEcs } = useMspEcs();    
     //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
@@ -19,7 +19,7 @@ function Snapshot() {
 
     return (
         <div className="p-4">
-            <h1 className="text-2xl font-bold mb-4">MSP Details {activeTenantName ? `for ${activeTenantName}` : ""}</h1>
+            <h1 className="text-2xl font-bold mb-4">MSP Details {activeControllerName ? `for ${activeControllerName}` : ""}</h1>
                 
             <section className="mb-4">
                 <h2 className="font-semibold">End Customers</h2>

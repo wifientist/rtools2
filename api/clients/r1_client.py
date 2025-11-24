@@ -5,62 +5,82 @@ from sqlalchemy.orm import Session
 from dependencies import get_db
 from dependencies import get_current_user
 from models.user import User
-from models.tenant import Tenant
+from models.controller import Controller
 from r1api.client import R1Client
 from utils.encryption import decrypt_value
 
-def create_r1_client_from_tenant(tenant_pk: int, db: Session) -> R1Client:
-    """Create a fresh R1Client using credentials from a Tenant record."""
 
-    print(f"create_r1_client_from_tenant - Fetching tenant with primary key: {tenant_pk}")
+def create_r1_client_from_controller(controller_id: int, db: Session) -> R1Client:
+    """
+    Create a fresh R1Client using credentials from a Controller record.
+    Only works for RuckusONE controllers.
 
-    # Note: Using tenant_pk (primary key) to avoid confusion with tenant_id that R1 uses.
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_pk).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail=f"Tenant with ID {tenant_pk} not found.")
+    Args:
+        controller_id: Database primary key of the controller
+        db: Database session
+
+    Returns:
+        R1Client configured with controller credentials
+
+    Raises:
+        HTTPException: If controller not found or not RuckusONE type
+    """
+    print(f"create_r1_client_from_controller - Fetching controller with ID: {controller_id}")
+
+    controller = db.query(Controller).filter(Controller.id == controller_id).first()
+    if not controller:
+        raise HTTPException(status_code=404, detail=f"Controller with ID {controller_id} not found.")
+
+    # Verify this is a RuckusONE controller
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot create R1 client for {controller.controller_type} controller. Only RuckusONE controllers supported."
+        )
 
     try:
-        decrypted_client_id = decrypt_value(tenant.encrypted_client_id)
-        decrypted_shared_secret = decrypt_value(tenant.encrypted_shared_secret)
+        decrypted_client_id = controller.get_r1_client_id()
+        decrypted_shared_secret = controller.get_r1_shared_secret()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error decrypting tenant credentials: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error decrypting controller credentials: {str(e)}")
 
-    region = tenant.region if hasattr(tenant, "region") and tenant.region else "US"  # Optional: if you add region later
+    region = controller.r1_region if controller.r1_region else "NA"
 
-    ec_type = tenant.ec_type if hasattr(tenant, "ec_type") else None 
-
+    # R1Client still uses "tenant_id" because that's R1's API terminology
+    # We're passing R1's tenant identifier, not our controller ID
     return R1Client(
-        tenant_id=tenant.tenant_id,
+        tenant_id=controller.r1_tenant_id,  # R1's tenant identifier
         client_id=decrypted_client_id,
         shared_secret=decrypted_shared_secret,
         region=region,
-        ec_type=ec_type,
+        ec_type=controller.controller_subtype,  # "MSP" or "EC"
     )
 
 def get_r1_active_client(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get an R1Client using the user's active tenant."""
-    print("get_r1_client - Fetching R1Client for user:", current_user.email)
-    tenant_id = current_user.active_tenant_id
-    if tenant_id is None:
-        raise HTTPException(status_code=400, detail="No active tenant selected.")
+    """Get an R1Client using the user's active controller."""
+    print("get_r1_active_client - Fetching R1Client for user:", current_user.email)
+    controller_id = current_user.active_controller_id
+    if controller_id is None:
+        raise HTTPException(status_code=400, detail="No active controller selected.")
 
-    return create_r1_client_from_tenant(tenant_id, db)
+    return create_r1_client_from_controller(controller_id, db)
+
 
 def get_r1_clients(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Get both active and secondary R1Clients for backward compatibility."""
-    print(" %%%%%%%%%%%% get_r1_CLIENTS - Fetching R1Clients for user:", current_user.email)
-    print(f"Active Tenant ID: {current_user.active_tenant_id}")
-    print(f"Secondary Tenant ID: {current_user.secondary_tenant_id}")
-    active = create_r1_client_from_tenant(current_user.active_tenant_id, db) if current_user.active_tenant_id else None
-    secondary = create_r1_client_from_tenant(current_user.secondary_tenant_id, db) if current_user.secondary_tenant_id else None
-    print(f"Active Tenant R1Client: {active}")
-    print(f"Secondary Tenant R1Client: {secondary}")
+    print("get_r1_clients - Fetching R1Clients for user:", current_user.email)
+    print(f"Active Controller ID: {current_user.active_controller_id}")
+    print(f"Secondary Controller ID: {current_user.secondary_controller_id}")
+    active = create_r1_client_from_controller(current_user.active_controller_id, db) if current_user.active_controller_id else None
+    secondary = create_r1_client_from_controller(current_user.secondary_controller_id, db) if current_user.secondary_controller_id else None
+    print(f"Active Controller R1Client: {active}")
+    print(f"Secondary Controller R1Client: {secondary}")
     return {"active": active, "secondary": secondary}
 
 # def validate_tenant_access(tenant_id: str, user: User, db: Session) -> Tenant:
@@ -98,55 +118,85 @@ def get_r1_clients(
     
 #     return tenant
 
-def validate_tenant_access(tenant_id: str, user: User, db: Session) -> Tenant:
+def validate_controller_access(controller_id: int, user: User, db: Session) -> Controller:
     """
-    Validate that the tenant exists and the user has access to it.
-    Returns the Tenant object if valid, raises HTTPException otherwise.
+    Validate that the controller exists and the user has access to it.
+    Returns the Controller object if valid, raises HTTPException otherwise.
+
+    Args:
+        controller_id: Database primary key of the controller
+        user: Current user
+        db: Database session
+
+    Returns:
+        Controller object if access is valid
+
+    Raises:
+        HTTPException: 404 if not found, 403 if access denied
     """
-    # Single query: find tenant that belongs to this user
-    tenant = db.query(Tenant).filter(
-        Tenant.id == tenant_id,  # Note: using tenant_id (the R1 identifier)
-        Tenant.user_id == user.id
+    # Single query: find controller that belongs to this user
+    controller = db.query(Controller).filter(
+        Controller.id == controller_id,
+        Controller.user_id == user.id
     ).first()
-    
-    if not tenant:
-        # Check if tenant exists at all to give appropriate error message
-        tenant_exists = db.query(Tenant).filter(Tenant.id == tenant_id).first()
-        if not tenant_exists:
-            raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+
+    if not controller:
+        # Check if controller exists at all to give appropriate error message
+        controller_exists = db.query(Controller).filter(Controller.id == controller_id).first()
+        if not controller_exists:
+            raise HTTPException(status_code=404, detail=f"Controller with ID {controller_id} not found.")
         else:
-            raise HTTPException(status_code=403, detail=f"Access denied to tenant '{tenant_id}'.")
-    
-    return tenant
+            raise HTTPException(status_code=403, detail=f"Access denied to controller {controller_id}.")
+
+    return controller
+
 
 def get_dynamic_r1_client(
-    tenant_pk: str = Path(..., description="Tenant PK"),
+    controller_id: int = Path(..., description="Controller ID"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> R1Client:
     """
-    Get an R1Client for a specific tenant ID with proper authorization checks.
+    Get an R1Client for a specific controller ID with proper authorization checks.
     This is the main dependency for the new dynamic routing system.
+
+    Args:
+        controller_id: Database primary key of the controller
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        R1Client configured for the controller
+
+    Raises:
+        HTTPException: If access denied, not found, or authentication fails
     """
-    print(f"get_dynamic_r1_client - Fetching R1Client for tenant: {tenant_pk}, user: {current_user.email}")
-    
-    # Validate tenant access
-    tenant = validate_tenant_access(tenant_pk, current_user, db)
-    
+    print(f"get_dynamic_r1_client - Fetching R1Client for controller: {controller_id}, user: {current_user.email}")
+
+    # Validate controller access
+    controller = validate_controller_access(controller_id, current_user, db)
+
+    # Verify it's a RuckusONE controller
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot create R1 client for {controller.controller_type} controller."
+        )
+
     # Create and return the R1Client
     try:
-        client = create_r1_client_from_tenant(tenant.id, db)  # Using primary key
-        
+        client = create_r1_client_from_controller(controller.id, db)
+
         # Check if authentication failed
         if getattr(client, "auth_failed", False):
             raise HTTPException(status_code=401, detail="R1Client authentication failed")
-        
-        print(f"Successfully created R1Client for tenant: {tenant_pk}")
+
+        print(f"Successfully created R1Client for controller: {controller_id}")
         return client
-        
+
     except Exception as e:
-        print(f"Error creating R1Client for tenant {tenant_pk}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create R1Client for tenant '{tenant_pk}': {str(e)}")
+        print(f"Error creating R1Client for controller {controller_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create R1Client for controller {controller_id}: {str(e)}")
 
 # Legacy support functions (kept for backward compatibility)
 # def get_scoped_r1_client(selector: str):
@@ -178,24 +228,25 @@ def get_dynamic_r1_client(
 
 #     return client
 
-def get_tenant_aware_r1_client(
-    request: Request, 
-    db: Session = Depends(get_db), 
+def get_controller_aware_r1_client(
+    request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)) -> R1Client:
-
     """
-    Extract tenant_id from the request path and return appropriate R1Client.
+    Extract controller_id from the request path and return appropriate R1Client.
     This allows existing endpoints to work without modification.
+
+    Path format: /r1/{controller_id}/...
     """
     path_parts = request.url.path.strip('/').split('/')
-    
-    # Find tenant_id in path (should be after 'r1')
+
+    # Find controller_id in path (should be after 'r1')
     try:
         r1_index = path_parts.index('r1')
         if r1_index + 1 < len(path_parts):
-            tenant_id = path_parts[r1_index + 1]
-            return get_dynamic_r1_client(tenant_id, current_user, db)
+            controller_id = int(path_parts[r1_index + 1])
+            return get_dynamic_r1_client(controller_id, current_user, db)
     except (ValueError, IndexError):
         pass
-    
-    raise HTTPException(status_code=400, detail="Could not extract tenant_id from request path")
+
+    raise HTTPException(status_code=400, detail="Could not extract controller_id from request path")

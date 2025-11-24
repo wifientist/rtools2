@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from models.user import User
 
 # from clients.r1_client import get_scoped_r1_client
-from clients.r1_client import create_r1_client_from_tenant
+from clients.r1_client import create_r1_client_from_controller
 from r1api.client import R1Client
 
 from dependencies import get_db
@@ -25,8 +25,8 @@ async def get_active_ec(
     """    
     # r1_client = await get_scoped_r1_client("a")
     # ecs = await r1_client.msp.get_msp_ecs()
-    tenant_id = current_user.active_tenant_id
-    r1_client = create_r1_client_from_tenant(tenant_id, db)
+    controller_id = current_user.active_controller_id
+    r1_client = create_r1_client_from_controller(controller_id, db)
 
     ecs = await r1_client.msp.get_msp_ecs()
     if not ecs:
@@ -55,8 +55,8 @@ async def get_secondary_ec(
     """    
     # r1_client = await get_scoped_r1_client("a")
     # ecs = await r1_client.msp.get_msp_ecs()
-    tenant_id = current_user.secondary_tenant_id
-    r1_client = create_r1_client_from_tenant(tenant_id, db)
+    controller_id = current_user.secondary_controller_id
+    r1_client = create_r1_client_from_controller(controller_id, db)
 
     ecs = await r1_client.msp.get_msp_ecs()
     if not ecs:
@@ -80,11 +80,11 @@ async def get_active_and_secondary_ecs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ): 
-    async def build_ec_response(tenant_id: int) -> dict:
-        if not tenant_id:
+    async def build_ec_response(controller_id: int) -> dict:
+        if not controller_id:
             return None
 
-        client = create_r1_client_from_tenant(tenant_id, db)
+        client = create_r1_client_from_controller(controller_id, db)
 
         result = {
             "ecs": None,
@@ -103,8 +103,8 @@ async def get_active_and_secondary_ecs(
 
         return result
 
-    active_data = await build_ec_response(current_user.active_tenant_id)
-    secondary_data = await build_ec_response(current_user.secondary_tenant_id)
+    active_data = await build_ec_response(current_user.active_controller_id)
+    secondary_data = await build_ec_response(current_user.secondary_controller_id)
 
     print("Active EC Data:", active_data)
     print("Secondary EC Data:", secondary_data)

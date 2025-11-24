@@ -4,14 +4,14 @@ import { useAuth } from "@/context/AuthContext"; // Update path as needed
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function useMspDetails() {
-    const { activeTenantId } = useAuth();
+    const { activeControllerId } = useAuth();
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!activeTenantId) {
-            setError("No active tenant selected");
+        if (!activeControllerId) {
+            setError("No active controller selected");
             setLoading(false);
             return;
         }
@@ -19,7 +19,7 @@ export function useMspDetails() {
         const controller = new AbortController();
         setLoading(true);
 
-        fetch(`${API_BASE_URL}/fer1agg/${activeTenantId}/msp/fulldetails`, {
+        fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/msp/fulldetails`, {
         //fetch(`${API_BASE_URL}/fer1agga/msp/fulldetails`, {
                 method: "GET",
             credentials: "include",
@@ -43,7 +43,7 @@ export function useMspDetails() {
             });
 
         return () => controller.abort();
-    }, [activeTenantId]);
+    }, [activeControllerId]);
 
     return { data, loading, error };
 }

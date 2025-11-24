@@ -4,9 +4,9 @@ import { useAuth } from "@/context/AuthContext";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 function TestCalls() {
-  const { activeTenantId, secondaryTenantId } = useAuth();
+  const { activeControllerId, secondaryControllerId } = useAuth();
 
-  const [endpoint, setEndpoint] = useState(`/r1/${activeTenantId}/tenant/self`);
+  const [endpoint, setEndpoint] = useState(`/r1/${activeControllerId}/tenant/self`);
   const [params, setParams] = useState("");
   const [response, setResponse] = useState(null);
   const [error, setError] = useState(null);

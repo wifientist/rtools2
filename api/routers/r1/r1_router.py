@@ -23,20 +23,24 @@ subrouters = [msp_router, venues_router, networks_router, tenant_router]
 
 def create_dynamic_r1_router() -> APIRouter:
     """
-    Create the new dynamic router that uses tenant_id in the path.
-    Routes will be: /r1/{tenant_pk}/msp/..., /r1/{tenant_id}/venues/..., etc.
+    Create the new dynamic router that uses controller_id in the path.
+    Routes will be: /r1/{controller_id}/msp/..., /r1/{controller_id}/venues/..., etc.
+
+    Note: controller_id is the database primary key for the Controller model.
+    The R1Client will be created using the controller's R1 tenant credentials.
     """
-    router = APIRouter(prefix="/r1/{tenant_pk}")
-    
+    router = APIRouter(prefix="/r1/{controller_id}")
+
     # Add the dynamic R1Client dependency to all sub-routers
+    # This validates controller access and creates authenticated R1Client
     for sub in subrouters:
         router.include_router(sub, dependencies=[Depends(get_dynamic_r1_client)])
-    
+
     return router
 
-# Legacy routers (for backward compatibility)
+# Legacy routers (for backward compatibility) - DEPRECATED
 # router_a = create_r1_router("a")  # /r1a
 # router_b = create_r1_router("b")  # /r1b
 
 # New dynamic router
-dynamic_router = create_dynamic_r1_router()  # /r1/{tenant_pk}
+dynamic_router = create_dynamic_r1_router()  # /r1/{controller_id}

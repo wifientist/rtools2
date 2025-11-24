@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext"; // Update path as needed
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function useTenantDetails(tenantId: number | null) {
-    const { activeTenantId } = useAuth();
+    const { activeControllerId } = useAuth();
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
@@ -19,8 +19,8 @@ export function useTenantDetails(tenantId: number | null) {
         const controller = new AbortController();
         setLoading(true);
 
-        //fetch(`${API_BASE_URL}/fer1agg/msp/fulldetails/${activeTenantId}`, {
-        fetch(`${API_BASE_URL}/fer1agg/${activeTenantId}/msp/fulldetails`, {
+        //fetch(`${API_BASE_URL}/fer1agg/msp/fulldetails/${activeControllerId}`, {
+        fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/msp/fulldetails`, {
                 method: "GET",
             credentials: "include",
             signal: controller.signal
@@ -43,7 +43,7 @@ export function useTenantDetails(tenantId: number | null) {
             });
 
         return () => controller.abort();
-    }, [activeTenantId]);
+    }, [activeControllerId]);
 
     return { data, loading, error };
 }

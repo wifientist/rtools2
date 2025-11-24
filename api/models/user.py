@@ -29,13 +29,15 @@ class User(Base):
     # 🔹 Add ForeignKey to link Users to Companies
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, default=-1)
 
-    # 🔹 Track the active R1 instance
-    active_tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
-    secondary_tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    # 🔹 Track the active controller (RuckusONE or SmartZone)
+    active_controller_id = Column(Integer, ForeignKey("controllers.id"), nullable=True)
+    secondary_controller_id = Column(Integer, ForeignKey("controllers.id"), nullable=True)
 
     # Relationships
     #proposals = relationship("Proposal", back_populates="creator", cascade="all, delete")
     #bids = relationship("Bid", back_populates="bidder", cascade="all, delete")
     company = relationship("Company", back_populates="users")
-    tenants = relationship("Tenant", back_populates="user", cascade="all, delete", foreign_keys="[Tenant.user_id]")
+    controllers = relationship("Controller", back_populates="user", cascade="all, delete", foreign_keys="[Controller.user_id]")
+    active_controller = relationship("Controller", foreign_keys=[active_controller_id], post_update=True)
+    secondary_controller = relationship("Controller", foreign_keys=[secondary_controller_id], post_update=True)
 

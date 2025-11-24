@@ -32,7 +32,8 @@ if config.config_file_name is not None:
 from database import Base
 from models.user import User
 from models.company import Company
-from models.tenant import Tenant
+from models.controller import Controller  # NEW: Replaces Tenant
+# from models.tenant import Tenant  # DEPRECATED: Migrated to Controller
 from models.pending_signup import PendingSignupOtp
 target_metadata = Base.metadata
 

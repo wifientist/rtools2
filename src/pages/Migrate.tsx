@@ -10,7 +10,7 @@ import VenueSelectPanel from "@/components/VenueSelectPanel";
 import SimpleAPSelect from "@/components/SimpleAPSelect";
 
 function Migrate() {
-    const { activeTenantName } = useAuth();
+    const { activeControllerName } = useAuth();
     //const { ecData, loading: loadingEcs, error: errorEcs } = useMspEcs();
     //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
     //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualEc();

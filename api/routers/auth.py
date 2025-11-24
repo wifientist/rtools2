@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from models.user import User
 from models.company import Company
-from models.tenant import Tenant
+from models.controller import Controller
 from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema
 from security import create_access_token, verify_access_token, create_user_token, is_production
 from dependencies import get_db, get_current_user
@@ -165,7 +165,7 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
     return response
 
 @router.get("/status")
-def auth_status(request: Request):
+def auth_status(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("session")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -174,18 +174,38 @@ def auth_status(request: Request):
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+    # Get user to fetch controller information
+    user_id = payload.get("id")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    # Fetch controller names
+    active_controller_name = None
+    secondary_controller_name = None
+
+    if user.active_controller_id:
+        active_controller = db.query(Controller).filter(Controller.id == user.active_controller_id).first()
+        if active_controller:
+            active_controller_name = active_controller.name
+
+    if user.secondary_controller_id:
+        secondary_controller = db.query(Controller).filter(Controller.id == user.secondary_controller_id).first()
+        if secondary_controller:
+            secondary_controller_name = secondary_controller.name
+
     return JSONResponse(content={
         "message": "Authenticated",
         "user": payload.get("sub"),
-        "id":payload.get("id"),
+        "id": payload.get("id"),
         "role": payload.get("role"),
         "company_id": payload.get("company_id"),
         "beta_enabled": payload.get("beta_enabled", False),
-        "active_tenant_id": payload.get("active_tenant_id"),
-        "active_tenant_name": payload.get("active_tenant_name"),
-        "secondary_tenant_id": payload.get("secondary_tenant_id"),
-        "secondary_tenant_name": payload.get("secondary_tenant_name"),
-        })
+        "active_controller_id": user.active_controller_id,
+        "active_controller_name": active_controller_name,
+        "secondary_controller_id": user.secondary_controller_id,
+        "secondary_controller_name": secondary_controller_name,
+    })
 
 
 ### 🚀 Signup Route

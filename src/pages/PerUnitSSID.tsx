@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 function PerUnitSSID() {
-  const { activeTenantId, secondaryTenantId } = useAuth();
+  const { activeControllerId } = useAuth();
   const [csvInput, setCsvInput] = useState("");
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState<any[]>([]);
@@ -21,8 +21,8 @@ function PerUnitSSID() {
       return;
     }
 
-    if (!activeTenantId) {
-      setError("Please select an active tenant first");
+    if (!activeControllerId) {
+      setError("Please select an active controller first");
       return;
     }
 
@@ -85,14 +85,14 @@ function PerUnitSSID() {
     <div className="p-4 max-w-6xl mx-auto">
       <h2 className="text-3xl font-bold mb-4">Per-Unit SSID Configuration</h2>
 
-      {/* Tenant Info */}
+      {/* Controller Info */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
         <p className="text-sm text-gray-700">
-          <strong>Active Tenant:</strong> {activeTenantId || "None selected"}
+          <strong>Active Controller:</strong> {activeControllerId || "None selected"}
         </p>
-        {!activeTenantId && (
+        {!activeControllerId && (
           <p className="text-sm text-red-600 mt-2">
-            ⚠️ Please select an active tenant from the Tenants page before proceeding.
+            ⚠️ Please select an active controller from the Controllers page before proceeding.
           </p>
         )}
       </div>
@@ -142,9 +142,9 @@ function PerUnitSSID() {
         {/* Process Button */}
         <button
           onClick={handleProcess}
-          disabled={processing || !activeTenantId}
+          disabled={processing || !activeControllerId}
           className={`px-6 py-2 rounded font-semibold ${
-            processing || !activeTenantId
+            processing || !activeControllerId
               ? "bg-gray-400 cursor-not-allowed"
               : "bg-blue-600 hover:bg-blue-700 text-white"
           }`}
