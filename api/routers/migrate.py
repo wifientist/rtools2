@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from dependencies import get_db, get_current_user
 from models.user import User
 from models.controller import Controller
-from clients.sz_client import SmartZoneClient
+from szapi.client import SZClient
 from clients.sz_client_deps import create_sz_client_from_controller
 from clients.r1_client import create_r1_client_from_controller
 from r1api.client import R1Client

@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 from dependencies import get_db, get_current_user
 from models.user import User
 from models.controller import Controller
-from clients.sz_client import SmartZoneClient
+from szapi.client import SZClient
 
 
-def create_sz_client_from_controller(controller_id: int, db: Session) -> SmartZoneClient:
+def create_sz_client_from_controller(controller_id: int, db: Session) -> SZClient:
     """
-    Create a SmartZoneClient using credentials from a Controller record.
+    Create a SZClient using credentials from a Controller record.
     Only works for SmartZone controllers.
 
     Args:
@@ -23,7 +23,7 @@ def create_sz_client_from_controller(controller_id: int, db: Session) -> SmartZo
         db: Database session
 
     Returns:
-        SmartZoneClient configured with controller credentials
+        SZClient configured with controller credentials
 
     Raises:
         HTTPException: If controller not found or not SmartZone type
@@ -59,7 +59,7 @@ def create_sz_client_from_controller(controller_id: int, db: Session) -> SmartZo
     # Use the version field as API version (e.g., v11_1, v12_0, v13_0)
     api_version = controller.version if controller.version else "v12_0"
 
-    return SmartZoneClient(
+    return SZClient(
         host=controller.sz_host,
         username=username,
         password=password,
@@ -107,9 +107,9 @@ def get_dynamic_sz_client(
     controller_id: int = Path(..., description="Controller ID"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> SmartZoneClient:
+) -> SZClient:
     """
-    Get a SmartZoneClient for a specific controller ID with proper authorization checks.
+    Get a SZClient for a specific controller ID with proper authorization checks.
     This is the main dependency for SmartZone endpoints.
 
     Args:
@@ -118,7 +118,7 @@ def get_dynamic_sz_client(
         db: Database session
 
     Returns:
-        SmartZoneClient configured for the controller
+        SZClient configured for the controller
 
     Raises:
         HTTPException: If access denied, not found, or authentication fails
@@ -152,16 +152,16 @@ def get_dynamic_sz_client(
 def get_sz_active_client(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> SmartZoneClient:
+) -> SZClient:
     """
-    Get a SmartZoneClient using the user's active controller.
+    Get a SZClient using the user's active controller.
 
     Args:
         current_user: Current authenticated user
         db: Database session
 
     Returns:
-        SmartZoneClient for active controller
+        SZClient for active controller
 
     Raises:
         HTTPException: If no active controller or not SmartZone type

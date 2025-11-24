@@ -25,9 +25,16 @@ export function useMspDetails() {
             credentials: "include",
             signal: controller.signal
         })
-            .then(res => {
+            .then(async res => {
                 if (!res.ok) {
-                    throw new Error(`HTTP error ${res.status}`);
+                    // Try to get detailed error message from response
+                    try {
+                        const errorData = await res.json();
+                        throw new Error(errorData.detail || `HTTP error ${res.status}`);
+                    } catch (e) {
+                        // If JSON parsing fails, use generic error
+                        throw new Error(`HTTP error ${res.status}`);
+                    }
                 }
                 return res.json();
             })

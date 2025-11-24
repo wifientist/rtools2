@@ -35,7 +35,7 @@ def create_r1_client_from_controller(controller_id: int, db: Session) -> R1Clien
     if controller.controller_type != "RuckusONE":
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot create R1 client for {controller.controller_type} controller. Only RuckusONE controllers supported."
+            detail=f"Cannot create R1 client for {controller.controller_type} controller '{controller.name}'. Only RuckusONE controllers are supported for this operation."
         )
 
     try:
@@ -180,7 +180,7 @@ def get_dynamic_r1_client(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot create R1 client for {controller.controller_type} controller."
+            detail=f"This endpoint requires a RuckusONE controller. Controller '{controller.name}' (ID: {controller_id}) is a {controller.controller_type} controller. Please select a RuckusONE controller."
         )
 
     # Create and return the R1Client

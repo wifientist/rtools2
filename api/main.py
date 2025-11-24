@@ -8,7 +8,8 @@ import traceback
 
 from database import engine
 import models
-from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, smartzone, migrate
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate
+from routers.sz.sz_router import router as sz_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -74,7 +75,7 @@ app.include_router(dynamic_fe_router)
 app.include_router(feagg_ec_router)
 
 # SmartZone Router - for SZ controller management and migration
-app.include_router(smartzone.router, tags=["SmartZone"])
+app.include_router(sz_router, tags=["SmartZone"])
 
 # Migration Router - for SZ→R1 and R1→R1 migrations
 app.include_router(migrate.router, tags=["Migration"])

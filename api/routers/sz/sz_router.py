@@ -7,7 +7,7 @@ including AP inventory queries and migration support.
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
-from clients.sz_client import SmartZoneClient
+from szapi.client import SZClient
 from clients.sz_client_deps import get_dynamic_sz_client
 
 router = APIRouter(
@@ -18,7 +18,7 @@ router = APIRouter(
 
 @router.get("/zones")
 async def get_zones(
-    sz_client: SmartZoneClient = Depends(get_dynamic_sz_client)
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
     """
     Get all zones (domains) from the SmartZone controller
@@ -28,7 +28,7 @@ async def get_zones(
     """
     try:
         async with sz_client:
-            zones = await sz_client.get_zones()
+            zones = await sz_client.zones.get_zones()
             return {
                 "status": "success",
                 "data": zones,
@@ -46,7 +46,7 @@ async def get_zone_aps(
     zone_id: str,
     page: int = 0,
     limit: int = 1000,
-    sz_client: SmartZoneClient = Depends(get_dynamic_sz_client)
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
     """
     Get all APs in a specific zone
@@ -61,7 +61,7 @@ async def get_zone_aps(
     """
     try:
         async with sz_client:
-            result = await sz_client.get_aps_by_zone(zone_id, page, limit)
+            result = await sz_client.aps.get_aps_by_zone(zone_id, page, limit)
             return {
                 "status": "success",
                 "data": result.get("list", []),
@@ -77,7 +77,7 @@ async def get_zone_aps(
 
 @router.get("/aps")
 async def get_all_aps(
-    sz_client: SmartZoneClient = Depends(get_dynamic_sz_client)
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
     """
     Get all APs across all zones in the SmartZone controller.
@@ -89,7 +89,7 @@ async def get_all_aps(
     """
     try:
         async with sz_client:
-            aps = await sz_client.get_all_aps()
+            aps = await sz_client.aps.get_all_aps()
             return {
                 "status": "success",
                 "data": aps,
@@ -105,7 +105,7 @@ async def get_all_aps(
 @router.get("/aps/{ap_mac}")
 async def get_ap_details(
     ap_mac: str,
-    sz_client: SmartZoneClient = Depends(get_dynamic_sz_client)
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
     """
     Get detailed information for a specific AP
@@ -118,7 +118,7 @@ async def get_ap_details(
     """
     try:
         async with sz_client:
-            ap = await sz_client.get_ap_details(ap_mac)
+            ap = await sz_client.aps.get_ap_details(ap_mac)
             return {
                 "status": "success",
                 "data": ap
@@ -132,7 +132,7 @@ async def get_ap_details(
 
 @router.get("/aps-formatted")
 async def get_aps_for_r1_import(
-    sz_client: SmartZoneClient = Depends(get_dynamic_sz_client)
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
     """
     Get all APs formatted for RuckusONE import.
@@ -143,11 +143,11 @@ async def get_aps_for_r1_import(
     """
     try:
         async with sz_client:
-            aps = await sz_client.get_all_aps()
+            aps = await sz_client.aps.get_all_aps()
 
             # Format each AP for R1 import
             formatted_aps = [
-                sz_client.format_ap_for_r1_import(ap)
+                sz_client.aps.format_ap_for_r1_import(ap)
                 for ap in aps
             ]
 
