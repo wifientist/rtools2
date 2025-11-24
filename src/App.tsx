@@ -18,7 +18,7 @@ import Admin from "@/pages/Admin";
 import Super from "@/pages/Super";
 import Controllers from "@/pages/Controllers";
 import Diff from "@/pages/Diff";
-import Migrate from "@/pages/Migrate";
+import MigrateR1ToR1 from "@/pages/MigrateR1ToR1";
 import MigrateSzToR1 from "@/pages/MigrateSzToR1";
 import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
@@ -49,7 +49,7 @@ const App = () => {
           <Route path="/controllers" element={<Controllers />} />
           <Route path="/diff" element={<BetaRoute element={<Diff />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
-          <Route path="/migrate" element={<Migrate />} />
+          <Route path="/migrate" element={<MigrateR1ToR1 />} />
           <Route path="/migrate-sz-to-r1" element={<MigrateSzToR1 />} />
           <Route path="/snapshot" element={<Snapshot />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />

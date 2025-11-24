@@ -128,9 +128,11 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
         )
 
     # Company is approved - proceed with user creation
+    # SECURITY: Always create new signups with user role
     new_user = User(
         email=payload.email,
-        company_id=company.id
+        company_id=company.id,
+        role=RoleEnum.user  # Explicitly set to user role for security
     )
     db.add(new_user)
     db.commit()
@@ -222,8 +224,14 @@ def signup(user_data: UserCreate, db: Session = Depends(get_db)):
     #if not company:
     #    raise HTTPException(status_code=404, detail="Invalid company ID")
 
+    # SECURITY: Public signup always creates regular users, never admin/super
+    # Explicitly ignore any role field from the request payload
+    # Explicitly set role to "user" to prevent privilege escalation
     #hashed_password = get_password_hash(user_data.password)
-    new_user = User(email=user_data.email) #, hashed_password=hashed_password)
+    new_user = User(
+        email=user_data.email,
+        role=RoleEnum.user  # Explicitly set to user role for security
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)

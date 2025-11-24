@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { AlertCircle, ArrowRight, Server, Target } from "lucide-react";
 
 //import { useDualMspEcs } from "@/hooks/useDualMspEcs";
 import { useVenueDetails } from "@/hooks/useVenueDetails";
@@ -9,8 +10,15 @@ import DoubleEc from "@/components/DoubleEc";
 import VenueSelectPanel from "@/components/VenueSelectPanel";
 import SimpleAPSelect from "@/components/SimpleAPSelect";
 
-function Migrate() {
-    const { activeControllerName } = useAuth();
+function MigrateR1ToR1() {
+    const {
+        activeControllerId,
+        activeControllerName,
+        activeControllerType,
+        secondaryControllerId,
+        secondaryControllerName,
+        secondaryControllerType
+    } = useAuth();
     //const { ecData, loading: loadingEcs, error: errorEcs } = useMspEcs();
     //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
     //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualEc();
@@ -151,16 +159,80 @@ function Migrate() {
     //if (loadingEcs) return <p className="p-4">Loading End Customers...</p>;
     //if (errorEcs) return <p className="p-4">Error loading End Customers: {errorEcs}</p>;
 
-    const isReadyToSelectAPs = selectedSource && selectedDestination && selectedSource !== selectedDestination;
+    // Validate controller types
+    const isActiveRuckusOne = activeControllerType === "RuckusONE";
+    const isSecondaryRuckusOne = secondaryControllerType === "RuckusONE";
+    const controllersValid = isActiveRuckusOne && isSecondaryRuckusOne;
+
+    const isReadyToSelectAPs = selectedSource && selectedDestination && selectedSource !== selectedDestination && controllersValid;
     const isReadyToMigrate = isReadyToSelectAPs && selectedAPs.length > 0;
 
     return (
         <div className="p-4 max-w-6xl mx-auto">
             <div className="mb-8">
-                <h2 className="text-3xl font-bold mb-2">Access Point Migration</h2>
+                <h2 className="text-3xl font-bold mb-2">RuckusONE to RuckusONE Migration</h2>
                 <p className="text-gray-600">
-                    Select source and destination End Customers, then choose specific Access Points to migrate.
+                    Migrate Access Points between RuckusONE controllers in 3 simple steps
                 </p>
+            </div>
+
+            {/* Controller Type Validation Error */}
+            {!controllersValid && (activeControllerId || secondaryControllerId) && (
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6 mb-6">
+                    <div className="flex items-start gap-3">
+                        <AlertCircle className="w-6 h-6 text-red-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                            <h3 className="text-lg font-semibold text-red-900 mb-2">
+                                Invalid Controller Configuration
+                            </h3>
+                            <p className="text-red-800 mb-3">
+                                This migration tool requires <strong>both</strong> your <strong>Active Controller</strong> and
+                                your <strong>Secondary Controller</strong> to be <strong>RuckusONE</strong> controllers.
+                            </p>
+                            <div className="bg-white rounded-lg p-4 space-y-2 text-sm">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-gray-700">Active Controller:</span>
+                                    <span className={`font-semibold ${isActiveRuckusOne ? 'text-green-600' : 'text-red-600'}`}>
+                                        {activeControllerType || 'Not selected'} {isActiveRuckusOne ? '✓' : '✗'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-gray-700">Secondary Controller:</span>
+                                    <span className={`font-semibold ${isSecondaryRuckusOne ? 'text-green-600' : 'text-red-600'}`}>
+                                        {secondaryControllerType || 'Not selected'} {isSecondaryRuckusOne ? '✓' : '✗'}
+                                    </span>
+                                </div>
+                            </div>
+                            <p className="text-sm text-red-700 mt-3">
+                                Please go to the <a href="/controllers" className="underline font-semibold">Controllers</a> page
+                                to select two RuckusONE controllers.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Migration Flow Diagram */}
+            <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-6 mb-6">
+                <div className="flex items-center justify-center gap-6">
+                    <div className="flex items-center gap-3">
+                        <Server className="w-6 h-6 text-blue-600" />
+                        <div>
+                            <div className="font-semibold text-blue-900">Source RuckusONE</div>
+                            <div className="text-sm text-blue-700">{activeControllerName || "Not selected"}</div>
+                        </div>
+                    </div>
+
+                    <ArrowRight className="w-8 h-8 text-gray-400" />
+
+                    <div className="flex items-center gap-3">
+                        <Target className="w-6 h-6 text-green-600" />
+                        <div>
+                            <div className="font-semibold text-green-900">Destination RuckusONE</div>
+                            <div className="text-sm text-green-700">{secondaryControllerName || "Not selected"}</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div className="bg-white rounded-lg shadow p-6 mb-6">
@@ -281,4 +353,4 @@ function Migrate() {
     );
 }
 
-export default Migrate;
+export default MigrateR1ToR1;
