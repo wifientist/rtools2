@@ -7,6 +7,7 @@ including AP inventory queries and migration support.
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
+import httpx
 from szapi.client import SZClient
 from clients.sz_client_deps import get_dynamic_sz_client
 
@@ -71,7 +72,13 @@ async def get_zone_aps(
     except ValueError as e:
         # Authentication or connection errors
         raise HTTPException(status_code=400, detail=str(e))
+    except httpx.HTTPStatusError as e:
+        # HTTP errors from SmartZone
+        status_code = e.response.status_code
+        raise HTTPException(status_code=status_code, detail=f"SmartZone API error: {status_code} - {str(e)}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()  # Print full traceback to logs
         raise HTTPException(status_code=500, detail=f"Failed to fetch APs: {str(e)}")
 
 

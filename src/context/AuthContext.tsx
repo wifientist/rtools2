@@ -11,9 +11,11 @@ interface AuthContextType {
   activeControllerId: number | null;
   activeControllerName: string | null;
   activeControllerType: string | null;
+  activeControllerSubtype: string | null;
   secondaryControllerId: number | null;
   secondaryControllerName: string | null;
   secondaryControllerType: string | null;
+  secondaryControllerSubtype: string | null;
   controllers: { id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[];
   roleHierarchy: { [key: string]: number };
   setActiveControllerId: (id: number) => void;
@@ -197,13 +199,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Compute controller types from controllers array
+  // Compute controller types and subtypes from controllers array
   const activeControllerType = activeControllerId
     ? controllers.find(c => c.id === activeControllerId)?.controller_type || null
     : null;
 
+  const activeControllerSubtype = activeControllerId
+    ? controllers.find(c => c.id === activeControllerId)?.controller_subtype || null
+    : null;
+
   const secondaryControllerType = secondaryControllerId
     ? controllers.find(c => c.id === secondaryControllerId)?.controller_type || null
+    : null;
+
+  const secondaryControllerSubtype = secondaryControllerId
+    ? controllers.find(c => c.id === secondaryControllerId)?.controller_subtype || null
     : null;
 
   return (
@@ -215,9 +225,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       activeControllerId,
       activeControllerName,
       activeControllerType,
+      activeControllerSubtype,
       secondaryControllerId,
       secondaryControllerName,
       secondaryControllerType,
+      secondaryControllerSubtype,
       controllers,
       roleHierarchy,
       setActiveControllerId,

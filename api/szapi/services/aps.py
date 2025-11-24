@@ -31,10 +31,18 @@ class ApService:
         Returns:
             Dict with 'list' of AP objects and pagination info
         """
-        endpoint = f"/{self.client.api_version}/rkszones/{zone_id}/aps"
+        # Different API versions use different endpoint structures
+        # For v11_1, the endpoint is typically one of:
+        # - /v11_1/aps (with zoneId as query param)
+        # - /v11_1/rkszones/{zoneId}/aps
+        # For v12_0+: /v12_0/rkszones/{zoneId}/aps
+
+        # Using query parameter approach for v11_1
+        endpoint = f"/{self.client.api_version}/aps"
         params = {
             "index": page,
-            "listSize": min(limit, 1000)
+            "listSize": min(limit, 1000),
+            "zoneId": zone_id  # Zone ID as query parameter
         }
 
         return await self.client._request("GET", endpoint, params=params)

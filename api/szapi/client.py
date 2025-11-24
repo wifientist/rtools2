@@ -106,6 +106,7 @@ class SZClient:
         }
 
         try:
+            logger.info(f"Attempting SmartZone login to {url}")
             response = await self.client.post(url, json=payload)
             response.raise_for_status()
 
@@ -120,15 +121,22 @@ class SZClient:
 
         except httpx.HTTPStatusError as e:
             status_code = e.response.status_code
+            # Try to get error details from response body
+            try:
+                error_body = e.response.json()
+                error_msg = error_body.get("message", str(e))
+            except:
+                error_msg = str(e)
+
             if status_code == 401:
-                logger.error(f"SmartZone authentication failed - Invalid credentials for {self.username}@{self.host}")
-                raise ValueError(f"Invalid SmartZone credentials for {self.username}@{self.host}")
+                logger.error(f"SmartZone authentication failed - Invalid credentials for {self.username}@{self.host}. Response: {error_msg}")
+                raise ValueError(f"Invalid SmartZone credentials for {self.username}@{self.host}: {error_msg}")
             elif status_code == 404:
-                logger.error(f"SmartZone API endpoint not found at {self.host}:{self.port} - Check host/port/version")
-                raise ValueError(f"SmartZone API not found at {self.host}:{self.port}. Verify host, port, and API version.")
+                logger.error(f"SmartZone API endpoint not found at {url} - Check host/port/version. Response: {error_msg}")
+                raise ValueError(f"SmartZone API not found at {self.host}:{self.port}. Verify host, port, and API version ({self.api_version}). Error: {error_msg}")
             else:
-                logger.error(f"SmartZone authentication failed with status {status_code}: {e}")
-                raise ValueError(f"SmartZone authentication failed: HTTP {status_code}")
+                logger.error(f"SmartZone authentication failed with status {status_code}: {error_msg}")
+                raise ValueError(f"SmartZone authentication failed: HTTP {status_code} - {error_msg}")
         except httpx.ConnectError as e:
             logger.error(f"Cannot connect to SmartZone at {self.host}:{self.port} - {e}")
             raise ValueError(f"Cannot connect to SmartZone at {self.host}:{self.port}. Check network connectivity and hostname.")
@@ -191,7 +199,40 @@ class SZClient:
         params["serviceTicket"] = self.session_id
         kwargs["params"] = params
 
-        response = await self.client.request(method, url, **kwargs)
-        response.raise_for_status()
+        # Log the request
+        logger.info(f"SmartZone API Request: {method} {url}")
+        logger.debug(f"  Params: {params}")
+        if kwargs.get("json"):
+            logger.debug(f"  Body: {kwargs.get('json')}")
 
-        return response.json()
+        try:
+            response = await self.client.request(method, url, **kwargs)
+            logger.info(f"SmartZone API Response: {response.status_code} from {method} {endpoint}")
+
+            response.raise_for_status()
+            response_data = response.json()
+
+            # Log response summary
+            if isinstance(response_data, dict):
+                if "list" in response_data:
+                    logger.info(f"  Returned {len(response_data['list'])} items (totalCount: {response_data.get('totalCount', 'N/A')})")
+                elif "totalCount" in response_data:
+                    logger.info(f"  Total count: {response_data['totalCount']}")
+
+            return response_data
+
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            logger.error(f"SmartZone API Error: {status_code} from {method} {endpoint}")
+
+            # Try to get error details from response
+            try:
+                error_body = e.response.json()
+                logger.error(f"  Error details: {error_body}")
+            except:
+                logger.error(f"  Error body: {e.response.text[:500]}")
+
+            raise
+        except Exception as e:
+            logger.error(f"SmartZone API Exception: {type(e).__name__} from {method} {endpoint}: {str(e)}")
+            raise

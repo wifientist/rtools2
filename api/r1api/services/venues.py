@@ -59,5 +59,33 @@ class VenueService:
         else:
             return self.client.post(f"/venues/{venue_id}/aps/{serial_number}").json()
 
-    
+    async def get_ap_groups(self, tenant_id: str = None):
+        """
+        Get all AP groups for a tenant
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"🔍 get_ap_groups called - tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.get("/venues/apGroups", override_tenant_id=tenant_id).json()
+        else:
+            response = self.client.get("/venues/apGroups").json()
+
+        logger.info(f"📊 AP Groups Response Type: {type(response)}")
+
+        if isinstance(response, dict):
+            logger.info(f"📊 AP Groups Response Keys: {response.keys()}")
+            if 'data' in response:
+                logger.info(f"📊 AP Groups Count: {len(response.get('data', []))}")
+                for idx, group in enumerate(response.get('data', [])[:5]):  # Log first 5 groups
+                    logger.info(f"  Group {idx}: {group}")
+        elif isinstance(response, list):
+            logger.info(f"📊 AP Groups Count (list): {len(response)}")
+            for idx, group in enumerate(response[:5]):  # Log first 5 groups
+                logger.info(f"  Group {idx}: {group}")
+
+        return response
+
 

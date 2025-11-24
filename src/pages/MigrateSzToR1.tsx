@@ -3,6 +3,8 @@ import { useAuth } from "@/context/AuthContext";
 import { ArrowRight, Server, Target, AlertCircle } from "lucide-react";
 import SmartZoneSelector from "@/components/SmartZoneSelector";
 import SzApSelect from "@/components/SzApSelect";
+import SingleEcSelector from "@/components/SingleEcSelector";
+import SingleVenueSelector from "@/components/SingleVenueSelector";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -25,7 +27,9 @@ function MigrateSzToR1() {
     activeControllerType,
     secondaryControllerId,
     secondaryControllerName,
-    secondaryControllerType
+    secondaryControllerType,
+    secondaryControllerSubtype,
+    controllers
   } = useAuth();
 
   // SmartZone (source) state
@@ -33,7 +37,10 @@ function MigrateSzToR1() {
   const [selectedZoneName, setSelectedZoneName] = useState<string | null>(null);
 
   // RuckusONE (destination) state - using secondary controller
-  const [destVenueId, setDestVenueId] = useState<string>("");
+  const [destEcId, setDestEcId] = useState<string | null>(null);
+  const [destEcName, setDestEcName] = useState<string | null>(null);
+  const [destVenueId, setDestVenueId] = useState<string | null>(null);
+  const [destVenueName, setDestVenueName] = useState<string | null>(null);
   const [destApGroup, setDestApGroup] = useState<string>("Default");
 
   // AP selection state
@@ -48,6 +55,22 @@ function MigrateSzToR1() {
     setSelectedZoneId(zoneId);
     setSelectedZoneName(zoneName);
     setSelectedAPs([]); // Clear AP selection when zone changes
+  };
+
+  const handleEcSelect = (ecId: string | null, ec: any) => {
+    setDestEcId(ecId);
+    setDestEcName(ec?.name || null);
+    setDestVenueId(null); // Clear venue when EC changes
+    setDestVenueName(null);
+  };
+
+  const handleVenueSelect = (venueId: string | null, venue: any) => {
+    setDestVenueId(venueId);
+    setDestVenueName(venue?.name || null);
+  };
+
+  const handleApGroupChange = (apGroup: string) => {
+    setDestApGroup(apGroup);
   };
 
   const handleSelectAPClick = () => {
@@ -79,8 +102,14 @@ function MigrateSzToR1() {
       return;
     }
 
+    // Check if EC selection is required (MSP) and if it's selected
+    if (secondaryControllerSubtype === "MSP" && !destEcId) {
+      alert("Please select a destination EC");
+      return;
+    }
+
     if (!destVenueId) {
-      alert("Please enter a destination venue ID");
+      alert("Please select a destination venue");
       return;
     }
 
@@ -147,8 +176,22 @@ function MigrateSzToR1() {
   const isSecondaryRuckusOne = secondaryControllerType === "RuckusONE";
   const controllersValid = isActiveSmartZone && isSecondaryRuckusOne;
 
+  // Determine if we need to show EC selector (MSP) or go straight to venue (EC)
+  const needsEcSelection = secondaryControllerSubtype === "MSP";
+
+  // For MSP controllers: use the selected EC ID
+  // For EC controllers: use the controller's r1_tenant_id from the database
+  const secondaryController = controllers.find(c => c.id === secondaryControllerId);
+  const effectiveTenantId = needsEcSelection
+    ? destEcId
+    : (secondaryController?.r1_tenant_id || null);
+
   const isReadyToSelectAPs = selectedZoneId && activeControllerId && controllersValid;
-  const isReadyToMigrate = isReadyToSelectAPs && selectedAPs.length > 0 && destVenueId && secondaryControllerId;
+  const isReadyToMigrate = isReadyToSelectAPs &&
+    selectedAPs.length > 0 &&
+    destVenueId &&
+    secondaryControllerId &&
+    (!needsEcSelection || destEcId); // EC must be selected if needed
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -232,12 +275,55 @@ function MigrateSzToR1() {
         />
       </div>
 
-      {/* Step 2: Select APs */}
-      {selectedZoneId && (
+      {/* Step 2: Select Destination EC (if MSP) */}
+      {selectedZoneId && needsEcSelection && (
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
               2
+            </div>
+            <h3 className="text-xl font-semibold">Select Destination EC</h3>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <SingleEcSelector
+              controllerId={secondaryControllerId}
+              onEcSelect={handleEcSelect}
+              selectedEcId={destEcId}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Select Destination Venue */}
+      {selectedZoneId && (!needsEcSelection || destEcId) && effectiveTenantId && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold">
+              {needsEcSelection ? "3" : "2"}
+            </div>
+            <h3 className="text-xl font-semibold">Select Destination Venue</h3>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <SingleVenueSelector
+              controllerId={secondaryControllerId}
+              tenantId={effectiveTenantId}
+              onVenueSelect={handleVenueSelect}
+              onApGroupChange={handleApGroupChange}
+              selectedVenueId={destVenueId}
+              selectedApGroup={destApGroup}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Select APs */}
+      {selectedZoneId && destVenueId && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold">
+              {needsEcSelection ? "4" : "3"}
             </div>
             <h3 className="text-xl font-semibold">Select Access Points</h3>
           </div>
@@ -248,7 +334,7 @@ function MigrateSzToR1() {
               disabled={!isReadyToSelectAPs || isLoading}
               className={`btn px-6 py-2 rounded font-medium ${
                 isReadyToSelectAPs && !isLoading
-                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                  ? "bg-purple-600 text-white hover:bg-purple-700"
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }`}
             >
@@ -268,52 +354,6 @@ function MigrateSzToR1() {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Configure Destination */}
-      {selectedAPs.length > 0 && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold">
-              3
-            </div>
-            <h3 className="text-xl font-semibold">Configure Destination</h3>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Destination Venue ID *
-              </label>
-              <input
-                type="text"
-                value={destVenueId}
-                onChange={(e) => setDestVenueId(e.target.value)}
-                placeholder="Enter RuckusONE venue ID"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                The venue in RuckusONE where APs will be migrated
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                AP Group (Optional)
-              </label>
-              <input
-                type="text"
-                value={destApGroup}
-                onChange={(e) => setDestApGroup(e.target.value)}
-                placeholder="Default"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                AP Group name in RuckusONE (defaults to "Default")
-              </p>
-            </div>
           </div>
         </div>
       )}

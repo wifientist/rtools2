@@ -60,7 +60,8 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
     };
 
     fetchZones();
-  }, [activeControllerId, onZoneSelect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeControllerId]); // Only re-fetch when controller changes, not when callback changes
 
   const handleZoneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const zoneId = e.target.value || null;
