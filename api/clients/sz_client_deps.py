@@ -56,8 +56,8 @@ def create_sz_client_from_controller(controller_id: int, db: Session) -> SZClien
         raise HTTPException(status_code=400, detail="SmartZone credentials not configured for this controller")
 
     # Create SmartZone client
-    # Use the version field as API version (e.g., v11_1, v12_0, v13_0)
-    api_version = controller.version if controller.version else "v12_0"
+    # Use the sz_version field as API version (e.g., v11_1, v12_0, v13_0)
+    api_version = controller.sz_version if controller.sz_version else "v12_0"
 
     return SZClient(
         host=controller.sz_host,
