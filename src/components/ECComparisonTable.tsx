@@ -1,7 +1,11 @@
-import React from 'react';
 import SectionDiff from '@/components/SectionDiff';
 
-const ECComparisonTable = ({ source, destination }) => {
+interface ECComparisonTableProps {
+  source: any;
+  destination: any;
+}
+
+const ECComparisonTable = ({ source, destination }: ECComparisonTableProps) => {
     const srcData = source?.data || {};
     const dstData = destination?.data || {};
   
@@ -15,10 +19,7 @@ const ECComparisonTable = ({ source, destination }) => {
         {allSections.map((sectionKey) => {
           const sourceItems = srcData[sectionKey] || [];
           const destinationItems = dstData[sectionKey] || [];
-  
-          // Skip "aps" for now
-          if (sectionKey === "aps") return null;
-  
+
           return (
             <SectionDiff
               key={sectionKey}

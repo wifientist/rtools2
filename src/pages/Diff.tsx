@@ -35,6 +35,10 @@ function Diff() {
             srcRes.json(),
             destRes.json(),
           ]);
+          console.log('Source data sections:', Object.keys(srcData?.data || {}));
+          console.log('Destination data sections:', Object.keys(destData?.data || {}));
+          console.log('Source WLANs:', srcData?.data?.wlans);
+          console.log('Destination WLANs:', destData?.data?.wlans);
           setSourceDetails(srcData);
           setDestinationDetails(destData);
         } catch (error) {

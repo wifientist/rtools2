@@ -117,7 +117,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setUserRole(data.role);
       setUserId(data.id);
+
+      // Log beta flag changes to help debug any unexpected disabling
+      if (data.beta_enabled !== undefined) {
+        console.log(`[AuthContext] Beta flag set to: ${data.beta_enabled}`);
+      }
       setBetaEnabled(data.beta_enabled || false);
+
       setActiveControllerId(data.active_controller_id || null);
       setSecondaryControllerId(data.secondary_controller_id || null);
 

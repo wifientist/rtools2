@@ -49,6 +49,9 @@ const Sidebar = () => {
     // Hide all protected items if not authenticated (includes null during loading)
     if (isAuthenticated !== true) return false;
 
+    // Hide "Admin" menu for super admins (they have "Super" menu instead)
+    if (item.label === "Admin" && userRole === "super") return false;
+
     // Check beta access
     if (item.requiresBeta && !betaEnabled) return false;
 

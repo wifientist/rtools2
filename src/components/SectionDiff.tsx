@@ -1,28 +1,61 @@
-import React from "react";
+import { useMemo } from "react";
 import ObjectDiff from "@/components/ObjectDiff";
+import { matchItems } from "@/utils/smartMatcher";
 
-const SectionDiff = ({ title, sourceItems, destinationItems }) => {
-  const byId = (arr) => {
-    return Array.isArray(arr)
-      ? Object.fromEntries(arr.map((item) => [item.id, item]))
-      : {};
-  };
+interface SectionDiffProps {
+  title: string;
+  sourceItems: any[];
+  destinationItems: any[];
+}
 
-  const srcMap = byId(sourceItems);
-  const dstMap = byId(destinationItems);
+const SectionDiff = ({ title, sourceItems, destinationItems }: SectionDiffProps) => {
+  const matches = useMemo(() => {
+    const srcArray = Array.isArray(sourceItems) ? sourceItems : [];
+    const dstArray = Array.isArray(destinationItems) ? destinationItems : [];
 
-  const allIds = Array.from(new Set([...Object.keys(srcMap), ...Object.keys(dstMap)]));
+    return matchItems(srcArray, dstArray, title);
+  }, [sourceItems, destinationItems, title]);
+
+  // Summary statistics
+  const stats = useMemo(() => {
+    const matched = matches.filter(m => m.matchType === 'matched').length;
+    const sourceOnly = matches.filter(m => m.matchType === 'source-only').length;
+    const destOnly = matches.filter(m => m.matchType === 'dest-only').length;
+
+    return { matched, sourceOnly, destOnly, total: matches.length };
+  }, [matches]);
+
+  if (matches.length === 0) {
+    return null; // Don't show empty sections
+  }
 
   return (
-    <div>
-      <h3 className="text-xl font-bold mb-2 capitalize">{title}</h3>
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-2xl font-bold capitalize">{title}</h3>
+        <div className="flex gap-4 text-sm">
+          <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full">
+            ✓ {stats.matched} matched
+          </span>
+          {stats.sourceOnly > 0 && (
+            <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full">
+              ← {stats.sourceOnly} source only
+            </span>
+          )}
+          {stats.destOnly > 0 && (
+            <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full">
+              → {stats.destOnly} dest only
+            </span>
+          )}
+        </div>
+      </div>
+
       <div className="space-y-4">
-        {allIds.map((id) => (
+        {matches.map((match, index) => (
           <ObjectDiff
-            key={id}
-            objectId={id}
-            left={srcMap[id]}
-            right={dstMap[id]}
+            key={index}
+            matchInfo={match}
+            sectionType={title}
           />
         ))}
       </div>
