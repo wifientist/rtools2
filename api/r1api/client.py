@@ -7,6 +7,7 @@ from r1api.services.networks import NetworksService
 from r1api.services.tenant import TenantService
 from r1api.services.aps import ApService
 from r1api.services.clients import ClientsService
+from r1api.services.entitlements import EntitlementsService
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, ec_type=None, region=None):
@@ -42,6 +43,7 @@ class R1Client:
         self.tenant = TenantService(self)
         self.aps = ApService(self)
         self.clients = ClientsService(self)
+        self.entitlements = EntitlementsService(self)
 
         print(f"R1Client initialized for tenant_id={tenant_id}, ec_type={self.ec_type}, host={self.host}")
 

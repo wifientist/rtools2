@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { ArrowRight, Server, Target, AlertCircle } from "lucide-react";
 import SmartZoneSelector from "@/components/SmartZoneSelector";
@@ -50,6 +50,19 @@ function MigrateSzToR1() {
   // Migration state
   const [isLoading, setIsLoading] = useState(false);
   const [migrationResult, setMigrationResult] = useState<any>(null);
+
+  // License check state
+  const [licenseCheck, setLicenseCheck] = useState<{
+    available: number;
+    required: number;
+    sufficient: boolean;
+    remaining: number;
+    message: string;
+    total: number;
+    used: number;
+  } | null>(null);
+  const [licenseCheckLoading, setLicenseCheckLoading] = useState(false);
+  const [licenseCheckError, setLicenseCheckError] = useState<string | null>(null);
 
   const handleZoneSelect = (zoneId: string | null, zoneName: string | null) => {
     setSelectedZoneId(zoneId);
@@ -125,6 +138,7 @@ function MigrateSzToR1() {
       const payload = {
         source_controller_id: activeControllerId,
         dest_controller_id: secondaryControllerId,
+        dest_tenant_id: effectiveTenantId, // Include tenant ID for MSP or EC
         dest_venue_id: destVenueId,
         dest_ap_group: destApGroup || "Default",
         aps: selectedAPs.map(ap => ({
@@ -155,7 +169,15 @@ function MigrateSzToR1() {
       const result = await response.json();
       setMigrationResult(result);
 
-      alert(`Migration completed!\n${result.migrated_count} APs migrated successfully\n${result.failed_count} APs failed`);
+      // Build alert message with license info if available
+      let alertMsg = `Migration completed!\n${result.migrated_count} APs migrated successfully\n${result.failed_count} APs failed`;
+
+      if (result.license_info && result.license_info.available !== "unknown") {
+        const remaining = result.license_info.available - result.migrated_count;
+        alertMsg += `\n\nLicenses: ${remaining} remaining (${result.license_info.available} available, ${result.migrated_count} used)`;
+      }
+
+      alert(alertMsg);
 
       // Reset on success
       if (result.failed_count === 0) {
@@ -192,6 +214,61 @@ function MigrateSzToR1() {
     destVenueId &&
     secondaryControllerId &&
     (!needsEcSelection || destEcId); // EC must be selected if needed
+
+  // Check license availability when APs are selected
+  useEffect(() => {
+    const checkLicenses = async () => {
+      // Only check if we have APs selected and destination controller configured
+      if (selectedAPs.length === 0 || !secondaryControllerId) {
+        setLicenseCheck(null);
+        setLicenseCheckError(null);
+        return;
+      }
+
+      // Check if EC selection is required and if it's selected
+      if (needsEcSelection && !destEcId) {
+        setLicenseCheck(null);
+        setLicenseCheckError(null);
+        return;
+      }
+
+      setLicenseCheckLoading(true);
+      setLicenseCheckError(null);
+
+      try {
+        const payload = {
+          controller_id: secondaryControllerId,
+          tenant_id: effectiveTenantId,
+          ap_count: selectedAPs.length,
+        };
+
+        const response = await fetch(`${API_BASE_URL}/migrate/check-license`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || "License check failed");
+        }
+
+        const result = await response.json();
+        setLicenseCheck(result);
+      } catch (error: any) {
+        console.error("License check failed:", error);
+        setLicenseCheckError(error.message);
+        setLicenseCheck(null);
+      } finally {
+        setLicenseCheckLoading(false);
+      }
+    };
+
+    checkLicenses();
+  }, [selectedAPs, secondaryControllerId, effectiveTenantId, destEcId, needsEcSelection]);
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -361,17 +438,96 @@ function MigrateSzToR1() {
       {/* Migration Button */}
       {isReadyToMigrate && (
         <div className="bg-white rounded-lg shadow p-6">
+          {/* License Status Display */}
+          {licenseCheckLoading && (
+            <div className="mb-4 flex items-center gap-2 text-blue-600">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              <span className="text-sm">Checking license availability...</span>
+            </div>
+          )}
+
+          {licenseCheckError && (
+            <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="font-semibold text-yellow-900 mb-1">License Check Failed</div>
+                  <div className="text-sm text-yellow-800">{licenseCheckError}</div>
+                  <div className="text-sm text-yellow-700 mt-2">
+                    You can still attempt migration, but it may fail if licenses are insufficient.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {licenseCheck && (
+            <div className={`mb-4 rounded-lg p-4 border-2 ${
+              licenseCheck.sufficient
+                ? "bg-green-50 border-green-200"
+                : "bg-red-50 border-red-200"
+            }`}>
+              <div className="flex items-start gap-2">
+                <div className={`text-2xl ${licenseCheck.sufficient ? "text-green-600" : "text-red-600"}`}>
+                  {licenseCheck.sufficient ? "✓" : "✗"}
+                </div>
+                <div className="flex-1">
+                  <div className={`font-semibold mb-2 ${
+                    licenseCheck.sufficient ? "text-green-900" : "text-red-900"
+                  }`}>
+                    {licenseCheck.sufficient ? "Ready to Migrate" : "Insufficient Licenses"}
+                  </div>
+                  <div className={`text-sm mb-3 ${
+                    licenseCheck.sufficient ? "text-green-800" : "text-red-800"
+                  }`}>
+                    {licenseCheck.message}
+                  </div>
+                  {/* Show Total/Used/Available breakdown */}
+                  <div className={`text-xs mb-3 font-mono ${
+                    licenseCheck.sufficient ? "text-green-700" : "text-red-700"
+                  }`}>
+                    Total: {licenseCheck.total}, Used: {licenseCheck.used}
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className={licenseCheck.sufficient ? "text-green-700" : "text-red-700"}>
+                      <div className="font-medium">Available</div>
+                      <div className="text-lg font-bold">{licenseCheck.available}</div>
+                    </div>
+                    <div className={licenseCheck.sufficient ? "text-green-700" : "text-red-700"}>
+                      <div className="font-medium">Required</div>
+                      <div className="text-lg font-bold">{licenseCheck.required}</div>
+                    </div>
+                    <div className={licenseCheck.sufficient ? "text-green-700" : "text-red-700"}>
+                      <div className="font-medium">{licenseCheck.sufficient ? "Remaining" : "Short by"}</div>
+                      <div className="text-lg font-bold">
+                        {licenseCheck.sufficient
+                          ? licenseCheck.remaining
+                          : licenseCheck.required - licenseCheck.available}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <button
             onClick={handleMigrate}
-            disabled={isLoading}
+            disabled={isLoading || (licenseCheck !== null && !licenseCheck.sufficient)}
             className={`btn px-8 py-3 rounded-lg font-medium text-lg ${
-              isLoading
+              isLoading || (licenseCheck !== null && !licenseCheck.sufficient)
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-green-600 text-white hover:bg-green-700"
             }`}
           >
             {isLoading ? "Migrating..." : `Migrate ${selectedAPs.length} APs to RuckusONE`}
           </button>
+
+          {licenseCheck !== null && !licenseCheck.sufficient && (
+            <div className="mt-3 text-sm text-red-600">
+              Migration is disabled due to insufficient licenses. Please purchase additional licenses or reduce the number of APs.
+            </div>
+          )}
 
           {isLoading && (
             <div className="mt-4 flex items-center gap-2 text-blue-600">

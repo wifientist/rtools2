@@ -162,5 +162,73 @@ class VenueService:
         else:
             return self.client.get(f"/venues/{venue_id}/apModelAntennaTypeSettings").json()
 
+    async def add_ap_to_venue(
+        self,
+        venue_id: str,
+        name: str,
+        serial_number: str,
+        tenant_id: str = None,
+        description: str = None,
+        model: str = None,
+        tags: list = None,
+        latitude: str = None,
+        longitude: str = None
+    ):
+        """
+        Add an AP to a venue
+
+        Args:
+            venue_id: The venue ID to add the AP to
+            name: AP name
+            serial_number: AP serial number
+            tenant_id: Optional tenant ID (required for MSP)
+            description: Optional AP description
+            model: Optional AP model
+            tags: Optional list of tags
+            latitude: Optional GPS latitude
+            longitude: Optional GPS longitude
+
+        Returns:
+            Response from the R1 API
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Build request payload
+        payload = {
+            "name": name,
+            "serialNumber": serial_number
+        }
+
+        # Add optional fields if provided
+        if description:
+            payload["description"] = description
+        if model:
+            payload["model"] = model
+        if tags:
+            payload["tags"] = tags
+        if latitude and longitude:
+            payload["deviceGps"] = {
+                "latitude": str(latitude),
+                "longitude": str(longitude)
+            }
+
+        logger.info(f"Adding AP {serial_number} to venue {venue_id}")
+        logger.info(f"Payload: {payload}")
+
+        # Make API call
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post(
+                f"/venues/{venue_id}/aps",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                f"/venues/{venue_id}/aps",
+                payload=payload
+            )
+
+        return response.json()
 
 

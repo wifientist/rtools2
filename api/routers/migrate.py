@@ -24,6 +24,122 @@ router = APIRouter(
 )
 
 
+class LicenseCheckRequest(BaseModel):
+    """Request to check license availability"""
+    controller_id: int = Field(..., description="RuckusONE controller ID")
+    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
+    ap_count: int = Field(..., description="Number of APs to check licenses for")
+
+
+class LicenseCheckResponse(BaseModel):
+    """License availability response"""
+    available: int
+    required: int
+    sufficient: bool
+    remaining: int
+    message: str
+    total: int = 0  # Total licenses allocated
+    used: int = 0   # Currently used licenses
+
+
+@router.post("/check-license", response_model=LicenseCheckResponse)
+async def check_license_availability(
+    request: LicenseCheckRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Check license availability before migration
+
+    This endpoint checks if there are sufficient AP licenses available
+    for the planned migration without actually performing the migration.
+
+    Args:
+        request: License check request with controller ID, tenant ID, and AP count
+
+    Returns:
+        License availability information
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"🔍 License check request - controller_id: {request.controller_id}, tenant_id: {request.tenant_id}, ap_count: {request.ap_count}")
+
+    # Validate access to controller
+    controller = validate_controller_access(request.controller_id, current_user, db)
+    logger.info(f"✅ Controller validated - type: {controller.controller_type}, subtype: {controller.controller_subtype}")
+
+    # Verify it's a RuckusONE controller
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
+        )
+
+    try:
+        # Create R1 client
+        logger.info(f"🔧 Creating R1 client for controller {controller.id}")
+        r1_client = create_r1_client_from_controller(controller.id, db)
+        logger.info(f"✅ R1 client created - ec_type: {r1_client.ec_type}, tenant_id: {r1_client.tenant_id}")
+
+        # Determine tenant_id
+        tenant_id = request.tenant_id or controller.r1_tenant_id
+        logger.info(f"🎯 Effective tenant_id: {tenant_id}")
+
+        # Validate tenant_id for MSP controllers
+        if controller.controller_subtype == "MSP" and not tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="tenant_id is required for MSP controllers"
+            )
+
+        # Check license availability
+        logger.info(f"📊 Checking license availability via entitlements service...")
+        license_data = await r1_client.entitlements.get_available_ap_licenses(
+            tenant_id=tenant_id
+        )
+        logger.info(f"✅ License check result: {license_data}")
+
+        available_licenses = license_data['available']
+        total_licenses = license_data['total']
+        used_licenses = license_data['used']
+
+        required_licenses = request.ap_count
+        sufficient = available_licenses >= required_licenses
+        remaining = available_licenses - required_licenses if sufficient else 0
+
+        # Build message
+        if sufficient:
+            if remaining == 0:
+                message = f"Exactly enough licenses available for {required_licenses} APs"
+            else:
+                message = f"Sufficient licenses available. {remaining} will remain after migration"
+        else:
+            shortage = required_licenses - available_licenses
+            message = f"Insufficient licenses. Need {shortage} more AP licenses"
+
+        logger.info(f"📝 Response: available={available_licenses}, required={required_licenses}, sufficient={sufficient}")
+
+        return LicenseCheckResponse(
+            available=available_licenses,
+            required=required_licenses,
+            sufficient=sufficient,
+            remaining=remaining if sufficient else available_licenses,
+            message=message,
+            total=total_licenses,
+            used=used_licenses
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ License check failed with exception: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"License check failed: {str(e)}"
+        )
+
+
 class APMigrationItem(BaseModel):
     """Single AP to migrate"""
     serial: str = Field(..., description="AP serial number")
@@ -39,6 +155,7 @@ class SZToR1MigrationRequest(BaseModel):
     """Request payload for SmartZone to RuckusONE migration"""
     source_controller_id: int = Field(..., description="Source SmartZone controller ID")
     dest_controller_id: int = Field(..., description="Destination RuckusONE controller ID")
+    dest_tenant_id: Optional[str] = Field(None, description="Destination tenant/EC ID (required for MSP)")
     dest_venue_id: str = Field(..., description="Destination venue ID in R1")
     dest_ap_group: Optional[str] = Field(None, description="AP Group name in R1")
     aps: List[APMigrationItem] = Field(..., description="List of APs to migrate")
@@ -61,6 +178,7 @@ class MigrationResponse(BaseModel):
     migrated_count: int
     failed_count: int
     details: Optional[List[Dict[str, Any]]] = None
+    license_info: Optional[Dict[str, Any]] = None
 
 
 def validate_controller_access(controller_id: int, user: User, db: Session) -> Controller:
@@ -130,42 +248,90 @@ async def migrate_sz_to_r1(
         # Create R1 client for destination
         r1_client = create_r1_client_from_controller(dest_controller.id, db)
 
+        # Determine tenant_id for destination
+        # Use provided tenant_id from request, or fall back to controller's tenant_id
+        dest_tenant_id = request.dest_tenant_id or dest_controller.r1_tenant_id
+
+        # Validate tenant_id for MSP controllers
+        if dest_controller.controller_subtype == "MSP" and not dest_tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="dest_tenant_id is required for MSP controllers"
+            )
+
+        # Check license availability before starting migration
+        license_info = {}
+        try:
+            license_data = await r1_client.entitlements.get_available_ap_licenses(
+                tenant_id=dest_tenant_id
+            )
+            available_licenses = license_data['available']
+
+            required_licenses = len(request.aps)
+
+            license_info = {
+                "available": available_licenses,
+                "required": required_licenses,
+                "sufficient": available_licenses >= required_licenses
+            }
+
+            if available_licenses < required_licenses:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient AP licenses. Required: {required_licenses}, Available: {available_licenses}. "
+                           f"Please purchase additional licenses or reduce the number of APs to migrate."
+                )
+
+            print(f"✅ License check passed: {available_licenses} available, {required_licenses} required")
+
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            print(f"⚠️ Warning: License check failed: {str(e)}")
+            print(f"Proceeding with migration anyway. License validation may be incomplete.")
+            license_info = {
+                "available": "unknown",
+                "required": len(request.aps),
+                "error": str(e)
+            }
+            # Don't fail the migration if license check fails - just warn
+            # The actual AP creation will fail if there are no licenses
+
         async with sz_client:
             # Process each AP
             for ap in request.aps:
                 try:
-                    # Format AP for R1 import
-                    r1_ap_data = {
-                        "apName": ap.name,
-                        "description": ap.description or "",
-                        "serialNumber": ap.serial,
-                        "apGroupName": request.dest_ap_group or "Default",
-                        "latitude": ap.latitude,
-                        "longitude": ap.longitude,
-                        # Add other required R1 fields
-                    }
+                    # Add AP to R1 venue using the venues service
+                    result = await r1_client.venues.add_ap_to_venue(
+                        venue_id=request.dest_venue_id,
+                        name=ap.name,
+                        serial_number=ap.serial,
+                        tenant_id=dest_tenant_id,
+                        description=ap.description,
+                        model=ap.model,
+                        tags=[request.dest_ap_group] if request.dest_ap_group else None,
+                        latitude=str(ap.latitude) if ap.latitude else None,
+                        longitude=str(ap.longitude) if ap.longitude else None
+                    )
 
-                    # TODO: Call R1 API to import AP
-                    # This requires implementing the AP import endpoint in r1api
-                    # For now, we'll simulate the call
-                    # result = await r1_client.aps.import_ap(request.dest_venue_id, r1_ap_data)
-
-                    print(f"Would import AP {ap.serial} to R1 venue {request.dest_venue_id}")
-                    print(f"AP data: {r1_ap_data}")
+                    print(f"Successfully added AP {ap.serial} to R1 venue {request.dest_venue_id}")
+                    print(f"R1 API response: {result}")
 
                     migrated_count += 1
                     details.append({
                         "serial": ap.serial,
                         "status": "success",
-                        "message": "AP queued for import (simulated)"
+                        "message": f"AP successfully added to venue"
                     })
 
                 except Exception as e:
                     failed_count += 1
+                    error_msg = str(e)
+                    print(f"Failed to add AP {ap.serial}: {error_msg}")
                     details.append({
                         "serial": ap.serial,
                         "status": "failed",
-                        "message": str(e)
+                        "message": error_msg
                     })
 
         return MigrationResponse(
@@ -173,7 +339,8 @@ async def migrate_sz_to_r1(
             message=f"Migration completed: {migrated_count} successful, {failed_count} failed",
             migrated_count=migrated_count,
             failed_count=failed_count,
-            details=details
+            details=details,
+            license_info=license_info
         )
 
     except Exception as e:
