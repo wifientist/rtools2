@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Info, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, ArrowLeftRight } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network } from "lucide-react";
 import { useState } from "react";
 
 const Sidebar = () => {
@@ -8,14 +8,17 @@ const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
 
   const navItems = [
-    { to: "/", icon: <Home size={22} />, label: "Dashboard", requiresAuth: false },
-    { to: "/about", icon: <Info size={22} />, label: "About", requiresAuth: false },
+    { to: "/", icon: <Home size={22} />, label: "Home", requiresAuth: false },
     { to: "/controllers", icon: <Users size={22} />, label: "Controllers", requiresAuth: true, rolesAllowed: ["user","admin"] },
     { to: "/snapshot", icon: <Camera size={22} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
-    { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+    { to: "/diff", icon: <GitCompareArrows size={22} />, label: "Diff Tenant", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/diff-venue", icon: <GitCompareArrows size={22} />, label: "Diff Venue", requiresAuth: true, rolesAllowed: ["user","admin"] },
+    { to: "/speed-explainer", icon: <Activity size={22} />, label: "Speed Explainer", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+    { to: "/firmware-matrix", icon: <Table2 size={22} />, label: "Firmware Matrix", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+    { to: "/diagrams", icon: <Network size={22} />, label: "Network Diagrams", requiresAuth: true, requiresBeta: true },
     { to: "/per-unit-ssid", icon: <Wifi size={22} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-    { to: "/migrate", icon: <ArrowRightFromLine size={22} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
-    { to: "/migrate-sz-to-r1", icon: <ArrowLeftRight size={22} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+    { to: "/migrate", icon: <RedoDot size={22} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+    { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={22} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
     { to: "/admin", icon: <Settings size={22} />, label: "Admin", requiresAuth: true, rolesAllowed: ["admin","super"] },
     { to: "/status", icon: <CloudCog size={22} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin","super"] },
     { to: "/super", icon: <Settings size={22} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
@@ -69,27 +72,39 @@ const Sidebar = () => {
 
       {/* Navigation */}
       <nav className="flex flex-col p-2 space-y-2 text-gray-200">
-        {visibleNavItems.map(({ to, icon, label }) => (
-          <Link
-            key={to}
-            to={to}
-            className="group flex items-center space-x-3 hover:text-gray-200 p-2 rounded hover:bg-gray-800 relative"
-          >
-            {icon}
-            {/* Only show label if not collapsed */}
-            {!collapsed && <span className="text-sm">{label}</span>}
+        {visibleNavItems.map(({ to, icon, label }) => {
+          // Use regular anchor tag for external/nginx-proxied routes
+          const isExternal = to === '/diagrams';
+          const className = "group flex items-center space-x-3 hover:text-gray-200 p-2 rounded hover:bg-gray-800 relative";
 
-            {/* When collapsed, show floating label on hover */}
-            {collapsed && (
-              <span
-                className="absolute left-16 bg-white whitespace-nowrap rounded shadow px-2 py-1 text-sm opacity-0 group-hover:opacity-100 transition
-                pointer-events-none z-50"
-              >
-                {label}
-              </span>
-            )}
-          </Link>
-        ))}
+          const content = (
+            <>
+              {icon}
+              {/* Only show label if not collapsed */}
+              {!collapsed && <span className="text-sm">{label}</span>}
+
+              {/* When collapsed, show floating label on hover */}
+              {collapsed && (
+                <span
+                  className="absolute left-16 bg-white whitespace-nowrap rounded shadow px-2 py-1 text-sm opacity-0 group-hover:opacity-100 transition
+                  pointer-events-none z-50"
+                >
+                  {label}
+                </span>
+              )}
+            </>
+          );
+
+          return isExternal ? (
+            <a key={to} href={to} className={className}>
+              {content}
+            </a>
+          ) : (
+            <Link key={to} to={to} className={className}>
+              {content}
+            </Link>
+          );
+        })}
       </nav>
 
         {/* Collapse Button */}

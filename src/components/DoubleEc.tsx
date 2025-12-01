@@ -7,7 +7,8 @@ export default function DoubleEc({
   initialSource = null,
   initialDestination = null,
   showActions = true,
-  disabled = false
+  disabled = false,
+  allowSameTenant = false
 }) {
   const { activeEcData, secondaryEcData, activeRaw, secondaryRaw, loadingEcs, errorEcs } = useDualEc();
   const [sourceEcId, setSourceEcId] = useState(initialSource);
@@ -39,38 +40,32 @@ export default function DoubleEc({
   const handleSourceSelect = (ecId) => {
     setSourceEcId(ecId);
     console.log("Source selected:", ecId);
-    //onSelectionChange?.(
-    //  ecId === destinationEcId ? null : ecId,
-    //  destinationEcId,
-    //  activeList.find(ec => String(ec.id) === String(ecId))?.name,
-    //  secondaryList.find(ec => String(ec.id) === String(destinationEcId))?.name
-    //);
     const sourceObj = activeList.find(ec => String(ec.id) === String(ecId));
     const destinationObj = secondaryList.find(ec => String(ec.id) === String(destinationEcId));
 
+    // If allowSameTenant is true, don't null out the source when it matches destination
+    const effectiveSourceId = (allowSameTenant || ecId !== destinationEcId) ? ecId : null;
+
     onSelectionChange?.(
-      ecId === destinationEcId ? null : ecId,
+      effectiveSourceId,
       destinationEcId,
       sourceObj,
       destinationObj
     );
   };
-  
+
   const handleDestinationSelect = (ecId) => {
     setDestinationEcId(ecId);
     console.log("Destination selected:", ecId);
-    //    onSelectionChange?.(
-    //      sourceEcId,
-    //      ecId === sourceEcId ? null : ecId,
-    //      activeList.find(ec => String(ec.id) === String(sourceEcId))?.name,
-    //      secondaryList.find(ec => String(ec.id) === String(ecId))?.name
-    //    );
     const sourceObj = activeList.find(ec => String(ec.id) === String(sourceEcId));
     const destinationObj = secondaryList.find(ec => String(ec.id) === String(ecId));
 
+    // If allowSameTenant is true, don't null out the destination when it matches source
+    const effectiveDestId = (allowSameTenant || ecId !== sourceEcId) ? ecId : null;
+
     onSelectionChange?.(
       sourceEcId,
-      ecId === sourceEcId ? null : ecId,
+      effectiveDestId,
       sourceObj,
       destinationObj
     );
@@ -84,7 +79,7 @@ export default function DoubleEc({
   };
 
 
-  const isValidSelection = sourceEcId && destinationEcId && sourceEcId !== destinationEcId;
+  const isValidSelection = sourceEcId && destinationEcId && (allowSameTenant || sourceEcId !== destinationEcId);
 
   if (loadingEcs) return <div>Loading ECs...</div>;
   if (errorEcs) return <div className="text-red-600">Error loading ECs: {errorEcs}</div>;
@@ -161,7 +156,7 @@ export default function DoubleEc({
             </div>
           )}
 
-          {sourceEcId && destinationEcId && sourceEcId === destinationEcId && (
+          {!allowSameTenant && sourceEcId && destinationEcId && sourceEcId === destinationEcId && (
             <div className="mt-2 text-sm text-red-600">
               ⚠️ Source and destination cannot be the same
             </div>

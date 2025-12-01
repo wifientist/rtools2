@@ -1,0 +1,80 @@
+{
+  "scenarios": [
+    {
+      "id": "moderate-congestion",
+      "name": "Demo iPhone 14 - Moderate Congestion",
+      "description": "Typical office environment with channel congestion from multiple clients",
+      "context": {
+        "scopeType": "client",
+        "scopeId": "demo-client-123",
+        "scopeName": "Demo iPhone 14",
+        "timeWindow": "15min"
+      },
+      "data": {
+        "summary": {
+          "score": "good",
+          "scoreValue": 72,
+          "primaryBottleneck": {
+            "type": "airtime",
+            "severity": "medium",
+            "description": "Channel is moderately busy with 12 active clients",
+            "recommendation": "Consider load balancing to another AP or enabling band steering to 5GHz"
+          },
+          "quickSignals": {
+            "signal": { "status": "good", "detail": "RSSI -65 dBm, SNR 28 dB" },
+            "wifiLoad": { "status": "fair", "detail": "58% airtime utilization" },
+            "retries": { "status": "good", "detail": "8% retry rate" },
+            "backhaul": { "status": "good", "detail": "450/1000 Mbps used" }
+          },
+          "tldr": "This device is experiencing moderate Wi-Fi performance. The main issue is channel congestion with multiple active clients sharing airtime. Signal quality is good, and backhaul has capacity."
+        },
+        "linkQuality": {
+          "rssi": -65,
+          "snr": 28,
+          "mcsMode": "MCS 7 / 2SS @ 80 MHz",
+          "mcsHistogram": { "5": 120, "6": 340, "7": 580, "8": 210, "9": 50 },
+          "diagnosis": "Signal strength is good (-65 dBm) with adequate SNR (28 dB). The device is consistently using MCS 6-8, which indicates a solid radio link. Not a bottleneck.",
+          "isBottleneck": false
+        },
+        "phyVsReal": {
+          "expectedPhyCeiling": 866,
+          "actualThroughputBest": 520,
+          "efficiency": 60,
+          "airtimeUtilization": 58,
+          "airtimeBreakdown": { "data": 42, "management": 8, "retries": 6, "other": 2 },
+          "clientsOnRadio": 12,
+          "avgPerClientAirtime": 4.8
+        },
+        "interference": {
+          "retryRate": 8,
+          "failureRate": 2,
+          "currentChannel": 36,
+          "channelWidth": 80,
+          "neighborApCount": 6,
+          "recentDfsEvents": 0,
+          "noiseFloor": -92,
+          "diagnosis": "Retry rate is acceptable at 8%. There are 6 neighbor APs detected but noise floor is low. Some contention but not severe.",
+          "isBottleneck": false
+        },
+        "backhaul": {
+          "wanCapacityEstimate": 1000,
+          "wanUsagePeak": 450,
+          "wanUsageAvg": 280,
+          "uplinkType": "fiber",
+          "uplinkSpeed": 1000,
+          "diagnosis": "Backhaul has plenty of capacity. Peak usage is only 45% of available bandwidth. Not a bottleneck.",
+          "isBottleneck": false
+        },
+        "clientLimitations": {
+          "streams": 2,
+          "maxWidthMhz": 80,
+          "wifiGeneration": "Wi-Fi 5",
+          "maxRealisticThroughput": 650,
+          "deviceProfile": "Demo iPhone 14",
+          "diagnosis": "Device supports Wi-Fi 5 with 2 spatial streams and 80 MHz channels. Modern enough for good performance. Not a limiting factor.",
+          "isBottleneck": false
+        }
+      }
+    }
+  ]
+}

@@ -319,6 +319,44 @@ def set_secondary_controller(
     return response
 
 
+# ===== Clear Secondary Controller =====
+
+@router.post("/clear-secondary")
+def clear_secondary_controller(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Clear the user's secondary controller.
+    """
+    current_user.secondary_controller_id = None
+    db.commit()
+    db.refresh(current_user)
+
+    # Create a new token with the updated secondary controller info
+    from security import is_production
+    access_token = create_access_token({
+        "sub": current_user.email,
+        "id": current_user.id,
+        "role": current_user.role,
+        "company_id": current_user.company_id,
+        "active_controller_id": current_user.active_controller_id,
+        "secondary_controller_id": current_user.secondary_controller_id,
+    })
+
+    # Return new token as cookie
+    response = JSONResponse(content={"message": "Secondary controller cleared"})
+    response.set_cookie(
+        key="session",
+        value=access_token,
+        httponly=True,
+        secure=is_production(),
+        samesite="Strict",
+    )
+
+    return response
+
+
 # ===== Get Available Controllers (for routing) =====
 
 @router.get("/available", response_model=List[UserControllerInfo])

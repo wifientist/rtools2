@@ -9,7 +9,6 @@ import BetaRoute from "@/components/BetaRoute";
 import { AuthProvider } from "@/context/AuthContext";
 
 import Home from "@/pages/Home";
-import About from "@/pages/About";
 import Status from "@/pages/Status";
 import Login from "@/pages/Login";
 import Signup from "@/pages/Signup";
@@ -17,7 +16,8 @@ import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Super from "@/pages/Super";
 import Controllers from "@/pages/Controllers";
-import Diff from "@/pages/Diff";
+import DiffTenant from "@/pages/DiffTenant";
+import DiffVenue from "@/pages/DiffVenue";
 import MigrateR1ToR1 from "@/pages/MigrateR1ToR1";
 import MigrateSzToR1 from "@/pages/MigrateSzToR1";
 import Layout from "@/components/Layout";
@@ -27,6 +27,8 @@ import Option43Calculator from "@/pages/Option43Calculator";
 import CompanyManager from "@/components/CompanyManager";
 import Users from "@/pages/Users";
 import PerUnitSSID from "@/pages/PerUnitSSID";
+import SpeedExplainer from "@/pages/SpeedExplainer";
+import FirmwareMatrix from "@/pages/FirmwareMatrix";
 
 const App = () => {
   
@@ -37,7 +39,6 @@ const App = () => {
         {/*<div className="container mx-auto p-6">*/}
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/about" element={<About />} />
           <Route path="/status" element={<AdminRoute element={<Status />} />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
@@ -47,7 +48,10 @@ const App = () => {
           <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
           <Route path="/users" element={<AdminRoute element={<Users />} />} />
           <Route path="/controllers" element={<Controllers />} />
-          <Route path="/diff" element={<BetaRoute element={<Diff />} />} />
+          <Route path="/diff" element={<DiffTenant />} />
+          <Route path="/diff-venue" element={<DiffVenue />} />
+          <Route path="/speed-explainer" element={<SpeedExplainer />} />
+          <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/migrate" element={<MigrateR1ToR1 />} />
           <Route path="/migrate-sz-to-r1" element={<MigrateSzToR1 />} />

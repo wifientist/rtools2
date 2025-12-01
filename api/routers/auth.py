@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import timedelta
-from models.user import User
+from models.user import User, RoleEnum
 from models.company import Company
 from models.controller import Controller
 from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema

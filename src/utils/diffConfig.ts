@@ -7,6 +7,8 @@ export const IGNORED_FIELDS = new Set([
   'id',
   'tenantId',
   'venueId',
+  'tenant_id',
+  'venue_id',
   'apGroupId',
   'createdAt',
   'updatedAt',
@@ -19,6 +21,8 @@ export const IGNORED_FIELDS = new Set([
   'clients', // Live client count changes frequently
   'aps', // Live AP count changes frequently
   'venues', // Count field that changes
+  'pictureDownloadUrl', // Signed URLs with expiring tokens
+  'lanPortPictureDownloadUrl', // Signed URLs with expiring tokens
 ]);
 
 // Fields to use for matching items across ECs (in priority order)
@@ -57,6 +61,17 @@ export const IMPORTANT_FIELDS = new Set([
   'nwSubType',
   'captiveType',
   'cog', // COG (Captive Portal) settings
+  // Venue WiFi settings
+  'channelWidth',
+  'channelBandwidth',
+  'channel',
+  'txPower',
+  'bandSteering',
+  'loadBalancing',
+  'bandMode',
+  'antennaType',
+  'antennaGain',
+  'admissionControl',
 ]);
 
 /**

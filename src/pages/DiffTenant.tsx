@@ -8,13 +8,14 @@ import ECComparisonTable from "@/components/ECComparisonTable";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-function Diff() {
+function DiffTenant() {
   const { activeControllerId, secondaryControllerId } = useAuth();
   //const { activeEcData, secondaryEcData, loadingEcs, errorEcs } = useDualMspEcs();
   const [selectedSource, setSelectedSource] = useState(null);
   const [selectedDestination, setSelectedDestination] = useState(null);
   const [sourceDetails, setSourceDetails] = useState(null);
   const [destinationDetails, setDestinationDetails] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const handleSelectionChange = (sourceId, destinationId) => {
     setSelectedSource(sourceId);
@@ -26,6 +27,7 @@ function Diff() {
   useEffect(() => {
     const fetchDetails = async () => {
       if (selectedSource && selectedDestination && selectedSource !== selectedDestination) {
+        setLoading(true);
         try {
           const [srcRes, destRes] = await Promise.all([
             fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/tenant/fulldetails?tenant_id=${selectedSource}`),
@@ -43,12 +45,14 @@ function Diff() {
           setDestinationDetails(destData);
         } catch (error) {
           console.error("Error fetching EC details:", error);
+        } finally {
+          setLoading(false);
         }
       }
     };
 
     fetchDetails();
-  }, [selectedSource, selectedDestination]);
+  }, [selectedSource, selectedDestination, activeControllerId, secondaryControllerId]);
 
   //if (loadingEcs) return <p className="p-4">Loading End Customers...</p>;
   //if (errorEcs) return <p className="p-4 text-red-500">Failed to load ECs: {errorEcs}</p>;
@@ -71,7 +75,14 @@ function Diff() {
         <p className="text-red-500 mb-4">Source and destination cannot be the same EC.</p>
       )}
 
-      {sourceDetails && destinationDetails && (
+      {loading && (
+        <div className="text-center py-8">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <p className="mt-2 text-gray-600">Loading tenant details...</p>
+        </div>
+      )}
+
+      {sourceDetails && destinationDetails && !loading && (
         <ECComparisonTable source={sourceDetails} destination={destinationDetails} />
       )}
 
@@ -97,4 +108,4 @@ function Diff() {
   );
 }
 
-export default Diff;
+export default DiffTenant;

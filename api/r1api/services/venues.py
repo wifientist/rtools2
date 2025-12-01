@@ -88,4 +88,79 @@ class VenueService:
 
         return response
 
+    # ========== Venue WiFi Settings Methods ==========
+
+    async def get_ap_load_balancing_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get AP load balancing settings for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apLoadBalancingSettings", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apLoadBalancingSettings").json()
+
+    async def get_ap_radio_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get AP radio settings for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apRadioSettings", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apRadioSettings").json()
+
+    async def get_wifi_available_channels(self, tenant_id: str, venue_id: str):
+        """
+        Get WiFi available channels for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/wifiAvailableChannels", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/wifiAvailableChannels").json()
+
+    async def get_ap_model_band_mode_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get AP model band mode settings for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apModelBandModeSettings", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apModelBandModeSettings").json()
+
+    async def get_ap_model_external_antenna_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get AP model external antenna settings for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apModelExternalAntennaSettings", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apModelExternalAntennaSettings").json()
+
+    async def get_ap_client_admission_control_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get AP client admission control settings for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apClientAdmissionControlSettings", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apClientAdmissionControlSettings").json()
+
+    async def get_ap_model_capabilities(self, tenant_id: str, venue_id: str):
+        """
+        Get AP model capabilities for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apModelCapabilities", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apModelCapabilities").json()
+
+    async def get_ap_model_antenna_type_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get AP model antenna type settings for a venue
+        """
+        if self.client.ec_type == "MSP":
+            return self.client.get(f"/venues/{venue_id}/apModelAntennaTypeSettings", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/venues/{venue_id}/apModelAntennaTypeSettings").json()
+
+
 
