@@ -5,7 +5,6 @@ from .venues import router as venues_router
 from .networks import router as networks_router
 from .tenant import router as tenant_router
 from .ec import router as ec_router
-from .speed_context import router as speed_context_router
 from .speed_explainer import router as speed_explainer_router
 
 # router = APIRouter(
@@ -21,7 +20,7 @@ from .speed_explainer import router as speed_explainer_router
 
 from clients.r1_client import get_dynamic_r1_client #, get_scoped_r1_client
 
-subrouters = [msp_router, venues_router, networks_router, tenant_router, speed_context_router, speed_explainer_router]
+subrouters = [msp_router, venues_router, networks_router, tenant_router, speed_explainer_router]
 
 # def create_fer1_router(scope: str) -> APIRouter:
 #     prefix = f"/fer1agg{scope}"
