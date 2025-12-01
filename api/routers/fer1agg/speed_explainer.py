@@ -13,7 +13,7 @@ from datetime import datetime
 from clients.r1_client import get_dynamic_r1_client
 from r1api.client import R1Client
 
-router = APIRouter()
+router = APIRouter(tags=["fer1agg"])
 logger = logging.getLogger(__name__)
 
 

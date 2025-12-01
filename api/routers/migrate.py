@@ -21,7 +21,6 @@ from r1api.client import R1Client
 
 router = APIRouter(
     prefix="/migrate",
-    tags=["migration"],
 )
 
 

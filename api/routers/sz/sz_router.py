@@ -13,7 +13,6 @@ from clients.sz_client_deps import get_dynamic_sz_client
 
 router = APIRouter(
     prefix="/sz/{controller_id}",
-    tags=["smartzone"],
 )
 
 

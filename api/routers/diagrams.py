@@ -10,7 +10,7 @@ from datetime import datetime
 import httpx
 import os
 
-router = APIRouter(prefix="/diagrams", tags=["diagrams"])
+router = APIRouter(prefix="/diagrams")
 
 # Fossflow backend URL
 # When running in Docker, use the container name
