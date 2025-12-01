@@ -13,6 +13,7 @@ import type {
   MockScenariosFile,
   MockScenario
 } from '@/types/speedDiagnostics';
+import mockScenariosData from '@/data/speed-explainer/mock-scenarios.json';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -34,24 +35,15 @@ function SpeedExplainer() {
   const [mockScenarios, setMockScenarios] = useState<MockScenario[]>([]);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
 
-  // Load mock scenarios from JSON file on component mount
+  // Load mock scenarios from imported JSON on component mount
   useEffect(() => {
-    const loadMockScenarios = async () => {
-      try {
-        const response = await fetch('/src/data/speed-explainer/mock-scenarios.json');
-        const data: MockScenariosFile = await response.json();
-        setMockScenarios(data.scenarios);
+    const data = mockScenariosData as MockScenariosFile;
+    setMockScenarios(data.scenarios);
 
-        // Auto-select the first scenario
-        if (data.scenarios.length > 0) {
-          setSelectedScenario(data.scenarios[0].id);
-        }
-      } catch (error) {
-        console.error('Error loading mock scenarios:', error);
-      }
-    };
-
-    loadMockScenarios();
+    // Auto-select the first scenario
+    if (data.scenarios.length > 0) {
+      setSelectedScenario(data.scenarios[0].id);
+    }
   }, []);
 
   // Load demo data immediately when switching to demo mode or changing scenario
