@@ -1,0 +1,289 @@
+{
+  "metadata": {
+    "generated_at": "2025-12-02T19:17:03.054549",
+    "total_apis": 31,
+    "total_endpoints": 1099,
+    "source": "Ruckus ONE OpenAPI Specifications"
+  },
+  "apis": [
+    {
+      "name": "WiFi API",
+      "version": "17.3.3.205",
+      "url": "https://docs.ruckus.cloud/_bundle/api/wifi-17.3.3.205.yaml",
+      "base_url": "https://api.asia.ruckus.cloud",
+      "endpoint_count": 432,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:31.475544"
+    },
+    {
+      "name": "Switch Service API",
+      "version": "0.4.0",
+      "url": "https://docs.ruckus.cloud/_bundle/api/switch-0.4.0.yaml",
+      "base_url": "https://api.ruckus.cloud",
+      "endpoint_count": 133,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:28.639399"
+    },
+    {
+      "name": "ViewModel service API",
+      "version": "1.0.42",
+      "url": "https://docs.ruckus.cloud/_bundle/api/viewmodel-1.0.42.yaml",
+      "base_url": "http://localhost",
+      "endpoint_count": 60,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:29.093277"
+    },
+    {
+      "name": "Certificate Template API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/certificate-template-api-0.0.1.yaml",
+      "base_url": "https://api.asia.ruckus.cloud",
+      "endpoint_count": 54,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.676334"
+    },
+    {
+      "name": "RUCKUS Edge API",
+      "version": "1.0.3",
+      "url": "https://docs.ruckus.cloud/_bundle/api/edge-api-1.0.3.yaml",
+      "base_url": "https://api.asia.ruckus.cloud",
+      "endpoint_count": 51,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:26.939569"
+    },
+    {
+      "name": "Tenant Management",
+      "version": "0.3.0",
+      "url": "https://docs.ruckus.cloud/_bundle/api/ptenant-0.3.0.yaml",
+      "base_url": "https://api.ruckus.cloud",
+      "endpoint_count": 31,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:27.710056"
+    },
+    {
+      "name": "DPSK Service",
+      "version": "0.0.3",
+      "url": "https://docs.ruckus.cloud/_bundle/api/dpsk-api-0.0.3.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 30,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.142861"
+    },
+    {
+      "name": "Adaptive Policy Management",
+      "version": "0.0.9",
+      "url": "https://docs.ruckus.cloud/_bundle/api/policy-mgmt-0.0.9.yaml",
+      "base_url": "https://api.ruckus.cloud",
+      "endpoint_count": 29,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:27.459859"
+    },
+    {
+      "name": "MSP Services",
+      "version": "0.3.3",
+      "url": "https://docs.ruckus.cloud/_bundle/api/mspservice-0.3.3.yaml",
+      "base_url": "https://api.ruckus.cloud",
+      "endpoint_count": 27,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:27.262250"
+    },
+    {
+      "name": "Workflow Management API",
+      "version": "0.0.3",
+      "url": "https://docs.ruckus.cloud/_bundle/api/workflow-api-0.0.3.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 27,
+      "rate_limit": "The Workflow Management REST API's allow the creation of a workflow, and steps within that workflow. Steps, and split step options must be assigned actions that are already defined through the /enrollmentActions api.  Please see that API for additional information. For split steps only the action definition is to be provided, but the options require a matching action type, and must be of type split.## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:31.629963"
+    },
+    {
+      "name": "Property Management",
+      "version": "1.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/property-management-1.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 23,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:27.570637"
+    },
+    {
+      "name": "Property Management REST API",
+      "version": "1.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/property-management-1.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 23,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.054247"
+    },
+    {
+      "name": "Guest API",
+      "version": "1.7.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/guest-1.7.1.yaml",
+      "base_url": "https://api.asia.ruckus.cloud",
+      "endpoint_count": 21,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:27.095413"
+    },
+    {
+      "name": "MAC Registration API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/mac-registration-0.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 18,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.345770"
+    },
+    {
+      "name": "Resident Portal API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/resident-portal-0.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 16,
+      "rate_limit": "Resident portals are provided to the unit owners to view and update unit details and secrets. The Resident portal APIs support these functions. These provide details on the property, units and dpsk passphrases associated. The APIs also supports updates of contact details and dpsk passphrases. APIs are authenticated using a specific token associated to the unit. These tokens are generated as the unit is created.",
+      "downloaded_at": "2025-12-02T18:45:27.812516"
+    },
+    {
+      "name": "Venue Service API",
+      "version": "0.2.8",
+      "url": "https://docs.ruckus.cloud/_bundle/api/venue-0.2.8.yaml",
+      "base_url": "http://localhost",
+      "endpoint_count": 16,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:28.696743"
+    },
+    {
+      "name": "Identity Management",
+      "version": "0.0.2",
+      "url": "https://docs.ruckus.cloud/_bundle/api/persona-0.0.2.yaml",
+      "base_url": "https://api.ruckus.cloud",
+      "endpoint_count": 15,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:27.334802"
+    },
+    {
+      "name": "RADIUS Attribute Group Management API",
+      "version": "1.0.8",
+      "url": "https://docs.ruckus.cloud/_bundle/api/radiusattribgroup-1.0.8.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 14,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:27.755309"
+    },
+    {
+      "name": "Workflow Actions API",
+      "version": "0.0.2",
+      "url": "https://docs.ruckus.cloud/_bundle/api/workflow-actions-0.0.2.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 10,
+      "rate_limit": "# RateLimit",
+      "downloaded_at": "2025-12-02T18:45:31.534315"
+    },
+    {
+      "name": "Entitlement Assignment Endpoints",
+      "version": "0.2.0",
+      "url": "https://docs.ruckus.cloud/_bundle/deprecated_apis/pentitlement-assign-0.2.0.yaml",
+      "base_url": "http://localhost",
+      "endpoint_count": 9,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:25.775413"
+    },
+    {
+      "name": "Events and Alarms API",
+      "version": "0.0.3",
+      "url": "https://docs.ruckus.cloud/_bundle/api/event-alarm-api-0.0.3.yaml",
+      "base_url": "http://localhost",
+      "endpoint_count": 9,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.377403"
+    },
+    {
+      "name": "External Auth API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/external-auth-0.0.1.yaml",
+      "base_url": "https://api.asia.ruckus.cloud",
+      "endpoint_count": 9,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:26.976845"
+    },
+    {
+      "name": "Device Enrollment REST API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/device-enrollment-api-0.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 8,
+      "rate_limit": "# RateLimit",
+      "downloaded_at": "2025-12-02T18:45:26.279727"
+    },
+    {
+      "name": "Message Template API",
+      "version": "0.0.12",
+      "url": "https://docs.ruckus.cloud/_bundle/api/msg_template_management-0.0.12.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 8,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:25.938527"
+    },
+    {
+      "name": "Config Template Service API",
+      "version": "1.0.0",
+      "url": "https://docs.ruckus.cloud/_bundle/api/cfg-template-service-1.0.0.yaml",
+      "base_url": "https://api.ruckus.cloud",
+      "endpoint_count": 6,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.433488"
+    },
+    {
+      "name": "Activities API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/activity-0.0.1.yaml",
+      "base_url": "http://localhost",
+      "endpoint_count": 5,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.161996"
+    },
+    {
+      "name": "Admin Enrollment REST API",
+      "version": "0.0.1",
+      "url": "https://docs.ruckus.cloud/_bundle/api/enrollment-api-0.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 4,
+      "rate_limit": "# RateLimit",
+      "downloaded_at": "2025-12-02T18:45:26.406628"
+    },
+    {
+      "name": "Property Management REST API",
+      "version": "1.0.0",
+      "url": "https://docs.ruckus.cloud/_bundle/deprecated_apis/property-management-1.0.1.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 4,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:25.831017"
+    },
+    {
+      "name": "File service API",
+      "version": "0.2.7",
+      "url": "https://docs.ruckus.cloud/_bundle/api/file-0.2.7.yaml",
+      "base_url": "http://localhost",
+      "endpoint_count": 3,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:26.984157"
+    },
+    {
+      "name": "Manage Entitlements API",
+      "version": "0.2.0",
+      "url": "https://docs.ruckus.cloud/_bundle/api/entitlement-0.2.0.yaml",
+      "base_url": "https://api.devalto.ruckuswireless.com",
+      "endpoint_count": 3,
+      "rate_limit": null,
+      "downloaded_at": "2025-12-02T18:45:26.236709"
+    },
+    {
+      "name": "Policy Management API",
+      "version": "0.0.3",
+      "url": "https://docs.ruckus.cloud/_bundle/api/policy-evaluator-0.0.3.yaml",
+      "base_url": "http://localhost:8080",
+      "endpoint_count": 1,
+      "rate_limit": "## Rate Limit",
+      "downloaded_at": "2025-12-02T18:45:27.353842"
+    }
+  ]
+}

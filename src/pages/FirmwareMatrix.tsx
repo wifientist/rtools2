@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 type WifiGeneration = 'wifi5' | 'wifi6' | 'wifi6e' | 'wifi7';
-type FirmwareVersion = '5.2.2' | '6.0' | '6.1' | '6.1.1' | '6.1.2' | '7.0.0' | '7.1.0' | '7.1.1';
+type FirmwareVersion = '5.2.2' | '6.0.0' | '6.1.0' | '6.1.1' | '6.1.2' | '7.0.0' | '7.1.0' | '7.1.1';
 type SupportStatus = 'initial' | 'supported' | 'final' | 'unsupported';
 
 interface APModel {
@@ -51,11 +51,11 @@ function FirmwareMatrix() {
       model: 'R510',
       wifiGen: 'wifi5',
       firmwareSupport: {
-        '5.2.2': 'initial',
-        '6.1.2': 'supported',
-        '7.0.0': 'supported',
-        '7.1.0': 'supported',
-        '7.1.1': 'final'
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final',
       },
       notes: 'Indoor, dual-band'
     },
@@ -63,11 +63,11 @@ function FirmwareMatrix() {
       model: 'R610',
       wifiGen: 'wifi5',
       firmwareSupport: {
-        '5.2.2': 'initial',
-        '6.1.2': 'supported',
-        '7.0.0': 'supported',
-        '7.1.0': 'supported',
-        '7.1.1': 'final'
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final',
       },
       notes: 'Indoor, dual-band'
     },
@@ -75,11 +75,11 @@ function FirmwareMatrix() {
       model: 'R710',
       wifiGen: 'wifi5',
       firmwareSupport: {
-        '5.2.2': 'initial',
-        '6.1.2': 'supported',
-        '7.0.0': 'supported',
-        '7.1.0': 'supported',
-        '7.1.1': 'final'
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final'
       },
       notes: 'Indoor, dual-band, 4x4:4'
     },
@@ -87,11 +87,11 @@ function FirmwareMatrix() {
       model: 'R720',
       wifiGen: 'wifi5',
       firmwareSupport: {
-        '5.2.2': 'initial',
-        '6.1.2': 'supported',
-        '7.0.0': 'supported',
-        '7.1.0': 'supported',
-        '7.1.1': 'final'
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final'
       },
       notes: 'Indoor, dual-band, 4x4:4'
     },
@@ -99,7 +99,10 @@ function FirmwareMatrix() {
       model: 'T310c',
       wifiGen: 'wifi5',
       firmwareSupport: {
-        '5.2.2': 'initial',
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
         '6.1.2': 'final'
       },
       notes: 'Outdoor, single-band 5GHz'
@@ -108,18 +111,87 @@ function FirmwareMatrix() {
       model: 'T310d',
       wifiGen: 'wifi5',
       firmwareSupport: {
-        '5.2.2': 'initial',
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
         '6.1.2': 'final'
       },
       notes: 'Outdoor, dual-band'
     },
+    {
+      model: 'T610',
+      wifiGen: 'wifi5',
+      firmwareSupport: {
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final'
+      },
+      notes: 'Outdoor, dual-band'
+    },
+    {
+      model: 'T710',
+      wifiGen: 'wifi5',
+      firmwareSupport: {
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final'
+      },
+      notes: 'Outdoor, dual-band'
+    },
+    {
+      model: 'H510',
+      wifiGen: 'wifi5',
+      firmwareSupport: {
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final'
+      },
+      notes: 'Outdoor, dual-band'
+    },
+    {
+      model: 'H320',
+      wifiGen: 'wifi5',
+      firmwareSupport: {
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final'
+      },
+      notes: 'Outdoor, dual-band'
+    },
+    {
+      model: 'T811',
+      wifiGen: 'wifi5',
+      firmwareSupport: {
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'final',
+        '7.1.1': 'supported'
+      },
+      notes: 'Outdoor, dual-band'
+    },
+
 
     // Wi-Fi 6 (802.11ax)
     {
       model: 'R650',
       wifiGen: 'wifi6',
       firmwareSupport: {
-        '6.1.2': 'initial',
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
         '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
@@ -130,7 +202,11 @@ function FirmwareMatrix() {
       model: 'R750',
       wifiGen: 'wifi6',
       firmwareSupport: {
-        '6.1.2': 'initial',
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
         '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
@@ -141,7 +217,11 @@ function FirmwareMatrix() {
       model: 'R850',
       wifiGen: 'wifi6',
       firmwareSupport: {
-        '6.1.2': 'initial',
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
         '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
@@ -149,10 +229,14 @@ function FirmwareMatrix() {
       notes: 'Indoor, dual-band, 8x8:8'
     },
     {
-      model: 'T650',
+      model: 'T750',
       wifiGen: 'wifi6',
       firmwareSupport: {
-        '6.1.2': 'initial',
+        '5.2.2': 'supported',
+        '6.0.0': 'supported',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
         '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
@@ -163,7 +247,10 @@ function FirmwareMatrix() {
       model: 'R350',
       wifiGen: 'wifi6',
       firmwareSupport: {
-        '6.1.2': 'initial',
+        '6.0.0': 'initial',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
         '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
@@ -174,20 +261,40 @@ function FirmwareMatrix() {
       model: 'H550',
       wifiGen: 'wifi6',
       firmwareSupport: {
-        '6.1.2': 'initial',
+        '6.0.0': 'initial',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
         '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
       },
       notes: 'Indoor, dual-band, wallplate'
     },
-
+    {
+      model: 'H350',
+      wifiGen: 'wifi6',
+      firmwareSupport: {
+        '6.0.0': 'initial',
+        '6.1.0': 'supported',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
+        '7.0.0': 'supported',
+        '7.1.0': 'supported',
+        '7.1.1': 'supported'
+      },
+      notes: 'Indoor, dual-band, wallplate'
+    },
+    
     // Wi-Fi 6E
     {
       model: 'R760',
       wifiGen: 'wifi6e',
       firmwareSupport: {
-        '7.0.0': 'initial',
+        '6.1.0': 'initial',
+        '6.1.1': 'supported',
+        '6.1.2': 'supported',
+        '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
       },
@@ -197,7 +304,9 @@ function FirmwareMatrix() {
       model: 'R560',
       wifiGen: 'wifi6e',
       firmwareSupport: {
-        '7.0.0': 'initial',
+        '6.1.1': 'initial',
+        '6.1.2': 'supported',
+        '7.0.0': 'supported',
         '7.1.0': 'supported',
         '7.1.1': 'supported'
       },
@@ -209,7 +318,8 @@ function FirmwareMatrix() {
       model: 'R770',
       wifiGen: 'wifi7',
       firmwareSupport: {
-        '7.1.0': 'initial',
+        '7.0.0': 'initial',
+        '7.1.0': 'supported',
         '7.1.1': 'supported'
       },
       notes: 'Indoor, tri-band, Wi-Fi 7'
@@ -218,7 +328,8 @@ function FirmwareMatrix() {
       model: 'R670',
       wifiGen: 'wifi7',
       firmwareSupport: {
-        '7.1.0': 'initial',
+        '7.0.0': 'initial',
+        '7.1.0': 'supported',
         '7.1.1': 'supported'
       },
       notes: 'Indoor, tri-band, Wi-Fi 7'
@@ -227,7 +338,8 @@ function FirmwareMatrix() {
       model: 'T670',
       wifiGen: 'wifi7',
       firmwareSupport: {
-        '7.1.0': 'initial',
+        '7.0.0': 'initial',
+        '7.1.0': 'supported',
         '7.1.1': 'supported'
       },
       notes: 'Outdoor, tri-band, Wi-Fi 7'
@@ -273,7 +385,7 @@ function FirmwareMatrix() {
       ],
     },
     {
-      version: '6.0',
+      version: '6.0.0',
       releaseDate: '2021-06-10',
       highlights: [
         'Initial Wi-Fi 6 support',
@@ -285,7 +397,7 @@ function FirmwareMatrix() {
       ],
     },
     {
-      version: '6.1',
+      version: '6.1.0',
       releaseDate: '2021-06-10',
       highlights: [
         'Enhanced Wi-Fi 6 support',
@@ -382,16 +494,16 @@ function FirmwareMatrix() {
   const upgradeConfig: Record<FirmwareVersion, FirmwareUpgradeConfig> = {
     '5.2.2': {
       version: '5.2.2',
-      directUpgradeTo: ['6.0', '6.1', '6.1.1', '6.1.2'],
+      directUpgradeTo: ['6.0.0', '6.1.0', '6.1.1', '6.1.2'],
       notes: 'Legacy firmware - must upgrade to 6.1.2 before any 7.x versions'
     },
-    '6.0': {
-      version: '6.0',
-      directUpgradeTo: ['6.1', '6.1.1', '6.1.2'],
+    '6.0.0': {
+      version: '6.0.0',
+      directUpgradeTo: ['6.1.0', '6.1.1', '6.1.2'],
       notes: 'Initial Wi-Fi 6 support - can upgrade to any 6.1.x version'
     },
-    '6.1': {
-      version: '6.1',
+    '6.1.0': {
+      version: '6.1.0',
       directUpgradeTo: ['6.1.1', '6.1.2', '7.0.0', '7.1.0', '7.1.1'],
       notes: 'Enhanced Wi-Fi 6 support - can upgrade to 6.1.2'
     },

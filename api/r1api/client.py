@@ -1,5 +1,6 @@
 import requests
 import time
+import asyncio
 from r1api.token_cache import get_cached_token, store_token
 from r1api.services.msp import MspService
 from r1api.services.venues import VenueService
@@ -60,7 +61,7 @@ class R1Client:
             'client_id': self.client_id,
             'client_secret': self.shared_secret
         }
-        response = self.session.post(url, headers=headers, data=data, verify=False)
+        response = self.session.post(url, headers=headers, data=data, verify=True)
         #print(f"Response status code: {response.status_code}")
         #print(f"Response headers: {response.headers}")
         #print(f"Response content: {response.content[:300]}")  # Print first 300 chars for brevity
@@ -130,7 +131,7 @@ class R1Client:
             headers=headers,
             json=payload,
             params=params,
-            verify=False
+            verify=True
         )
 
         print(f"{method.upper()} {url} --> {response.status_code}")
@@ -151,3 +152,76 @@ class R1Client:
 
     def delete(self, path, override_tenant_id=None):
         return self._request("delete", path, override_tenant_id=override_tenant_id)
+
+    async def await_task_completion(
+        self,
+        request_id: str,
+        override_tenant_id: str = None,
+        max_attempts: int = 20,
+        sleep_seconds: int = 3
+    ):
+        """
+        Poll /activities/{requestId} until async task completes
+
+        RuckusONE API returns 202 Accepted for many operations with a requestId.
+        This method polls the /activities endpoint to check task status until
+        completion (SUCCESS or FAIL).
+
+        Args:
+            request_id: The requestId returned from a 202 response
+            override_tenant_id: Optional tenant ID for MSP multi-tenant calls
+            max_attempts: Maximum number of polling attempts (default: 20)
+            sleep_seconds: Seconds to wait between polls (default: 3)
+
+        Returns:
+            dict: Final task status response from /activities/{requestId}
+
+        Raises:
+            TimeoutError: If task doesn't complete within max_attempts
+            Exception: If task status is FAIL
+        """
+        print(f"    ⏳ Waiting for task {request_id} to complete...")
+
+        for attempt in range(1, max_attempts + 1):
+            response = self.get(f"/activities/{request_id}", override_tenant_id=override_tenant_id)
+
+            if not response.ok:
+                # Activity might not exist yet - this is normal for the first few attempts
+                if attempt == 1:
+                    print(f"    ⏱️  Waiting for activity to be created...")
+                elif attempt % 5 == 0:
+                    print(f"    ⏱️  Still waiting... (attempt {attempt}/{max_attempts})")
+                await asyncio.sleep(sleep_seconds)
+                continue
+
+            data = response.json()
+            status = data.get('status')
+
+            # Print status updates periodically
+            if attempt == 1 or attempt % 5 == 0:
+                print(f"    ⏱️  Poll {attempt}/{max_attempts}: status={status}")
+
+            # Debug: Print full data on first successful poll
+            if attempt == 1:
+                print(f"    🔍 Activity data: {data}")
+
+            if status == 'SUCCESS':
+                print(f"    ✅ Task {request_id} completed successfully")
+                print(f"    📋 Success response: {data}")
+                return data
+
+            elif status == 'FAIL':
+                error_msg = data.get('message', 'Unknown error')
+                print(f"    ❌ Task {request_id} failed: {error_msg}")
+                print(f"    📋 Full response: {data}")
+                raise Exception(f"Task {request_id} failed: {error_msg}")
+
+            # Status is still PENDING or IN_PROGRESS
+            if attempt < max_attempts:
+                await asyncio.sleep(sleep_seconds)
+
+        # Max attempts reached
+        raise TimeoutError(
+            f"Task {request_id} did not complete after {max_attempts} attempts "
+            f"({max_attempts * sleep_seconds} seconds)"
+        )

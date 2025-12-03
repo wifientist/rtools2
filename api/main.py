@@ -8,7 +8,7 @@ import traceback
 
 from database import engine
 import models
-from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid
 from routers.sz.sz_router import router as sz_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
@@ -82,6 +82,9 @@ app.include_router(migrate.router, tags=["Migration"])
 
 # Diagrams Router - for network diagram generation
 app.include_router(diagrams.router, tags=["Diagrams"])
+
+# Per-Unit SSID Router - for automating per-unit SSID configuration
+app.include_router(per_unit_ssid.router, tags=["Per-Unit SSID"])
 
 # Debug: Print all routes to check for conflicts
 print("=== ALL ROUTES ===")

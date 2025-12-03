@@ -15,6 +15,7 @@
 /api/.venv
 /api/migrations/
 /api/migrations/versions
+/api/specs/cache/
 /api/__pycache__
 /api/*/__pycache__
 /api/*/*/__pycache__
