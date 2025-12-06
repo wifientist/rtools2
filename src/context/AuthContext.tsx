@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -52,26 +52,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [secondaryControllerName, setSecondaryControllerName] = useState<string | null>(null);
   const [roleHierarchy, setRoleHierarchy] = useState<{ [key: string]: number }>({});
 
+  // Ref to track in-flight refresh promises (prevents concurrent refresh attempts)
+  const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
 
   // Helper to refresh access token using refresh token
   const refreshAccessToken = async (): Promise<boolean> => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (response.ok) {
-        console.log("Access token refreshed successfully");
-        return true;
-      } else {
-        console.warn("Failed to refresh access token");
-        return false;
-      }
-    } catch (error) {
-      console.error("Error refreshing token:", error);
-      return false;
+    // If refresh already in progress, return that promise to prevent race conditions
+    if (refreshPromiseRef.current) {
+      console.log("Refresh already in progress, waiting...");
+      return refreshPromiseRef.current;
     }
+
+    const refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+        });
+
+        if (response.ok) {
+          console.log("Access token refreshed successfully");
+          return true;
+        } else {
+          console.warn("Failed to refresh access token");
+          return false;
+        }
+      } catch (error) {
+        console.error("Error refreshing token:", error);
+        return false;
+      } finally {
+        refreshPromiseRef.current = null;
+      }
+    })();
+
+    refreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
   };
 
   const checkAuth = async () => {
@@ -180,15 +195,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Auto-refresh access token every 11 hours (before 12-hour expiry)
+  // With visibility API support to handle backgrounded tabs
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const refreshInterval = setInterval(() => {
-      console.log("Auto-refreshing access token...");
-      refreshAccessToken();
-    }, 11 * 60 * 60 * 1000); // 11 hours in milliseconds
+    let intervalId: NodeJS.Timeout;
+    let lastRefreshTime = Date.now();
 
-    return () => clearInterval(refreshInterval);
+    const startInterval = () => {
+      intervalId = setInterval(() => {
+        // Only refresh if page is visible (prevents throttled background timers)
+        if (document.visibilityState === 'visible') {
+          console.log("Auto-refreshing access token...");
+          refreshAccessToken();
+          lastRefreshTime = Date.now();
+        }
+      }, 11 * 60 * 60 * 1000); // 11 hours
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // When tab becomes visible, check if refresh is needed
+        const timeSinceRefresh = Date.now() - lastRefreshTime;
+        const elevenHours = 11 * 60 * 60 * 1000;
+
+        if (timeSinceRefresh > elevenHours) {
+          console.log("Tab became visible after long idle, refreshing token...");
+          refreshAccessToken();
+          lastRefreshTime = Date.now();
+        }
+      }
+    };
+
+    startInterval();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [isAuthenticated]);
 
   const logout = async () => {

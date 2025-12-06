@@ -1,47 +1,9 @@
-import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Building2, Users, Settings, Shield } from "lucide-react";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+import { useAuth } from "../context/AuthContext";
 
 const Admin = () => {
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [userRole, setUserRole] = useState<string>("admin");
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/status`, {
-          method: "GET",
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          navigate("/login");
-          return;
-        }
-
-        const data = await response.json();
-        console.log(data);
-        if (data.role !== "admin" && data.role !== "super") {
-          navigate("/");
-          return;
-        }
-
-        setUserRole(data.role);
-        setIsAdmin(true);
-      } catch (error) {
-        navigate("/login");
-      }
-    };
-
-    checkAdmin();
-  }, [navigate]);
-
-  if (isAdmin === null) {
-    return <div>Loading...</div>;
-  }
+  const { userRole } = useAuth();
 
   const adminFeatures = [
     {

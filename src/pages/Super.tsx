@@ -1,46 +1,8 @@
-import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Database, Activity, Terminal, Zap } from "lucide-react";
 import Admin from "./Admin";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
-
 const Super = () => {
-  const [isSuper, setIsSuper] = useState<boolean | null>(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/status`, {
-          method: "GET",
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          navigate("/login");
-          return;
-        }
-
-        const data = await response.json();
-        console.log(data);
-        if (data.role !== "super") {
-          navigate("/");
-          return;
-        }
-
-        setIsSuper(true);
-      } catch (error) {
-        navigate("/login");
-      }
-    };
-
-    checkAdmin();
-  }, [navigate]);
-
-  if (isSuper === null) {
-    return <div>Loading...</div>;
-  }
 
   const superFeatures = [
     {
