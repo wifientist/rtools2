@@ -4,7 +4,7 @@ import { useMspDetails } from "@/hooks/useMspDetails";
 import { useAuth } from "@/context/AuthContext";
 //import EcSelector from "@/components/EcSelector"; // adjust the import path as needed
 import { AlertCircle } from "lucide-react";
-import ReactJson from 'react-json-view';
+import { JsonViewer } from '@textea/json-viewer';
 
 
 function Snapshot() {
@@ -51,32 +51,32 @@ function Snapshot() {
                 
             <section className="mb-4">
                 <h2 className="font-semibold">End Customers</h2>
-                <ReactJson src={data.ecs} />
+                <JsonViewer value={data.ecs} />
             </section>
 
             <section className="mb-4">
                 <h2 className="font-semibold">Labels</h2>
-                <ReactJson src={data.labels} />
+                <JsonViewer value={data.labels} />
             </section>
 
             <section className="mb-4">
                 <h2 className="font-semibold">Tech Partners</h2>
-                <ReactJson src={data.tech_partners} />
+                <JsonViewer value={data.tech_partners} />
             </section>
 
             <section className="mb-4">
                 <h2 className="font-semibold">Entitlements</h2>
-                <ReactJson src={data.entitlements} />
+                <JsonViewer value={data.entitlements} />
             </section>
 
             <section className="mb-4">
                 <h2 className="font-semibold">MSP Entitlements</h2>
-                <ReactJson src={data.msp_entitlements} />
+                <JsonViewer value={data.msp_entitlements} />
             </section>
 
             <section>
                 <h2 className="font-semibold">MSP Admins</h2>
-                <ReactJson src={data.msp_admins} />
+                <JsonViewer value={data.msp_admins} />
             </section>
 
         </div>

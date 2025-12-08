@@ -1,7 +1,7 @@
 # Multi-stage build for React frontend
 
 # Stage 1: Build
-FROM node:18-alpine as build
+FROM node:20-alpine as build
 
 WORKDIR /app
 
@@ -36,7 +36,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 CMD ["nginx", "-g", "daemon off;"]
 
 # Stage 3: Development (optional, can be used with docker-compose override)
-FROM node:18-alpine as development
+FROM node:20-alpine as development
 
 WORKDIR /app
 
