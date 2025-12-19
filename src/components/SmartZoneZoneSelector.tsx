@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Server, ChevronDown } from 'lucide-react';
+import { Network, ChevronDown } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -10,12 +10,13 @@ interface Zone {
   description?: string;
 }
 
-interface SmartZoneSelectorProps {
+interface SmartZoneZoneSelectorProps {
+  domainId: string;
   onZoneSelect: (zoneId: string | null, zoneName: string | null) => void;
   disabled?: boolean;
 }
 
-const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelectorProps) => {
+const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false }: SmartZoneZoneSelectorProps) => {
   const { activeControllerId } = useAuth();
   const [zones, setZones] = useState<Zone[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
@@ -24,22 +25,23 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
 
   useEffect(() => {
     const fetchZones = async () => {
-      if (!activeControllerId) {
-        setError('No SmartZone controller selected');
+      if (!activeControllerId || !domainId) {
+        setError('No SmartZone controller or domain selected');
         return;
       }
 
       setLoading(true);
       setError(null);
+      setSelectedZoneId(null); // Reset selection when domain changes
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}/sz/${activeControllerId}/zones`,
+          `${API_BASE_URL}/sz/${activeControllerId}/zones?domain_id=${domainId}`,
           { credentials: 'include' }
         );
 
         if (!response.ok) {
-          throw new Error('Failed to fetch SmartZone zones');
+          throw new Error('Failed to fetch zones');
         }
 
         const result = await response.json();
@@ -61,7 +63,7 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
 
     fetchZones();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeControllerId]); // Only re-fetch when controller changes, not when callback changes
+  }, [activeControllerId, domainId]);
 
   const handleZoneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const zoneId = e.target.value || null;
@@ -75,7 +77,7 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center gap-3">
-          <Server className="w-5 h-5 text-gray-400" />
+          <Network className="w-5 h-5 text-gray-400" />
           <div className="animate-pulse bg-gray-200 h-6 w-48 rounded"></div>
         </div>
       </div>
@@ -86,7 +88,7 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <div className="flex items-start gap-3">
-          <Server className="w-5 h-5 text-red-500 mt-0.5" />
+          <Network className="w-5 h-5 text-red-500 mt-0.5" />
           <div>
             <h3 className="font-semibold text-red-900">Error Loading Zones</h3>
             <p className="text-sm text-red-700 mt-1">{error}</p>
@@ -100,18 +102,18 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
     <div className="bg-white rounded-lg shadow p-6">
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-2">
-          <Server className="w-5 h-5 text-gray-600" />
-          <h3 className="text-lg font-semibold">SmartZone Source</h3>
+          <Network className="w-5 h-5 text-gray-600" />
+          <h3 className="text-lg font-semibold">Wireless Zone (for APs)</h3>
         </div>
         <p className="text-sm text-gray-600">
-          Select the zone/domain containing the APs you want to migrate
+          Select the wireless zone containing the APs you want to migrate
         </p>
       </div>
 
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Zone / Domain
+            Zone
           </label>
           <div className="relative">
             <select
@@ -134,7 +136,7 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
 
         {zones.length === 0 && (
           <div className="text-sm text-gray-500 italic">
-            No zones found in this SmartZone controller
+            No zones found in this domain
           </div>
         )}
 
@@ -151,4 +153,4 @@ const SmartZoneSelector = ({ onZoneSelect, disabled = false }: SmartZoneSelector
   );
 };
 
-export default SmartZoneSelector;
+export default SmartZoneZoneSelector;

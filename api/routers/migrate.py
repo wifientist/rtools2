@@ -151,6 +151,17 @@ class APMigrationItem(BaseModel):
     longitude: Optional[float] = Field(None, description="GPS longitude")
 
 
+class SwitchMigrationItem(BaseModel):
+    """Single Switch to migrate"""
+    serial: str = Field(..., description="Switch serial number")
+    name: str = Field(..., description="Switch name")
+    description: Optional[str] = Field(None, description="Switch description")
+    mac: Optional[str] = Field(None, description="Switch MAC address")
+    model: Optional[str] = Field(None, description="Switch model")
+    switchGroupId: Optional[str] = Field(None, description="SmartZone Switch Group ID")
+    switchGroupName: Optional[str] = Field(None, description="SmartZone Switch Group Name")
+
+
 class SZToR1MigrationRequest(BaseModel):
     """Request payload for SmartZone to RuckusONE migration"""
     source_controller_id: int = Field(..., description="Source SmartZone controller ID")
@@ -158,7 +169,8 @@ class SZToR1MigrationRequest(BaseModel):
     dest_tenant_id: Optional[str] = Field(None, description="Destination tenant/EC ID (required for MSP)")
     dest_venue_id: str = Field(..., description="Destination venue ID in R1")
     dest_ap_group: Optional[str] = Field(None, description="AP Group name in R1")
-    aps: List[APMigrationItem] = Field(..., description="List of APs to migrate")
+    aps: List[APMigrationItem] = Field(default_factory=list, description="List of APs to migrate")
+    switches: List[SwitchMigrationItem] = Field(default_factory=list, description="List of Switches to migrate")
 
 
 class R1ToR1MigrationRequest(BaseModel):
@@ -205,17 +217,17 @@ async def migrate_sz_to_r1(
     db: Session = Depends(get_db),
 ):
     """
-    Migrate APs from SmartZone to RuckusONE
+    Migrate APs and/or Switches from SmartZone to RuckusONE
 
     This endpoint:
     1. Validates access to both controllers
-    2. Fetches AP details from SmartZone (if needed)
-    3. Formats AP data for R1 import
-    4. Imports APs into R1 venue
+    2. Fetches device details from SmartZone (if needed)
+    3. Formats device data for R1 import
+    4. Imports APs and Switches into R1 venue
     5. Returns migration results
 
     Args:
-        request: Migration request with source/dest controllers and AP list
+        request: Migration request with source/dest controllers and device lists
 
     Returns:
         Migration results with success/failure counts
@@ -260,6 +272,9 @@ async def migrate_sz_to_r1(
             )
 
         # Check license availability before starting migration
+        # Total devices = APs + Switches (both consume licenses)
+        total_devices = len(request.aps) + len(request.switches)
+
         license_info = {}
         try:
             license_data = await r1_client.entitlements.get_available_ap_licenses(
@@ -267,7 +282,7 @@ async def migrate_sz_to_r1(
             )
             available_licenses = license_data['available']
 
-            required_licenses = len(request.aps)
+            required_licenses = total_devices
 
             license_info = {
                 "available": available_licenses,
@@ -278,11 +293,11 @@ async def migrate_sz_to_r1(
             if available_licenses < required_licenses:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Insufficient AP licenses. Required: {required_licenses}, Available: {available_licenses}. "
-                           f"Please purchase additional licenses or reduce the number of APs to migrate."
+                    detail=f"Insufficient device licenses. Required: {required_licenses} ({len(request.aps)} APs + {len(request.switches)} Switches), Available: {available_licenses}. "
+                           f"Please purchase additional licenses or reduce the number of devices to migrate."
                 )
 
-            print(f"✅ License check passed: {available_licenses} available, {required_licenses} required")
+            print(f"✅ License check passed: {available_licenses} available, {required_licenses} required ({len(request.aps)} APs + {len(request.switches)} Switches)")
 
         except HTTPException:
             raise  # Re-raise HTTP exceptions
@@ -291,11 +306,11 @@ async def migrate_sz_to_r1(
             print(f"Proceeding with migration anyway. License validation may be incomplete.")
             license_info = {
                 "available": "unknown",
-                "required": len(request.aps),
+                "required": total_devices,
                 "error": str(e)
             }
             # Don't fail the migration if license check fails - just warn
-            # The actual AP creation will fail if there are no licenses
+            # The actual device creation will fail if there are no licenses
 
         async with sz_client:
             # Process each AP
@@ -330,6 +345,45 @@ async def migrate_sz_to_r1(
                     print(f"Failed to add AP {ap.serial}: {error_msg}")
                     details.append({
                         "serial": ap.serial,
+                        "status": "failed",
+                        "message": error_msg
+                    })
+
+            # Process each Switch
+            for switch in request.switches:
+                try:
+                    # TODO: Implement add_switch_to_venue method in R1 venues service
+                    # For now, we'll log the switch and mark as not implemented
+                    print(f"⚠️ Switch migration not yet fully implemented: {switch.serial}")
+                    print(f"   Switch details: name={switch.name}, model={switch.model}")
+
+                    # Placeholder: In the future, call r1_client.venues.add_switch_to_venue()
+                    # result = await r1_client.venues.add_switch_to_venue(
+                    #     venue_id=request.dest_venue_id,
+                    #     name=switch.name,
+                    #     serial_number=switch.serial,
+                    #     tenant_id=dest_tenant_id,
+                    #     description=switch.description,
+                    #     model=switch.model,
+                    #     tags=[request.dest_ap_group] if request.dest_ap_group else None
+                    # )
+
+                    # For now, mark as failed with "not implemented" message
+                    failed_count += 1
+                    details.append({
+                        "serial": switch.serial,
+                        "device_type": "switch",
+                        "status": "failed",
+                        "message": "Switch migration to RuckusONE not yet implemented. Please contact support for switch migration."
+                    })
+
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = str(e)
+                    print(f"Failed to process switch {switch.serial}: {error_msg}")
+                    details.append({
+                        "serial": switch.serial,
+                        "device_type": "switch",
                         "status": "failed",
                         "message": error_msg
                     })

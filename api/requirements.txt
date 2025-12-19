@@ -30,6 +30,7 @@ PyYAML==6.0.1
 python-http-client==3.3.7
 python-jose==3.4.0
 python-multipart==0.0.20
+redis==5.0.1
 requests==2.32.3
 rsa==4.9
 sendgrid==6.11.0

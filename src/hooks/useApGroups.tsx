@@ -29,8 +29,8 @@ export function useApGroups(controllerId: number | null, tenantId: string | numb
         return res.json();
       })
       .then((json) => {
-        console.log("🎯 useApGroups - Raw Response:", json);
-        console.log("🎯 useApGroups - Response Type:", typeof json, Array.isArray(json) ? "(array)" : "(object)");
+        //console.log("🎯 useApGroups - Raw Response:", json);
+        //console.log("🎯 useApGroups - Response Type:", typeof json, Array.isArray(json) ? "(array)" : "(object)");
 
         let groups = [];
 
@@ -50,9 +50,9 @@ export function useApGroups(controllerId: number | null, tenantId: string | numb
             name: group.name.trim()
           }));
 
-        console.log("🎯 useApGroups - Original count:", groups.length);
-        console.log("🎯 useApGroups - After filtering (with names):", processedGroups.length);
-        console.log("🎯 useApGroups - Processed groups:", processedGroups.map(g => ({ id: g.id, name: g.name, isDefault: g.isDefault })));
+        //console.log("🎯 useApGroups - Original count:", groups.length);
+        //console.log("🎯 useApGroups - After filtering (with names):", processedGroups.length);
+        //console.log("🎯 useApGroups - Processed groups:", processedGroups.map(g => ({ id: g.id, name: g.name, isDefault: g.isDefault })));
 
         setApGroups(processedGroups);
         setLoading(false);

@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { ArrowRight, Server, Target, AlertCircle } from "lucide-react";
-import SmartZoneSelector from "@/components/SmartZoneSelector";
+import SmartZoneDomainSelector from "@/components/SmartZoneDomainSelector";
+import SmartZoneZoneSelector from "@/components/SmartZoneZoneSelector";
 import SzApSelect from "@/components/SzApSelect";
+import SzSwitchSelect from "@/components/SzSwitchSelect";
 import SingleEcSelector from "@/components/SingleEcSelector";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 
@@ -20,6 +22,20 @@ interface SzAP {
   longitude?: number;
 }
 
+interface SzSwitch {
+  serialNumber: string;
+  name: string;
+  description?: string;
+  mac?: string;
+  model?: string;
+  switchGroupId?: string;
+  switchGroupName?: string;
+  domainId?: string;
+  ipAddress?: string;
+  firmwareVersion?: string;
+  status?: string;
+}
+
 function MigrateSzToR1() {
   const {
     activeControllerId,
@@ -33,6 +49,8 @@ function MigrateSzToR1() {
   } = useAuth();
 
   // SmartZone (source) state
+  const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
+  const [selectedDomainName, setSelectedDomainName] = useState<string | null>(null);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [selectedZoneName, setSelectedZoneName] = useState<string | null>(null);
 
@@ -46,6 +64,10 @@ function MigrateSzToR1() {
   // AP selection state
   const [selectedAPs, setSelectedAPs] = useState<SzAP[]>([]);
   const [showAPSelect, setShowAPSelect] = useState(false);
+
+  // Switch selection state
+  const [selectedSwitches, setSelectedSwitches] = useState<SzSwitch[]>([]);
+  const [showSwitchSelect, setShowSwitchSelect] = useState(false);
 
   // Migration state
   const [isLoading, setIsLoading] = useState(false);
@@ -64,10 +86,19 @@ function MigrateSzToR1() {
   const [licenseCheckLoading, setLicenseCheckLoading] = useState(false);
   const [licenseCheckError, setLicenseCheckError] = useState<string | null>(null);
 
+  const handleDomainSelect = (domainId: string | null, domainName: string | null) => {
+    setSelectedDomainId(domainId);
+    setSelectedDomainName(domainName);
+    setSelectedZoneId(null); // Clear zone when domain changes
+    setSelectedZoneName(null);
+    setSelectedAPs([]); // Clear device selections when domain changes
+    setSelectedSwitches([]);
+  };
+
   const handleZoneSelect = (zoneId: string | null, zoneName: string | null) => {
     setSelectedZoneId(zoneId);
     setSelectedZoneName(zoneName);
-    setSelectedAPs([]); // Clear AP selection when zone changes
+    setSelectedAPs([]); // Clear AP selections when zone changes
   };
 
   const handleEcSelect = (ecId: string | null, ec: any) => {
@@ -88,7 +119,7 @@ function MigrateSzToR1() {
 
   const handleSelectAPClick = () => {
     if (!selectedZoneId || !activeControllerId) {
-      alert("Please select a SmartZone zone first");
+      alert("Please select a wireless zone first");
       return;
     }
     setShowAPSelect(true);
@@ -104,9 +135,27 @@ function MigrateSzToR1() {
     console.log("Selected APs for migration:", aps);
   };
 
+  const handleSelectSwitchClick = () => {
+    if (!selectedDomainId || !activeControllerId) {
+      alert("Please select a domain first");
+      return;
+    }
+    setShowSwitchSelect(true);
+  };
+
+  const handleSwitchSelectClose = () => {
+    setShowSwitchSelect(false);
+  };
+
+  const handleSwitchSelectConfirm = (switches: SzSwitch[]) => {
+    setSelectedSwitches(switches);
+    setShowSwitchSelect(false);
+    console.log("Selected Switches for migration:", switches);
+  };
+
   const handleMigrate = async () => {
-    if (!selectedZoneId) {
-      alert("Please select a SmartZone zone");
+    if (!selectedDomainId) {
+      alert("Please select a SmartZone domain");
       return;
     }
 
@@ -126,8 +175,8 @@ function MigrateSzToR1() {
       return;
     }
 
-    if (selectedAPs.length === 0) {
-      alert("Please select at least one Access Point to migrate");
+    if (selectedAPs.length === 0 && selectedSwitches.length === 0) {
+      alert("Please select at least one Access Point or Switch to migrate");
       return;
     }
 
@@ -149,6 +198,15 @@ function MigrateSzToR1() {
           model: ap.model,
           latitude: ap.latitude,
           longitude: ap.longitude,
+        })),
+        switches: selectedSwitches.map(sw => ({
+          serial: sw.serialNumber,
+          name: sw.name,
+          description: sw.description,
+          mac: sw.mac,
+          model: sw.model,
+          switchGroupId: sw.switchGroupId,
+          switchGroupName: sw.switchGroupName,
         }))
       };
 
@@ -170,7 +228,12 @@ function MigrateSzToR1() {
       setMigrationResult(result);
 
       // Build alert message with license info if available
-      let alertMsg = `Migration completed!\n${result.migrated_count} APs migrated successfully\n${result.failed_count} APs failed`;
+      let alertMsg = `Migration completed!\n${result.migrated_count} devices migrated successfully\n${result.failed_count} devices failed`;
+
+      // Add breakdown if both APs and switches were migrated
+      if (selectedAPs.length > 0 && selectedSwitches.length > 0) {
+        alertMsg += `\n(${selectedAPs.length} APs, ${selectedSwitches.length} Switches)`;
+      }
 
       if (result.license_info && result.license_info.available !== "unknown") {
         const remaining = result.license_info.available - result.migrated_count;
@@ -182,6 +245,7 @@ function MigrateSzToR1() {
       // Reset on success
       if (result.failed_count === 0) {
         setSelectedAPs([]);
+        setSelectedSwitches([]);
         setDestVenueId("");
       }
 
@@ -208,18 +272,20 @@ function MigrateSzToR1() {
     ? destEcId
     : (secondaryController?.r1_tenant_id || null);
 
-  const isReadyToSelectAPs = selectedZoneId && activeControllerId && controllersValid;
-  const isReadyToMigrate = isReadyToSelectAPs &&
-    selectedAPs.length > 0 &&
+  const isReadyToSelectDevices = selectedDomainId && activeControllerId && controllersValid;
+  const hasDevicesSelected = selectedAPs.length > 0 || selectedSwitches.length > 0;
+  const isReadyToMigrate = isReadyToSelectDevices &&
+    hasDevicesSelected &&
     destVenueId &&
     secondaryControllerId &&
     (!needsEcSelection || destEcId); // EC must be selected if needed
 
-  // Check license availability when APs are selected
+  // Check license availability when devices are selected
   useEffect(() => {
     const checkLicenses = async () => {
-      // Only check if we have APs selected and destination controller configured
-      if (selectedAPs.length === 0 || !secondaryControllerId) {
+      // Only check if we have devices selected and destination controller configured
+      const totalDevices = selectedAPs.length + selectedSwitches.length;
+      if (totalDevices === 0 || !secondaryControllerId) {
         setLicenseCheck(null);
         setLicenseCheckError(null);
         return;
@@ -239,7 +305,7 @@ function MigrateSzToR1() {
         const payload = {
           controller_id: secondaryControllerId,
           tenant_id: effectiveTenantId,
-          ap_count: selectedAPs.length,
+          ap_count: totalDevices, // Total APs + Switches
         };
 
         const response = await fetch(`${API_BASE_URL}/migrate/check-license`, {
@@ -268,14 +334,14 @@ function MigrateSzToR1() {
     };
 
     checkLicenses();
-  }, [selectedAPs, secondaryControllerId, effectiveTenantId, destEcId, needsEcSelection]);
+  }, [selectedAPs, selectedSwitches, secondaryControllerId, effectiveTenantId, destEcId, needsEcSelection]);
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="mb-8">
         <h2 className="text-3xl font-bold mb-2">SmartZone to RuckusONE Migration</h2>
         <p className="text-gray-600">
-          Migrate Access Points from SmartZone to RuckusONE in 3 simple steps
+          Migrate Access Points and/or Switches from SmartZone to RuckusONE
         </p>
       </div>
 
@@ -338,26 +404,115 @@ function MigrateSzToR1() {
         </div>
       </div>
 
-      {/* Step 1: Select SmartZone Zone */}
+      {/* Step 1: Select SmartZone Domain */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
             1
           </div>
-          <h3 className="text-xl font-semibold">Select Source Zone</h3>
+          <h3 className="text-xl font-semibold">Select Source Domain</h3>
         </div>
-        <SmartZoneSelector
-          onZoneSelect={handleZoneSelect}
+        <SmartZoneDomainSelector
+          onDomainSelect={handleDomainSelect}
           disabled={!activeControllerId}
         />
       </div>
 
-      {/* Step 2: Select Destination EC (if MSP) */}
-      {selectedZoneId && needsEcSelection && (
+      {/* Step 2: Select Zone (for APs) */}
+      {selectedDomainId && (
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold">
               2
+            </div>
+            <h3 className="text-xl font-semibold">Select Zone (for APs)</h3>
+          </div>
+
+          <SmartZoneZoneSelector
+            domainId={selectedDomainId}
+            onZoneSelect={handleZoneSelect}
+            disabled={!activeControllerId}
+          />
+        </div>
+      )}
+
+      {/* Step 3: Select Devices (APs and/or Switches) */}
+      {selectedDomainId && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold">
+              3
+            </div>
+            <h3 className="text-xl font-semibold">Select Devices to Migrate</h3>
+            <span className="text-sm text-gray-500">(APs and/or Switches)</span>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex gap-4">
+              <button
+                onClick={handleSelectAPClick}
+                disabled={!selectedZoneId || isLoading}
+                className={`btn px-6 py-2 rounded font-medium ${
+                  selectedZoneId && !isLoading
+                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {selectedAPs.length > 0
+                  ? `Reselect APs (${selectedAPs.length} selected)`
+                  : "Select APs"}
+              </button>
+
+              <button
+                onClick={handleSelectSwitchClick}
+                disabled={!selectedDomainId || isLoading}
+                className={`btn px-6 py-2 rounded font-medium ${
+                  selectedDomainId && !isLoading
+                    ? "bg-purple-600 text-white hover:bg-purple-700"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
+              >
+                {selectedSwitches.length > 0
+                  ? `Reselect Switches (${selectedSwitches.length} selected)`
+                  : "Select Switches"}
+              </button>
+            </div>
+
+            <div className="mt-4 flex gap-4">
+              {selectedAPs.length > 0 && (
+                <div className="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="font-semibold text-blue-900 mb-2">
+                    {selectedAPs.length} APs Selected
+                  </div>
+                  <div className="text-sm text-blue-700">
+                    {selectedAPs.slice(0, 3).map(ap => ap.name || ap.serial).join(", ")}
+                    {selectedAPs.length > 3 && ` and ${selectedAPs.length - 3} more...`}
+                  </div>
+                </div>
+              )}
+
+              {selectedSwitches.length > 0 && (
+                <div className="flex-1 bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="font-semibold text-purple-900 mb-2">
+                    {selectedSwitches.length} Switches Selected
+                  </div>
+                  <div className="text-sm text-purple-700">
+                    {selectedSwitches.slice(0, 3).map(sw => sw.name || sw.serialNumber).join(", ")}
+                    {selectedSwitches.length > 3 && ` and ${selectedSwitches.length - 3} more...`}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Select Destination EC (if MSP) */}
+      {hasDevicesSelected && needsEcSelection && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold">
+              4
             </div>
             <h3 className="text-xl font-semibold">Select Destination EC</h3>
           </div>
@@ -372,12 +527,12 @@ function MigrateSzToR1() {
         </div>
       )}
 
-      {/* Step 3: Select Destination Venue */}
-      {selectedZoneId && (!needsEcSelection || destEcId) && effectiveTenantId && (
+      {/* Step 5: Select Destination Venue */}
+      {hasDevicesSelected && (!needsEcSelection || destEcId) && effectiveTenantId && (
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold">
-              {needsEcSelection ? "3" : "2"}
+              {needsEcSelection ? "5" : "4"}
             </div>
             <h3 className="text-xl font-semibold">Select Destination Venue</h3>
           </div>
@@ -391,46 +546,6 @@ function MigrateSzToR1() {
               selectedVenueId={destVenueId}
               selectedApGroup={destApGroup}
             />
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: Select APs */}
-      {selectedZoneId && destVenueId && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold">
-              {needsEcSelection ? "4" : "3"}
-            </div>
-            <h3 className="text-xl font-semibold">Select Access Points</h3>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <button
-              onClick={handleSelectAPClick}
-              disabled={!isReadyToSelectAPs || isLoading}
-              className={`btn px-6 py-2 rounded font-medium ${
-                isReadyToSelectAPs && !isLoading
-                  ? "bg-purple-600 text-white hover:bg-purple-700"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              {selectedAPs.length > 0
-                ? `Reselect APs (${selectedAPs.length} selected)`
-                : "Select APs to Migrate"}
-            </button>
-
-            {selectedAPs.length > 0 && (
-              <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="font-semibold text-green-900 mb-2">
-                  {selectedAPs.length} APs Selected
-                </div>
-                <div className="text-sm text-green-700">
-                  {selectedAPs.slice(0, 3).map(ap => ap.name || ap.serial).join(", ")}
-                  {selectedAPs.length > 3 && ` and ${selectedAPs.length - 3} more...`}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -574,6 +689,16 @@ function MigrateSzToR1() {
           zoneId={selectedZoneId}
           onClose={handleAPSelectClose}
           onConfirm={handleAPSelectConfirm}
+        />
+      )}
+
+      {/* Switch Selection Modal */}
+      {showSwitchSelect && activeControllerId && selectedDomainId && (
+        <SzSwitchSelect
+          controllerId={activeControllerId}
+          domainId={selectedDomainId}
+          onClose={handleSwitchSelectClose}
+          onConfirm={handleSwitchSelectConfirm}
         />
       )}
     </div>

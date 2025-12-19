@@ -3,7 +3,7 @@ Network diagram generation API endpoints.
 
 Generates fossflow-compatible diagram JSON from network topology data.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Literal
 from datetime import datetime
@@ -219,7 +219,7 @@ async def generate_network_diagram(request: NetworkDiagramRequest):
 
 
 @router.post("/network/generate-and-save")
-async def generate_and_save_to_fossflow(request: NetworkDiagramRequest):
+async def generate_and_save_to_fossflow(diagram_request: NetworkDiagramRequest, request: Request):
     """
     Generate a network diagram AND save it to fossflow backend storage.
 
@@ -231,7 +231,7 @@ async def generate_and_save_to_fossflow(request: NetworkDiagramRequest):
     The diagram will then be available in the fossflow UI.
     """
     # Generate the diagram
-    diagram_data = await _generate_diagram_data(request)
+    diagram_data = await _generate_diagram_data(diagram_request)
 
     # Add a name field for the diagram (required by fossflow storage)
     diagram_with_name = {
@@ -251,11 +251,24 @@ async def generate_and_save_to_fossflow(request: NetworkDiagramRequest):
                 result = response.json()
                 diagram_id = result.get("id")
 
+                # Build the fossflow URL based on the request's base URL
+                # This handles localhost:3000, localhost:8080, and production URLs correctly
+                base_url = str(request.base_url).rstrip('/')
+
+                # If accessing through the API (/api/diagrams/...), use the proxy path
+                # Otherwise use direct port 3000 access
+                if '/api/' in str(request.url):
+                    # Accessed through nginx proxy - use /diagrams/ path
+                    fossflow_url = f"{base_url}/diagrams/?diagramId={diagram_id}"
+                else:
+                    # Direct access - use port 3000
+                    fossflow_url = f"http://localhost:3000/?diagramId={diagram_id}"
+
                 return {
                     "success": True,
                     "diagram_id": diagram_id,
                     "message": "Diagram saved to fossflow storage",
-                    "fossflow_url": f"http://localhost:3000/?diagramId={diagram_id}",
+                    "fossflow_url": fossflow_url,
                     "api_url": f"{FOSSFLOW_API_URL}/api/diagrams/{diagram_id}"
                 }
             else:

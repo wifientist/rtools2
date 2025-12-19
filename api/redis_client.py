@@ -1,0 +1,59 @@
+"""
+Redis client configuration for workflow state management
+"""
+import os
+import redis.asyncio as redis
+from typing import Optional
+
+class RedisClient:
+    """Singleton Redis client for workflow state storage"""
+
+    _instance: Optional[redis.Redis] = None
+
+    @classmethod
+    async def get_client(cls) -> redis.Redis:
+        """Get or create Redis client instance"""
+        if cls._instance is None:
+            host = os.getenv("REDIS_HOST", "localhost")
+            port = int(os.getenv("REDIS_PORT", "6379"))
+            db = int(os.getenv("REDIS_DB", "1"))
+            password = os.getenv("REDIS_PASSWORD", None)
+
+            # Only pass password if it's set (not empty string)
+            redis_kwargs = {
+                "host": host,
+                "port": port,
+                "db": db,
+                "decode_responses": True,  # Automatically decode bytes to strings
+                "socket_connect_timeout": 5,
+                "socket_timeout": 5,
+            }
+
+            if password:
+                redis_kwargs["password"] = password
+
+            cls._instance = redis.Redis(**redis_kwargs)
+
+            # Test connection
+            try:
+                await cls._instance.ping()
+                print(f"✅ Redis connected: {host}:{port} (DB {db})")
+            except redis.ConnectionError as e:
+                print(f"❌ Redis connection failed: {e}")
+                cls._instance = None
+                raise
+
+        return cls._instance
+
+    @classmethod
+    async def close(cls):
+        """Close Redis connection"""
+        if cls._instance:
+            await cls._instance.close()
+            cls._instance = None
+            print("Redis connection closed")
+
+# Convenience function for FastAPI dependency injection
+async def get_redis() -> redis.Redis:
+    """FastAPI dependency for Redis client"""
+    return await RedisClient.get_client()

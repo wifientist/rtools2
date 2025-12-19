@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from szapi.services.zones import ZoneService
 from szapi.services.aps import ApService
+from szapi.services.switches import SwitchService
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class SZClient:
         # Attach modular services
         self.zones = ZoneService(self)
         self.aps = ApService(self)
+        self.switches = SwitchService(self)
 
         logger.info(f"SZClient initialized for {host}:{port} with API version {api_version}")
 

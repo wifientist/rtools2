@@ -29,6 +29,7 @@ import Users from "@/pages/Users";
 import PerUnitSSID from "@/pages/PerUnitSSID";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
+import CloudpathDPSK from "@/pages/CloudpathDPSK";
 
 const App = () => {
   
@@ -53,6 +54,7 @@ const App = () => {
           <Route path="/speed-explainer" element={<SpeedExplainer />} />
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
+          <Route path="/cloudpath-dpsk" element={<BetaRoute element={<CloudpathDPSK />} />} />
           <Route path="/migrate" element={<MigrateR1ToR1 />} />
           <Route path="/migrate-sz-to-r1" element={<MigrateSzToR1 />} />
           <Route path="/snapshot" element={<Snapshot />} />

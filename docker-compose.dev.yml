@@ -21,6 +21,33 @@ services:
     networks:
       - rtools-network
 
+  # Redis (for workflow state management)
+  redis:
+    image: redis:7-alpine
+    container_name: rtools-redis-dev
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}  # Optional: Set in .env for password protection
+    ports:
+      - "6381:6379"  # Host:6380 -> Container:6379 (avoid conflict with host Redis)
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rtools-network
+    command: >
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"
+        else
+          redis-server --appendonly yes --appendfsync everysec
+        fi
+      '
+
   # FastAPI Backend (Development with hot-reload)
   backend:
     build:
@@ -31,8 +58,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://postgres:${DB_PASSWORD}@db:5432/rtools2
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
       AUTH_ALGORITHM: ${AUTH_ALGORITHM:-HS256}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4173,http://localhost}
@@ -87,7 +120,7 @@ services:
     environment:
       VITE_API_BASE_URL: /api
       API_BASE_URL: http://backend:4174
-      VITE_ALLOWED_HOSTS: localhost
+      VITE_ALLOWED_HOSTS: localhost,10.0.25.25
     volumes:
       # Mount source code for hot-reload
       - .:/app
@@ -137,6 +170,8 @@ services:
 
 volumes:
   postgres_data_dev:
+    driver: local
+  redis_data_dev:
     driver: local
   backend_venv:
     driver: local
