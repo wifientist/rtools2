@@ -1,0 +1,788 @@
+
+class PolicySetService:
+    """
+    Service for managing Adaptive Policy Sets in RuckusONE.
+
+    Policy Sets are collections of prioritized policies that define access control
+    rules based on device/user attributes. They can be attached to:
+    - Identity Groups
+    - DPSK Pools
+    - MAC Registration Pools
+    - Certificate Templates
+    """
+
+    def __init__(self, client):
+        self.client = client  # back-reference to main R1Client
+
+    # ========== Policy Set Management ==========
+
+    async def query_policy_sets(
+        self,
+        tenant_id: str = None,
+        filters: dict = None,
+        search_string: str = None,
+        page: int = 0,
+        limit: int = 100
+    ):
+        """
+        Query policy sets with advanced filtering
+
+        Args:
+            tenant_id: Tenant/EC ID (required for MSP)
+            filters: Dictionary of filters
+            search_string: Optional search string
+            page: Page number (0-based)
+            limit: Number of results per page
+
+        Returns:
+            Query response with policy sets
+        """
+        body = {
+            "page": page,
+            "limit": limit
+        }
+
+        if filters:
+            body["filters"] = filters
+        if search_string:
+            body["searchString"] = search_string
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.post(
+                "/policySets/query",
+                payload=body,
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.post(
+                "/policySets/query",
+                payload=body
+            ).json()
+
+    async def get_policy_set(
+        self,
+        policy_set_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific policy set by ID
+
+        Args:
+            policy_set_id: Policy set ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Policy set details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policySets/{policy_set_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policySets/{policy_set_id}"
+            ).json()
+
+    async def create_policy_set(
+        self,
+        name: str,
+        tenant_id: str = None,
+        description: str = None
+    ):
+        """
+        Create a new policy set
+
+        Args:
+            name: Policy set name
+            tenant_id: Tenant/EC ID (required for MSP)
+            description: Optional description
+
+        Returns:
+            Created policy set response
+        """
+        payload = {
+            "name": name
+        }
+
+        if description:
+            payload["description"] = description
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post(
+                "/policySets",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                "/policySets",
+                payload=payload
+            )
+
+        return response.json()
+
+    async def update_policy_set(
+        self,
+        policy_set_id: str,
+        tenant_id: str = None,
+        name: str = None,
+        description: str = None
+    ):
+        """
+        Update an existing policy set
+
+        Args:
+            policy_set_id: Policy set ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            name: Optional new name
+            description: Optional new description
+
+        Returns:
+            Updated policy set response
+        """
+        payload = {}
+
+        if name:
+            payload["name"] = name
+        if description:
+            payload["description"] = description
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.patch(
+                f"/policySets/{policy_set_id}",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.patch(
+                f"/policySets/{policy_set_id}",
+                payload=payload
+            )
+
+        return response.json()
+
+    async def delete_policy_set(
+        self,
+        policy_set_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Delete a policy set
+
+        Args:
+            policy_set_id: Policy set ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Deletion response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.delete(
+                f"/policySets/{policy_set_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.delete(
+                f"/policySets/{policy_set_id}"
+            )
+
+        return response.json() if response.content else {"status": "deleted"}
+
+    # ========== Policy Set Assignments ==========
+
+    async def get_policy_set_assignments(
+        self,
+        policy_set_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get all assignments (where this policy set is used)
+
+        Args:
+            policy_set_id: Policy set ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            List of assignments
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/assignments",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/assignments"
+            ).json()
+
+    async def query_policy_set_assignments(
+        self,
+        policy_set_id: str,
+        tenant_id: str = None,
+        filters: dict = None,
+        page: int = 0,
+        limit: int = 100
+    ):
+        """
+        Query policy set assignments with filtering
+
+        Args:
+            policy_set_id: Policy set ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            filters: Optional filters
+            page: Page number
+            limit: Page size
+
+        Returns:
+            Query response with assignments
+        """
+        body = {
+            "page": page,
+            "limit": limit
+        }
+
+        if filters:
+            body["filters"] = filters
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.post(
+                f"/policySets/{policy_set_id}/assignments/query",
+                payload=body,
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.post(
+                f"/policySets/{policy_set_id}/assignments/query",
+                payload=body
+            ).json()
+
+    async def get_policy_set_assignment(
+        self,
+        policy_set_id: str,
+        assignment_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific assignment
+
+        Args:
+            policy_set_id: Policy set ID
+            assignment_id: Assignment ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Assignment details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/assignments/{assignment_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/assignments/{assignment_id}"
+            ).json()
+
+    # ========== Prioritized Policies ==========
+
+    async def get_prioritized_policies(
+        self,
+        policy_set_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get all policies in a policy set with their priorities
+
+        Args:
+            policy_set_id: Policy set ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            List of prioritized policies
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/prioritizedPolicies",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/prioritizedPolicies"
+            ).json()
+
+    async def get_prioritized_policy(
+        self,
+        policy_set_id: str,
+        policy_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific policy within a policy set
+
+        Args:
+            policy_set_id: Policy set ID
+            policy_id: Policy ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Policy details with priority
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}"
+            ).json()
+
+    async def assign_policy_to_policy_set(
+        self,
+        policy_set_id: str,
+        policy_id: str,
+        tenant_id: str = None,
+        priority: int = None
+    ):
+        """
+        Assign a policy to a policy set
+
+        Args:
+            policy_set_id: Policy set ID
+            policy_id: Policy ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            priority: Optional priority (lower = higher priority)
+
+        Returns:
+            Response from API
+        """
+        payload = {}
+
+        if priority is not None:
+            payload["priority"] = priority
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.put(
+                f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
+                payload=payload
+            )
+
+        return response.json() if response.content else {"status": "assigned"}
+
+    async def remove_policy_from_policy_set(
+        self,
+        policy_set_id: str,
+        policy_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Remove a policy from a policy set
+
+        Args:
+            policy_set_id: Policy set ID
+            policy_id: Policy ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Response from API
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.delete(
+                f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.delete(
+                f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}"
+            )
+
+        return response.json() if response.content else {"status": "removed"}
+
+    # ========== Policy Evaluation ==========
+
+    async def evaluate_policy_criteria(
+        self,
+        policy_set_id: str,
+        criteria: dict,
+        tenant_id: str = None
+    ):
+        """
+        Evaluate policy criteria to see which policies would match
+
+        Args:
+            policy_set_id: Policy set ID
+            criteria: Dictionary of criteria to evaluate
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Evaluation report showing matching policies
+        """
+        payload = criteria
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post(
+                f"/policySets/{policy_set_id}/evaluationReports",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                f"/policySets/{policy_set_id}/evaluationReports",
+                payload=payload
+            )
+
+        return response.json()
+
+    # ========== Policy Templates ==========
+
+    async def query_policy_templates(
+        self,
+        tenant_id: str = None,
+        filters: dict = None,
+        page: int = 0,
+        limit: int = 100
+    ):
+        """
+        Query policy templates
+
+        Args:
+            tenant_id: Tenant/EC ID (required for MSP)
+            filters: Optional filters
+            page: Page number
+            limit: Page size
+
+        Returns:
+            Query response with policy templates
+        """
+        body = {
+            "page": page,
+            "limit": limit
+        }
+
+        if filters:
+            body["filters"] = filters
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.post(
+                "/policyTemplates/query",
+                payload=body,
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.post(
+                "/policyTemplates/query",
+                payload=body
+            ).json()
+
+    async def get_policy_template(
+        self,
+        template_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific policy template
+
+        Args:
+            template_id: Policy template ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Policy template details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}"
+            ).json()
+
+    async def get_template_attributes(
+        self,
+        template_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get attributes for a policy template
+
+        Args:
+            template_id: Policy template ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            List of template attributes
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/attributes",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/attributes"
+            ).json()
+
+    async def query_template_attributes(
+        self,
+        template_id: str,
+        tenant_id: str = None,
+        filters: dict = None,
+        page: int = 0,
+        limit: int = 100
+    ):
+        """
+        Query template attributes with filtering
+
+        Args:
+            template_id: Policy template ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            filters: Optional filters
+            page: Page number
+            limit: Page size
+
+        Returns:
+            Query response with attributes
+        """
+        body = {
+            "page": page,
+            "limit": limit
+        }
+
+        if filters:
+            body["filters"] = filters
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.post(
+                f"/policyTemplates/{template_id}/attributes/query",
+                payload=body,
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.post(
+                f"/policyTemplates/{template_id}/attributes/query",
+                payload=body
+            ).json()
+
+    async def get_template_attribute(
+        self,
+        template_id: str,
+        attribute_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific template attribute
+
+        Args:
+            template_id: Policy template ID
+            attribute_id: Attribute ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Attribute details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/attributes/{attribute_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/attributes/{attribute_id}"
+            ).json()
+
+    # ========== Template Policies ==========
+
+    async def get_template_policies(
+        self,
+        template_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get all policies for a template
+
+        Args:
+            template_id: Policy template ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            List of policies
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies"
+            ).json()
+
+    async def query_template_policies(
+        self,
+        template_id: str,
+        tenant_id: str = None,
+        filters: dict = None,
+        page: int = 0,
+        limit: int = 100
+    ):
+        """
+        Query policies for a template with filtering
+
+        Args:
+            template_id: Policy template ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            filters: Optional filters
+            page: Page number
+            limit: Page size
+
+        Returns:
+            Query response with policies
+        """
+        body = {
+            "page": page,
+            "limit": limit
+        }
+
+        if filters:
+            body["filters"] = filters
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.post(
+                f"/policyTemplates/{template_id}/policies/query",
+                payload=body,
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.post(
+                f"/policyTemplates/{template_id}/policies/query",
+                payload=body
+            ).json()
+
+    async def create_template_policy(
+        self,
+        template_id: str,
+        policy_data: dict,
+        tenant_id: str = None
+    ):
+        """
+        Create a new policy in a template
+
+        Args:
+            template_id: Policy template ID
+            policy_data: Policy configuration data
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Created policy response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post(
+                f"/policyTemplates/{template_id}/policies",
+                payload=policy_data,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                f"/policyTemplates/{template_id}/policies",
+                payload=policy_data
+            )
+
+        return response.json()
+
+    async def get_template_policy(
+        self,
+        template_id: str,
+        policy_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific policy from a template
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Policy details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies/{policy_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies/{policy_id}"
+            ).json()
+
+    async def update_template_policy(
+        self,
+        template_id: str,
+        policy_id: str,
+        policy_data: dict,
+        tenant_id: str = None
+    ):
+        """
+        Update a policy in a template
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            policy_data: Updated policy configuration
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Updated policy response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.patch(
+                f"/policyTemplates/{template_id}/policies/{policy_id}",
+                payload=policy_data,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.patch(
+                f"/policyTemplates/{template_id}/policies/{policy_id}",
+                payload=policy_data
+            )
+
+        return response.json()
+
+    async def delete_template_policy(
+        self,
+        template_id: str,
+        policy_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Delete a policy from a template
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Deletion response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.delete(
+                f"/policyTemplates/{template_id}/policies/{policy_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.delete(
+                f"/policyTemplates/{template_id}/policies/{policy_id}"
+            )
+
+        return response.json() if response.content else {"status": "deleted"}

@@ -624,7 +624,7 @@ class VenueService:
             response.raise_for_status()
             return None
 
-    async def configure_ssid_ap_group_settings(
+    async def configure_ssid_for_specific_ap_group(
         self,
         tenant_id: str,
         venue_id: str,
@@ -635,16 +635,18 @@ class VenueService:
         wait_for_completion: bool = True
     ):
         """
-        Configure venue SSID settings to filter SSID to specific AP Group(s)
+        Configure SSID to use a specific AP Group (not All AP Groups).
 
-        This filters an already-activated SSID to broadcast only on specific AP Groups
-        rather than all AP Groups in the venue.
+        This performs the 3-step process the R1 frontend uses:
+        1. PUT /venues/{venueId}/wifiNetworks/{wifiNetworkId}/settings - set isAllApGroups=false
+        2. PUT /venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId} - activate AP Group
+        3. PUT /venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/settings - configure settings
 
         Args:
             tenant_id: Tenant/EC ID
             venue_id: Venue ID
             wifi_network_id: WiFi Network (SSID) ID
-            ap_group_id: AP Group ID to filter to
+            ap_group_id: AP Group ID to activate
             radio_types: List of radio types (e.g., ["2.4-GHz", "5-GHz", "6-GHz"])
             vlan_id: Optional VLAN ID override
             wait_for_completion: If True, wait for async task to complete (default: True)
@@ -652,57 +654,128 @@ class VenueService:
         Returns:
             Response from API
         """
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Default to all radio types if not specified
         if radio_types is None:
             radio_types = ["2.4-GHz", "5-GHz", "6-GHz"]
 
-        # Build the settings payload
-        # Based on user's description: isAllApGroups: false and apGroups array
-        payload = {
+        # Step 1: Update venue SSID settings to set isAllApGroups=false
+        logger.info(f"      Step 3a: Setting isAllApGroups=false on venue SSID settings...")
+        settings_payload = {
+            "dual5gEnabled": False,
+            "tripleBandEnabled": False,
+            "allApGroupsRadio": "Both",
             "isAllApGroups": False,
-            "apGroups": [
-                {
-                    "apGroupId": ap_group_id,
-                    "radioTypes": radio_types
-                }
-            ]
+            "allApGroupsRadioTypes": radio_types,
+            "scheduler": None,
+            "allApGroupsVlanId": None,
+            "oweTransWlanId": None,
+            "isEnforced": False,
+            "networkId": wifi_network_id,
+            "apGroups": [{
+                "apGroupId": ap_group_id,
+                "radioTypes": radio_types,
+                "radio": "Both"
+            }],
+            "venueId": venue_id
         }
 
         # Add VLAN if specified
         if vlan_id is not None:
-            payload["apGroups"][0]["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
+            settings_payload["apGroups"][0]["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
-        print(f"    🔍 Settings payload: {payload}")
+        print(f"    🔍 Settings payload: {settings_payload}")
 
-        # Make API call
+        # Step 1: PUT settings
         if self.client.ec_type == "MSP":
             response = self.client.put(
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
-                payload=payload,
+                payload=settings_payload,
                 override_tenant_id=tenant_id
             )
         else:
             response = self.client.put(
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
-                payload=payload
+                payload=settings_payload
             )
 
-        # API returns 202 Accepted for async operations
-        if response.status_code in [200, 201, 202]:
-            result = response.json() if response.content else {"status": "accepted"}
-
-            # If 202 Accepted and wait_for_completion=True, poll for task completion
-            if response.status_code == 202 and wait_for_completion:
-                request_id = result.get('requestId')
-                if request_id:
-                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
-
-            return result
-        else:
-            print(f"  ❌ Failed to configure SSID AP Group settings: {response.status_code} - {response.text}")
+        if response.status_code not in [200, 201, 202]:
+            print(f"  ❌ Step 3a failed: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
+
+        result_3a = response.json() if response.content else {"status": "accepted"}
+        request_id_3a = result_3a.get('requestId') if response.status_code == 202 else None
+        logger.info(f"      Step 3a sent (requestId: {request_id_3a})")
+
+        # Step 2: Activate AP Group on the SSID (fire immediately, don't wait)
+        logger.info(f"      Step 3b: Activating AP Group on SSID...")
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}"
+            )
+
+        if response.status_code not in [200, 201, 202]:
+            print(f"  ❌ Step 3b failed: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+        result_3b = response.json() if response.content else {"status": "accepted"}
+        request_id_3b = result_3b.get('requestId') if response.status_code == 202 else None
+        logger.info(f"      Step 3b sent (requestId: {request_id_3b})")
+
+        # Step 3: Configure AP Group settings on the SSID (fire immediately, don't wait)
+        logger.info(f"      Step 3c: Configuring AP Group settings...")
+        ap_group_settings_payload = {
+            "apGroupId": ap_group_id,
+            "radioTypes": radio_types,
+            "radio": "Both"
+        }
+        if vlan_id is not None:
+            ap_group_settings_payload["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
+                payload=ap_group_settings_payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
+                payload=ap_group_settings_payload
+            )
+
+        if response.status_code not in [200, 201, 202]:
+            print(f"  ❌ Step 3c failed: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+        result_3c = response.json() if response.content else {"status": "accepted"}
+        request_id_3c = result_3c.get('requestId') if response.status_code == 202 else None
+        logger.info(f"      Step 3c sent (requestId: {request_id_3c})")
+
+        # Now wait for all 3 to complete (in order)
+        if wait_for_completion:
+            if request_id_3a:
+                logger.info(f"      Waiting for Step 3a to complete...")
+                await self.client.await_task_completion(request_id_3a, override_tenant_id=tenant_id)
+            if request_id_3b:
+                logger.info(f"      Waiting for Step 3b to complete...")
+                await self.client.await_task_completion(request_id_3b, override_tenant_id=tenant_id)
+            if request_id_3c:
+                logger.info(f"      Waiting for Step 3c to complete...")
+                await self.client.await_task_completion(request_id_3c, override_tenant_id=tenant_id)
+
+        logger.info(f"      All 3 steps complete")
+        return result_3c
 
     # ========== Comprehensive View Methods ==========
 

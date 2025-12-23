@@ -5,18 +5,28 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
+import os
+import logging
+
+# Configure logging BEFORE anything else
+from logging_config import setup_logging
+log_level = os.getenv("LOG_LEVEL", "INFO")
+setup_logging(log_level=log_level)
+
+logger = logging.getLogger(__name__)
 
 from database import engine
 import models
 from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid
 from routers.sz.sz_router import router as sz_router
+from routers.cloudpath.cloudpath_router import router as cloudpath_router
+from routers.workflows_router import router as workflows_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
 # Updated imports for FER1AGG routers (assuming similar pattern)
 from routers.fer1agg.fer1_router import dynamic_fe_router, feagg_ec_router #, fe_router_a, fe_router_b, # Legacy routers commented out for backward compatibility
 
-import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -86,11 +96,17 @@ app.include_router(diagrams.router, tags=["Diagrams"])
 # Per-Unit SSID Router - for automating per-unit SSID configuration
 app.include_router(per_unit_ssid.router, tags=["Per-Unit SSID"])
 
-# Debug: Print all routes to check for conflicts
-print("=== ALL ROUTES ===")
+# Workflow Job Management Router - generic job management for all workflows
+app.include_router(workflows_router)
+
+# Cloudpath DPSK Router - workflow-specific operations (audit, import)
+app.include_router(cloudpath_router, tags=["Cloudpath DPSK"])
+
+# Debug: Log all routes to check for conflicts
+logger.info("=== ALL ROUTES ===")
 for route in app.routes:
-    print(f"Path: {route.path}")
-print("=== END ROUTES ===")
+    logger.info(f"Path: {route.path}")
+logger.info("=== END ROUTES ===")
 
 # Exception handlers
 @app.exception_handler(StarletteHTTPException)
@@ -109,7 +125,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    print("Unexpected error:", traceback.format_exc())
+    logger.error(f"Unexpected error: {traceback.format_exc()}")
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error"},

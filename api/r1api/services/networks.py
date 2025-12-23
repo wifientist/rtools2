@@ -76,6 +76,22 @@ class NetworksService:
 
         return {'data': all_networks, 'totalCount': total_count}
 
+    async def get_wifi_network_by_id(self, network_id: str, tenant_id: str = None):
+        """
+        Get a specific WiFi network by ID
+
+        Args:
+            network_id: WiFi network ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            WiFi network details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id).json()
+        else:
+            return self.client.get(f"/wifiNetworks/{network_id}").json()
+
     async def find_wifi_network_by_name(self, tenant_id: str, venue_id: str, network_name: str):
         """
         Search for a WiFi network by name (IDEMPOTENT check)
@@ -210,5 +226,130 @@ class NetworksService:
             return result
         else:
             print(f"  ❌ Failed to create network: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def update_wifi_network_venue_config(
+        self,
+        tenant_id: str,
+        network_id: str,
+        venue_id: str,
+        ap_group_id: str,
+        ap_group_name: str = None,
+        radio_types: list = None,
+        vlan_id: int = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Update a WiFi network's venue configuration to use specific AP Groups.
+
+        This is the approach the R1 frontend uses - it updates the network object
+        directly with the venue configuration including isAllApGroups: false.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            network_id: WiFi Network ID to update
+            venue_id: Venue ID
+            ap_group_id: AP Group ID to activate on
+            ap_group_name: AP Group name (optional)
+            radio_types: List of radio types (default: all radios)
+            vlan_id: Optional VLAN ID override
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Updated network response from API
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Default radio types
+        if radio_types is None:
+            radio_types = ["2.4-GHz", "5-GHz", "6-GHz"]
+
+        # First, get the current network object
+        logger.info(f"    Fetching current network {network_id}...")
+        current_network = await self.get_wifi_network_by_id(network_id, tenant_id)
+
+        if not current_network:
+            raise Exception(f"Network {network_id} not found")
+
+        # Log current venue config for debugging
+        current_venues = current_network.get("venues", [])
+        logger.info(f"    Current venues count: {len(current_venues)}")
+        for cv in current_venues:
+            logger.info(f"      Venue {cv.get('venueId')}: isAllApGroups={cv.get('isAllApGroups')}, apGroups={len(cv.get('apGroups', []))}")
+
+        # Build the AP Group entry
+        ap_group_entry = {
+            "apGroupId": ap_group_id,
+            "radioTypes": radio_types,
+            "radio": "Both",
+            "isDefault": False
+        }
+        if ap_group_name:
+            ap_group_entry["apGroupName"] = ap_group_name
+        if vlan_id is not None:
+            ap_group_entry["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
+
+        # Update or add the venue in the network's venues array
+        # MERGE with existing venue config instead of replacing entirely
+        venues = current_network.get("venues", [])
+        venue_found = False
+        for i, v in enumerate(venues):
+            if v.get("venueId") == venue_id:
+                # Merge: keep existing fields, update AP Group settings
+                v["isAllApGroups"] = False
+                v["apGroups"] = [ap_group_entry]
+                v["scheduler"] = v.get("scheduler", {"type": "ALWAYS_ON"})
+                v["allApGroupsRadio"] = "Both"
+                v["allApGroupsRadioTypes"] = radio_types
+                venues[i] = v
+                venue_found = True
+                logger.info(f"    Merged venue config: {v}")
+                break
+
+        if not venue_found:
+            # Create new venue config
+            venue_config = {
+                "venueId": venue_id,
+                "isAllApGroups": False,
+                "apGroups": [ap_group_entry],
+                "scheduler": {"type": "ALWAYS_ON"},
+                "allApGroupsRadio": "Both",
+                "allApGroupsRadioTypes": radio_types
+            }
+            venues.append(venue_config)
+            logger.info(f"    Added new venue config: {venue_config}")
+
+        current_network["venues"] = venues
+
+        logger.info(f"    Updating network with venue config: isAllApGroups=False, apGroup={ap_group_name or ap_group_id}")
+
+        # PUT the updated network object
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}",
+                payload=current_network,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}",
+                payload=current_network
+            )
+
+        # Handle response
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            # If 202 Accepted and wait_for_completion=True, poll for task completion
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            print(f"  ❌ Failed to update network venue config: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None

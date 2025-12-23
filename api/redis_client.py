@@ -53,7 +53,11 @@ class RedisClient:
             cls._instance = None
             print("Redis connection closed")
 
-# Convenience function for FastAPI dependency injection
+# Convenience functions for FastAPI dependency injection
 async def get_redis() -> redis.Redis:
-    """FastAPI dependency for Redis client"""
+    """FastAPI dependency for async Redis client"""
+    return await RedisClient.get_client()
+
+async def get_redis_client() -> redis.Redis:
+    """Async Redis client for workflow engine (alias for get_redis)"""
     return await RedisClient.get_client()

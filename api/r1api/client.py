@@ -9,6 +9,9 @@ from r1api.services.tenant import TenantService
 from r1api.services.aps import ApService
 from r1api.services.clients import ClientsService
 from r1api.services.entitlements import EntitlementsService
+from r1api.services.dpsk import DpskService
+from r1api.services.identity import IdentityService
+from r1api.services.policy_sets import PolicySetService
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, ec_type=None, region=None):
@@ -45,6 +48,9 @@ class R1Client:
         self.aps = ApService(self)
         self.clients = ClientsService(self)
         self.entitlements = EntitlementsService(self)
+        self.dpsk = DpskService(self)
+        self.identity = IdentityService(self)
+        self.policy_sets = PolicySetService(self)
 
         print(f"R1Client initialized for tenant_id={tenant_id}, ec_type={self.ec_type}, host={self.host}")
 
@@ -150,8 +156,104 @@ class R1Client:
     def put(self, path, payload=None, override_tenant_id=None):
         return self._request("put", path, payload=payload, override_tenant_id=override_tenant_id)
 
-    def delete(self, path, override_tenant_id=None):
-        return self._request("delete", path, override_tenant_id=override_tenant_id)
+    def delete(self, path, payload=None, override_tenant_id=None):
+        return self._request("delete", path, payload=payload, override_tenant_id=override_tenant_id)
+
+    def _extract_error_message(self, data: dict) -> str:
+        """
+        Extract detailed error message from RuckusONE activity response
+
+        RuckusONE error structure can be complex and nested:
+        {
+            'error': '{"requestId":"...","errors":["{\\"message\\":\\"Validation Error\\",\\"subErrors\\":[...]}"]}'
+        }
+
+        This method attempts to parse nested JSON and extract meaningful validation errors.
+
+        Args:
+            data: Activity response data from /activities/{requestId}
+
+        Returns:
+            str: Detailed error message
+        """
+        import json
+
+        # Try to get error from 'error' field (most common)
+        if 'error' in data:
+            error_value = data['error']
+
+            # If it's a string, try to parse it as JSON
+            if isinstance(error_value, str):
+                try:
+                    error_obj = json.loads(error_value)
+
+                    # Check for 'errors' array
+                    if isinstance(error_obj, dict) and 'errors' in error_obj:
+                        errors_array = error_obj['errors']
+
+                        # Parse each error in the array (they might be JSON strings too)
+                        error_messages = []
+                        for err in errors_array:
+                            if isinstance(err, str):
+                                try:
+                                    err_obj = json.loads(err)
+
+                                    # Check for subErrors (validation errors)
+                                    if isinstance(err_obj, dict) and 'subErrors' in err_obj:
+                                        for sub_err in err_obj['subErrors']:
+                                            if isinstance(sub_err, dict):
+                                                # Format: "DPSK service.name: Name must be unique"
+                                                obj = sub_err.get('object', 'Unknown')
+                                                field = sub_err.get('field', '')
+                                                msg = sub_err.get('message', 'Unknown error')
+
+                                                if field:
+                                                    error_messages.append(f"{obj}.{field}: {msg}")
+                                                else:
+                                                    error_messages.append(f"{obj}: {msg}")
+
+                                    # If no subErrors, use the main message
+                                    elif isinstance(err_obj, dict) and 'message' in err_obj:
+                                        error_messages.append(err_obj['message'])
+                                    else:
+                                        error_messages.append(str(err))
+
+                                except json.JSONDecodeError:
+                                    # Not JSON, use as-is
+                                    error_messages.append(str(err))
+                            else:
+                                error_messages.append(str(err))
+
+                        if error_messages:
+                            return '; '.join(error_messages)
+
+                    # If error_obj has a message field directly
+                    elif isinstance(error_obj, dict) and 'message' in error_obj:
+                        return error_obj['message']
+
+                    # Otherwise return the stringified object
+                    return str(error_obj)
+
+                except json.JSONDecodeError:
+                    # Not JSON, return as-is
+                    return error_value
+
+            # If error_value is already a dict
+            elif isinstance(error_value, dict):
+                if 'message' in error_value:
+                    return error_value['message']
+                return str(error_value)
+
+        # Try 'message' field (fallback)
+        if 'message' in data:
+            return data['message']
+
+        # Try 'errorMessage' field (another common pattern)
+        if 'errorMessage' in data:
+            return data['errorMessage']
+
+        # Last resort: return full data as string
+        return 'Unknown error'
 
     async def await_task_completion(
         self,
@@ -211,7 +313,8 @@ class R1Client:
                 return data
 
             elif status == 'FAIL':
-                error_msg = data.get('message', 'Unknown error')
+                # Extract detailed error message from RuckusONE response
+                error_msg = self._extract_error_message(data)
                 print(f"    ❌ Task {request_id} failed: {error_msg}")
                 print(f"    📋 Full response: {data}")
                 raise Exception(f"Task {request_id} failed: {error_msg}")
@@ -225,3 +328,116 @@ class R1Client:
             f"Task {request_id} did not complete after {max_attempts} attempts "
             f"({max_attempts * sleep_seconds} seconds)"
         )
+
+    async def await_task_completion_bulk(
+        self,
+        request_ids: list[str],
+        override_tenant_id: str = None,
+        max_attempts: int = 60,
+        sleep_seconds: int = 3,
+        max_concurrent: int = 100,
+        progress_callback=None,
+        global_timeout_seconds: int = None
+    ):
+        """
+        Poll multiple async tasks in parallel with throttling
+
+        Args:
+            request_ids: List of requestId strings to poll
+            override_tenant_id: Optional tenant ID for MSP multi-tenant calls
+            max_attempts: Maximum polling attempts per task (default: 60)
+            sleep_seconds: Seconds between polls (default: 3)
+            max_concurrent: Max concurrent polls (default: 100)
+            progress_callback: Optional callback(completed_count, total_count, result)
+            global_timeout_seconds: Optional global timeout for all tasks
+
+        Returns:
+            dict: {request_id: result_data} for all tasks
+
+        Note:
+            - Failed tasks are included in results with their exception
+            - Use return_exceptions=True to handle mixed success/failure
+            - Progress callback receives updates as tasks complete
+        """
+        if not request_ids:
+            return {}
+
+        print(f"🔄 Bulk polling {len(request_ids)} async tasks (max_concurrent={max_concurrent})")
+
+        results = {}
+        semaphore = asyncio.Semaphore(max_concurrent)
+        completed_count = 0
+        total_count = len(request_ids)
+
+        async def poll_single_task(request_id: str):
+            """Poll a single task with semaphore throttling"""
+            nonlocal completed_count
+
+            async with semaphore:
+                try:
+                    result = await self.await_task_completion(
+                        request_id=request_id,
+                        override_tenant_id=override_tenant_id,
+                        max_attempts=max_attempts,
+                        sleep_seconds=sleep_seconds
+                    )
+
+                    # Store successful result
+                    results[request_id] = {
+                        "success": True,
+                        "data": result,
+                        "request_id": request_id
+                    }
+
+                except Exception as e:
+                    # Store failed result
+                    results[request_id] = {
+                        "success": False,
+                        "error": str(e),
+                        "request_id": request_id
+                    }
+                    print(f"    ⚠️  Task {request_id} failed: {str(e)}")
+
+                # Update progress
+                completed_count += 1
+                if progress_callback:
+                    progress_callback(completed_count, total_count, results[request_id])
+
+                # Log progress periodically
+                if completed_count % 10 == 0 or completed_count == total_count:
+                    success_count = sum(1 for r in results.values() if r.get("success"))
+                    fail_count = completed_count - success_count
+                    print(f"    📊 Progress: {completed_count}/{total_count} "
+                          f"(✅ {success_count} | ❌ {fail_count})")
+
+                return results[request_id]
+
+        # Create tasks for all request_ids
+        tasks = [poll_single_task(request_id) for request_id in request_ids]
+
+        # Execute with optional global timeout
+        try:
+            if global_timeout_seconds:
+                await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=global_timeout_seconds
+                )
+            else:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.TimeoutError:
+            print(f"    ⚠️  Global timeout of {global_timeout_seconds}s exceeded")
+            # Mark incomplete tasks as timed out
+            for request_id in request_ids:
+                if request_id not in results:
+                    results[request_id] = {
+                        "success": False,
+                        "error": f"Global timeout of {global_timeout_seconds}s exceeded",
+                        "request_id": request_id
+                    }
+
+        # Final summary
+        success_count = sum(1 for r in results.values() if r.get("success"))
+        fail_count = len(results) - success_count
+        print(f"✅ Bulk polling complete: {success_count} succeeded, {fail_count} failed")
+
+        return results

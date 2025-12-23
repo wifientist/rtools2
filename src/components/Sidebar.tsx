@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo } from "lucide-react";
 import { useState } from "react";
 
 interface NavItem {
@@ -80,6 +80,7 @@ const Sidebar = () => {
       icon: <Shield size={18} />,
       items: [
         { to: "/admin", icon: <Settings size={20} />, label: "Admin", requiresAuth: true, rolesAllowed: ["admin","super"] },
+        { to: "/jobs", icon: <ListTodo size={20} />, label: "Jobs", requiresAuth: true, rolesAllowed: ["admin","super"] },
         { to: "/status", icon: <CloudCog size={20} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin","super"] },
         { to: "/super", icon: <Settings size={20} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
         { to: "/testcalls", icon: <BookCheck size={20} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["admin","super"] },

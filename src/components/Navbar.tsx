@@ -25,12 +25,13 @@ const Navbar = () => {
           <>
             <Link to="/controllers" className="hover:underline">Controllers</Link>
             <Link to="/profile" className="hover:underline">Profile</Link>
-            {userRole === "admin" && <Link to="/admin" className="hover:underline">Admin</Link>}
+            {(userRole === "admin" || userRole === "super") && <Link to="/admin" className="hover:underline">Admin</Link>}
+            {(userRole === "admin" || userRole === "super") && <Link to="/jobs" className="hover:underline">Jobs</Link>}
             <button onClick={logout} className="bg-red-500 px-3 py-1 rounded">
                 Logout
               </button>
-          </> 
-            : 
+          </>
+            :
           null}
           {isAuthenticated ? 
           null 

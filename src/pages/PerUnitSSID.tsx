@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import JobMonitorModal from "@/components/JobMonitorModal";
+import type { JobResult } from "@/components/JobMonitorModal";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -35,8 +37,12 @@ function PerUnitSSID() {
 
   const [csvInput, setCsvInput] = useState("");
   const [processing, setProcessing] = useState(false);
-  const [results, setResults] = useState<any[]>([]);
   const [error, setError] = useState("");
+
+  // Job monitor modal state
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [lastJobResult, setLastJobResult] = useState<JobResult | null>(null);
 
   // Configuration options
   const [venueId, setVenueId] = useState<string | null>(null);
@@ -79,7 +85,6 @@ function PerUnitSSID() {
 
     setProcessing(true);
     setError("");
-    setResults([]);
 
     try {
       // Parse CSV
@@ -142,7 +147,7 @@ function PerUnitSSID() {
         return;
       }
 
-      // Call backend API
+      // Call backend API - now returns job_id for async processing
       const response = await fetch(`${API_BASE_URL}/per-unit-ssid/configure`, {
         method: "POST",
         credentials: "include",
@@ -151,8 +156,7 @@ function PerUnitSSID() {
           controller_id: activeControllerId,
           venue_id: venueId,
           units: units,
-          ap_group_prefix: apGroupPrefix,
-          dry_run: false
+          ap_group_prefix: apGroupPrefix
         }),
       });
 
@@ -163,23 +167,9 @@ function PerUnitSSID() {
 
       const result = await response.json();
 
-      // Convert backend results to frontend format
-      setResults(
-        result.unit_results.map((ur: any) => ({
-          unit: ur.unit_number,
-          status: ur.status,
-          message: ur.message,
-          details: ur.details
-        }))
-      );
-
-      if (result.status === "completed") {
-        alert(`✅ Success! All ${result.successful_units} units configured successfully.`);
-      } else if (result.status === "partial") {
-        alert(`⚠️ Partial success: ${result.successful_units} succeeded, ${result.failed_units} failed.`);
-      } else {
-        alert(`❌ Failed: ${result.message}`);
-      }
+      // Show job monitor modal
+      setCurrentJobId(result.job_id);
+      setShowJobModal(true);
 
     } catch (err: any) {
       console.error("Processing error:", err);
@@ -187,6 +177,15 @@ function PerUnitSSID() {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleCloseJobModal = () => {
+    setShowJobModal(false);
+    // Keep the job ID so user can reopen if needed
+  };
+
+  const handleJobComplete = (result: JobResult) => {
+    setLastJobResult(result);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -473,56 +472,68 @@ function PerUnitSSID() {
         >
           {processing ? "Processing..." : "Process Units"}
         </button>
-      </div>
 
-      {/* Results Section */}
-      {results.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-xl font-semibold mb-4">Processing Results</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Unit
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Message
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {results.map((result, idx) => (
-                  <tr key={idx}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {result.unit}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          result.status === "success"
-                            ? "bg-green-100 text-green-800"
-                            : result.status === "error"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-yellow-100 text-yellow-800"
-                        }`}
-                      >
-                        {result.status}
+        {/* Last Job Result */}
+        {lastJobResult && (
+          <div className={`mt-4 p-4 rounded-lg border ${
+            lastJobResult.status === 'COMPLETED'
+              ? 'bg-green-50 border-green-200'
+              : lastJobResult.status === 'FAILED'
+              ? 'bg-red-50 border-red-200'
+              : 'bg-yellow-50 border-yellow-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">
+                  {lastJobResult.status === 'COMPLETED' ? '✅' :
+                   lastJobResult.status === 'FAILED' ? '❌' : '⚠️'}
+                </span>
+                <div>
+                  <p className={`font-semibold ${
+                    lastJobResult.status === 'COMPLETED' ? 'text-green-800' :
+                    lastJobResult.status === 'FAILED' ? 'text-red-800' : 'text-yellow-800'
+                  }`}>
+                    Last Job: {lastJobResult.status}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {lastJobResult.progress.completed_phases}/{lastJobResult.progress.total_phases} phases completed
+                    {lastJobResult.progress.failed > 0 && (
+                      <span className="text-red-600 ml-2">
+                        ({lastJobResult.progress.failed} tasks failed)
                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      {result.message}
-                    </td>
-                  </tr>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowJobModal(true)}
+                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded border border-gray-300"
+                >
+                  View Details
+                </button>
+                <button
+                  onClick={() => setLastJobResult(null)}
+                  className="px-2 py-1 text-gray-400 hover:text-gray-600"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            {lastJobResult.errors && lastJobResult.errors.length > 0 && (
+              <div className="mt-2 text-sm text-red-600">
+                {lastJobResult.errors.slice(0, 2).map((err, idx) => (
+                  <p key={idx}>{err}</p>
                 ))}
-              </tbody>
-            </table>
+                {lastJobResult.errors.length > 2 && (
+                  <p className="text-gray-500">...and {lastJobResult.errors.length - 2} more</p>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Audit Section */}
       <div className="bg-white rounded-lg shadow p-6 mt-6">
@@ -552,6 +563,16 @@ function PerUnitSSID() {
           {auditLoading ? "Loading..." : "Audit Venue"}
         </button>
       </div>
+
+      {/* Job Monitor Modal */}
+      {currentJobId && (
+        <JobMonitorModal
+          jobId={currentJobId}
+          isOpen={showJobModal}
+          onClose={handleCloseJobModal}
+          onJobComplete={handleJobComplete}
+        />
+      )}
 
       {/* Audit Modal */}
       {showAuditModal && auditData && (
