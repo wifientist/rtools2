@@ -36,6 +36,7 @@ from routers.per_unit_ssid.phases import create_ssids
 from routers.per_unit_ssid.phases import activate_ssids
 from routers.per_unit_ssid.phases import create_ap_groups
 from routers.per_unit_ssid.phases import process_units
+from routers.per_unit_ssid.phases import configure_lan_ports
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,28 @@ router = APIRouter(
 
 
 # ==================== Request/Response Models ====================
+
+class PortConfig(BaseModel):
+    """Configuration for a single LAN port on wall-plate APs"""
+    mode: str = Field(default="match", description="Port mode: 'match' (use unit VLAN), 'specific' (custom VLAN), 'disable' (disable port)")
+    vlan: Optional[int] = Field(default=None, description="Custom VLAN ID when mode is 'specific'")
+
+
+class ModelPortConfigs(BaseModel):
+    """Port configurations organized by AP model type"""
+    one_port: List[PortConfig] = Field(
+        default_factory=lambda: [PortConfig(mode="match")],
+        description="Config for 1-port models: LAN1"
+    )
+    two_port: List[PortConfig] = Field(
+        default_factory=lambda: [PortConfig(mode="match"), PortConfig(mode="match")],
+        description="Config for 2-port models (H320/H350): LAN1, LAN2"
+    )
+    four_port: List[PortConfig] = Field(
+        default_factory=lambda: [PortConfig(mode="match"), PortConfig(mode="match"), PortConfig(mode="match"), PortConfig(mode="match")],
+        description="Config for 4-port models (H510/H550): LAN1-LAN4"
+    )
+
 
 class UnitConfig(BaseModel):
     """Configuration for a single unit"""
@@ -64,6 +87,12 @@ class PerUnitSSIDRequest(BaseModel):
     venue_id: str = Field(..., description="Venue ID where APs are located")
     units: List[UnitConfig] = Field(..., description="List of unit configurations")
     ap_group_prefix: str = Field(default="APGroup-", description="Prefix for AP group names")
+    # Phase 5: LAN port configuration for wall-plate APs
+    configure_lan_ports: bool = Field(default=False, description="Configure LAN port VLANs on H-series wall-plate APs")
+    model_port_configs: ModelPortConfigs = Field(
+        default_factory=ModelPortConfigs,
+        description="LAN port configuration matrix organized by model type (2-port vs 4-port)"
+    )
 
 
 class ConfigureResponse(BaseModel):
@@ -138,7 +167,8 @@ async def run_workflow_background(
             'create_ssids': create_ssids.execute,
             'activate_ssids': activate_ssids.execute,
             'create_ap_groups': create_ap_groups.execute,
-            'process_units': process_units.execute
+            'process_units': process_units.execute,
+            'configure_lan_ports': configure_lan_ports.execute
         }
 
         logger.info(f"Workflow: {job.workflow_name}")
@@ -205,7 +235,7 @@ async def configure_per_unit_ssids(
     job_id = str(uuid.uuid4())
     logger.info(f"Generated job ID: {job_id}")
 
-    workflow_def = get_workflow_definition()
+    workflow_def = get_workflow_definition(configure_lan_ports=request.configure_lan_ports)
     logger.info(f"Workflow definition loaded: {workflow_def.name} ({len(workflow_def.phases)} phases)")
 
     # Create phases from definition
@@ -225,6 +255,9 @@ async def configure_per_unit_ssids(
     # Convert units to dict format for workflow
     units_data = [unit.model_dump() for unit in request.units]
 
+    # Convert model port configs to dict format for workflow
+    model_port_configs_data = request.model_port_configs.model_dump()
+
     job = WorkflowJob(
         id=job_id,
         workflow_name=workflow_def.name,
@@ -233,11 +266,15 @@ async def configure_per_unit_ssids(
         venue_id=request.venue_id,
         tenant_id=tenant_id,
         options={
-            'ap_group_prefix': request.ap_group_prefix
+            'ap_group_prefix': request.ap_group_prefix,
+            'configure_lan_ports': request.configure_lan_ports,
+            'model_port_configs': model_port_configs_data
         },
         input_data={
             'units': units_data,
-            'ap_group_prefix': request.ap_group_prefix
+            'ap_group_prefix': request.ap_group_prefix,
+            'configure_lan_ports': request.configure_lan_ports,
+            'model_port_configs': model_port_configs_data
         },
         phases=phases
     )

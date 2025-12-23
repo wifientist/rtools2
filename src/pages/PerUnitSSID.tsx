@@ -6,6 +6,36 @@ import type { JobResult } from "@/components/JobMonitorModal";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
+// LAN Port configuration types
+type PortMode = 'match' | 'specific' | 'disable';
+
+interface PortConfig {
+  mode: PortMode;
+  vlan?: number;
+}
+
+interface ModelPortConfigs {
+  one_port: PortConfig[];   // Single-port models: LAN1
+  two_port: PortConfig[];   // H320/H350: LAN1, LAN2
+  four_port: PortConfig[];  // H510/H550: LAN1, LAN2, LAN3, LAN4
+}
+
+const DEFAULT_MODEL_PORT_CONFIGS: ModelPortConfigs = {
+  one_port: [
+    { mode: 'match' },
+  ],
+  two_port: [
+    { mode: 'match' },
+    { mode: 'match' },
+  ],
+  four_port: [
+    { mode: 'match' },
+    { mode: 'match' },
+    { mode: 'match' },
+    { mode: 'match' },
+  ],
+};
+
 interface AuditData {
   venue_id: string;
   venue_name: string;
@@ -48,6 +78,10 @@ function PerUnitSSID() {
   const [venueId, setVenueId] = useState<string | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
   const [apGroupPrefix, setApGroupPrefix] = useState("APG-");
+
+  // LAN port configuration options (Phase 5)
+  const [configureLanPorts, setConfigureLanPorts] = useState(false);
+  const [modelPortConfigs, setModelPortConfigs] = useState<ModelPortConfigs>(DEFAULT_MODEL_PORT_CONFIGS);
 
   // Audit modal state
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -156,7 +190,9 @@ function PerUnitSSID() {
           controller_id: activeControllerId,
           venue_id: venueId,
           units: units,
-          ap_group_prefix: apGroupPrefix
+          ap_group_prefix: apGroupPrefix,
+          configure_lan_ports: configureLanPorts,
+          model_port_configs: modelPortConfigs
         }),
       });
 
@@ -420,6 +456,205 @@ function PerUnitSSID() {
           <p className="text-xs text-gray-500 mt-1">
             Prefix for AP Group names (e.g., "APG-" creates "APG-101", "APG-102")
           </p>
+        </div>
+
+        {/* LAN Port Configuration (Phase 5) */}
+        <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="configureLanPorts"
+              checked={configureLanPorts}
+              onChange={(e) => setConfigureLanPorts(e.target.checked)}
+              className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <div className="flex-1">
+              <label htmlFor="configureLanPorts" className="block text-sm font-medium text-gray-700 cursor-pointer">
+                Configure AP LAN Ports (Wall-Plate APs)
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                Set LAN port VLANs on H-series wall-plate APs to match each unit's <code className="bg-gray-200 px-1 rounded">default_vlan</code>
+              </p>
+
+              {configureLanPorts && (
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    Port Configuration Matrix
+                  </label>
+
+                  <div className="bg-white rounded border border-gray-200 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-700 w-36">Model</th>
+                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN1</th>
+                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN2</th>
+                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN3</th>
+                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN4</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* 1-Port Models Row */}
+                        <tr className="bg-white border-b">
+                          <td className="px-3 py-2 font-medium text-gray-700">
+                            <div className="text-sm">1-Port</div>
+                            <div className="text-xs text-gray-500">Single LAN</div>
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <select
+                              value={modelPortConfigs.one_port[0]?.mode || 'match'}
+                              onChange={(e) => {
+                                const updated = { ...modelPortConfigs };
+                                updated.one_port = [...updated.one_port];
+                                updated.one_port[0] = {
+                                  ...updated.one_port[0],
+                                  mode: e.target.value as PortMode,
+                                  vlan: e.target.value === 'specific' ? (updated.one_port[0]?.vlan || 1) : undefined
+                                };
+                                setModelPortConfigs(updated);
+                              }}
+                              className="text-xs border border-gray-300 rounded px-1 py-1 w-20"
+                            >
+                              <option value="match">Match</option>
+                              <option value="specific">Specific</option>
+                              <option value="disable">Disable</option>
+                            </select>
+                            {modelPortConfigs.one_port[0]?.mode === 'specific' && (
+                              <input
+                                type="number"
+                                min="1"
+                                max="4094"
+                                value={modelPortConfigs.one_port[0]?.vlan || 1}
+                                onChange={(e) => {
+                                  const updated = { ...modelPortConfigs };
+                                  updated.one_port = [...updated.one_port];
+                                  updated.one_port[0] = {
+                                    ...updated.one_port[0],
+                                    vlan: parseInt(e.target.value) || 1
+                                  };
+                                  setModelPortConfigs(updated);
+                                }}
+                                className="ml-1 w-14 text-xs border border-gray-300 rounded px-1 py-1"
+                              />
+                            )}
+                          </td>
+                          {/* Empty cells for LAN2/LAN3/LAN4 */}
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                        </tr>
+
+                        {/* 2-Port Models Row (H320/H350) */}
+                        <tr className="bg-gray-50 border-b">
+                          <td className="px-3 py-2 font-medium text-gray-700">
+                            <div className="text-sm">2-Port</div>
+                            <div className="text-xs text-gray-500">H320, H350</div>
+                          </td>
+                          {[0, 1].map((portIdx) => (
+                            <td key={portIdx} className="px-2 py-2 text-center">
+                              <select
+                                value={modelPortConfigs.two_port[portIdx]?.mode || 'match'}
+                                onChange={(e) => {
+                                  const updated = { ...modelPortConfigs };
+                                  updated.two_port = [...updated.two_port];
+                                  updated.two_port[portIdx] = {
+                                    ...updated.two_port[portIdx],
+                                    mode: e.target.value as PortMode,
+                                    vlan: e.target.value === 'specific' ? (updated.two_port[portIdx]?.vlan || 1) : undefined
+                                  };
+                                  setModelPortConfigs(updated);
+                                }}
+                                className="text-xs border border-gray-300 rounded px-1 py-1 w-20"
+                              >
+                                <option value="match">Match</option>
+                                <option value="specific">Specific</option>
+                                <option value="disable">Disable</option>
+                              </select>
+                              {modelPortConfigs.two_port[portIdx]?.mode === 'specific' && (
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="4094"
+                                  value={modelPortConfigs.two_port[portIdx]?.vlan || 1}
+                                  onChange={(e) => {
+                                    const updated = { ...modelPortConfigs };
+                                    updated.two_port = [...updated.two_port];
+                                    updated.two_port[portIdx] = {
+                                      ...updated.two_port[portIdx],
+                                      vlan: parseInt(e.target.value) || 1
+                                    };
+                                    setModelPortConfigs(updated);
+                                  }}
+                                  className="ml-1 w-14 text-xs border border-gray-300 rounded px-1 py-1"
+                                />
+                              )}
+                            </td>
+                          ))}
+                          {/* Empty cells for LAN3/LAN4 */}
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                        </tr>
+
+                        {/* 4-Port Models Row (H510/H550/H670) */}
+                        <tr className="bg-white">
+                          <td className="px-3 py-2 font-medium text-gray-700">
+                            <div className="text-sm">4-Port</div>
+                            <div className="text-xs text-gray-500">H510, H550, H670</div>
+                          </td>
+                          {[0, 1, 2, 3].map((portIdx) => (
+                            <td key={portIdx} className="px-2 py-2 text-center">
+                              <select
+                                value={modelPortConfigs.four_port[portIdx]?.mode || 'match'}
+                                onChange={(e) => {
+                                  const updated = { ...modelPortConfigs };
+                                  updated.four_port = [...updated.four_port];
+                                  updated.four_port[portIdx] = {
+                                    ...updated.four_port[portIdx],
+                                    mode: e.target.value as PortMode,
+                                    vlan: e.target.value === 'specific' ? (updated.four_port[portIdx]?.vlan || 1) : undefined
+                                  };
+                                  setModelPortConfigs(updated);
+                                }}
+                                className="text-xs border border-gray-300 rounded px-1 py-1 w-20"
+                              >
+                                <option value="match">Match</option>
+                                <option value="specific">Specific</option>
+                                <option value="disable">Disable</option>
+                              </select>
+                              {modelPortConfigs.four_port[portIdx]?.mode === 'specific' && (
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="4094"
+                                  value={modelPortConfigs.four_port[portIdx]?.vlan || 1}
+                                  onChange={(e) => {
+                                    const updated = { ...modelPortConfigs };
+                                    updated.four_port = [...updated.four_port];
+                                    updated.four_port[portIdx] = {
+                                      ...updated.four_port[portIdx],
+                                      vlan: parseInt(e.target.value) || 1
+                                    };
+                                    setModelPortConfigs(updated);
+                                  }}
+                                  className="ml-1 w-14 text-xs border border-gray-300 rounded px-1 py-1"
+                                />
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-2 text-xs text-gray-500">
+                    <strong>Match:</strong> Uses unit's <code className="bg-gray-200 px-1 rounded">default_vlan</code> •
+                    <strong className="ml-2">Specific:</strong> Custom VLAN •
+                    <strong className="ml-2">Disable:</strong> Disable port via API
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* CSV Text Input */}

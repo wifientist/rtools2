@@ -1093,4 +1093,205 @@ class VenueService:
             logger.error(f"Error building venue network summary: {str(e)}")
             raise
 
+    # ========== LAN Port Configuration Methods ==========
+
+    async def set_ap_lan_port_specific_settings(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str,
+        use_venue_settings: bool = False,
+        wait_for_completion: bool = True
+    ):
+        """
+        Set AP-level LAN port specific settings (enable/disable venue settings inheritance).
+
+        This must be called with use_venue_settings=False before setting per-port VLANs.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            serial_number: AP serial number
+            use_venue_settings: If True, inherit from venue; if False, use AP-level overrides
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response from API
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        payload = {
+            "useVenueSettings": use_venue_settings
+        }
+
+        logger.info(f"Setting AP {serial_number} LAN port specific settings: useVenueSettings={use_venue_settings}")
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings",
+                payload=payload
+            )
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            logger.error(f"Failed to set AP LAN port specific settings: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def set_ap_lan_port_settings(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str,
+        port_id: str,
+        untagged_vlan: int,
+        vlan_members: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Set VLAN configuration for a specific LAN port on an AP.
+
+        This sets the overwrite VLAN for the port, overriding venue-level settings.
+        Note: set_ap_lan_port_specific_settings must be called first with use_venue_settings=False.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            serial_number: AP serial number
+            port_id: Port ID (e.g., "LAN1", "LAN2", "1", "2")
+            untagged_vlan: Untagged VLAN ID (1-4094)
+            vlan_members: Optional VLAN members string (e.g., "100,200-300") for trunk ports
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response from API
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Normalize port_id - accept both "LAN1" and "1" formats
+        if not port_id.upper().startswith('LAN'):
+            port_id = f"LAN{port_id}"
+
+        # For the API, we need the port number (1, 2, 3, 4)
+        port_number = port_id.upper().replace('LAN', '')
+
+        payload = {
+            "overwriteUntagId": untagged_vlan
+        }
+
+        # Add vlan_members if specified (for trunk ports)
+        if vlan_members:
+            payload["overwriteVlanMembers"] = vlan_members
+        else:
+            # Set vlan_members to just the untagged VLAN for access port behavior
+            payload["overwriteVlanMembers"] = str(untagged_vlan)
+
+        logger.info(f"Setting AP {serial_number} port {port_id} VLAN: {untagged_vlan}")
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
+                payload=payload
+            )
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            logger.error(f"Failed to set AP LAN port settings: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def set_ap_lan_port_enabled(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str,
+        port_id: str,
+        enabled: bool,
+        wait_for_completion: bool = True
+    ):
+        """
+        Enable or disable a specific LAN port on an AP.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            serial_number: AP serial number
+            port_id: Port ID (e.g., "LAN1", "LAN2", "1", "2")
+            enabled: True to enable, False to disable
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response from API
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Normalize port_id - accept both "LAN1" and "1" formats
+        if not port_id.upper().startswith('LAN'):
+            port_id = f"LAN{port_id}"
+
+        # For the API, we need the port number (1, 2, 3, 4)
+        port_number = port_id.upper().replace('LAN', '')
+
+        payload = {
+            "enabled": enabled
+        }
+
+        logger.info(f"Setting AP {serial_number} port {port_id} enabled: {enabled}")
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
+                payload=payload
+            )
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            logger.error(f"Failed to set AP LAN port enabled: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
 

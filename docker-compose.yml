@@ -20,15 +20,17 @@ services:
     networks:
       - rtools-network
 
-  # Redis Cache
+  # Redis Cache (for workflow state management)
   redis:
     image: redis:7-alpine
     container_name: rtools-redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,6 +38,14 @@ services:
       - redis_data:/data
     networks:
       - rtools-network
+    command: >
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"
+        else
+          redis-server --appendonly yes --appendfsync everysec
+        fi
+      '
 
   # FastAPI Backend
   backend:
@@ -51,7 +61,10 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${DB_PASSWORD}@db:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
       AUTH_ALGORITHM: HS256
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
