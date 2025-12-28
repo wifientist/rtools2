@@ -1,9 +1,13 @@
+import logging
+
 from r1api.constants import (
     WifiNetworkType,
     WlanSecurity,
     SECURITY_TYPE_MAP,
     R1StatusCode
 )
+
+logger = logging.getLogger(__name__)
 
 
 class NetworksService:
@@ -46,33 +50,37 @@ class NetworksService:
             'pageSize': 100
         }
 
-        first_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+        # Use override_tenant_id only for MSP accounts
+        if self.client.ec_type == "MSP" and tenant_id:
+            first_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+        else:
+            first_response = self.client.post("/wifiNetworks/query", payload=body).json()
 
         all_networks = first_response.get('data', [])
         total_count = first_response.get('totalCount', len(all_networks))
 
-        print(f"📡 WIFI NETWORKS PAGINATION:")
-        print(f"  - First page returned: {len(all_networks)} networks")
-        print(f"  - Total count: {total_count}")
+        logger.debug(f"WiFi Networks: first page returned {len(all_networks)}, total count: {total_count}")
 
         # If there are more pages, fetch them
         if total_count > len(all_networks):
             page_size = len(all_networks) or 100  # Actual page size returned
             pages_needed = (total_count + page_size - 1) // page_size
 
-            print(f"  - Page size: {page_size}")
-            print(f"  - Total pages needed: {pages_needed}")
+            logger.debug(f"WiFi Networks pagination: page_size={page_size}, pages_needed={pages_needed}")
 
             for page_num in range(1, pages_needed):
                 body['page'] = page_num
-                page_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+                if self.client.ec_type == "MSP" and tenant_id:
+                    page_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+                else:
+                    page_response = self.client.post("/wifiNetworks/query", payload=body).json()
                 page_data = page_response.get('data', [])
 
-                print(f"  - Page {page_num + 1} returned: {len(page_data)} networks")
+                logger.debug(f"WiFi Networks page {page_num + 1} returned: {len(page_data)} networks")
 
                 all_networks.extend(page_data)
 
-        print(f"✅ Total WiFi Networks fetched: {len(all_networks)}")
+        logger.debug(f"Total WiFi Networks fetched: {len(all_networks)}")
 
         return {'data': all_networks, 'totalCount': total_count}
 
@@ -220,12 +228,12 @@ class NetworksService:
                     if created_network:
                         return created_network
                     else:
-                        print(f"    ⚠️  Task completed but could not find created network '{name}'")
+                        logger.warning(f"Task completed but could not find created network '{name}'")
                         return result
 
             return result
         else:
-            print(f"  ❌ Failed to create network: {response.status_code} - {response.text}")
+            logger.error(f"Failed to create network: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -259,9 +267,6 @@ class NetworksService:
         Returns:
             Updated network response from API
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Default radio types
         if radio_types is None:
             radio_types = ["2.4-GHz", "5-GHz", "6-GHz"]
@@ -350,6 +355,6 @@ class NetworksService:
 
             return result
         else:
-            print(f"  ❌ Failed to update network venue config: {response.status_code} - {response.text}")
+            logger.error(f"Failed to update network venue config: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None

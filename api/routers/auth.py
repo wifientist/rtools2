@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Request, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
@@ -13,6 +15,8 @@ from services.auth_service import generate_and_send_otp, verify_otp_and_login
 from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
 from utils.email import send_otp_email_via_api
 from constants.roles import role_hierarchy
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 

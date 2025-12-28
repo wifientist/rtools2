@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
@@ -8,6 +10,8 @@ from decorators import require_role
 from models.user import User, RoleEnum
 from pydantic import BaseModel, EmailStr
 from utils.audit import log_audit_event
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

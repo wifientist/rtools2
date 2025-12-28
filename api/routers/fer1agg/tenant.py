@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from clients.r1_client import get_dynamic_r1_client
 from r1api.client import R1Client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/tenant",
@@ -29,20 +33,19 @@ async def get_tenant_details(tenant_id: str, r1_client: R1Client = Depends(get_d
     # Fetch WLANs with error handling
     try:
         wlans = await r1_client.networks.get_wifi_networks(tenant_id)
-        print(f"WLANs response type: {type(wlans)}")
-        print(f"WLANs response: {wlans}")
-        wlans_list = wlans.get('data', []) if isinstance(wlans, dict) else wlans  # Fixed: 'data' not 'list'
+        logger.debug(f"WLANs response type: {type(wlans)}")
+        wlans_list = wlans.get('data', []) if isinstance(wlans, dict) else wlans
     except Exception as e:
-        print(f"Error fetching WLANs: {e}")
+        logger.error(f"Error fetching WLANs: {e}")
         wlans_list = []
 
     # Fetch AP Groups with error handling
     try:
         apGroups = await r1_client.venues.get_ap_groups(tenant_id)
-        print(f"AP Groups response type: {type(apGroups)}")
+        logger.debug(f"AP Groups response type: {type(apGroups)}")
         apGroups_list = apGroups if isinstance(apGroups, list) else []
     except Exception as e:
-        print(f"Error fetching AP Groups: {e}")
+        logger.error(f"Error fetching AP Groups: {e}")
         apGroups_list = []
 
     # Enrich venues with detailed WiFi settings
@@ -86,18 +89,16 @@ async def get_tenant_details(tenant_id: str, r1_client: R1Client = Depends(get_d
 
                 enriched_venues.append(enriched_venue)
             except Exception as e:
-                print(f"Error enriching venue {venue_id}: {e}")
+                logger.error(f"Error enriching venue {venue_id}: {e}")
                 enriched_venues.append(venue)  # Keep base venue data if enrichment fails
         else:
             enriched_venues.append(venue)
 
-    answer =  {
+    answer = {
         "venues": enriched_venues,
         "aps": aps,
         "wlans": wlans_list,
         "apGroups": apGroups_list,
     }
-    print(f"Final answer keys: {answer.keys()}")
-    print(f"WLANs count: {len(wlans_list) if isinstance(wlans_list, list) else 'not a list'}")
-    print(f"Enriched venues count: {len(enriched_venues)}")
+    logger.debug(f"Tenant fulldetails: {len(wlans_list)} WLANs, {len(enriched_venues)} venues")
     return {'status': 'success', 'data': answer}

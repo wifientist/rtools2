@@ -1,9 +1,12 @@
+import logging
 import smtplib
 from email.mime.text import MIMEText
 import requests
 import os
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = os.getenv("SMTP_PORT")
@@ -18,13 +21,13 @@ MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
 
 def send_otp_email_via_snmp(to_email: str, otp_code: str):
 
-    print(f'Emailing {to_email} with OTP {otp_code}')
+    logger.info(f'Sending OTP email to {to_email}')
 
     subject = "Your ruckus.tools OTP Code"
     body = f"""\
 Hello,
 
-Your One-Time Password (OTP) is: 
+Your One-Time Password (OTP) is:
 
 **{otp_code}**
 
@@ -48,7 +51,7 @@ The Ruckus Tools Team
 
 
 def send_otp_email_via_api(to_email: str, otp_code: str):
-    print(f'Emailing {to_email} with OTP {otp_code} via Mailgun API')
+    logger.info(f'Sending OTP email to {to_email} via Mailgun API')
 
     url = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
 
@@ -68,13 +71,13 @@ def send_otp_email_via_api(to_email: str, otp_code: str):
         )
         if response.status_code != 200:
             raise Exception(f"Mailgun error: {response.status_code} {response.text}")
-        print("✅ Email sent via Mailgun.")
+        logger.info("Email sent via Mailgun")
     except Exception as e:
-        print(f"❌ Mailgun failed: {e}")
+        logger.error(f"Mailgun failed: {e}")
         try:
             send_otp_email_via_snmp(to_email, otp_code)
         except Exception as smtp_e:
-            print(f"❌ SMTP fallback failed too: {smtp_e}")
+            logger.error(f"SMTP fallback failed too: {smtp_e}")
 
 
 from sendgrid import SendGridAPIClient
@@ -82,7 +85,7 @@ from sendgrid.helpers.mail import Mail
 
 def SENDGRID_send_otp_email_via_api(to_email: str, otp_code: str):
 
-    print(f'Emailing {to_email} with OTP {otp_code}')
+    logger.info(f'Sending OTP email to {to_email} via SendGrid')
 
     message = Mail(
         from_email=FROM_EMAIL,
@@ -92,12 +95,10 @@ def SENDGRID_send_otp_email_via_api(to_email: str, otp_code: str):
     try:
         sg = SendGridAPIClient(os.environ.get('WEBAPI_KEY'))
         response = sg.send(message)
-        print(response.status_code)
-        print(response.body)
-        print(response.headers)
+        logger.debug(f"SendGrid response: {response.status_code}")
     except Exception as e:
-        print(f"SendGrid error: {str(e)}")
+        logger.error(f"SendGrid error: {str(e)}")
         try:
             send_otp_email_via_snmp(to_email, otp_code)
         except Exception as smtp_e:
-            print(f"SMTP fallback failed too: {smtp_e}")
+            logger.error(f"SMTP fallback failed too: {smtp_e}")

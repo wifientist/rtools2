@@ -312,18 +312,6 @@ function CloudpathDPSK() {
         Migrate Dynamic Pre-Shared Keys (DPSKs) from Cloudpath to RuckusONE
       </p>
 
-      {/* Controller Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <p className="text-sm text-gray-700">
-          <strong>Active Controller:</strong> {activeControllerId || "None selected"}
-        </p>
-        {!activeControllerId && (
-          <p className="text-sm text-red-600 mt-2">
-            Please select an active controller from the Controllers page before proceeding.
-          </p>
-        )}
-      </div>
-
       {/* Step 1: Upload JSON */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h3 className="text-xl font-semibold mb-4">Step 1: Upload Cloudpath Export</h3>
@@ -638,7 +626,7 @@ function CloudpathDPSK() {
       <div className="bg-gradient-to-r from-red-900 to-orange-900 rounded-lg shadow-xl p-6 mt-6 border-4 border-red-600">
         <h3 className="text-2xl font-bold mb-4 flex items-center gap-3 text-white">
           <span className="text-3xl animate-pulse">☢️</span>
-          <span>NUCLEAR CLEANUP (DANGER ZONE)</span>
+          <span>CLEANUP (DANGER ZONE)</span>
         </h3>
         <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-4 mb-4">
           <p className="text-sm font-bold text-red-900 mb-2">⚠️ EXTREME CAUTION REQUIRED</p>

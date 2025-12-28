@@ -1,5 +1,7 @@
 # api/clients/r1_client.py
 
+import logging
+
 from fastapi import HTTPException, Depends, Request, Path
 from sqlalchemy.orm import Session
 from dependencies import get_db
@@ -8,6 +10,8 @@ from models.user import User
 from models.controller import Controller
 from r1api.client import R1Client
 from utils.encryption import decrypt_value
+
+logger = logging.getLogger(__name__)
 
 
 def create_r1_client_from_controller(controller_id: int, db: Session) -> R1Client:
@@ -25,7 +29,7 @@ def create_r1_client_from_controller(controller_id: int, db: Session) -> R1Clien
     Raises:
         HTTPException: If controller not found or not RuckusONE type
     """
-    print(f"create_r1_client_from_controller - Fetching controller with ID: {controller_id}")
+    logger.debug(f"Creating R1Client for controller ID: {controller_id}")
 
     controller = db.query(Controller).filter(Controller.id == controller_id).first()
     if not controller:
@@ -61,7 +65,7 @@ def get_r1_active_client(
     db: Session = Depends(get_db),
 ):
     """Get an R1Client using the user's active controller."""
-    print("get_r1_active_client - Fetching R1Client for user:", current_user.email)
+    logger.debug(f"get_r1_active_client for user: {current_user.email}")
     controller_id = current_user.active_controller_id
     if controller_id is None:
         raise HTTPException(status_code=400, detail="No active controller selected.")
@@ -74,13 +78,9 @@ def get_r1_clients(
     db: Session = Depends(get_db),
 ):
     """Get both active and secondary R1Clients for backward compatibility."""
-    print("get_r1_clients - Fetching R1Clients for user:", current_user.email)
-    print(f"Active Controller ID: {current_user.active_controller_id}")
-    print(f"Secondary Controller ID: {current_user.secondary_controller_id}")
+    logger.debug(f"get_r1_clients for user: {current_user.email}, active={current_user.active_controller_id}, secondary={current_user.secondary_controller_id}")
     active = create_r1_client_from_controller(current_user.active_controller_id, db) if current_user.active_controller_id else None
     secondary = create_r1_client_from_controller(current_user.secondary_controller_id, db) if current_user.secondary_controller_id else None
-    print(f"Active Controller R1Client: {active}")
-    print(f"Secondary Controller R1Client: {secondary}")
     return {"active": active, "secondary": secondary}
 
 # def validate_tenant_access(tenant_id: str, user: User, db: Session) -> Tenant:
@@ -171,7 +171,7 @@ def get_dynamic_r1_client(
     Raises:
         HTTPException: If access denied, not found, or authentication fails
     """
-    print(f"get_dynamic_r1_client - Fetching R1Client for controller: {controller_id}, user: {current_user.email}")
+    logger.debug(f"get_dynamic_r1_client for controller: {controller_id}, user: {current_user.email}")
 
     # Validate controller access
     controller = validate_controller_access(controller_id, current_user, db)
@@ -191,11 +191,11 @@ def get_dynamic_r1_client(
         if getattr(client, "auth_failed", False):
             raise HTTPException(status_code=401, detail="R1Client authentication failed")
 
-        print(f"Successfully created R1Client for controller: {controller_id}")
+        logger.debug(f"Successfully created R1Client for controller: {controller_id}")
         return client
 
     except Exception as e:
-        print(f"Error creating R1Client for controller {controller_id}: {str(e)}")
+        logger.error(f"Error creating R1Client for controller {controller_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create R1Client for controller {controller_id}: {str(e)}")
 
 # Legacy support functions (kept for backward compatibility)

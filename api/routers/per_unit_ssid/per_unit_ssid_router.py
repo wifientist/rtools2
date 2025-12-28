@@ -180,9 +180,7 @@ async def run_workflow_background(
         logger.info(f"Workflow {job.id} completed with status: {final_job.status}")
 
     except Exception as e:
-        logger.error(f"Workflow {job.id} failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Workflow {job.id} failed: {str(e)}")
 
 
 # ==================== API Endpoints ====================

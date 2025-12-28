@@ -1,12 +1,16 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class MspService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
 
     async def get_msp_ecs(self):
-        print(f"client:", self.client)
+        logger.debug(f"get_msp_ecs called on client: {self.client}")
         if self.client.ec_type != "MSP":
-            return {"success": False, "error": "Unavailable for non-MSP clients."}        
+            return {"success": False, "error": "Unavailable for non-MSP clients."}
         body = {
             'fields': ['check-all', 'id', 'name', 'tenantType', 'mspAdminCount', 'mspEcAdminCount'],
             'sortField': 'name',
@@ -26,23 +30,21 @@ class MspService:
         }
         return self.client.post("/techpartners/mspecs/query", payload=body).json()
 
-    async def get_msp_labels(self): #, r1_client: R1Client = None):
+    async def get_msp_labels(self):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        #r1_client = r1_client or get_r1_client()
-        print("Fetching MSP labels")
-        #return self.client.get("/mspLabels").json()
+        logger.debug("Fetching MSP labels")
         response = self.client.get("/mspLabels")
-        print(f"Response content: {response.content}")
+        logger.debug(f"MSP labels response: {response.status_code}")
 
         if response.ok:
             try:
                 return response.json()
             except ValueError:
-                print("Failed to decode JSON")
+                logger.warning("Failed to decode JSON from MSP labels response")
                 return None
         else:
-            print(f"Failed to fetch labels: {response.status_code}")
+            logger.warning(f"Failed to fetch MSP labels: {response.status_code}")
             return None
 
     async def get_entitlements(self): #, r1_client: R1Client = None):

@@ -4,8 +4,11 @@ SmartZone Client Dependency Injection
 Provides FastAPI dependency functions for creating SmartZone clients
 with proper authentication and authorization.
 """
+import logging
 
 from fastapi import HTTPException, Depends, Path
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from dependencies import get_db, get_current_user
 from models.user import User
@@ -28,7 +31,7 @@ def create_sz_client_from_controller(controller_id: int, db: Session) -> SZClien
     Raises:
         HTTPException: If controller not found or not SmartZone type
     """
-    print(f"create_sz_client_from_controller - Fetching controller with ID: {controller_id}")
+    logger.debug(f"create_sz_client_from_controller - Fetching controller with ID: {controller_id}")
 
     controller = db.query(Controller).filter(Controller.id == controller_id).first()
     if not controller:
@@ -123,7 +126,7 @@ def get_dynamic_sz_client(
     Raises:
         HTTPException: If access denied, not found, or authentication fails
     """
-    print(f"get_dynamic_sz_client - Fetching SmartZone client for controller: {controller_id}, user: {current_user.email}")
+    logger.debug(f"get_dynamic_sz_client - Fetching SmartZone client for controller: {controller_id}, user: {current_user.email}")
 
     # Validate controller access
     controller = validate_controller_access(controller_id, current_user, db)
@@ -138,11 +141,11 @@ def get_dynamic_sz_client(
     # Create and return the SmartZone client
     try:
         client = create_sz_client_from_controller(controller.id, db)
-        print(f"Successfully created SmartZone client for controller: {controller_id}")
+        logger.debug(f"Successfully created SmartZone client for controller: {controller_id}")
         return client
 
     except Exception as e:
-        print(f"Error creating SmartZone client for controller {controller_id}: {str(e)}")
+        logger.error(f"Error creating SmartZone client for controller {controller_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create SmartZone client for controller {controller_id}: {str(e)}"
@@ -166,7 +169,7 @@ def get_sz_active_client(
     Raises:
         HTTPException: If no active controller or not SmartZone type
     """
-    print("get_sz_active_client - Fetching SmartZone client for user:", current_user.email)
+    logger.debug(f"get_sz_active_client - Fetching SmartZone client for user: {current_user.email}")
 
     controller_id = current_user.active_controller_id
     if controller_id is None:

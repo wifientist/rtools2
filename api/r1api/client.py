@@ -1,8 +1,11 @@
+import logging
 import requests
 import time
 import asyncio
 from r1api.token_cache import get_cached_token, store_token
 from r1api.services.msp import MspService
+
+logger = logging.getLogger(__name__)
 from r1api.services.venues import VenueService
 from r1api.services.networks import NetworksService
 from r1api.services.tenant import TenantService
@@ -15,8 +18,7 @@ from r1api.services.policy_sets import PolicySetService
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, ec_type=None, region=None):
-        print("Initializing R1Client...")
-        print(f"tenant_id: {tenant_id}, client_id: {client_id}, shared_secret: {shared_secret}, ec_type: {ec_type}, region: {region}")
+        logger.debug(f"Initializing R1Client for tenant_id={tenant_id}, ec_type={ec_type}, region={region}")
         # self.token = None
         # self.token_expiry = None  # optional if you want expiry management
         self.session = requests.Session()
@@ -52,14 +54,14 @@ class R1Client:
         self.identity = IdentityService(self)
         self.policy_sets = PolicySetService(self)
 
-        print(f"R1Client initialized for tenant_id={tenant_id}, ec_type={self.ec_type}, host={self.host}")
+        logger.info(f"R1Client initialized: tenant_id={tenant_id}, ec_type={self.ec_type}, host={self.host}")
 
     def __repr__(self):
         return f"<R1Client tenant_id={self.tenant_id}, ec_type={self.ec_type}, host={self.host}>"
 
     def _authenticate(self):
         """Authenticate with R1 API using client_id and shared_secret."""
-        print(f"Authenticating R1Client for tenant_id={self.tenant_id} {self.ec_type}...")
+        logger.debug(f"Authenticating R1Client for tenant_id={self.tenant_id} ec_type={self.ec_type}")
         url = f"https://{self.host}/oauth2/token/{self.tenant_id}"
         headers = {'Content-Type': 'application/x-www-form-urlencoded'}
         data = {
@@ -73,8 +75,7 @@ class R1Client:
         #print(f"Response content: {response.content[:300]}")  # Print first 300 chars for brevity
 
         if not response.ok:
-            print(f"❌ Auth failed: {response.status_code}")
-            print(f"Response text: {response.text[:300]}")
+            logger.error(f"Auth failed: {response.status_code} - {response.text[:300]}")
             self.token = None
             self.auth_failed = True
             self.auth_error = {
@@ -88,7 +89,7 @@ class R1Client:
         try:
             data = response.json()
         except ValueError:
-            print("❌ Failed to decode JSON during authentication")
+            logger.error("Failed to decode JSON during authentication")
             self.token = None
             self.auth_failed = True
             self.auth_error = {
@@ -102,8 +103,7 @@ class R1Client:
         expires_in = data.get('expires_in', 3600)  # default to 1hr if not specified
         store_token(self.tenant_id, self.token, expires_in)
 
-        print(f"Authentication successful: {self.token[:8]}...")
-        print(f'Token expiry: {data.get("expires_in", "N/A")} seconds')
+        logger.debug(f"Authentication successful, token expires in {expires_in}s")
 
     def _request(self, method, path, payload=None, params=None, override_tenant_id=None):
         """General request wrapper."""
@@ -117,8 +117,7 @@ class R1Client:
         if override_tenant_id:
             headers["x-rks-tenantid"] = override_tenant_id
 
-        print("--- R1Client Request ---")
-        print(f'client_id: {self.client_id}, tenant_id: {self.tenant_id}, host (region): {self.host}{path}')
+        logger.debug(f"R1Client Request: client_id={self.client_id}, tenant_id={self.tenant_id}, host={self.host}{path}")
         #print("Preparing _request:")
         #print(f"Method: {method.upper()}")
         #print(f"URL: {url}")
@@ -140,9 +139,9 @@ class R1Client:
             verify=True
         )
 
-        print(f"{method.upper()} {url} --> {response.status_code}")
+        logger.debug(f"{method.upper()} {url} --> {response.status_code}")
         if not response.ok:
-            print(f"Error body: {response.text}")
+            logger.warning(f"Request error: {response.status_code} - {response.text[:500]}")
 
         return response
 
@@ -282,7 +281,7 @@ class R1Client:
             TimeoutError: If task doesn't complete within max_attempts
             Exception: If task status is FAIL
         """
-        print(f"    ⏳ Waiting for task {request_id} to complete...")
+        logger.info(f"Waiting for task {request_id} to complete...")
 
         for attempt in range(1, max_attempts + 1):
             response = self.get(f"/activities/{request_id}", override_tenant_id=override_tenant_id)
@@ -290,33 +289,33 @@ class R1Client:
             if not response.ok:
                 # Activity might not exist yet - this is normal for the first few attempts
                 if attempt == 1:
-                    print(f"    ⏱️  Waiting for activity to be created...")
+                    logger.debug(f"Waiting for activity {request_id} to be created...")
                 elif attempt % 5 == 0:
-                    print(f"    ⏱️  Still waiting... (attempt {attempt}/{max_attempts})")
+                    logger.debug(f"Still waiting for {request_id}... (attempt {attempt}/{max_attempts})")
                 await asyncio.sleep(sleep_seconds)
                 continue
 
             data = response.json()
             status = data.get('status')
 
-            # Print status updates periodically
+            # Log status updates periodically
             if attempt == 1 or attempt % 5 == 0:
-                print(f"    ⏱️  Poll {attempt}/{max_attempts}: status={status}")
+                logger.debug(f"Poll {attempt}/{max_attempts}: status={status}")
 
-            # Debug: Print full data on first successful poll
+            # Debug: Log full data on first successful poll
             if attempt == 1:
-                print(f"    🔍 Activity data: {data}")
+                logger.debug(f"Activity data for {request_id}: {data}")
 
             if status == 'SUCCESS':
-                print(f"    ✅ Task {request_id} completed successfully")
-                print(f"    📋 Success response: {data}")
+                logger.info(f"Task {request_id} completed successfully")
+                logger.debug(f"Success response for {request_id}: {data}")
                 return data
 
             elif status == 'FAIL':
                 # Extract detailed error message from RuckusONE response
                 error_msg = self._extract_error_message(data)
-                print(f"    ❌ Task {request_id} failed: {error_msg}")
-                print(f"    📋 Full response: {data}")
+                logger.error(f"Task {request_id} failed: {error_msg}")
+                logger.debug(f"Full failure response for {request_id}: {data}")
                 raise Exception(f"Task {request_id} failed: {error_msg}")
 
             # Status is still PENDING or IN_PROGRESS
@@ -362,7 +361,7 @@ class R1Client:
         if not request_ids:
             return {}
 
-        print(f"🔄 Bulk polling {len(request_ids)} async tasks (max_concurrent={max_concurrent})")
+        logger.info(f"Bulk polling {len(request_ids)} async tasks (max_concurrent={max_concurrent})")
 
         results = {}
         semaphore = asyncio.Semaphore(max_concurrent)
@@ -396,7 +395,7 @@ class R1Client:
                         "error": str(e),
                         "request_id": request_id
                     }
-                    print(f"    ⚠️  Task {request_id} failed: {str(e)}")
+                    logger.warning(f"Task {request_id} failed: {str(e)}")
 
                 # Update progress
                 completed_count += 1
@@ -407,8 +406,8 @@ class R1Client:
                 if completed_count % 10 == 0 or completed_count == total_count:
                     success_count = sum(1 for r in results.values() if r.get("success"))
                     fail_count = completed_count - success_count
-                    print(f"    📊 Progress: {completed_count}/{total_count} "
-                          f"(✅ {success_count} | ❌ {fail_count})")
+                    logger.info(f"Bulk progress: {completed_count}/{total_count} "
+                                f"(success={success_count}, failed={fail_count})")
 
                 return results[request_id]
 
@@ -425,7 +424,7 @@ class R1Client:
             else:
                 await asyncio.gather(*tasks, return_exceptions=True)
         except asyncio.TimeoutError:
-            print(f"    ⚠️  Global timeout of {global_timeout_seconds}s exceeded")
+            logger.warning(f"Global timeout of {global_timeout_seconds}s exceeded")
             # Mark incomplete tasks as timed out
             for request_id in request_ids:
                 if request_id not in results:
@@ -438,6 +437,6 @@ class R1Client:
         # Final summary
         success_count = sum(1 for r in results.values() if r.get("success"))
         fail_count = len(results) - success_count
-        print(f"✅ Bulk polling complete: {success_count} succeeded, {fail_count} failed")
+        logger.info(f"Bulk polling complete: {success_count} succeeded, {fail_count} failed")
 
         return results

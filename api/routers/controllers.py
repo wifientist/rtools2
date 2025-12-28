@@ -1,4 +1,5 @@
 # api/routers/controllers.py
+import logging
 
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +19,7 @@ from schemas.controller import (
 )
 from security import create_access_token
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/controllers", tags=["Controllers"])
 

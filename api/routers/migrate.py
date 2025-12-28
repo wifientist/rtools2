@@ -5,8 +5,11 @@ Handles migrations between controllers:
 - SmartZone → RuckusONE
 - RuckusONE → RuckusONE
 """
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Body
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -60,10 +63,7 @@ async def check_license_availability(
     Returns:
         License availability information
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
-    logger.info(f"🔍 License check request - controller_id: {request.controller_id}, tenant_id: {request.tenant_id}, ap_count: {request.ap_count}")
+    logger.info(f"License check request - controller_id: {request.controller_id}, tenant_id: {request.tenant_id}, ap_count: {request.ap_count}")
 
     # Validate access to controller
     controller = validate_controller_access(request.controller_id, current_user, db)
@@ -297,13 +297,12 @@ async def migrate_sz_to_r1(
                            f"Please purchase additional licenses or reduce the number of devices to migrate."
                 )
 
-            print(f"✅ License check passed: {available_licenses} available, {required_licenses} required ({len(request.aps)} APs + {len(request.switches)} Switches)")
+            logger.info(f"License check passed: {available_licenses} available, {required_licenses} required ({len(request.aps)} APs + {len(request.switches)} Switches)")
 
         except HTTPException:
             raise  # Re-raise HTTP exceptions
         except Exception as e:
-            print(f"⚠️ Warning: License check failed: {str(e)}")
-            print(f"Proceeding with migration anyway. License validation may be incomplete.")
+            logger.warning(f"License check failed: {str(e)} - proceeding with migration anyway")
             license_info = {
                 "available": "unknown",
                 "required": total_devices,
@@ -329,8 +328,8 @@ async def migrate_sz_to_r1(
                         longitude=str(ap.longitude) if ap.longitude else None
                     )
 
-                    print(f"Successfully added AP {ap.serial} to R1 venue {request.dest_venue_id}")
-                    print(f"R1 API response: {result}")
+                    logger.info(f"Successfully added AP {ap.serial} to R1 venue {request.dest_venue_id}")
+                    logger.debug(f"R1 API response: {result}")
 
                     migrated_count += 1
                     details.append({
@@ -342,7 +341,7 @@ async def migrate_sz_to_r1(
                 except Exception as e:
                     failed_count += 1
                     error_msg = str(e)
-                    print(f"Failed to add AP {ap.serial}: {error_msg}")
+                    logger.error(f"Failed to add AP {ap.serial}: {error_msg}")
                     details.append({
                         "serial": ap.serial,
                         "status": "failed",
@@ -354,8 +353,7 @@ async def migrate_sz_to_r1(
                 try:
                     # TODO: Implement add_switch_to_venue method in R1 venues service
                     # For now, we'll log the switch and mark as not implemented
-                    print(f"⚠️ Switch migration not yet fully implemented: {switch.serial}")
-                    print(f"   Switch details: name={switch.name}, model={switch.model}")
+                    logger.warning(f"Switch migration not yet fully implemented: {switch.serial} (name={switch.name}, model={switch.model})")
 
                     # Placeholder: In the future, call r1_client.venues.add_switch_to_venue()
                     # result = await r1_client.venues.add_switch_to_venue(
@@ -380,7 +378,7 @@ async def migrate_sz_to_r1(
                 except Exception as e:
                     failed_count += 1
                     error_msg = str(e)
-                    print(f"Failed to process switch {switch.serial}: {error_msg}")
+                    logger.error(f"Failed to process switch {switch.serial}: {error_msg}")
                     details.append({
                         "serial": switch.serial,
                         "device_type": "switch",

@@ -216,9 +216,7 @@ async def run_workflow_background(
         logger.info(f"✅ Workflow {job.id} completed with status: {final_job.status}")
 
     except Exception as e:
-        logger.error(f"❌ Workflow {job.id} failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Workflow {job.id} failed: {str(e)}")
 
 
 # ==================== API Endpoints ====================
@@ -267,21 +265,21 @@ async def audit_venue_dpsk(
     logger.info(f"✅ Controller validated - type: {controller.controller_type}, tenant: {tenant_id}")
 
     try:
-        print(f"\n🔍 DPSK AUDIT - Starting for venue {request.venue_id}")
+        logger.info(f"DPSK AUDIT - Starting for venue {request.venue_id}")
 
         # STEP 1: Get venue details
-        print(f"📍 STEP 1: Fetching venue details...")
+        logger.debug(f"STEP 1: Fetching venue details...")
         venue = await r1_client.venues.get_venue(tenant_id, request.venue_id)
         venue_name = venue.get('name', 'Unknown')
-        print(f"  ✅ Venue: {venue_name} (ID: {request.venue_id})")
+        logger.debug(f"Venue: {venue_name} (ID: {request.venue_id})")
 
         # STEP 2: Get SSIDs activated at this venue
-        print(f"\n📡 STEP 2: Fetching SSIDs activated at venue...")
+        logger.debug(f"STEP 2: Fetching SSIDs activated at venue...")
         try:
             # Get all WiFi networks for the tenant
             wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
             all_networks = wifi_networks_response.get('data', [])
-            print(f"  📊 Found {len(all_networks)} total WiFi networks across tenant")
+            logger.debug(f"Found {len(all_networks)} total WiFi networks across tenant")
 
             # Filter networks that are activated at this venue
             # Each network has a venueApGroups array showing which venues it's on
@@ -298,20 +296,18 @@ async def audit_venue_dpsk(
                             'name': network_name,
                             'id': network_id
                         })
-                        print(f"    ✅ {network_name} (ID: {network_id})")
+                        logger.debug(f"Found SSID: {network_name} (ID: {network_id})")
                         break
 
-            print(f"  ✅ Found {len(venue_ssids)} SSIDs activated at this venue")
+            logger.debug(f"Found {len(venue_ssids)} SSIDs activated at this venue")
             all_ssids = venue_ssids
 
         except Exception as e:
-            print(f"  ❌ Error fetching SSIDs: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Error fetching SSIDs: {str(e)}")
             raise
 
         # STEP 3: Get all DPSK pools (query by tenant)
-        print(f"\n🔑 STEP 3: Fetching all DPSK pools...")
+        logger.debug(f"STEP 3: Fetching all DPSK pools...")
         try:
             dpsk_pools_response = await r1_client.dpsk.query_dpsk_pools(
                 tenant_id=tenant_id,
@@ -320,23 +316,21 @@ async def audit_venue_dpsk(
                 limit=1000  # Get all pools
             )
             all_dpsk_pools = dpsk_pools_response.get('data', [])
-            print(f"  ✅ Found {len(all_dpsk_pools)} DPSK pools")
+            logger.debug(f"Found {len(all_dpsk_pools)} DPSK pools")
 
             # Log pool details for debugging
             for pool in all_dpsk_pools:
                 pool_name = pool.get('name', 'Unknown')
                 pool_id = pool.get('id', 'Unknown')
                 identity_group_id = pool.get('identityGroupId', 'N/A')
-                print(f"    🔑 Pool: {pool_name} (ID: {pool_id}, Identity Group: {identity_group_id})")
+                logger.debug(f"Pool: {pool_name} (ID: {pool_id}, Identity Group: {identity_group_id})")
         except Exception as e:
-            print(f"  ⚠️  Error fetching DPSK pools: {str(e)}")
-            print(f"  ⚠️  DPSK feature may not be enabled or API endpoint unavailable")
+            logger.warning(f"Error fetching DPSK pools: {str(e)} - DPSK feature may not be enabled")
             all_dpsk_pools = []
-            import traceback
-            traceback.print_exc()
+            logger.debug("DPSK pools exception details", exc_info=True)
 
         # STEP 4: Get all Identity Groups
-        print(f"\n👥 STEP 4: Fetching all Identity Groups...")
+        logger.debug(f"STEP 4: Fetching all Identity Groups...")
         try:
             identity_groups_response = await r1_client.identity.query_identity_groups(
                 tenant_id=tenant_id,
@@ -344,12 +338,11 @@ async def audit_venue_dpsk(
                 page=0,
                 size=1000
             )
-            print(f"  📊 Full response keys: {identity_groups_response.keys()}")
+            logger.debug(f"Identity groups response keys: {identity_groups_response.keys()}")
             # Identity Groups uses Spring Data pagination format (content, not data)
             all_identity_groups = identity_groups_response.get('content', identity_groups_response.get('data', []))
             total_count = identity_groups_response.get('totalElements', identity_groups_response.get('totalCount', 'N/A'))
-            print(f"  ✅ Found {len(all_identity_groups)} Identity Groups")
-            print(f"  📊 Total count from API: {total_count}")
+            logger.debug(f"Found {len(all_identity_groups)} Identity Groups (total from API: {total_count})")
 
             # Log identity group details and collect pool IDs
             dpsk_pool_ids = []
@@ -359,35 +352,33 @@ async def audit_venue_dpsk(
                 dpsk_pool_id = group.get('dpskPoolId')
                 if dpsk_pool_id:
                     dpsk_pool_ids.append(dpsk_pool_id)
-                print(f"    👥 Group: {group_name} (ID: {group_id}, DPSK Pool: {dpsk_pool_id or 'N/A'})")
+                logger.debug(f"Group: {group_name} (ID: {group_id}, DPSK Pool: {dpsk_pool_id or 'N/A'})")
         except Exception as e:
-            print(f"  ⚠️  Error fetching Identity Groups: {str(e)}")
-            print(f"  ⚠️  Identity Groups feature may not be enabled or API endpoint unavailable")
+            logger.warning(f"Error fetching Identity Groups: {str(e)} - feature may not be enabled")
             all_identity_groups = []
             dpsk_pool_ids = []
-            import traceback
-            traceback.print_exc()
+            logger.debug("Identity Groups exception details", exc_info=True)
 
         # STEP 4.5: Fetch DPSK pool details individually (workaround for broken query endpoint)
-        print(f"\n🔑 STEP 4.5: Fetching DPSK pool details from Identity Groups...")
+        logger.debug(f"STEP 4.5: Fetching DPSK pool details from Identity Groups...")
         all_dpsk_pools_from_groups = []
         for pool_id in dpsk_pool_ids:
             try:
-                print(f"  📡 Fetching DPSK pool: {pool_id}")
+                logger.debug(f"Fetching DPSK pool: {pool_id}")
                 pool = await r1_client.dpsk.get_dpsk_pool(pool_id, tenant_id)
                 all_dpsk_pools_from_groups.append(pool)
                 pool_name = pool.get('name', 'Unknown')
-                print(f"    ✅ Pool: {pool_name} (ID: {pool_id})")
+                logger.debug(f"Pool: {pool_name} (ID: {pool_id})")
             except Exception as e:
-                print(f"    ⚠️  Error fetching pool {pool_id}: {str(e)}")
+                logger.warning(f"Error fetching pool {pool_id}: {str(e)}")
 
         # Use pools from individual fetches if query failed
         if not all_dpsk_pools and all_dpsk_pools_from_groups:
             all_dpsk_pools = all_dpsk_pools_from_groups
-            print(f"  ✅ Using {len(all_dpsk_pools)} pools from individual fetches")
+            logger.debug(f"Using {len(all_dpsk_pools)} pools from individual fetches")
 
         # STEP 5: Get detailed SSID information to identify DPSK networks
-        print(f"\n🔗 STEP 5: Fetching detailed SSID information...")
+        logger.debug(f"STEP 5: Fetching detailed SSID information...")
         dpsk_ssids = []
         all_ssids_detailed = []
 
@@ -397,7 +388,7 @@ async def audit_venue_dpsk(
 
             try:
                 # Get full WiFi network details
-                print(f"  📡 Fetching details for: {ssid_name}")
+                logger.debug(f"Fetching details for: {ssid_name}")
                 ssid_details = await r1_client.networks.get_wifi_network_by_id(ssid_id, tenant_id)
                 all_ssids_detailed.append(ssid_details)
 
@@ -409,21 +400,21 @@ async def audit_venue_dpsk(
                 # Primary DPSK detection fields
                 if ssid_details.get('type') == 'dpsk':
                     has_dpsk = True
-                    print(f"      → Detected via type='dpsk'")
+                    logger.debug(f"  {ssid_name}: Detected via type='dpsk'")
 
                 if ssid_details.get('useDpskService') == True:
                     has_dpsk = True
-                    print(f"      → Detected via useDpskService=true")
+                    logger.debug(f"  {ssid_name}: Detected via useDpskService=true")
 
                 if ssid_details.get('nwSubType') == 'DPSK':
                     has_dpsk = True
-                    print(f"      → Detected via nwSubType='DPSK'")
+                    logger.debug(f"  {ssid_name}: Detected via nwSubType='DPSK'")
 
                 # Check for DPSK pool/service references
                 if 'dpskPool' in ssid_details:
                     has_dpsk = True
                     dpsk_pool_ids.append(ssid_details['dpskPool'])
-                    print(f"      → Found dpskPool: {ssid_details['dpskPool']}")
+                    logger.debug(f"  {ssid_name}: Found dpskPool: {ssid_details['dpskPool']}")
 
                 if 'dpskService' in ssid_details:
                     has_dpsk = True
@@ -431,28 +422,25 @@ async def audit_venue_dpsk(
                         dpsk_pool_ids.extend(ssid_details['dpskService'])
                     else:
                         dpsk_pool_ids.append(ssid_details['dpskService'])
-                    print(f"      → Found dpskService: {ssid_details['dpskService']}")
+                    logger.debug(f"  {ssid_name}: Found dpskService: {ssid_details['dpskService']}")
 
                 if 'dpsk' in ssid_details:
                     has_dpsk = True
-                    print(f"      → Found 'dpsk' field")
+                    logger.debug(f"  {ssid_name}: Found 'dpsk' field")
 
                 if has_dpsk:
-                    print(f"    ✅ DPSK SSID: {ssid_name} (ID: {ssid_id})")
+                    logger.debug(f"DPSK SSID: {ssid_name} (ID: {ssid_id})")
                     dpsk_ssids.append(ssid_details)
                 else:
-                    print(f"    ⚪ Regular SSID: {ssid_name} (ID: {ssid_id})")
+                    logger.debug(f"Regular SSID: {ssid_name} (ID: {ssid_id})")
 
             except Exception as e:
-                print(f"    ⚠️  Error fetching details for {ssid_name}: {str(e)}")
+                logger.warning(f"Error fetching details for {ssid_name}: {str(e)}")
                 # Keep the basic info if detail fetch fails
                 all_ssids_detailed.append(ssid)
 
-        print(f"\n📊 SUMMARY:")
-        print(f"  Total SSIDs: {len(all_ssids)}")
-        print(f"  DPSK SSIDs: {len(dpsk_ssids)}")
-        print(f"  DPSK Pools: {len(all_dpsk_pools)}")
-        print(f"  Identity Groups: {len(all_identity_groups)}")
+        logger.info(f"DPSK Audit Summary: SSIDs={len(all_ssids)}, DPSK SSIDs={len(dpsk_ssids)}, "
+                    f"DPSK Pools={len(all_dpsk_pools)}, Identity Groups={len(all_identity_groups)}")
 
         # Build response
         response = DPSKAuditResponse(
@@ -470,9 +458,7 @@ async def audit_venue_dpsk(
         return response
 
     except Exception as e:
-        logger.error(f"❌ DPSK audit failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"DPSK audit failed: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to audit DPSK configuration: {str(e)}"
@@ -637,9 +623,7 @@ async def preview_cleanup(
         )
 
     except Exception as e:
-        logger.error(f"❌ Preview cleanup failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Preview cleanup failed: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to preview cleanup: {str(e)}"

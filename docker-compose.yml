@@ -1,9 +1,17 @@
+# Default logging configuration for all services
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # PostgreSQL Database
   db:
     image: postgres:15-alpine
     container_name: rtools-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -25,6 +33,7 @@ services:
     image: redis:7-alpine
     container_name: rtools-redis
     restart: unless-stopped
+    logging: *default-logging
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
@@ -54,6 +63,7 @@ services:
       dockerfile: Dockerfile
     container_name: rtools-backend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +89,7 @@ services:
       MAILGUN_DOMAIN: ${MAILGUN_DOMAIN}
       INTEGRATION_API_URL: ${INTEGRATION_API_URL}
       FERNET_KEY: ${FERNET_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "4174:4174"
     healthcheck:
@@ -111,6 +122,7 @@ services:
       target: production
     container_name: rtools-frontend
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - backend
     environment:
@@ -125,6 +137,7 @@ services:
       dockerfile: Dockerfile
     container_name: rtools-fossflow
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "3000:80"      # fossFLOW web UI
       - "3001:3001"    # fossFLOW backend API
@@ -144,6 +157,7 @@ services:
     image: nginx:alpine
     container_name: rtools-nginx
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - frontend
       - backend

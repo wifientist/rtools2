@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class DpskService:
     """
@@ -117,10 +121,7 @@ class DpskService:
             payload["expirationType"] = "DAYS_AFTER_TIME"
             payload["expirationOffset"] = expiration_days
 
-        # Debug: Log the payload being sent
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"🔍 DEBUG - create_dpsk_pool payload: {payload}")
+        logger.debug(f"create_dpsk_pool payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.post(
@@ -389,10 +390,7 @@ class DpskService:
             except (ValueError, TypeError):
                 pass  # Skip invalid VLAN IDs
 
-        # Debug: Log the payload being sent
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"🔍 DEBUG - create_passphrase payload: {payload}")
+        logger.debug(f"create_passphrase payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.post(

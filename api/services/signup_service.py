@@ -1,3 +1,4 @@
+import logging
 import random
 from datetime import datetime, timedelta
 from models.user import User
@@ -6,6 +7,8 @@ from models.pending_signup import PendingSignupOtp
 from sqlalchemy.orm import Session
 from dependencies import get_db
 from fastapi import Depends
+
+logger = logging.getLogger(__name__)
 
 
 def verify_signup_otp(email: str, otp_code: str, db: Session = Depends(get_db)) -> bool:
@@ -21,7 +24,7 @@ def verify_signup_otp(email: str, otp_code: str, db: Session = Depends(get_db)) 
     db.delete(pending)
     db.commit()
 
-    print(f'Signup OTP for {email}: {otp_code} verified successfully.')
+    logger.info(f'Signup OTP verified for {email}')
 
     return True
 
@@ -38,5 +41,5 @@ def generate_and_store_signup_otp(email: str, db: Session = Depends(get_db)):
         db.add(pending)
 
     db.commit()
-    print(f'Signup OTP for {email}: {otp}')
+    logger.info(f'Signup OTP generated for {email}')
     return otp

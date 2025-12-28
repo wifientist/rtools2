@@ -1,9 +1,12 @@
 """
 Redis client configuration for workflow state management
 """
+import logging
 import os
 import redis.asyncio as redis
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 class RedisClient:
     """Singleton Redis client for workflow state storage"""
@@ -37,9 +40,9 @@ class RedisClient:
             # Test connection
             try:
                 await cls._instance.ping()
-                print(f"✅ Redis connected: {host}:{port} (DB {db})")
+                logger.info(f"Redis connected: {host}:{port} (DB {db})")
             except redis.ConnectionError as e:
-                print(f"❌ Redis connection failed: {e}")
+                logger.error(f"Redis connection failed: {e}")
                 cls._instance = None
                 raise
 
@@ -51,7 +54,7 @@ class RedisClient:
         if cls._instance:
             await cls._instance.close()
             cls._instance = None
-            print("Redis connection closed")
+            logger.info("Redis connection closed")
 
 # Convenience functions for FastAPI dependency injection
 async def get_redis() -> redis.Redis:

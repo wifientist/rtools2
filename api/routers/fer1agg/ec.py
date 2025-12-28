@@ -1,14 +1,17 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from models.user import User
 
-# from clients.r1_client import get_scoped_r1_client
 from clients.r1_client import create_r1_client_from_controller
 from r1api.client import R1Client
 
 from dependencies import get_db
 from dependencies import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/ec",
@@ -36,13 +39,13 @@ async def get_active_ec(
         tenants_self = await r1_client.tenant.get_tenant_self()
         tenants_user_profiles = await r1_client.tenant.get_tenant_user_profiles()
         raw_ecs = {"self": tenants_self, "userProfiles": tenants_user_profiles}
-        print(raw_ecs)
+        logger.debug(f"Non-MSP EC fallback: {raw_ecs}")
         ecs = extract_ec_list(raw_ecs.get("ecs", {}))
-    
-    answer =  {
+
+    answer = {
          "ecs": ecs,
     }
-    print(answer)
+    logger.debug(f"Active EC response: {len(ecs) if isinstance(ecs, list) else 'N/A'} ECs")
     return {'status': 'success', 'data': answer}
 
 @router.get("/secondary")
@@ -66,13 +69,13 @@ async def get_secondary_ec(
         tenants_self = await r1_client.tenant.get_tenant_self()
         tenants_user_profiles = await r1_client.tenant.get_tenant_user_profiles()
         raw_ecs = {"self": tenants_self, "userProfiles": tenants_user_profiles}
-        print(raw_ecs)
+        logger.debug(f"Non-MSP EC fallback: {raw_ecs}")
         ecs = extract_ec_list(raw_ecs.get("ecs", {}))
 
-    answer =  {
+    answer = {
          "ecs": ecs,
     }
-    print(answer)
+    logger.debug(f"Secondary EC response: {len(ecs) if isinstance(ecs, list) else 'N/A'} ECs")
     return {'status': 'success', 'data': answer}
 
 @router.get("/dual")
@@ -93,11 +96,11 @@ async def get_active_and_secondary_ecs(
         }
 
         msp_ecs = await client.msp.get_msp_ecs()
-        print("MSP ECS Response:", msp_ecs)
+        logger.debug(f"MSP ECS Response: {msp_ecs}")
         if msp_ecs:
             if msp_ecs.get("data"):
                 result["ecs"] = extract_ec_list(msp_ecs)
-        
+
         result["self"] = await client.tenant.get_tenant_self()
         result["userProfiles"] = await client.tenant.get_tenant_user_profiles()
 
@@ -106,8 +109,7 @@ async def get_active_and_secondary_ecs(
     active_data = await build_ec_response(current_user.active_controller_id)
     secondary_data = await build_ec_response(current_user.secondary_controller_id)
 
-    print("Active EC Data:", active_data)
-    print("Secondary EC Data:", secondary_data)
+    logger.debug(f"Dual EC response: active={active_data is not None}, secondary={secondary_data is not None}")
 
     return {
         "status": "success",

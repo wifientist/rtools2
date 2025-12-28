@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class ApService:
     def __init__(self, client):
@@ -7,10 +11,9 @@ class ApService:
         """
         Get all AP for a tenant
         """
-        print(f"getting AP for tenant_id: {tenant_id}")
-        print(f"client.ec_type: {self.client.ec_type}")
+        logger.debug(f"getting AP for tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
         if self.client.ec_type == "MSP":
-            print("Using MSP-specific endpoint overriding tenant_id")
+            logger.debug("Using MSP-specific endpoint overriding tenant_id")
             return self.client.get("/apconfig", override_tenant_id=tenant_id).json()
         else:
             return self.client.get("/apconfig").json()

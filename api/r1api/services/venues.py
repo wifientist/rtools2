@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class VenueService:
     def __init__(self, client):
@@ -59,15 +63,11 @@ class VenueService:
         all_aps = first_response.get('data', [])
         total_count = first_response.get('totalCount', len(all_aps))
 
-        print(f"📡 APS QUERY:")
-        print(f"  - Fetched: {len(all_aps)} APs")
-        print(f"  - Total reported: {total_count}")
+        logger.debug(f"APs query: fetched {len(all_aps)}, total reported: {total_count}")
 
         # Check if we got everything in one request
         if total_count > len(all_aps):
-            print(f"⚠️  WARNING: API returned {len(all_aps)} APs but reports {total_count} total")
-            print(f"    Pagination is known to be broken on this endpoint (returns duplicates)")
-            print(f"    Consider increasing pageSize to {total_count} if this venue has that many APs")
+            logger.warning(f"API returned {len(all_aps)} APs but reports {total_count} total - pagination is broken on this endpoint")
 
         # Deduplicate APs by serial number (in case API returns duplicates)
         seen_serials = set()
@@ -82,8 +82,7 @@ class VenueService:
                 duplicate_count += 1
 
         if duplicate_count > 0:
-            print(f"⚠️  Removed {duplicate_count} duplicate APs from fetched data")
-            print(f"✅ Final unique APs: {len(deduplicated_aps)}")
+            logger.warning(f"Removed {duplicate_count} duplicate APs, final count: {len(deduplicated_aps)}")
 
         return {'data': deduplicated_aps, 'totalCount': len(deduplicated_aps)}
 
@@ -112,28 +111,21 @@ class VenueService:
         Note: This returns a simple list. For more advanced querying with filters,
         use query_ap_groups() instead.
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
-        logger.info(f"🔍 get_ap_groups called - tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
+        logger.debug(f"get_ap_groups called - tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.get("/venues/apGroups", override_tenant_id=tenant_id).json()
         else:
             response = self.client.get("/venues/apGroups").json()
 
-        logger.info(f"📊 AP Groups Response Type: {type(response)}")
+        logger.debug(f"AP Groups Response Type: {type(response)}")
 
         if isinstance(response, dict):
-            logger.info(f"📊 AP Groups Response Keys: {response.keys()}")
+            logger.debug(f"AP Groups Response Keys: {response.keys()}")
             if 'data' in response:
-                logger.info(f"📊 AP Groups Count: {len(response.get('data', []))}")
-                for idx, group in enumerate(response.get('data', [])[:5]):  # Log first 5 groups
-                    logger.info(f"  Group {idx}: {group}")
+                logger.debug(f"AP Groups Count: {len(response.get('data', []))}")
         elif isinstance(response, list):
-            logger.info(f"📊 AP Groups Count (list): {len(response)}")
-            for idx, group in enumerate(response[:5]):  # Log first 5 groups
-                logger.info(f"  Group {idx}: {group}")
+            logger.debug(f"AP Groups Count (list): {len(response)}")
 
         return response
 
@@ -308,9 +300,6 @@ class VenueService:
         Returns:
             Response from the R1 API
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Build request payload
         payload = {
             "name": name,
@@ -441,12 +430,12 @@ class VenueService:
                     if created_group:
                         return created_group
                     else:
-                        print(f"    ⚠️  Task completed but could not find created AP Group '{name}'")
+                        logger.warning(f"Task completed but could not find created AP Group '{name}'")
                         return result
 
             return result
         else:
-            print(f"  ❌ Failed to create AP Group: {response.status_code} - {response.text}")
+            logger.error(f"Failed to create AP Group: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -495,7 +484,7 @@ class VenueService:
 
             return result
         else:
-            print(f"  ❌ Failed to assign AP: {response.status_code} - {response.text}")
+            logger.error(f"Failed to assign AP: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -549,7 +538,7 @@ class VenueService:
 
             return result
         else:
-            print(f"  ❌ Failed to activate SSID on venue: {response.status_code} - {response.text}")
+            logger.error(f"Failed to activate SSID on venue: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -620,7 +609,7 @@ class VenueService:
 
             return result
         else:
-            print(f"  ❌ Failed to activate SSID on AP Group: {response.status_code} - {response.text}")
+            logger.error(f"Failed to activate SSID on AP Group: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -654,15 +643,12 @@ class VenueService:
         Returns:
             Response from API
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Default to all radio types if not specified
         if radio_types is None:
             radio_types = ["2.4-GHz", "5-GHz", "6-GHz"]
 
         # Step 1: Update venue SSID settings to set isAllApGroups=false
-        logger.info(f"      Step 3a: Setting isAllApGroups=false on venue SSID settings...")
+        logger.debug(f"Step 3a: Setting isAllApGroups=false on venue SSID settings")
         settings_payload = {
             "dual5gEnabled": False,
             "tripleBandEnabled": False,
@@ -686,7 +672,7 @@ class VenueService:
         if vlan_id is not None:
             settings_payload["apGroups"][0]["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
-        print(f"    🔍 Settings payload: {settings_payload}")
+        logger.debug(f"Settings payload: {settings_payload}")
 
         # Step 1: PUT settings
         if self.client.ec_type == "MSP":
@@ -702,16 +688,16 @@ class VenueService:
             )
 
         if response.status_code not in [200, 201, 202]:
-            print(f"  ❌ Step 3a failed: {response.status_code} - {response.text}")
+            logger.error(f"Step 3a failed: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
         result_3a = response.json() if response.content else {"status": "accepted"}
         request_id_3a = result_3a.get('requestId') if response.status_code == 202 else None
-        logger.info(f"      Step 3a sent (requestId: {request_id_3a})")
+        logger.debug(f"Step 3a sent (requestId: {request_id_3a})")
 
         # Step 2: Activate AP Group on the SSID (fire immediately, don't wait)
-        logger.info(f"      Step 3b: Activating AP Group on SSID...")
+        logger.debug(f"Step 3b: Activating AP Group on SSID")
         if self.client.ec_type == "MSP":
             response = self.client.put(
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
@@ -723,16 +709,16 @@ class VenueService:
             )
 
         if response.status_code not in [200, 201, 202]:
-            print(f"  ❌ Step 3b failed: {response.status_code} - {response.text}")
+            logger.error(f"Step 3b failed: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
         result_3b = response.json() if response.content else {"status": "accepted"}
         request_id_3b = result_3b.get('requestId') if response.status_code == 202 else None
-        logger.info(f"      Step 3b sent (requestId: {request_id_3b})")
+        logger.debug(f"Step 3b sent (requestId: {request_id_3b})")
 
         # Step 3: Configure AP Group settings on the SSID (fire immediately, don't wait)
-        logger.info(f"      Step 3c: Configuring AP Group settings...")
+        logger.debug(f"Step 3c: Configuring AP Group settings")
         ap_group_settings_payload = {
             "apGroupId": ap_group_id,
             "radioTypes": radio_types,
@@ -754,27 +740,27 @@ class VenueService:
             )
 
         if response.status_code not in [200, 201, 202]:
-            print(f"  ❌ Step 3c failed: {response.status_code} - {response.text}")
+            logger.error(f"Step 3c failed: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
         result_3c = response.json() if response.content else {"status": "accepted"}
         request_id_3c = result_3c.get('requestId') if response.status_code == 202 else None
-        logger.info(f"      Step 3c sent (requestId: {request_id_3c})")
+        logger.debug(f"Step 3c sent (requestId: {request_id_3c})")
 
         # Now wait for all 3 to complete (in order)
         if wait_for_completion:
             if request_id_3a:
-                logger.info(f"      Waiting for Step 3a to complete...")
+                logger.debug(f"Waiting for Step 3a to complete")
                 await self.client.await_task_completion(request_id_3a, override_tenant_id=tenant_id)
             if request_id_3b:
-                logger.info(f"      Waiting for Step 3b to complete...")
+                logger.debug(f"Waiting for Step 3b to complete")
                 await self.client.await_task_completion(request_id_3b, override_tenant_id=tenant_id)
             if request_id_3c:
-                logger.info(f"      Waiting for Step 3c to complete...")
+                logger.debug(f"Waiting for Step 3c to complete")
                 await self.client.await_task_completion(request_id_3c, override_tenant_id=tenant_id)
 
-        logger.info(f"      All 3 steps complete")
+        logger.debug(f"All 3 steps complete")
         return result_3c
 
     # ========== Comprehensive View Methods ==========
@@ -801,9 +787,6 @@ class VenueService:
                 'total_ssids': int
             }
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         result = {
             'ap_group': None,
             'aps': [],
@@ -887,9 +870,6 @@ class VenueService:
                 ...
             ]
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         try:
             # 1. Get all AP Groups using the simple GET endpoint (query endpoint is broken)
             # The query endpoint ignores pagination and only returns 25 items
@@ -910,17 +890,12 @@ class VenueService:
             if venue_id:
                 all_ap_groups = [g for g in all_ap_groups if g.get('venueId') == venue_id]
 
-            print(f"🔍 GET ENDPOINT RESPONSE:")
-            print(f"  - Total AP Groups: {len(all_ap_groups)}")
-            print(f"  - Venue filter applied: {venue_id is not None}")
+            logger.debug(f"AP Groups: {len(all_ap_groups)} total, venue filter: {venue_id is not None}")
 
             # Skip the broken query endpoint pagination logic
             first_response = {'data': all_ap_groups, 'totalCount': len(all_ap_groups)}
 
-            # GET endpoint returns all groups at once (no pagination needed)
-            print(f"✅ Fetched {len(all_ap_groups)} total AP Groups from GET endpoint")
-
-            logger.info(f"Total AP Groups fetched: {len(all_ap_groups)}")
+            logger.info(f"Fetched {len(all_ap_groups)} AP Groups")
 
             # 2. Get all APs in venue to map serial numbers to names
             logger.info(f"Fetching APs for venue {venue_id}...")
@@ -933,15 +908,11 @@ class VenueService:
                 ap_lookup = {}
 
             # 3. Get all WiFi networks to find which are activated on each AP Group
-            logger.info(f"Fetching WiFi Networks for tenant {tenant_id}...")
+            logger.debug(f"Fetching WiFi Networks for tenant {tenant_id}")
             networks_response = await self.client.networks.get_wifi_networks(tenant_id)
             all_networks = networks_response.get('data', [])
 
-            print(f"🌐 WIFI NETWORKS DEBUG:")
-            print(f"  - Total networks: {len(all_networks)}")
-            if all_networks:
-                print(f"  - Sample network fields: {list(all_networks[0].keys())}")
-                print(f"  - Sample network venueApGroups: {all_networks[0].get('venueApGroups', 'NOT FOUND')}")
+            logger.debug(f"WiFi Networks: {len(all_networks)} total")
 
             # Build reverse lookup: AP Group ID -> List of SSIDs activated on it
             # The relationship is stored in each network's venueApGroups field
@@ -968,10 +939,7 @@ class VenueService:
                                     apgroup_to_ssids[ap_group_id] = []
                                 apgroup_to_ssids[ap_group_id].append(network)
 
-            print(f"🔗 SSID-to-AP-Group mapping:")
-            print(f"  - AP Groups with SSIDs: {len(apgroup_to_ssids)}")
-            for gid, nets in list(apgroup_to_ssids.items())[:3]:
-                print(f"  - AP Group {gid}: {len(nets)} SSIDs")
+            logger.debug(f"SSID-to-AP-Group mapping: {len(apgroup_to_ssids)} groups with SSIDs")
 
             # 4. Build summary for each group
             summaries = []
@@ -998,8 +966,7 @@ class VenueService:
                     ap_serials_list.append(serial)
 
                 if missing_serials:
-                    print(f"⚠️  AP Group '{group.get('name')}': {len(missing_serials)} APs not found in venue AP list")
-                    print(f"    Missing serials: {missing_serials[:5]}...")  # Show first 5
+                    logger.warning(f"AP Group '{group.get('name')}': {len(missing_serials)} APs not found in venue")
 
                 # Get SSIDs activated on this AP Group from our reverse lookup
                 ssids = apgroup_to_ssids.get(group_id, [])
@@ -1008,7 +975,7 @@ class VenueService:
                 # Skip groups without names (usually default groups)
                 group_name = group.get('name')
                 if not group_name:
-                    print(f"Skipping AP Group without name: {group.get('id')}")
+                    logger.debug(f"Skipping AP Group without name: {group.get('id')}")
                     continue
 
                 summary = {
@@ -1027,10 +994,7 @@ class VenueService:
 
                 summaries.append(summary)
 
-            print(f"📋 SUMMARY BUILD COMPLETE:")
-            print(f"   - Total groups fetched: {len(all_ap_groups)}")
-            print(f"   - Groups after filtering: {len(summaries)}")
-            print(f"   - Filtered out: {len(all_ap_groups) - len(summaries)} groups")
+            logger.info(f"AP Groups summary: {len(summaries)} groups ({len(all_ap_groups) - len(summaries)} filtered out)")
 
             return summaries
 
@@ -1059,11 +1023,8 @@ class VenueService:
                 'total_ssids': int
             }
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         try:
-            logger.info(f"Building network summary for venue {venue_id}...")
+            logger.info(f"Building network summary for venue {venue_id}")
 
             # 1. Get venue details
             venue = await self.get_venue(tenant_id, venue_id)
@@ -1118,14 +1079,11 @@ class VenueService:
         Returns:
             Response from API
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         payload = {
             "useVenueSettings": use_venue_settings
         }
 
-        logger.info(f"Setting AP {serial_number} LAN port specific settings: useVenueSettings={use_venue_settings}")
+        logger.debug(f"Setting AP {serial_number} LAN port specific settings: useVenueSettings={use_venue_settings}")
 
         if self.client.ec_type == "MSP":
             response = self.client.put(
@@ -1181,9 +1139,6 @@ class VenueService:
         Returns:
             Response from API
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Normalize port_id - accept both "LAN1" and "1" formats
         if not port_id.upper().startswith('LAN'):
             port_id = f"LAN{port_id}"
@@ -1202,7 +1157,7 @@ class VenueService:
             # Set vlan_members to just the untagged VLAN for access port behavior
             payload["overwriteVlanMembers"] = str(untagged_vlan)
 
-        logger.info(f"Setting AP {serial_number} port {port_id} VLAN: {untagged_vlan}")
+        logger.debug(f"Setting AP {serial_number} port {port_id} VLAN: {untagged_vlan}")
 
         if self.client.ec_type == "MSP":
             response = self.client.put(
@@ -1253,9 +1208,6 @@ class VenueService:
         Returns:
             Response from API
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Normalize port_id - accept both "LAN1" and "1" formats
         if not port_id.upper().startswith('LAN'):
             port_id = f"LAN{port_id}"
@@ -1267,7 +1219,7 @@ class VenueService:
             "enabled": enabled
         }
 
-        logger.info(f"Setting AP {serial_number} port {port_id} enabled: {enabled}")
+        logger.debug(f"Setting AP {serial_number} port {port_id} enabled: {enabled}")
 
         if self.client.ec_type == "MSP":
             response = self.client.put(

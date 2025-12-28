@@ -346,9 +346,7 @@ async def _audit_venue_resources(r1_client, venue_id: str, tenant_id: str = None
         logger.info(f"=" * 60)
 
     except Exception as e:
-        logger.error(f"❌ Error auditing venue: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Error auditing venue: {str(e)}")
         raise
 
     return inventory

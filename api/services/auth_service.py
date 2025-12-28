@@ -1,6 +1,6 @@
+import logging
 import random
 from datetime import datetime, timedelta
-#from sqlalchemy.ext.asyncio import AsyncSession
 from models.user import User
 from utils.email import send_otp_email_via_api
 from crud.crud_users import get_user_by_email
@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from dependencies import get_db
 from fastapi import Depends
 from security import create_user_token
+
+logger = logging.getLogger(__name__)
 
 def generate_and_send_otp(email: str, db: Session = Depends(get_db)):
 
@@ -22,7 +24,7 @@ def generate_and_send_otp(email: str, db: Session = Depends(get_db)):
     user.otp_expires_at = expires_at
     db.commit()
 
-    print(f"Generated login OTP: {email} : {otp}")
+    logger.info(f"Generated login OTP for {email}")
 
     send_otp_email_via_api(user.email, otp)
 
@@ -31,7 +33,7 @@ def verify_otp_and_login(email: str, otp_code: str, db: Session = Depends(get_db
     user = get_user_by_email(db, email)
     if not user:
         raise Exception("User not found")
-    
+
     if str(user.otp_code) != str(otp_code) or user.otp_expires_at < datetime.utcnow():
         raise Exception("Invalid or expired OTP")
 
@@ -42,6 +44,6 @@ def verify_otp_and_login(email: str, otp_code: str, db: Session = Depends(get_db
 
     token = create_user_token(user)
 
-    print(f"Verify login OTP: {email} : {otp_code} ==> {token}")
+    logger.info(f"Login OTP verified for {email}")
 
     return token

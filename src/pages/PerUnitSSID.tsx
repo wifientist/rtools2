@@ -294,18 +294,6 @@ function PerUnitSSID() {
         Configure unique SSIDs for individual apartment units or rooms in RuckusONE
       </p>
 
-      {/* Controller Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <p className="text-sm text-gray-700">
-          <strong>Active Controller:</strong> {activeControllerId || "None selected"}
-        </p>
-        {!activeControllerId && (
-          <p className="text-sm text-red-600 mt-2">
-            ⚠️ Please select an active controller from the Controllers page before proceeding.
-          </p>
-        )}
-      </div>
-
       {/* Educational Section - How It Works */}
       <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-6 mb-6">
         <h3 className="text-xl font-bold mb-3 flex items-center gap-2">

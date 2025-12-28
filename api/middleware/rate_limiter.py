@@ -1,8 +1,11 @@
+import logging
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime, timedelta
 from collections import defaultdict
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -57,6 +60,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         current_count = len(self.request_counts[client_ip][endpoint])
 
         if current_count >= max_requests:
+            logger.warning(f"Rate limit exceeded for {client_ip} on {endpoint} ({current_count}/{max_requests})")
             raise HTTPException(
                 status_code=429,
                 detail=f"Rate limit exceeded. Maximum {max_requests} requests per {window_seconds} seconds."

@@ -4,12 +4,15 @@ SmartZone API Router
 Provides endpoints for interacting with SmartZone controllers,
 including AP inventory queries and migration support.
 """
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Dict, Any
 import httpx
 from szapi.client import SZClient
 from clients.sz_client_deps import get_dynamic_sz_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/sz/{controller_id}",
@@ -121,8 +124,7 @@ async def get_zone_aps(
         status_code = e.response.status_code
         raise HTTPException(status_code=status_code, detail=f"SmartZone API error: {status_code} - {str(e)}")
     except Exception as e:
-        import traceback
-        traceback.print_exc()  # Print full traceback to logs
+        logger.exception(f"Failed to fetch APs: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch APs: {str(e)}")
 
 
