@@ -48,6 +48,10 @@ class JobStatusResponse(BaseModel):
     created_resources: Dict[str, list]
     errors: list
     summary: Dict[str, Any]
+    # Parallel execution fields (only present for parent jobs)
+    is_parallel: bool = False
+    parallel_progress: Optional[Dict[str, Any]] = None
+    child_jobs: Optional[List[Dict[str, Any]]] = None
 
 
 class JobListItem(BaseModel):
@@ -93,6 +97,13 @@ class DeleteJobResponse(BaseModel):
     failed: List[Dict[str, str]] = Field(default_factory=list, description="Failed deletions with reasons")
 
 
+class CancelJobResponse(BaseModel):
+    """Cancel job response"""
+    job_id: str
+    status: str
+    message: str
+
+
 # ==================== API Endpoints ====================
 
 @router.get("", response_model=JobListResponse)
@@ -125,6 +136,10 @@ async def list_jobs(
     # Note: Legacy jobs (user_id=0) are shown to all users since they pre-date user association
     user_jobs = [job for job in all_jobs if job.user_id == current_user.id or job.user_id == 0]
 
+    # Filter out child jobs - only show parent/standalone jobs in the list
+    # Child jobs are tracked under their parent and can be viewed in the parent's detail view
+    user_jobs = [job for job in user_jobs if job.parent_job_id is None]
+
     # Apply optional filters
     if workflow_name:
         user_jobs = [job for job in user_jobs if job.workflow_name == workflow_name]
@@ -141,18 +156,21 @@ async def list_jobs(
 
     # Build response
     job_items = []
-    for job in paginated_jobs:
+    for i, job in enumerate(paginated_jobs):
         progress = job.get_progress_stats()
         job_items.append(JobListItem(
             job_id=job.id,
             workflow_name=job.workflow_name,
             status=job.status,
-            created_at=job.created_at.isoformat(),
-            completed_at=job.completed_at.isoformat() if job.completed_at else None,
+            created_at=job.created_at.isoformat() + 'Z',  # Add Z suffix to indicate UTC
+            completed_at=job.completed_at.isoformat() + 'Z' if job.completed_at else None,
             venue_id=job.venue_id,
             controller_id=job.controller_id,
             progress_percent=progress['percent']
         ))
+        # Yield every 20 jobs to prevent blocking
+        if i > 0 and i % 20 == 0:
+            await asyncio.sleep(0)
 
     return JobListResponse(
         jobs=job_items,
@@ -235,6 +253,68 @@ async def get_job_status(
 
         phases.append(phase_data)
 
+    # Check if this is a parallel parent job
+    is_parallel = job.is_parent_job()
+    parallel_progress = None
+    child_jobs = None
+
+    if is_parallel:
+        # Fetch child job statuses using MGET for efficiency
+        child_jobs = []
+        completed_children = 0
+        failed_children = 0
+        running_children = 0
+
+        if job.child_job_ids:
+            # Use MGET to fetch all child jobs in one Redis call
+            keys = [f"workflow:jobs:{child_id}" for child_id in job.child_job_ids]
+            child_data_list = await redis_client.mget(keys)
+
+            for i, child_data in enumerate(child_data_list):
+                if child_data:
+                    try:
+                        child_dict = json.loads(child_data)
+                        # Handle legacy jobs without user_id
+                        if 'user_id' not in child_dict:
+                            child_dict['user_id'] = 0
+                        child = WorkflowJob(**child_dict)
+
+                        child_progress = child.get_progress_stats() if child.phases else {}
+                        child_jobs.append({
+                            'job_id': child.id,
+                            'item_id': child.get_item_identifier(),
+                            'status': child.status,
+                            'current_phase': child.current_phase_id,
+                            'progress': child_progress,
+                            'errors': child.errors[:3] if child.errors else []  # Limit errors
+                        })
+
+                        if child.status == JobStatus.COMPLETED:
+                            completed_children += 1
+                        elif child.status == JobStatus.FAILED:
+                            failed_children += 1
+                        elif child.status == JobStatus.RUNNING:
+                            running_children += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to deserialize child job: {e}")
+
+                # Yield every 20 children to prevent blocking
+                if i > 0 and i % 20 == 0:
+                    await asyncio.sleep(0)
+
+        total_children = len(job.child_job_ids)
+        parallel_progress = {
+            'total_items': total_children,
+            'completed': completed_children,
+            'failed': failed_children,
+            'running': running_children,
+            'pending': total_children - completed_children - failed_children - running_children,
+            'percent': round((completed_children + failed_children) / total_children * 100, 2) if total_children > 0 else 0
+        }
+
+        # Override progress with parallel progress for parent jobs
+        progress = parallel_progress
+
     return JobStatusResponse(
         job_id=job.id,
         status=job.status,
@@ -243,7 +323,10 @@ async def get_job_status(
         phases=phases,
         created_resources=job.created_resources,
         errors=job.errors,
-        summary=job.summary
+        summary=job.summary,
+        is_parallel=is_parallel,
+        parallel_progress=parallel_progress,
+        child_jobs=child_jobs
     )
 
 
@@ -301,6 +384,76 @@ async def cleanup_job(
         )
 
 
+@router.post("/{job_id}/cancel", response_model=CancelJobResponse)
+async def cancel_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Cancel a running workflow job
+
+    Sets a cancellation flag that the workflow engine checks between phases
+    and the task executor checks between items. The job will stop at the
+    next safe point (after completing any in-flight API calls).
+
+    Returns:
+    - job_id: The job ID
+    - status: The updated job status
+    - message: Description of what happened
+    """
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManager(redis_client)
+
+    job = await state_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Verify user owns this job (legacy jobs with user_id=0 are accessible to all)
+    if job.user_id != current_user.id and job.user_id != 0:
+        raise HTTPException(status_code=403, detail=f"Access denied to job {job_id}")
+
+    # Check if job is in a cancellable state
+    if job.status not in [JobStatus.PENDING, JobStatus.RUNNING]:
+        return CancelJobResponse(
+            job_id=job_id,
+            status=job.status,
+            message=f"Job cannot be cancelled - already in terminal state: {job.status}"
+        )
+
+    # Set the cancellation flag on this job
+    await state_manager.set_cancelled(job_id)
+
+    # If this is a parallel parent job, also cancel all child jobs
+    if job.is_parent_job():
+        for i, child_id in enumerate(job.child_job_ids):
+            await state_manager.set_cancelled(child_id)
+            # Yield every 20 to prevent blocking
+            if i > 0 and i % 20 == 0:
+                await asyncio.sleep(0)
+        logger.info(f"Set cancellation flag on {len(job.child_job_ids)} child jobs")
+
+    # Update job status to CANCELLED
+    job.status = JobStatus.CANCELLED
+    job.errors.append("Job cancelled by user")
+    await state_manager.save_job(job)
+
+    logger.info(f"Job {job_id} cancelled by user {current_user.email}")
+
+    # Publish cancellation event so frontend gets notified
+    from workflow.events import WorkflowEventPublisher
+    event_publisher = WorkflowEventPublisher(redis_client)
+    await event_publisher.publish_event(job_id, "job_cancelled", {
+        "status": JobStatus.CANCELLED,
+        "message": "Job cancelled by user"
+    })
+
+    return CancelJobResponse(
+        job_id=job_id,
+        status=JobStatus.CANCELLED,
+        message="Job cancellation requested. The job will stop at the next safe point."
+    )
+
+
 @router.get("/{job_id}/stream")
 async def stream_job_events(
     job_id: str,
@@ -347,8 +500,8 @@ async def stream_job_events(
                 yield f"event: status\ndata: {json.dumps({'status': current_job.status, 'progress': progress})}\n\n"
 
                 # If job already in terminal state, send final event and close
-                if current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL]:
-                    final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else 'job_failed'
+                if current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL, JobStatus.CANCELLED]:
+                    final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else ('job_cancelled' if current_job.status == JobStatus.CANCELLED else 'job_failed')
                     yield f"event: {final_event_type}\ndata: {json.dumps({'status': current_job.status, 'progress': progress})}\n\n"
                     logger.info(f"Job {job_id} already in terminal state {current_job.status}, closing SSE stream")
                     return
@@ -374,9 +527,9 @@ async def stream_job_events(
 
                         # Also check if job completed while we were waiting
                         current_job = await state_manager.get_job(job_id)
-                        if current_job and current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL]:
+                        if current_job and current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL, JobStatus.CANCELLED]:
                             progress = current_job.get_progress_stats()
-                            final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else 'job_failed'
+                            final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else ('job_cancelled' if current_job.status == JobStatus.CANCELLED else 'job_failed')
                             yield f"event: {final_event_type}\ndata: {json.dumps({'status': current_job.status, 'progress': progress})}\n\n"
                             logger.info(f"Job {job_id} reached terminal state {current_job.status}, closing SSE stream")
                             return
@@ -391,7 +544,7 @@ async def stream_job_events(
                             yield f"event: {event_type}\ndata: {sse_data}\n\n"
 
                             # Close stream on terminal events
-                            if event_type in ['job_completed', 'job_failed']:
+                            if event_type in ['job_completed', 'job_failed', 'job_cancelled']:
                                 logger.info(f"Job {job_id} reached terminal state, closing SSE stream")
                                 return
 
@@ -407,9 +560,9 @@ async def stream_job_events(
 
                         # Check if job completed
                         current_job = await state_manager.get_job(job_id)
-                        if current_job and current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL]:
+                        if current_job and current_job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL, JobStatus.CANCELLED]:
                             progress = current_job.get_progress_stats()
-                            final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else 'job_failed'
+                            final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else ('job_cancelled' if current_job.status == JobStatus.CANCELLED else 'job_failed')
                             yield f"event: {final_event_type}\ndata: {json.dumps({'status': current_job.status, 'progress': progress})}\n\n"
                             logger.info(f"Job {job_id} reached terminal state {current_job.status}, closing SSE stream")
                             return

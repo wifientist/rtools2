@@ -179,7 +179,8 @@ async def run_workflow_background(
             max_retries=3,
             retry_backoff_base=2,
             r1_client=r1_client,
-            event_publisher=event_publisher
+            event_publisher=event_publisher,
+            state_manager=state_manager
         )
         workflow_engine = WorkflowEngine(state_manager, task_executor, event_publisher)
 

@@ -208,6 +208,10 @@ function PerUnitSSID() {
   const [configureLanPorts, setConfigureLanPorts] = useState(false);
   const [modelPortConfigs, setModelPortConfigs] = useState<ModelPortConfigs>(DEFAULT_MODEL_PORT_CONFIGS);
 
+  // Parallel execution options
+  const [parallelExecution, setParallelExecution] = useState(false);
+  const [maxConcurrent, setMaxConcurrent] = useState(10);
+
   // Audit modal state
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -421,7 +425,9 @@ function PerUnitSSID() {
           ap_group_postfix: apGroupPostfix,
           name_conflict_resolution: nameConflictResolution,
           configure_lan_ports: configureLanPorts,
-          model_port_configs: modelPortConfigs
+          model_port_configs: modelPortConfigs,
+          parallel_execution: parallelExecution,
+          max_concurrent: maxConcurrent
         }),
       });
 
@@ -470,6 +476,9 @@ function PerUnitSSID() {
     setVenueName(venue?.name || null);
   };
 
+  // Audit progress message for UI feedback during polling
+  const [auditProgress, setAuditProgress] = useState<string>("");
+
   const handleAuditVenue = async () => {
     if (!venueId) {
       setAuditError("Please select a venue");
@@ -484,9 +493,12 @@ function PerUnitSSID() {
     setAuditLoading(true);
     setAuditError("");
     setAuditData(null);
+    setAuditProgress("Starting audit...");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/per-unit-ssid/audit`, {
+      // Step 1: Start the async audit job
+      console.log('🔍 Starting audit job...');
+      const startResponse = await fetch(`${API_BASE_URL}/per-unit-ssid/audit/start`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -496,22 +508,77 @@ function PerUnitSSID() {
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Audit failed");
+      if (!startResponse.ok) {
+        const error = await startResponse.json().catch(() => ({}));
+        throw new Error(error.detail || `Failed to start audit: ${startResponse.status}`);
       }
 
-      const data = await response.json();
-      console.log('🔍 FRONTEND: Received audit data:', data);
-      console.log('🔍 FRONTEND: Total AP Groups in response:', data.ap_groups?.length);
-      console.log('🔍 FRONTEND: AP Group names:', data.ap_groups?.map((g: any) => g.ap_group_name));
-      setAuditData(data);
-      setShowAuditModal(true);
+      const startResult = await startResponse.json();
+      const jobId = startResult.job_id;
+      console.log(`🔍 Audit job started: ${jobId}`);
+      setAuditProgress("Audit job started, processing...");
+
+      // Step 2: Poll for completion
+      const POLL_INTERVAL_MS = 2000; // 2 seconds
+      const MAX_POLL_TIME_MS = 10 * 60 * 1000; // 10 minutes max
+      const startTime = Date.now();
+
+      while (true) {
+        // Check timeout
+        if (Date.now() - startTime > MAX_POLL_TIME_MS) {
+          throw new Error('Audit timed out after 10 minutes. Please try again.');
+        }
+
+        // Wait before polling
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+
+        // Poll status
+        const statusResponse = await fetch(
+          `${API_BASE_URL}/per-unit-ssid/audit/${jobId}/status`,
+          { credentials: "include" }
+        );
+
+        if (!statusResponse.ok) {
+          console.warn(`Status check failed: ${statusResponse.status}`);
+          continue; // Keep polling
+        }
+
+        const status = await statusResponse.json();
+        console.log(`🔍 Audit status: ${status.status} - ${status.progress || ''}`);
+        setAuditProgress(status.progress || status.message || `Status: ${status.status}`);
+
+        if (status.status === 'COMPLETED') {
+          // Step 3: Fetch results
+          console.log('🔍 Audit completed, fetching results...');
+          setAuditProgress("Audit complete, loading results...");
+
+          const resultResponse = await fetch(
+            `${API_BASE_URL}/per-unit-ssid/audit/${jobId}/result`,
+            { credentials: "include" }
+          );
+
+          if (!resultResponse.ok) {
+            const error = await resultResponse.json().catch(() => ({}));
+            throw new Error(error.detail || `Failed to fetch audit results: ${resultResponse.status}`);
+          }
+
+          const data = await resultResponse.json();
+          console.log('🔍 FRONTEND: Received audit data:', data);
+          console.log('🔍 FRONTEND: Total AP Groups in response:', data.ap_groups?.length);
+          setAuditData(data);
+          setShowAuditModal(true);
+          break;
+        } else if (status.status === 'FAILED') {
+          throw new Error(status.message || 'Audit failed');
+        }
+        // Continue polling for PENDING or RUNNING
+      }
     } catch (err: any) {
       console.error("Audit error:", err);
       setAuditError(err.message || "An error occurred during audit");
     } finally {
       setAuditLoading(false);
+      setAuditProgress("");
     }
   };
 
@@ -892,6 +959,51 @@ function PerUnitSSID() {
           </div>
         </div>
 
+        {/* Parallel Execution Options */}
+        <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="parallelExecution"
+              checked={parallelExecution}
+              onChange={(e) => setParallelExecution(e.target.checked)}
+              className="mt-1 h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+            />
+            <div className="flex-1">
+              <label htmlFor="parallelExecution" className="block text-sm font-medium text-gray-700 cursor-pointer">
+                Enable Parallel Execution
+                <span className="ml-2 text-xs font-normal text-purple-600 bg-purple-100 px-2 py-0.5 rounded">
+                  Recommended for 5+ units
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                Process each unit independently in parallel. Each unit runs through all phases before moving to the next.
+                Without this, all units complete Phase 1 before any start Phase 2, etc.
+              </p>
+
+              {parallelExecution && (
+                <div className="mt-3 flex items-center gap-3">
+                  <label htmlFor="maxConcurrent" className="text-sm text-gray-600">
+                    Max concurrent units:
+                  </label>
+                  <input
+                    type="number"
+                    id="maxConcurrent"
+                    min="1"
+                    max="50"
+                    value={maxConcurrent}
+                    onChange={(e) => setMaxConcurrent(Math.max(1, Math.min(50, parseInt(e.target.value) || 10)))}
+                    className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <span className="text-xs text-gray-400">
+                    (1-50, default 10)
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* CSV Text Input */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1021,17 +1133,28 @@ function PerUnitSSID() {
           </div>
         )}
 
-        <button
-          onClick={handleAuditVenue}
-          disabled={auditLoading || !activeControllerId || !venueId}
-          className={`px-6 py-2 rounded font-semibold ${
-            auditLoading || !activeControllerId || !venueId
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-indigo-600 hover:bg-indigo-700 text-white"
-          }`}
-        >
-          {auditLoading ? "Loading..." : "Audit Venue"}
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleAuditVenue}
+            disabled={auditLoading || !activeControllerId || !venueId}
+            className={`px-6 py-2 rounded font-semibold ${
+              auditLoading || !activeControllerId || !venueId
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-indigo-600 hover:bg-indigo-700 text-white"
+            }`}
+          >
+            {auditLoading ? "Auditing..." : "Audit Venue"}
+          </button>
+          {auditLoading && auditProgress && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <svg className="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>{auditProgress}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Job Monitor Modal */}

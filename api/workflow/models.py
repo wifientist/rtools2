@@ -21,6 +21,15 @@ class JobStatus(str, Enum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     PARTIAL = "PARTIAL"  # Some tasks succeeded, some failed
+    CANCELLED = "CANCELLED"  # User requested cancellation
+
+
+class FlowStatus(str, Enum):
+    """Status of an individual flow (per-item workflow)"""
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 class PhaseStatus(str, Enum):
@@ -112,6 +121,14 @@ class WorkflowJob(BaseModel):
     tenant_id: str = Field(..., description="Tenant/EC ID")
     options: Dict[str, Any] = Field(default_factory=dict, description="Workflow-specific options")
 
+    # Parent/Child job hierarchy (for parallel per-item execution)
+    parent_job_id: Optional[str] = Field(None, description="Parent job ID if this is a child job")
+    child_job_ids: List[str] = Field(default_factory=list, description="Child job IDs if this is a parent job")
+    parallel_config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parallel execution config: {max_concurrent: int, item_key: str}"
+    )
+
     # Input data
     input_data: Dict[str, Any] = Field(default_factory=dict, description="Original request payload")
 
@@ -189,6 +206,22 @@ class WorkflowJob(BaseModel):
         if self.current_phase_id:
             return self.get_phase_by_id(self.current_phase_id)
         return None
+
+    def is_parent_job(self) -> bool:
+        """Check if this is a parent job with child jobs"""
+        return len(self.child_job_ids) > 0
+
+    def is_child_job(self) -> bool:
+        """Check if this is a child job of a parent"""
+        return self.parent_job_id is not None
+
+    def get_item_identifier(self) -> Optional[str]:
+        """Get the item identifier for child jobs (e.g., unit_number)"""
+        if not self.is_child_job():
+            return None
+        item_key = self.parallel_config.get('item_key', 'item')
+        item_data = self.input_data.get('item', {})
+        return item_data.get(item_key) or item_data.get('id') or self.id[:8]
 
 
 class PhaseDefinition(BaseModel):

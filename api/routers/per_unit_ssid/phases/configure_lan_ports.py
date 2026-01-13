@@ -19,123 +19,16 @@ import logging
 from typing import Dict, Any, List
 from workflow.models import Task, TaskStatus
 
+# Import centralized AP model metadata
+from r1api.models import (
+    MODEL_PORT_COUNTS,
+    MODEL_UPLINK_PORTS,
+    has_configurable_lan_ports as has_configurable_ports,
+    get_port_count,
+    get_uplink_port,
+)
+
 logger = logging.getLogger(__name__)
-
-# Model to port count mapping
-# This defines how many configurable LAN ports each model has
-# (excludes the uplink port which is handled separately)
-MODEL_PORT_COUNTS = {
-    # 1-port models with LAN1 as uplink (LAN2 is configurable)
-    "R500": 1,
-    "R510": 1,
-    "R600": 1,
-    "R610": 1,
-    "R710": 1,
-    "T610": 1,
-    "T610S": 1,
-    "T710": 1,
-    "T710S": 1,
-    # 1-port models with LAN2 as uplink (LAN1 is configurable)
-    "R550": 1,
-    "R560": 1,
-    "R575": 1,
-    "R650": 1,
-    "R670": 1,
-    "R720": 1,
-    "R730": 1,
-    "R750": 1,
-    "R760": 1,
-    "R770": 1,
-    "R850": 1,
-    "T350": 1,
-    "T670": 1,
-    "T670SN": 1,
-    # 2-port models (LAN1, LAN2 configurable; LAN3 is uplink)
-    "H320": 2,
-    "H350": 2,
-    "T750": 2,
-    "T750SE": 2,
-    # 4-port models (LAN1-4 configurable; LAN5 is uplink)
-    "H510": 4,
-    "H550": 4,
-    "H670": 4,
-}
-
-# Uplink/WAN port for each model - these ports should be protected from disable/VLAN changes
-# Based on Ruckus hardware documentation - the uplink is the PoE-in port
-MODEL_UPLINK_PORTS = {
-    # 1-port models: LAN1 is the POE/uplink, leaving LAN2 as access
-    "R500": "LAN1",
-    "R510": "LAN1",
-    "R600": "LAN1",
-    "R610": "LAN1",
-    "R710": "LAN1",
-    "T610": "LAN1",
-    "T610S": "LAN1",
-    "T710": "LAN1",
-    "T710S": "LAN1",
-    # 1-port models: LAN2 is the POE/uplink port, leaving LAN1 as access
-    "R550": "LAN2",
-    "R560": "LAN2",
-    "R650": "LAN2",
-    "R670": "LAN2",
-    "R720": "LAN2",
-    "R730": "LAN2",
-    "R750": "LAN2",
-    "R760": "LAN2",
-    "R770": "LAN2",
-    "R850": "LAN2",
-    "T670": "LAN2",
-    "T670SN": "LAN2",
-    # 2-port models: LAN3 is the uplink (PoE-in), LAN1-2 are the access ports
-    'H320': 'LAN3',
-    'H350': 'LAN3',
-    "T750": "LAN3",
-    "T750SE": "LAN3",
-    # 4-port models: LAN5 is the uplink (PoE-in), LAN1-4 are access ports
-    'H510': 'LAN5',
-    'H550': 'LAN5',
-    'H670': 'LAN5',
-}
-
-
-def has_configurable_ports(model: str) -> bool:
-    """Check if AP model has configurable LAN ports"""
-    if not model:
-        return False
-    # Check if model is in our port count mapping
-    model_upper = model.upper()
-    for model_prefix in MODEL_PORT_COUNTS.keys():
-        if model_upper.startswith(model_prefix.upper()):
-            return True
-    return False
-
-
-def get_port_count(model: str) -> int:
-    """Get the number of LAN ports for a given model"""
-    if not model:
-        return 0
-    model_upper = model.upper()
-    for model_prefix, count in MODEL_PORT_COUNTS.items():
-        if model_upper.startswith(model_prefix.upper()):
-            return count
-    return 0
-
-
-def get_uplink_port(model: str) -> str | None:
-    """
-    Get the uplink/WAN port for a given model.
-
-    Returns the port ID (e.g., 'LAN1') that is the uplink for the model,
-    or None if no uplink is defined for the model.
-    """
-    if not model:
-        return None
-    model_upper = model.upper()
-    for model_prefix, uplink_port in MODEL_UPLINK_PORTS.items():
-        if model_upper.startswith(model_prefix.upper()):
-            return uplink_port
-    return None
 
 
 def is_uplink_port(model: str, port_id: str) -> bool:
@@ -388,6 +281,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     configured_aps = 0
     failed_aps = 0
     skipped_aps = 0
+    already_configured_aps = 0  # APs skipped because all ports already correct
     protected_count = 0  # Count of ports protected from disable/changes
     results = []
 
@@ -467,14 +361,74 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 skipped_aps += 1
                 continue
 
+            # Idempotency check: fetch current port settings
+            current_port_settings = {}
+            try:
+                port_settings_response = await r1_client.venues.get_ap_all_lan_port_settings(
+                    tenant_id=tenant_id,
+                    venue_id=venue_id,
+                    serial_number=serial,
+                    model=model
+                )
+                # Build lookup: port_id -> current_vlan
+                for port_id, settings in port_settings_response.items():
+                    if isinstance(settings, dict):
+                        current_port_settings[port_id] = {
+                            'vlan': settings.get('overwriteUntagId') or settings.get('untagId'),
+                            'type': settings.get('overwriteType') or settings.get('type'),
+                            'enabled': settings.get('enabled', True)
+                        }
+            except Exception as e:
+                logger.debug(f"      Could not fetch current port settings for {ap_name}: {str(e)}")
+
+            # Filter ports that need changes
+            ports_needing_changes = []
+            ports_already_correct = []
+            for port_config in ports_to_configure:
+                port_id = port_config['port_id']
+                current = current_port_settings.get(port_id, {})
+
+                if port_config['action'] == 'configure':
+                    target_vlan = port_config['vlan']
+                    current_vlan = current.get('vlan')
+                    current_type = current.get('type', '').upper()
+
+                    # Check if already correct: ACCESS type with matching VLAN
+                    if current_type == 'ACCESS' and current_vlan == target_vlan:
+                        ports_already_correct.append(port_config)
+                        logger.info(f"        ✓ {port_id} already VLAN {target_vlan} (ACCESS) - skipping")
+                    else:
+                        ports_needing_changes.append(port_config)
+                elif port_config['action'] == 'disable':
+                    if not current.get('enabled', True):
+                        ports_already_correct.append(port_config)
+                        logger.info(f"        ✓ {port_id} already disabled - skipping")
+                    else:
+                        ports_needing_changes.append(port_config)
+
+            # If all ports already correct, skip this AP
+            if not ports_needing_changes:
+                logger.info(f"      ✓ {ap_name} - all {len(ports_already_correct)} ports already configured correctly")
+                already_configured_aps += 1
+                results.append({
+                    'unit_number': unit_number,
+                    'ap_name': ap_name,
+                    'serial': serial,
+                    'model': model,
+                    'ports_already_correct': len(ports_already_correct),
+                    'status': 'already_configured'
+                })
+                continue
+
             def format_port(p):
                 if p['action'] == 'disable':
                     return f"{p['port_id']}=disabled"
                 uplink_marker = " (uplink)" if p.get('is_uplink') else ""
                 return f"{p['port_id']}=VLAN{p['vlan']}{uplink_marker}"
 
-            port_summary = ", ".join([format_port(p) for p in ports_to_configure])
-            logger.info(f"      Configuring {ap_name} ({model}): {port_summary}")
+            port_summary = ", ".join([format_port(p) for p in ports_needing_changes])
+            already_summary = f" ({len(ports_already_correct)} already correct)" if ports_already_correct else ""
+            logger.info(f"      Configuring {ap_name} ({model}): {port_summary}{already_summary}")
 
             try:
                 # Step 2a: Disable venue settings inheritance for this AP's LAN ports
@@ -486,29 +440,32 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                     wait_for_completion=True
                 )
 
-                # Step 2b: Configure each port - set VLAN override then activate default profile
+                # Step 2b: Configure each port - activate ACCESS profile first, then set VLAN override
+                # Order matters: the port might currently be TRUNK, so we need to switch to ACCESS first
+                # Only configure ports that actually need changes
                 configured_ports = []
-                for port_config in ports_to_configure:
+                for port_config in ports_needing_changes:
                     if port_config['action'] == 'configure':
                         port_vlan = port_config['vlan']
 
-                        # First, set the VLAN override on the port
-                        await r1_client.venues.set_ap_lan_port_settings(
-                            tenant_id=tenant_id,
-                            venue_id=venue_id,
-                            serial_number=serial,
-                            port_id=port_config['port_id'],
-                            untagged_vlan=port_vlan,
-                            wait_for_completion=True
-                        )
-
-                        # Then activate the default ACCESS profile on the port
+                        # First, activate the default ACCESS profile on the port
+                        # This switches the port to ACCESS mode (if it was TRUNK)
                         await r1_client.ethernet_port_profiles.activate_profile_on_ap_lan_port(
                             tenant_id=tenant_id,
                             venue_id=venue_id,
                             serial_number=serial,
                             port_id=port_config['port_id'],
                             profile_id=default_profile_id,
+                            wait_for_completion=True
+                        )
+
+                        # Then set the VLAN override on the port (now that it's ACCESS mode)
+                        await r1_client.venues.set_ap_lan_port_settings(
+                            tenant_id=tenant_id,
+                            venue_id=venue_id,
+                            serial_number=serial,
+                            port_id=port_config['port_id'],
+                            untagged_vlan=port_vlan,
                             wait_for_completion=True
                         )
 
@@ -532,13 +489,15 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                     'model': model,
                     'uplink_port': get_uplink_port(model),
                     'ports': configured_ports,
+                    'ports_already_correct': len(ports_already_correct),
                     'protected_ports': protected_ports,
                     'profile_id': default_profile_id,
                     'status': 'success'
                 })
 
                 protected_info = f", {len(protected_ports)} protected" if protected_ports else ""
-                logger.info(f"        Configured {ap_name}: {len(configured_ports)} ports{protected_info}")
+                already_info = f", {len(ports_already_correct)} already correct" if ports_already_correct else ""
+                logger.info(f"        Configured {ap_name}: {len(configured_ports)} ports{already_info}{protected_info}")
 
             except Exception as e:
                 logger.error(f"        Failed to configure {ap_name}: {str(e)}")
@@ -553,17 +512,26 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 })
 
     # Summary
-    protected_msg = f", {protected_count} uplink ports protected" if protected_count > 0 else ""
-    logger.info(f"  Phase 5 complete: {configured_aps} configured, {failed_aps} failed, {skipped_aps} skipped{protected_msg}")
+    # Build summary parts
+    summary_parts = []
+    if configured_aps > 0:
+        summary_parts.append(f"{configured_aps} configured")
+    if already_configured_aps > 0:
+        summary_parts.append(f"{already_configured_aps} already correct")
+    if failed_aps > 0:
+        summary_parts.append(f"{failed_aps} failed")
+    if skipped_aps > 0:
+        summary_parts.append(f"{skipped_aps} skipped")
+    summary_str = ", ".join(summary_parts) if summary_parts else "no changes"
 
-    if failed_aps == 0 and configured_aps > 0:
-        success_msg = f"Configured LAN ports on {configured_aps} APs"
-        if protected_count > 0:
-            success_msg += f" ({protected_count} uplink ports protected)"
-        await emit_message(success_msg, "success")
+    protected_msg = f", {protected_count} uplink ports protected" if protected_count > 0 else ""
+    logger.info(f"  Phase 5 complete: {summary_str}{protected_msg}")
+
+    if failed_aps == 0 and (configured_aps > 0 or already_configured_aps > 0):
+        await emit_message(f"LAN ports: {summary_str}", "success")
         task_status = TaskStatus.COMPLETED
-    elif configured_aps > 0:
-        await emit_message(f"LAN ports: {configured_aps} configured, {failed_aps} failed", "warning")
+    elif configured_aps > 0 or already_configured_aps > 0:
+        await emit_message(f"LAN ports: {summary_str}", "warning")
         task_status = TaskStatus.COMPLETED
     elif failed_aps > 0:
         await emit_message(f"LAN port configuration failed for all {failed_aps} APs", "error")
@@ -574,10 +542,11 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
     return [Task(
         id="configure_lan_ports",
-        name=f"LAN Ports: {configured_aps} configured, {failed_aps} failed, {skipped_aps} skipped",
+        name=f"LAN Ports: {summary_str}",
         status=task_status,
         output_data={
             'configured_aps': configured_aps,
+            'already_configured_aps': already_configured_aps,
             'failed_aps': failed_aps,
             'skipped_aps': skipped_aps,
             'protected_uplink_ports': protected_count,

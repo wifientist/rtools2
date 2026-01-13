@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -510,6 +511,7 @@ class VenueService:
         Returns:
             Response from API
         """
+        logger.info(f"[activate_ssid_on_venue] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}")
 
         # Make API call - PUT with empty body
         payload = {}
@@ -526,19 +528,24 @@ class VenueService:
                 payload=payload
             )
 
+        logger.info(f"[activate_ssid_on_venue] Response: {response.status_code}")
+
         # API returns 202 Accepted for async operations
         if response.status_code in [200, 201, 202]:
             result = response.json() if response.content else {"status": "accepted"}
+            request_id = result.get('requestId') if response.status_code == 202 else None
+            logger.info(f"[activate_ssid_on_venue] Success (requestId: {request_id})")
 
             # If 202 Accepted and wait_for_completion=True, poll for task completion
             if response.status_code == 202 and wait_for_completion:
-                request_id = result.get('requestId')
                 if request_id:
+                    logger.info(f"[activate_ssid_on_venue] Waiting for task {request_id}...")
                     await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+                    logger.info(f"[activate_ssid_on_venue] Task complete")
 
             return result
         else:
-            logger.error(f"Failed to activate SSID on venue: {response.status_code} - {response.text}")
+            logger.error(f"[activate_ssid_on_venue] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -621,7 +628,8 @@ class VenueService:
         ap_group_id: str,
         radio_types: list = None,
         vlan_id: int = None,
-        wait_for_completion: bool = True
+        wait_for_completion: bool = True,
+        debug_delay: float = 0
     ):
         """
         Configure SSID to use a specific AP Group (not All AP Groups).
@@ -639,16 +647,26 @@ class VenueService:
             radio_types: List of radio types (e.g., ["2.4-GHz", "5-GHz", "6-GHz"])
             vlan_id: Optional VLAN ID override
             wait_for_completion: If True, wait for async task to complete (default: True)
+            debug_delay: Seconds to wait between steps (for debugging)
 
         Returns:
             Response from API
         """
+        import asyncio
+
         # Default to all radio types if not specified
         if radio_types is None:
             radio_types = ["2.4-GHz", "5-GHz", "6-GHz"]
 
+        logger.info(f"[configure_ssid_for_ap_group] Starting 3-step process:")
+        logger.info(f"  venue_id={venue_id}")
+        logger.info(f"  wifi_network_id={wifi_network_id}")
+        logger.info(f"  ap_group_id={ap_group_id}")
+        logger.info(f"  radio_types={radio_types}")
+        logger.info(f"  vlan_id={vlan_id}")
+
         # Step 1: Update venue SSID settings to set isAllApGroups=false
-        logger.debug(f"Step 3a: Setting isAllApGroups=false on venue SSID settings")
+        logger.info(f"[Step 1/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings")
         settings_payload = {
             "dual5gEnabled": False,
             "tripleBandEnabled": False,
@@ -672,7 +690,7 @@ class VenueService:
         if vlan_id is not None:
             settings_payload["apGroups"][0]["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
-        logger.debug(f"Settings payload: {settings_payload}")
+        logger.info(f"[Step 1/3] Payload: isAllApGroups={settings_payload['isAllApGroups']}, apGroups={len(settings_payload['apGroups'])}")
 
         # Step 1: PUT settings
         if self.client.ec_type == "MSP":
@@ -687,17 +705,22 @@ class VenueService:
                 payload=settings_payload
             )
 
+        logger.info(f"[Step 1/3] Response: {response.status_code}")
         if response.status_code not in [200, 201, 202]:
-            logger.error(f"Step 3a failed: {response.status_code} - {response.text}")
+            logger.error(f"[Step 1/3] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
-        result_3a = response.json() if response.content else {"status": "accepted"}
-        request_id_3a = result_3a.get('requestId') if response.status_code == 202 else None
-        logger.debug(f"Step 3a sent (requestId: {request_id_3a})")
+        result_1 = response.json() if response.content else {"status": "accepted"}
+        request_id_1 = result_1.get('requestId') if response.status_code == 202 else None
+        logger.info(f"[Step 1/3] Success (requestId: {request_id_1})")
+
+        if debug_delay > 0:
+            logger.info(f"[DEBUG] Waiting {debug_delay}s before Step 2...")
+            await asyncio.sleep(debug_delay)
 
         # Step 2: Activate AP Group on the SSID (fire immediately, don't wait)
-        logger.debug(f"Step 3b: Activating AP Group on SSID")
+        logger.info(f"[Step 2/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}")
         if self.client.ec_type == "MSP":
             response = self.client.put(
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
@@ -708,17 +731,22 @@ class VenueService:
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}"
             )
 
+        logger.info(f"[Step 2/3] Response: {response.status_code}")
         if response.status_code not in [200, 201, 202]:
-            logger.error(f"Step 3b failed: {response.status_code} - {response.text}")
+            logger.error(f"[Step 2/3] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
-        result_3b = response.json() if response.content else {"status": "accepted"}
-        request_id_3b = result_3b.get('requestId') if response.status_code == 202 else None
-        logger.debug(f"Step 3b sent (requestId: {request_id_3b})")
+        result_2 = response.json() if response.content else {"status": "accepted"}
+        request_id_2 = result_2.get('requestId') if response.status_code == 202 else None
+        logger.info(f"[Step 2/3] Success (requestId: {request_id_2})")
+
+        if debug_delay > 0:
+            logger.info(f"[DEBUG] Waiting {debug_delay}s before Step 3...")
+            await asyncio.sleep(debug_delay)
 
         # Step 3: Configure AP Group settings on the SSID (fire immediately, don't wait)
-        logger.debug(f"Step 3c: Configuring AP Group settings")
+        logger.info(f"[Step 3/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings")
         ap_group_settings_payload = {
             "apGroupId": ap_group_id,
             "radioTypes": radio_types,
@@ -726,6 +754,8 @@ class VenueService:
         }
         if vlan_id is not None:
             ap_group_settings_payload["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
+
+        logger.info(f"[Step 3/3] Payload: {ap_group_settings_payload}")
 
         if self.client.ec_type == "MSP":
             response = self.client.put(
@@ -739,29 +769,33 @@ class VenueService:
                 payload=ap_group_settings_payload
             )
 
+        logger.info(f"[Step 3/3] Response: {response.status_code}")
         if response.status_code not in [200, 201, 202]:
-            logger.error(f"Step 3c failed: {response.status_code} - {response.text}")
+            logger.error(f"[Step 3/3] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
-        result_3c = response.json() if response.content else {"status": "accepted"}
-        request_id_3c = result_3c.get('requestId') if response.status_code == 202 else None
-        logger.debug(f"Step 3c sent (requestId: {request_id_3c})")
+        result_3 = response.json() if response.content else {"status": "accepted"}
+        request_id_3 = result_3.get('requestId') if response.status_code == 202 else None
+        logger.info(f"[Step 3/3] Success (requestId: {request_id_3})")
 
         # Now wait for all 3 to complete (in order)
         if wait_for_completion:
-            if request_id_3a:
-                logger.debug(f"Waiting for Step 3a to complete")
-                await self.client.await_task_completion(request_id_3a, override_tenant_id=tenant_id)
-            if request_id_3b:
-                logger.debug(f"Waiting for Step 3b to complete")
-                await self.client.await_task_completion(request_id_3b, override_tenant_id=tenant_id)
-            if request_id_3c:
-                logger.debug(f"Waiting for Step 3c to complete")
-                await self.client.await_task_completion(request_id_3c, override_tenant_id=tenant_id)
+            if request_id_1:
+                logger.info(f"[Waiting] Step 1 task {request_id_1}...")
+                await self.client.await_task_completion(request_id_1, override_tenant_id=tenant_id)
+                logger.info(f"[Waiting] Step 1 complete")
+            if request_id_2:
+                logger.info(f"[Waiting] Step 2 task {request_id_2}...")
+                await self.client.await_task_completion(request_id_2, override_tenant_id=tenant_id)
+                logger.info(f"[Waiting] Step 2 complete")
+            if request_id_3:
+                logger.info(f"[Waiting] Step 3 task {request_id_3}...")
+                await self.client.await_task_completion(request_id_3, override_tenant_id=tenant_id)
+                logger.info(f"[Waiting] Step 3 complete")
 
-        logger.debug(f"All 3 steps complete")
-        return result_3c
+        logger.info(f"[configure_ssid_for_ap_group] All 3 steps complete for SSID {wifi_network_id} -> AP Group {ap_group_id}")
+        return result_3
 
     # ========== Comprehensive View Methods ==========
 
@@ -983,24 +1017,12 @@ class VenueService:
                         # Get live LAN port statuses from AP data (shows physical link status)
                         lan_port_statuses = ap.get('lanPortStatuses', [])
 
-                        # Fetch full LAN port settings if requested (VLANs, enabled status)
-                        lan_port_settings = None
-                        if include_lan_port_settings and venue_id:
-                            logger.info(f"Fetching LAN port settings for AP {serial} (model: {ap_model})")
-                            try:
-                                lan_port_settings = await self.get_ap_all_lan_port_settings(
-                                    tenant_id, venue_id, serial
-                                )
-                                logger.info(f"Got LAN port settings for AP {serial}: {len(lan_port_settings.get('ports', []))} ports")
-                            except Exception as e:
-                                logger.warning(f"Failed to get LAN port settings for AP {serial}: {str(e)}")
-
                         ap_details.append({
                             'serial': serial,
                             'name': ap_name,
                             'model': ap_model,
                             'lan_port_statuses': lan_port_statuses,  # Live physical link status
-                            'lan_port_settings': lan_port_settings   # VLAN/enabled configuration
+                            'lan_port_settings': None   # Will be populated below if requested
                         })
 
                 if missing_serials:
@@ -1034,6 +1056,46 @@ class VenueService:
                 summaries.append(summary)
 
             logger.info(f"AP Groups summary: {len(summaries)} groups ({len(all_ap_groups) - len(summaries)} filtered out)")
+
+            # Fetch LAN port settings in parallel if requested
+            if include_lan_port_settings and venue_id:
+                # Collect all APs that need LAN port settings
+                aps_to_fetch = []
+                for summary in summaries:
+                    for ap in summary.get('aps', []):
+                        if ap.get('serial'):
+                            aps_to_fetch.append({
+                                'serial': ap['serial'],
+                                'model': ap.get('model'),
+                                'ap_ref': ap  # Reference to update in place
+                            })
+
+                if aps_to_fetch:
+                    logger.info(f"Fetching LAN port settings for {len(aps_to_fetch)} APs in parallel...")
+
+                    # Create async tasks with semaphore to limit concurrency
+                    semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests
+
+                    async def fetch_lan_port_settings(ap_info):
+                        async with semaphore:
+                            serial = ap_info['serial']
+                            model = ap_info['model']
+                            try:
+                                settings = await self.get_ap_all_lan_port_settings(
+                                    tenant_id, venue_id, serial, model=model
+                                )
+                                ap_info['ap_ref']['lan_port_settings'] = settings
+                                return True
+                            except Exception as e:
+                                logger.debug(f"Failed to get LAN port settings for AP {serial}: {str(e)}")
+                                return False
+
+                    results = await asyncio.gather(
+                        *[fetch_lan_port_settings(ap) for ap in aps_to_fetch],
+                        return_exceptions=True
+                    )
+                    successful = sum(1 for r in results if r is True)
+                    logger.info(f"Fetched LAN port settings: {successful}/{len(aps_to_fetch)} successful")
 
             return summaries
 
@@ -1248,18 +1310,20 @@ class VenueService:
         self,
         tenant_id: str,
         venue_id: str,
-        serial_number: str
+        serial_number: str,
+        model: str = None
     ):
         """
         Get all LAN port settings for an AP (specific settings + per-port settings).
 
-        Automatically discovers available ports by querying LAN1-LAN4 and including
-        only ports that return valid settings.
+        If model is provided, only queries ports that exist on that model.
+        Otherwise falls back to querying LAN1-LAN4.
 
         Args:
             tenant_id: Tenant/EC ID
             venue_id: Venue ID
             serial_number: AP serial number
+            model: Optional AP model (e.g., "H510", "R750") to optimize port queries
 
         Returns:
             Dict with:
@@ -1273,12 +1337,19 @@ class VenueService:
                 ]
             }
         """
+        from r1api.models import get_all_ports, has_configurable_lan_ports
+
         result = {
             'poeMode': None,
             'poeOut': False,
             'useVenueSettings': True,
             'ports': []
         }
+
+        # Skip LAN port queries entirely for models without LAN ports
+        if model and not has_configurable_lan_ports(model):
+            logger.debug(f"AP {serial_number} model {model} has no configurable LAN ports, skipping port queries")
+            return result
 
         # Get AP-level specific settings
         specific_settings = await self.get_ap_lan_port_specific_settings(
@@ -1289,10 +1360,20 @@ class VenueService:
             result['poeOut'] = specific_settings.get('poeOut', False)
             result['useVenueSettings'] = specific_settings.get('useVenueSettings', True)
 
-        # Try to get settings for LAN1-LAN4, only include ports that exist
-        logger.debug(f"Fetching LAN port settings for AP {serial_number}")
-        for i in range(1, 5):
-            port_id = f"LAN{i}"
+        # Determine which ports to query based on model
+        if model:
+            ports_to_query = get_all_ports(model)
+            if not ports_to_query:
+                # Model not recognized, fall back to standard ports
+                ports_to_query = ['LAN1', 'LAN2']
+            logger.debug(f"AP {serial_number} model {model}: querying ports {ports_to_query}")
+        else:
+            # No model provided, fall back to LAN1-LAN4
+            ports_to_query = ['LAN1', 'LAN2', 'LAN3', 'LAN4']
+            logger.debug(f"AP {serial_number}: no model provided, querying all ports {ports_to_query}")
+
+        # Query each port
+        for port_id in ports_to_query:
             port_settings = await self.get_ap_lan_port_settings(
                 tenant_id, venue_id, serial_number, port_id
             )

@@ -25,7 +25,9 @@ class TaskExecutor:
         max_retries: int = 3,
         retry_backoff_base: int = 2,
         r1_client=None,
-        event_publisher=None
+        event_publisher=None,
+        state_manager=None,
+        activation_semaphore=None
     ):
         """
         Initialize task executor
@@ -35,13 +37,23 @@ class TaskExecutor:
             retry_backoff_base: Base for exponential backoff (seconds)
             r1_client: R1Client instance for async task polling
             event_publisher: WorkflowEventPublisher for real-time updates
+            state_manager: RedisStateManager for cancellation checking
+            activation_semaphore: Optional semaphore for throttling SSID activation
         """
         self.max_retries = max_retries
         self.retry_backoff_base = retry_backoff_base
         self.r1_client = r1_client
         self.event_publisher = event_publisher
+        self.state_manager = state_manager
+        self.activation_semaphore = activation_semaphore
         self._current_job_id = None
         self._current_phase_id = None
+
+    async def is_cancelled(self) -> bool:
+        """Check if the current job has been cancelled"""
+        if self.state_manager and self._current_job_id:
+            return await self.state_manager.is_cancelled(self._current_job_id)
+        return False
 
     async def execute_task(
         self,
@@ -209,6 +221,12 @@ class TaskExecutor:
 
         async def execute_with_semaphore(task: Task) -> Task:
             async with semaphore:
+                # Check for cancellation before starting task
+                if await self.is_cancelled():
+                    logger.info(f"🛑 Job cancelled - skipping task {task.id}")
+                    task.status = TaskStatus.FAILED
+                    task.error_message = "Job cancelled by user"
+                    return task
                 return await self.execute_task(task, executor_func, context)
 
         logger.info(f"Executing {len(tasks)} tasks in parallel (max_concurrent={max_concurrent})")
@@ -250,6 +268,20 @@ class TaskExecutor:
 
         results = []
         for task in tasks:
+            # Check for cancellation before each task
+            if await self.is_cancelled():
+                logger.info(f"🛑 Job cancelled - skipping remaining {len(tasks) - len(results)} tasks")
+                # Mark remaining tasks as failed due to cancellation
+                task.status = TaskStatus.FAILED
+                task.error_message = "Job cancelled by user"
+                results.append(task)
+                # Skip remaining tasks
+                for remaining_task in tasks[len(results):]:
+                    remaining_task.status = TaskStatus.FAILED
+                    remaining_task.error_message = "Job cancelled by user"
+                    results.append(remaining_task)
+                break
+
             result = await self.execute_task(task, executor_func, context)
             results.append(result)
 

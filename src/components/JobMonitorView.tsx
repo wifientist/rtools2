@@ -34,6 +34,27 @@ interface Progress {
   failed_phases?: number;
   running_phases?: number;
   phase_percent?: number;
+  // Parallel job progress (items instead of tasks)
+  total_items?: number;
+  running?: number;
+}
+
+interface ChildJob {
+  job_id: string;
+  item_id: string;
+  status: string;
+  current_phase: string | null;
+  progress: Progress;
+  errors: string[];
+}
+
+interface ParallelProgress {
+  total_items: number;
+  completed: number;
+  failed: number;
+  running: number;
+  pending: number;
+  percent: number;
 }
 
 interface JobStatus {
@@ -51,6 +72,10 @@ interface JobStatus {
   created_resources: Record<string, any[]>;
   errors: string[];
   summary: Record<string, any>;
+  // Parallel execution fields
+  is_parallel: boolean;
+  parallel_progress?: ParallelProgress;
+  child_jobs?: ChildJob[];
 }
 
 export interface JobResult {
@@ -81,9 +106,23 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
+  const [expandedChildJobs, setExpandedChildJobs] = useState<Set<string>>(new Set());
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
+  const [cancelling, setCancelling] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  const toggleChildJob = (jobId: string) => {
+    setExpandedChildJobs(prev => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  };
 
   // Fetch initial job status
   useEffect(() => {
@@ -173,11 +212,17 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     eventSource.addEventListener('progress', (e) => {
       const data = JSON.parse(e.data);
       console.log('Progress:', data);
-      // Show phase progress if available
-      if (data.total_phases) {
+      // Show appropriate progress based on job type
+      if (data.total_items !== undefined) {
+        // Parallel job - show items progress
+        const running = data.running ? ` (${data.running} running)` : '';
+        addLiveEvent(`📈 Progress: ${data.completed}/${data.total_items} items complete${running}`);
+      } else if (data.total_phases) {
+        // Sequential job - show phase progress
         addLiveEvent(`📈 Progress: ${data.completed_phases}/${data.total_phases} phases complete`);
       } else {
-        addLiveEvent(`📈 Progress: ${data.percent}% (${data.completed}/${data.total_tasks || data.total})`);
+        // Fallback
+        addLiveEvent(`📈 Progress: ${data.percent}% (${data.completed}/${data.total_tasks || data.total || '?'})`);
       }
       refreshJobStatus();
     });
@@ -245,10 +290,36 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       eventSource.close();
     });
 
+    eventSource.addEventListener('job_cancelled', async (e) => {
+      const data = JSON.parse(e.data);
+      console.log('Job cancelled:', data);
+      addLiveEvent(`🛑 Job cancelled by user`);
+      setCancelling(false);
+      await refreshJobStatus();
+      // Notify parent of completion
+      if (onJobComplete) {
+        onJobComplete({
+          job_id: jobId,
+          status: 'CANCELLED',
+          progress: data.progress || {
+            total_phases: data.total_phases || 0,
+            completed_phases: data.completed_phases || 0,
+            failed_phases: data.failed_phases || 0,
+            total_tasks: data.total_tasks || 0,
+            completed: data.completed || 0,
+            failed: data.failed || 0,
+          },
+          summary: data.summary,
+          errors: ['Job cancelled by user'],
+        });
+      }
+      eventSource.close();
+    });
+
     eventSource.onerror = (err) => {
       console.error('SSE error:', err);
 
-      if (jobStatus?.status === 'COMPLETED' || jobStatus?.status === 'FAILED' || jobStatus?.status === 'PARTIAL') {
+      if (jobStatus?.status === 'COMPLETED' || jobStatus?.status === 'FAILED' || jobStatus?.status === 'PARTIAL' || jobStatus?.status === 'CANCELLED') {
         console.log('Job in terminal state, closing SSE connection');
         addLiveEvent('✓ Job finished, closing live stream');
         eventSource.close();
@@ -284,6 +355,32 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     setLiveEvents(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 50));
   };
 
+  const cancelJob = async () => {
+    if (!jobId || cancelling) return;
+
+    setCancelling(true);
+    addLiveEvent('🛑 Requesting job cancellation...');
+
+    try {
+      const response = await fetch(`${API_URL}/jobs/${jobId}/cancel`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to cancel job');
+      }
+
+      const data = await response.json();
+      addLiveEvent(`🛑 ${data.message}`);
+      await refreshJobStatus();
+    } catch (err: any) {
+      console.error('Error cancelling job:', err);
+      addLiveEvent(`❌ Failed to cancel: ${err.message}`);
+      setCancelling(false);
+    }
+  };
+
   const togglePhase = (phaseId: string) => {
     setExpandedPhases(prev => {
       const next = new Set(prev);
@@ -305,6 +402,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         return 'text-blue-600 bg-blue-50 border-blue-200';
       case 'FAILED':
         return 'text-red-600 bg-red-50 border-red-200';
+      case 'CANCELLED':
+        return 'text-orange-600 bg-orange-50 border-orange-200';
       case 'PENDING':
         return 'text-gray-600 bg-gray-50 border-gray-200';
       case 'SKIPPED':
@@ -323,6 +422,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         return '▶️';
       case 'FAILED':
         return '❌';
+      case 'CANCELLED':
+        return '🛑';
       case 'PENDING':
         return '⏸️';
       case 'SKIPPED':
@@ -398,45 +499,145 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
             <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(jobStatus.status)}`}>
               {getStatusIcon(jobStatus.status)} {jobStatus.status}
             </span>
+            {jobStatus.is_parallel && (
+              <span className="ml-2 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">Parallel</span>
+            )}
           </div>
-          <div>
-            <p className="text-sm text-gray-500">Phases</p>
-            <p className="text-lg font-bold">
-              {jobStatus.progress.completed_phases ?? 0}/{jobStatus.progress.total_phases ?? jobStatus.phases.length}
-              {jobStatus.progress.running_phases ? (
-                <span className="text-blue-600 text-sm font-normal ml-1">(1 running)</span>
-              ) : null}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500">Tasks</p>
-            <p className="text-sm">
-              {jobStatus.progress.completed}/{jobStatus.progress.total_tasks} completed
-              {jobStatus.progress.failed > 0 && (
-                <span className="text-red-600 ml-2">({jobStatus.progress.failed} failed)</span>
-              )}
-            </p>
-          </div>
+          {jobStatus.is_parallel ? (
+            <>
+              <div>
+                <p className="text-sm text-gray-500">Units</p>
+                <p className="text-lg font-bold">
+                  {jobStatus.parallel_progress?.completed ?? 0}/{jobStatus.parallel_progress?.total_items ?? jobStatus.child_jobs?.length ?? 0}
+                  {(jobStatus.parallel_progress?.running ?? 0) > 0 && (
+                    <span className="text-blue-600 text-sm font-normal ml-1">({jobStatus.parallel_progress?.running} running)</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Progress</p>
+                <p className="text-sm">
+                  {jobStatus.parallel_progress?.completed ?? 0} completed
+                  {(jobStatus.parallel_progress?.failed ?? 0) > 0 && (
+                    <span className="text-red-600 ml-2">({jobStatus.parallel_progress?.failed} failed)</span>
+                  )}
+                  {(jobStatus.parallel_progress?.pending ?? 0) > 0 && (
+                    <span className="text-gray-500 ml-2">({jobStatus.parallel_progress?.pending} pending)</span>
+                  )}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm text-gray-500">Phases</p>
+                <p className="text-lg font-bold">
+                  {jobStatus.progress?.completed_phases ?? 0}/{jobStatus.progress?.total_phases ?? jobStatus.phases?.length ?? 0}
+                  {jobStatus.progress?.running_phases ? (
+                    <span className="text-blue-600 text-sm font-normal ml-1">(1 running)</span>
+                  ) : null}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Tasks</p>
+                <p className="text-sm">
+                  {jobStatus.progress?.completed ?? 0}/{jobStatus.progress?.total_tasks ?? 0} completed
+                  {(jobStatus.progress?.failed ?? 0) > 0 && (
+                    <span className="text-red-600 ml-2">({jobStatus.progress?.failed} failed)</span>
+                  )}
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Progress Bar - uses phase percent for stable visual feedback */}
+        {/* Progress Bar */}
         <div className="mt-4">
           <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
             <div
-              className="bg-blue-600 h-full transition-all duration-500"
-              style={{ width: `${jobStatus.progress.phase_percent ?? jobStatus.progress.percent}%` }}
+              className={`h-full transition-all duration-500 ${
+                jobStatus.progress.failed > 0 ? 'bg-gradient-to-r from-blue-600 to-red-500' : 'bg-blue-600'
+              }`}
+              style={{ width: `${jobStatus.parallel_progress?.percent ?? jobStatus.progress.phase_percent ?? jobStatus.progress.percent}%` }}
             />
           </div>
         </div>
 
-        {/* Current Phase */}
-        {jobStatus.current_phase && (
+        {/* Parallel Job Live Summary */}
+        {jobStatus.is_parallel && jobStatus.child_jobs && jobStatus.status === 'RUNNING' && (
+          <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm text-purple-800 font-medium">Parallel Execution Progress</p>
+              <div className="flex gap-3 text-xs">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  {jobStatus.parallel_progress?.completed || 0} done
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                  {jobStatus.parallel_progress?.running || 0} running
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-gray-300"></span>
+                  {jobStatus.parallel_progress?.pending || 0} pending
+                </span>
+                {(jobStatus.parallel_progress?.failed || 0) > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    {jobStatus.parallel_progress?.failed} failed
+                  </span>
+                )}
+              </div>
+            </div>
+            {/* Mini grid showing unit status tiles */}
+            <div className="flex flex-wrap gap-1 mt-2">
+              {jobStatus.child_jobs.map((child) => (
+                <div
+                  key={child.job_id}
+                  title={`Unit ${child.item_id}: ${child.status}${child.current_phase ? ` (${child.current_phase})` : ''}`}
+                  className={`w-12 h-7 rounded text-xs flex items-center justify-center font-medium cursor-pointer transition-transform hover:scale-105 ${
+                    child.status === 'COMPLETED' ? 'bg-green-500 text-white' :
+                    child.status === 'RUNNING' ? 'bg-blue-500 text-white animate-pulse' :
+                    child.status === 'FAILED' ? 'bg-red-500 text-white' :
+                    'bg-gray-200 text-gray-600'
+                  }`}
+                  onClick={() => toggleChildJob(child.job_id)}
+                >
+                  {child.item_id?.slice(-4) || '?'}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Current Phase (for non-parallel jobs) */}
+        {!jobStatus.is_parallel && jobStatus.current_phase && (
           <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded">
             <p className="text-sm text-blue-800 font-medium">Currently Running:</p>
             <p className="text-blue-900">{jobStatus.current_phase.name}</p>
             <p className="text-sm text-blue-600 mt-1">
               {jobStatus.current_phase.tasks_completed}/{jobStatus.current_phase.tasks_total} tasks completed
             </p>
+          </div>
+        )}
+
+        {/* Stop Job Button for Running Jobs */}
+        {(jobStatus.status === 'RUNNING' || jobStatus.status === 'PENDING') && (
+          <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded">
+            <p className="text-sm text-orange-800 mb-3">
+              Job is currently {jobStatus.status.toLowerCase()}. You can stop it at any time.
+            </p>
+            <button
+              onClick={cancelJob}
+              disabled={cancelling}
+              className={`px-4 py-2 rounded font-semibold transition-colors ${
+                cancelling
+                  ? 'bg-gray-400 cursor-not-allowed text-white'
+                  : 'bg-orange-600 hover:bg-orange-700 text-white'
+              }`}
+            >
+              {cancelling ? '🛑 Cancelling...' : '🛑 Stop Job'}
+            </button>
           </div>
         )}
 
@@ -457,136 +658,252 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Phases Panel */}
+        {/* Main Panel - Child Jobs for parallel, Phases for sequential */}
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Phases</h2>
-            </div>
-            <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
-              {jobStatus.phases.map((phase) => (
-                <div key={phase.id} className="p-4">
-                  <div
-                    className="flex items-center justify-between cursor-pointer"
-                    onClick={() => togglePhase(phase.id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{getStatusIcon(phase.status)}</span>
-                      <div>
-                        <h3 className="font-medium text-gray-900">{phase.name}</h3>
-                        <span className={`inline-block px-2 py-0.5 text-xs rounded ${getStatusColor(phase.status)}`}>
-                          {phase.status}
+          {jobStatus.is_parallel && jobStatus.child_jobs ? (
+            /* Child Jobs Panel for Parallel Execution */
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-bold text-gray-900">Unit Progress</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Each unit runs through all phases independently
+                </p>
+              </div>
+              <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+                {jobStatus.child_jobs.map((child) => (
+                  <div key={child.job_id} className="p-4">
+                    <div
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => toggleChildJob(child.job_id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{getStatusIcon(child.status)}</span>
+                        <div>
+                          <h3 className="font-medium text-gray-900">Unit {child.item_id}</h3>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`inline-block px-2 py-0.5 text-xs rounded ${getStatusColor(child.status)}`}>
+                              {child.status}
+                            </span>
+                            {child.current_phase && child.status === 'RUNNING' && (
+                              <span className="text-xs text-blue-600">
+                                → {child.current_phase}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {/* Progress indicator for child job */}
+                        {child.progress && (child.progress.total_phases ?? 0) > 0 && (
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-300 ${
+                                  child.status === 'FAILED' ? 'bg-red-500' :
+                                  child.status === 'COMPLETED' ? 'bg-green-500' : 'bg-blue-500'
+                                }`}
+                                style={{ width: `${child.progress.phase_percent ?? 0}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {child.progress.completed_phases ?? 0}/{child.progress.total_phases ?? 0}
+                            </span>
+                          </div>
+                        )}
+                        <span className="text-gray-400">
+                          {expandedChildJobs.has(child.job_id) ? '▼' : '▶'}
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {/* Per-phase progress indicator */}
-                      {phase.tasks && phase.tasks.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <div
-                              className={`h-full transition-all duration-300 ${
-                                phase.status === 'FAILED' ? 'bg-red-500' :
-                                phase.status === 'COMPLETED' ? 'bg-green-500' : 'bg-blue-500'
-                              }`}
-                              style={{
-                                width: `${phase.tasks.length > 0
-                                  ? (phase.tasks.filter(t => t.status === 'COMPLETED' || t.status === 'FAILED').length / phase.tasks.length) * 100
-                                  : 0}%`
-                              }}
-                            />
+
+                    {/* Expanded Child Job Details */}
+                    {expandedChildJobs.has(child.job_id) && (
+                      <div className="mt-3 ml-8 space-y-3">
+                        {/* Phase progress for this child */}
+                        {child.progress && (child.progress.total_phases ?? 0) > 0 && (
+                          <div className="p-3 bg-gray-50 rounded border border-gray-200">
+                            <p className="text-xs font-medium text-gray-700 mb-2">Phase Progress:</p>
+                            <div className="text-xs text-gray-600 space-y-1">
+                              <div className="flex justify-between">
+                                <span>Completed:</span>
+                                <span className="font-medium text-green-600">{child.progress.completed_phases ?? 0}</span>
+                              </div>
+                              {(child.progress.running_phases ?? 0) > 0 && (
+                                <div className="flex justify-between">
+                                  <span>Running:</span>
+                                  <span className="font-medium text-blue-600">{child.progress.running_phases}</span>
+                                </div>
+                              )}
+                              {(child.progress.failed_phases ?? 0) > 0 && (
+                                <div className="flex justify-between">
+                                  <span>Failed:</span>
+                                  <span className="font-medium text-red-600">{child.progress.failed_phases}</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between">
+                                <span>Total:</span>
+                                <span className="font-medium">{child.progress.total_phases ?? 0}</span>
+                              </div>
+                            </div>
                           </div>
-                          <span className="text-xs text-gray-500 whitespace-nowrap">
-                            {phase.tasks.filter(t => t.status === 'COMPLETED').length}/{phase.tasks.length}
+                        )}
+
+                        {/* Errors for this child */}
+                        {child.errors && child.errors.length > 0 && (
+                          <div className="p-3 bg-red-50 rounded border border-red-200">
+                            <p className="text-xs font-medium text-red-800 mb-2">Errors:</p>
+                            <div className="space-y-1">
+                              {child.errors.map((error, idx) => (
+                                <p key={idx} className="text-xs text-red-600">{error}</p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Current phase info */}
+                        {child.current_phase && child.status === 'RUNNING' && (
+                          <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                            <p className="text-xs font-medium text-blue-800">Currently Running:</p>
+                            <p className="text-sm text-blue-900 mt-1">{child.current_phase}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* Phases Panel for Sequential Execution */
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-bold text-gray-900">Phases</h2>
+              </div>
+              <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+                {jobStatus.phases.map((phase) => (
+                  <div key={phase.id} className="p-4">
+                    <div
+                      className="flex items-center justify-between cursor-pointer"
+                      onClick={() => togglePhase(phase.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{getStatusIcon(phase.status)}</span>
+                        <div>
+                          <h3 className="font-medium text-gray-900">{phase.name}</h3>
+                          <span className={`inline-block px-2 py-0.5 text-xs rounded ${getStatusColor(phase.status)}`}>
+                            {phase.status}
                           </span>
                         </div>
-                      )}
-                      {phase.duration_seconds !== undefined && phase.duration_seconds !== null && (
-                        <span className="text-sm text-gray-500">
-                          {phase.duration_seconds.toFixed(1)}s
-                        </span>
-                      )}
-                      <span className="text-gray-400">
-                        {expandedPhases.has(phase.id) ? '▼' : '▶'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Expanded Phase Details */}
-                  {expandedPhases.has(phase.id) && (
-                    <div className="mt-3 ml-8 space-y-3">
-                      {/* Phase Result Summary */}
-                      {phase.result && Object.keys(phase.result).length > 0 && (
-                        <div className="p-3 bg-blue-50 rounded border border-blue-200">
-                          <p className="text-xs font-medium text-blue-900 mb-2">Phase Summary:</p>
-                          <div className="text-xs text-blue-800 space-y-1">
-                            {Object.entries(phase.result).map(([key, value]) => {
-                              if (key === 'created_count' || key === 'total_count' || key === 'processed_count') {
-                                return (
-                                  <div key={key} className="flex justify-between">
-                                    <span className="font-medium">{key.replace(/_/g, ' ')}:</span>
-                                    <span>{String(value)}</span>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tasks List */}
-                      {phase.tasks && phase.tasks.length > 0 ? (
-                        <div className="space-y-2">
-                          {phase.tasks.map((task) => (
-                            <div
-                              key={task.id}
-                              className="p-3 bg-gray-50 rounded border border-gray-200"
-                            >
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="flex items-center gap-2 font-medium">
-                                  {getStatusIcon(task.status)}
-                                  <span className={task.error_message ? 'text-red-600' : 'text-gray-900'}>
-                                    {task.name}
-                                  </span>
-                                </span>
-                                <span className={`text-xs px-2 py-0.5 rounded ${getStatusColor(task.status)}`}>
-                                  {task.status}
-                                </span>
-                              </div>
-
-                              {task.started_at && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {task.completed_at ? (
-                                    <>
-                                      Completed in {((new Date(task.completed_at).getTime() - new Date(task.started_at).getTime()) / 1000).toFixed(2)}s
-                                    </>
-                                  ) : (
-                                    <>Started {new Date(task.started_at).toLocaleTimeString()}</>
-                                  )}
-                                </div>
-                              )}
-
-                              {task.error_message && (
-                                <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
-                                  <p className="text-xs text-red-700 font-medium">Error:</p>
-                                  <p className="text-xs text-red-600 mt-1">{task.error_message}</p>
-                                </div>
-                              )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {/* Per-phase progress indicator */}
+                        {phase.tasks && phase.tasks.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-300 ${
+                                  phase.status === 'FAILED' ? 'bg-red-500' :
+                                  phase.status === 'COMPLETED' ? 'bg-green-500' : 'bg-blue-500'
+                                }`}
+                                style={{
+                                  width: `${phase.tasks.length > 0
+                                    ? (phase.tasks.filter(t => t.status === 'COMPLETED' || t.status === 'FAILED').length / phase.tasks.length) * 100
+                                    : 0}%`
+                                }}
+                              />
                             </div>
-                          ))}
-                        </div>
-                      ) : !phase.result ? (
-                        <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm text-gray-500 italic">
-                          No task details available for this phase
-                        </div>
-                      ) : null}
+                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                              {phase.tasks.filter(t => t.status === 'COMPLETED').length}/{phase.tasks.length}
+                            </span>
+                          </div>
+                        )}
+                        {phase.duration_seconds !== undefined && phase.duration_seconds !== null && (
+                          <span className="text-sm text-gray-500">
+                            {phase.duration_seconds.toFixed(1)}s
+                          </span>
+                        )}
+                        <span className="text-gray-400">
+                          {expandedPhases.has(phase.id) ? '▼' : '▶'}
+                        </span>
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {/* Expanded Phase Details */}
+                    {expandedPhases.has(phase.id) && (
+                      <div className="mt-3 ml-8 space-y-3">
+                        {/* Phase Result Summary */}
+                        {phase.result && Object.keys(phase.result).length > 0 && (
+                          <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                            <p className="text-xs font-medium text-blue-900 mb-2">Phase Summary:</p>
+                            <div className="text-xs text-blue-800 space-y-1">
+                              {Object.entries(phase.result).map(([key, value]) => {
+                                if (key === 'created_count' || key === 'total_count' || key === 'processed_count') {
+                                  return (
+                                    <div key={key} className="flex justify-between">
+                                      <span className="font-medium">{key.replace(/_/g, ' ')}:</span>
+                                      <span>{String(value)}</span>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tasks List */}
+                        {phase.tasks && phase.tasks.length > 0 ? (
+                          <div className="space-y-2">
+                            {phase.tasks.map((task) => (
+                              <div
+                                key={task.id}
+                                className="p-3 bg-gray-50 rounded border border-gray-200"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="flex items-center gap-2 font-medium">
+                                    {getStatusIcon(task.status)}
+                                    <span className={task.error_message ? 'text-red-600' : 'text-gray-900'}>
+                                      {task.name}
+                                    </span>
+                                  </span>
+                                  <span className={`text-xs px-2 py-0.5 rounded ${getStatusColor(task.status)}`}>
+                                    {task.status}
+                                  </span>
+                                </div>
+
+                                {task.started_at && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {task.completed_at ? (
+                                      <>
+                                        Completed in {((new Date(task.completed_at).getTime() - new Date(task.started_at).getTime()) / 1000).toFixed(2)}s
+                                      </>
+                                    ) : (
+                                      <>Started {new Date(task.started_at).toLocaleTimeString()}</>
+                                    )}
+                                  </div>
+                                )}
+
+                                {task.error_message && (
+                                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                                    <p className="text-xs text-red-700 font-medium">Error:</p>
+                                    <p className="text-xs text-red-600 mt-1">{task.error_message}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : !phase.result ? (
+                          <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm text-gray-500 italic">
+                            No task details available for this phase
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Live Events Panel */}
@@ -632,6 +949,72 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                     {type}: {resources.length}
                   </p>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Job Summary (shown for completed/failed jobs) */}
+          {(jobStatus.status === 'COMPLETED' || jobStatus.status === 'FAILED' || jobStatus.status === 'PARTIAL' || jobStatus.status === 'CANCELLED') &&
+           jobStatus.summary && Object.keys(jobStatus.summary).length > 0 && (
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-sm font-bold text-blue-800 mb-2">Job Summary</h3>
+              <div className="space-y-2 text-xs">
+                {/* Parallel job summary */}
+                {jobStatus.is_parallel && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Total Units:</span>
+                        <span className="font-medium">{jobStatus.summary.total_items ?? '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Completed:</span>
+                        <span className="font-medium text-green-600">{jobStatus.summary.completed ?? '-'}</span>
+                      </div>
+                      {(jobStatus.summary.failed ?? 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Failed:</span>
+                          <span className="font-medium text-red-600">{jobStatus.summary.failed}</span>
+                        </div>
+                      )}
+                      {(jobStatus.summary.partial ?? 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Partial:</span>
+                          <span className="font-medium text-yellow-600">{jobStatus.summary.partial}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Resources summary */}
+                    {jobStatus.summary.resources && Object.keys(jobStatus.summary.resources).length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-blue-200">
+                        <p className="text-blue-700 font-medium mb-1">Resources Created:</p>
+                        <div className="grid grid-cols-2 gap-1">
+                          {Object.entries(jobStatus.summary.resources).map(([type, count]) => (
+                            <div key={type} className="flex justify-between text-blue-600">
+                              <span>{type.replace(/_/g, ' ')}:</span>
+                              <span className="font-medium">{String(count)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {/* Non-parallel job summary - show all summary fields */}
+                {!jobStatus.is_parallel && (
+                  <div className="space-y-1">
+                    {Object.entries(jobStatus.summary).map(([key, value]) => {
+                      // Skip complex objects
+                      if (typeof value === 'object') return null;
+                      return (
+                        <div key={key} className="flex justify-between">
+                          <span className="text-gray-600">{key.replace(/_/g, ' ')}:</span>
+                          <span className="font-medium">{String(value)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

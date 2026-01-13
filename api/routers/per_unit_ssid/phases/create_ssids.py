@@ -1,7 +1,8 @@
 """
-Phase 1: Create SSIDs
+Phase 2: Create SSIDs
 
-Creates SSIDs for each unit in RuckusONE
+Creates SSIDs for each unit in RuckusONE.
+Runs AFTER create_ap_groups to avoid the 15 SSID limit issue.
 """
 
 import logging
@@ -16,12 +17,18 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     Create SSIDs for each unit in RuckusONE
 
     Args:
-        context: Execution context with units data
+        context: Execution context with units data and ap_group_map from Phase 1
 
     Returns:
-        Single completed task with ssid_map for downstream phases
+        Single completed task with ssid_map and ap_group_map for downstream phases
     """
-    logger.info("Phase 1: Create SSIDs")
+    logger.info("Phase 2: Create SSIDs")
+
+    # Get ap_group_map from previous phase (create_ap_groups)
+    phase1_results = context.get('previous_phase_results', {}).get('create_ap_groups', {})
+    aggregated = phase1_results.get('aggregated', {})
+    ap_group_map_list = aggregated.get('ap_group_map', [{}])
+    ap_group_map = ap_group_map_list[0] if ap_group_map_list else {}
 
     # Get units from input_data
     units = context.get('units', [])
@@ -54,7 +61,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             id="create_ssids",
             name="No units to process",
             status=TaskStatus.COMPLETED,
-            output_data={'ssid_map': {}, 'units': []}
+            output_data={'ssid_map': {}, 'ap_group_map': ap_group_map, 'units': []}
         )]
 
     logger.info(f"  Creating SSIDs for {len(units)} units...")
@@ -227,7 +234,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         summary_parts.append(f"{failed_count} failed")
 
     summary_str = ", ".join(summary_parts) if summary_parts else "no changes"
-    logger.info(f"  Phase 1 complete: {summary_str}")
+    logger.info(f"  Phase 2 complete: {summary_str}")
 
     # Summary message
     if failed_count == 0:
@@ -241,6 +248,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         status=TaskStatus.COMPLETED,
         output_data={
             'ssid_map': ssid_map,
+            'ap_group_map': ap_group_map,  # Pass through from Phase 1
             'ssid_results': ssid_results,
             'units': units  # Forward units to next phase
         }

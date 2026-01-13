@@ -2,11 +2,15 @@
 Per-Unit SSID Configuration Workflow Definition
 
 Defines the workflow for configuring per-unit SSIDs in RuckusONE:
-1. Create SSIDs for each unit
-2. Activate SSIDs on venue
-3. Create AP Groups for each unit
+1. Create AP Groups FIRST (before SSIDs exist - avoids 15 SSID limit issue)
+2. Create SSIDs for each unit
+3. Activate SSIDs on venue
 4. Process units (find APs, assign to groups, activate SSIDs on groups)
 5. (Optional) Configure LAN ports on APs with configurable ports
+
+NOTE: AP Groups are created first because R1 auto-activates all existing venue
+SSIDs on new AP Groups. By creating AP Groups before the per-unit SSIDs exist,
+we avoid hitting the default 15 SSID per AP Group limit.
 """
 
 from typing import List
@@ -15,17 +19,27 @@ from workflow.models import WorkflowDefinition, PhaseDefinition
 
 # Base phases (always included)
 BASE_PHASES: List[PhaseDefinition] = [
-    # Phase 1: Create SSIDs
+    # Phase 1: Create AP Groups FIRST (before SSIDs exist to avoid 15 SSID limit)
+    PhaseDefinition(
+        id="create_ap_groups",
+        name="Create AP Groups",
+        dependencies=[],
+        parallelizable=False,
+        critical=True,
+        executor="routers.per_unit_ssid.phases.create_ap_groups.execute"
+    ),
+
+    # Phase 2: Create SSIDs
     PhaseDefinition(
         id="create_ssids",
         name="Create SSIDs",
-        dependencies=[],
+        dependencies=["create_ap_groups"],
         parallelizable=False,
         critical=True,
         executor="routers.per_unit_ssid.phases.create_ssids.execute"
     ),
 
-    # Phase 2: Activate SSIDs on Venue
+    # Phase 3: Activate SSIDs on Venue
     PhaseDefinition(
         id="activate_ssids",
         name="Activate SSIDs on Venue",
@@ -35,21 +49,11 @@ BASE_PHASES: List[PhaseDefinition] = [
         executor="routers.per_unit_ssid.phases.activate_ssids.execute"
     ),
 
-    # Phase 3: Create AP Groups
-    PhaseDefinition(
-        id="create_ap_groups",
-        name="Create AP Groups",
-        dependencies=["activate_ssids"],
-        parallelizable=False,
-        critical=True,
-        executor="routers.per_unit_ssid.phases.create_ap_groups.execute"
-    ),
-
     # Phase 4: Process Units (AP assignment + SSID activation on groups)
     PhaseDefinition(
         id="process_units",
         name="Process Units",
-        dependencies=["create_ap_groups"],
+        dependencies=["activate_ssids"],
         parallelizable=False,
         critical=True,
         executor="routers.per_unit_ssid.phases.process_units.execute"

@@ -77,6 +77,15 @@ class WorkflowEventPublisher:
             "summary": job.summary
         })
 
+    async def job_cancelled(self, job: WorkflowJob):
+        """Publish job cancelled event"""
+        await self._publish_event(job.id, "job_cancelled", {
+            "job_id": job.id,
+            "status": job.status,
+            "message": "Job cancelled by user",
+            "summary": job.summary
+        })
+
     async def phase_started(self, job_id: str, phase: Phase):
         """Publish phase started event"""
         await self._publish_event(job_id, "phase_started", {
@@ -139,3 +148,14 @@ class WorkflowEventPublisher:
             "level": level,
             "details": details or {}
         })
+
+    async def publish_event(self, job_id: str, event_type: str, data: Dict[str, Any]):
+        """
+        Public method to publish arbitrary events
+
+        Args:
+            job_id: Job ID
+            event_type: Event type string
+            data: Event data dict
+        """
+        await self._publish_event(job_id, event_type, data)

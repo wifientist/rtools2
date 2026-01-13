@@ -1,7 +1,9 @@
 """
-Phase 3: Create AP Groups
+Phase 1: Create AP Groups (FIRST - before SSIDs exist)
 
-Creates AP Groups for each unit in RuckusONE
+Creates AP Groups for each unit in RuckusONE BEFORE SSIDs are created.
+This avoids hitting the 15 SSID per AP Group limit, since R1 auto-activates
+all existing venue SSIDs on new AP Groups.
 """
 
 import logging
@@ -15,23 +17,18 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     """
     Create AP Groups for each unit in RuckusONE
 
+    This runs FIRST (before SSIDs) to avoid the 15 SSID limit issue.
+
     Args:
-        context: Execution context with ssid_map and units from previous phases
+        context: Execution context with units from input_data
 
     Returns:
         Single completed task with ap_group_map for downstream phases
     """
-    logger.info("Phase 3: Create AP Groups")
+    logger.info("Phase 1: Create AP Groups (before SSIDs)")
 
-    # Get data from previous phase
-    phase2_results = context.get('previous_phase_results', {}).get('activate_ssids', {})
-    aggregated = phase2_results.get('aggregated', {})
-
-    ssid_map_list = aggregated.get('ssid_map', [{}])
-    ssid_map = ssid_map_list[0] if ssid_map_list else {}
-
-    units_list = aggregated.get('units', [[]])
-    units = units_list[0] if units_list else []
+    # Get units directly from context (this is now Phase 1, no previous phase)
+    units = context.get('units', [])
 
     venue_id = context.get('venue_id')
     tenant_id = context.get('tenant_id')
@@ -56,7 +53,6 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             name="No units to process",
             status=TaskStatus.COMPLETED,
             output_data={
-                'ssid_map': ssid_map,
                 'ap_group_map': {},
                 'units': units,
                 'ap_group_results': []
@@ -77,12 +73,13 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         await emit_message(f"[{unit_number}] Checking AP Group '{ap_group_name}'...", "info")
 
         try:
-            # Check if AP Group exists
+            # Check if AP Group with EXACT name exists
             existing_group = await r1_client.venues.find_ap_group_by_name(
                 tenant_id, venue_id, ap_group_name
             )
 
-            if existing_group:
+            # Verify EXACT name match (API might return partial matches)
+            if existing_group and existing_group.get('name') == ap_group_name:
                 logger.info(f"    [{unit_number}] AP Group '{ap_group_name}' already exists (ID: {existing_group.get('id')})")
                 await emit_message(f"[{unit_number}] '{ap_group_name}' already exists", "info")
                 ap_group_map[unit_number] = existing_group.get('id')
@@ -93,6 +90,9 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                     'status': 'existed'
                 })
             else:
+                # Log if we got a partial match that we're ignoring
+                if existing_group:
+                    logger.info(f"    [{unit_number}] Found group '{existing_group.get('name')}' but need exact '{ap_group_name}' - creating new")
                 # Create AP Group
                 logger.info(f"    [{unit_number}] Creating AP Group '{ap_group_name}'...")
                 await emit_message(f"[{unit_number}] Creating '{ap_group_name}'...", "info")
@@ -154,7 +154,6 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         name=f"Created {created_count} AP Groups ({existed_count} existed, {failed_count} failed)",
         status=TaskStatus.COMPLETED,
         output_data={
-            'ssid_map': ssid_map,
             'ap_group_map': ap_group_map,
             'units': units,
             'ap_group_results': ap_group_results

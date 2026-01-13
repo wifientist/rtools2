@@ -8,12 +8,15 @@ Handles Redis CRUD operations for workflow state:
 - Redis locks for concurrent access
 """
 
+import asyncio
 import json
+import logging
 import redis.asyncio as redis
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from workflow.models import WorkflowJob, Phase, Task, JobStatus
 
+logger = logging.getLogger(__name__)
 
 # TTL Settings
 JOB_TTL_SECONDS = 604800  # 7 days
@@ -156,12 +159,28 @@ class RedisStateManager:
             offset + limit - 1
         )
 
+        if not job_ids:
+            return []
+
+        # Use MGET to fetch all jobs in a single Redis call (much faster!)
+        keys = [f"workflow:jobs:{job_id}" for job_id in job_ids]
+        job_data_list = await self.redis.mget(keys)
+
         jobs = []
-        for job_id in job_ids:
-            # job_id is already decoded with decode_responses=True
-            job = await self.get_job(job_id)
-            if job:
-                jobs.append(job)
+        for i, job_data in enumerate(job_data_list):
+            if job_data:
+                try:
+                    job_dict = json.loads(job_data)
+                    # Handle legacy jobs without user_id field
+                    if 'user_id' not in job_dict:
+                        job_dict['user_id'] = 0
+                    jobs.append(WorkflowJob(**job_dict))
+                except Exception as e:
+                    logger.warning(f"Failed to deserialize job: {e}")
+
+            # Yield to event loop every 20 jobs to prevent blocking other requests
+            if i > 0 and i % 20 == 0:
+                await asyncio.sleep(0)
 
         return jobs
 
@@ -343,6 +362,50 @@ class RedisStateManager:
         job.summary['progress'] = progress
 
         return await self.save_job(job)
+
+    # ==================== Cancellation ====================
+
+    async def set_cancelled(self, job_id: str) -> bool:
+        """
+        Mark a job as cancelled
+
+        Args:
+            job_id: Job ID to cancel
+
+        Returns:
+            bool: True if cancellation flag was set
+        """
+        cancel_key = f"workflow:jobs:{job_id}:cancelled"
+        await self.redis.setex(cancel_key, JOB_TTL_SECONDS, "1")
+        return True
+
+    async def is_cancelled(self, job_id: str) -> bool:
+        """
+        Check if a job has been cancelled
+
+        Args:
+            job_id: Job ID to check
+
+        Returns:
+            bool: True if job is cancelled
+        """
+        cancel_key = f"workflow:jobs:{job_id}:cancelled"
+        result = await self.redis.get(cancel_key)
+        return result == "1"
+
+    async def clear_cancelled(self, job_id: str) -> bool:
+        """
+        Clear cancellation flag for a job
+
+        Args:
+            job_id: Job ID
+
+        Returns:
+            bool: True if cleared
+        """
+        cancel_key = f"workflow:jobs:{job_id}:cancelled"
+        await self.redis.delete(cancel_key)
+        return True
 
     # ==================== Cleanup ====================
 

@@ -84,6 +84,19 @@ class WorkflowEngine:
             phases_to_execute = self._resolve_dependencies(job.phases)
 
             for phase in phases_to_execute:
+                # Check for cancellation before starting each phase
+                if await self.state_manager.is_cancelled(job.id):
+                    logger.info(f"🛑 Job {job.id} cancelled - stopping before phase {phase.id}")
+                    job.status = JobStatus.CANCELLED
+                    job.errors.append("Job cancelled by user")
+                    job.completed_at = datetime.utcnow()
+                    await self.state_manager.save_job(job)
+
+                    # Publish cancellation event
+                    if self.event_publisher:
+                        await self.event_publisher.job_cancelled(job)
+
+                    return job
                 # Check if phase should be skipped
                 if await self._should_skip_phase(phase, job):
                     logger.info(f"⏭️  Skipping phase {phase.id} ({phase.name})")
@@ -210,6 +223,7 @@ class WorkflowEngine:
                 'previous_phase_results': self._get_previous_phase_results(job, phase),
                 'r1_client': self.task_executor.r1_client if self.task_executor else None,
                 'event_publisher': self.event_publisher,  # Allow phases to emit custom messages
+                'activation_semaphore': self.task_executor.activation_semaphore if self.task_executor else None,
                 **context,
                 **(job.input_data if job.input_data else {})  # Unpack input_data for easy access
             }
