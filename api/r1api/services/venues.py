@@ -845,13 +845,15 @@ class VenueService:
             logger.error(f"Error fetching comprehensive AP Group view: {str(e)}")
             raise
 
-    async def get_all_ap_groups_with_details(self, tenant_id: str, venue_id: str = None):
+    async def get_all_ap_groups_with_details(self, tenant_id: str, venue_id: str = None, include_lan_port_settings: bool = False):
         """
         Get all AP Groups with their members and SSIDs
 
         Args:
             tenant_id: Tenant/EC ID
             venue_id: Optional - filter by specific venue
+            include_lan_port_settings: If True, fetch full LAN port settings (VLANs, enabled status)
+                                       for each AP. This requires additional API calls per AP.
 
         Returns:
             List of AP Group summaries:
@@ -954,16 +956,52 @@ class VenueService:
                     aps_objects = group.get('aps', [])
                     ap_serials = [ap.get('serialNumber') for ap in aps_objects if ap.get('serialNumber')]
 
-                # Get AP names from lookup
+                # Get AP details from lookup (includes LAN port statuses)
                 ap_names = []
                 ap_serials_list = []
+                ap_details = []  # Full AP details for each AP in this group
                 missing_serials = []
                 for serial in ap_serials:
                     ap = ap_lookup.get(serial, {})
                     if not ap:
                         missing_serials.append(serial)
-                    ap_names.append(ap.get('name') or serial)
-                    ap_serials_list.append(serial)
+                        ap_names.append(serial)
+                        ap_serials_list.append(serial)
+                        ap_details.append({
+                            'serial': serial,
+                            'name': serial,
+                            'model': None,
+                            'lan_port_statuses': [],
+                            'lan_port_settings': None
+                        })
+                    else:
+                        ap_name = ap.get('name') or serial
+                        ap_model = ap.get('model')
+                        ap_names.append(ap_name)
+                        ap_serials_list.append(serial)
+
+                        # Get live LAN port statuses from AP data (shows physical link status)
+                        lan_port_statuses = ap.get('lanPortStatuses', [])
+
+                        # Fetch full LAN port settings if requested (VLANs, enabled status)
+                        lan_port_settings = None
+                        if include_lan_port_settings and venue_id:
+                            logger.info(f"Fetching LAN port settings for AP {serial} (model: {ap_model})")
+                            try:
+                                lan_port_settings = await self.get_ap_all_lan_port_settings(
+                                    tenant_id, venue_id, serial
+                                )
+                                logger.info(f"Got LAN port settings for AP {serial}: {len(lan_port_settings.get('ports', []))} ports")
+                            except Exception as e:
+                                logger.warning(f"Failed to get LAN port settings for AP {serial}: {str(e)}")
+
+                        ap_details.append({
+                            'serial': serial,
+                            'name': ap_name,
+                            'model': ap_model,
+                            'lan_port_statuses': lan_port_statuses,  # Live physical link status
+                            'lan_port_settings': lan_port_settings   # VLAN/enabled configuration
+                        })
 
                 if missing_serials:
                     logger.warning(f"AP Group '{group.get('name')}': {len(missing_serials)} APs not found in venue")
@@ -987,6 +1025,7 @@ class VenueService:
                     'total_aps': len(ap_serials),
                     'ap_names': ap_names,
                     'ap_serials': ap_serials_list,
+                    'aps': ap_details,  # Full AP details with LAN port statuses
                     'total_ssids': len(ssids),
                     'ssid_names': ssid_names,
                     'ssids': ssids  # Full SSID objects with details
@@ -1002,16 +1041,18 @@ class VenueService:
             logger.error(f"Error fetching all AP Groups with details: {str(e)}")
             raise
 
-    async def get_venue_network_summary(self, tenant_id: str, venue_id: str):
+    async def get_venue_network_summary(self, tenant_id: str, venue_id: str, include_lan_port_settings: bool = True):
         """
         Get a complete network summary for a venue:
         - Venue details
         - All AP Groups with their members
         - All SSIDs and their activations
+        - LAN port settings (VLANs, enabled status) for each AP
 
         Args:
             tenant_id: Tenant/EC ID
             venue_id: Venue ID
+            include_lan_port_settings: If True, fetch full LAN port settings for each AP
 
         Returns:
             Dictionary with:
@@ -1024,15 +1065,21 @@ class VenueService:
             }
         """
         try:
-            logger.info(f"Building network summary for venue {venue_id}")
+            logger.info(f"Building network summary for venue {venue_id} (include_lan_port_settings={include_lan_port_settings})")
 
             # 1. Get venue details
             venue = await self.get_venue(tenant_id, venue_id)
 
-            # 2. Get all AP Groups with details
-            ap_groups = await self.get_all_ap_groups_with_details(tenant_id, venue_id)
+            # 2. Get venue-level LAN port settings (defaults for all AP models)
+            venue_lan_port_settings = []
+            if include_lan_port_settings:
+                venue_lan_port_settings = await self.get_venue_lan_port_settings(tenant_id, venue_id)
+                logger.info(f"Fetched venue LAN port settings for {len(venue_lan_port_settings)} AP models")
 
-            # 3. Calculate totals
+            # 3. Get all AP Groups with details
+            ap_groups = await self.get_all_ap_groups_with_details(tenant_id, venue_id, include_lan_port_settings=include_lan_port_settings)
+
+            # 4. Calculate totals
             total_aps = sum(g['total_aps'] for g in ap_groups)
             unique_ssids = set()
             for g in ap_groups:
@@ -1040,6 +1087,7 @@ class VenueService:
 
             summary = {
                 'venue': venue,
+                'venue_lan_port_settings': venue_lan_port_settings,  # Default LAN port settings per model
                 'ap_groups': ap_groups,
                 'total_ap_groups': len(ap_groups),
                 'total_aps': total_aps,
@@ -1055,6 +1103,210 @@ class VenueService:
             raise
 
     # ========== LAN Port Configuration Methods ==========
+
+    async def get_venue_lan_port_settings(self, tenant_id: str, venue_id: str):
+        """
+        Get venue-level LAN port settings for all AP models.
+
+        These are the default/parent settings that APs inherit before any per-AP overrides.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+
+        Returns:
+            List of model settings:
+            [
+                {
+                    'model': 'H510',
+                    'poeMode': 'Auto',
+                    'poeOut': False,
+                    'lanPorts': [
+                        {'portId': '1', 'enabled': True, 'untagId': 1, 'type': 'ACCESS', 'vlanMembers': '1'},
+                        ...
+                    ]
+                },
+                ...
+            ]
+        """
+        try:
+            logger.info(f"Fetching venue LAN port settings for venue {venue_id}")
+            if self.client.ec_type == "MSP":
+                response = self.client.get(
+                    f"/templates/venues/{venue_id}/apModelLanPortSettings",
+                    override_tenant_id=tenant_id
+                )
+            else:
+                response = self.client.get(
+                    f"/templates/venues/{venue_id}/apModelLanPortSettings"
+                )
+
+            logger.debug(f"Venue LAN port settings response: {response.status_code}")
+            if response.status_code == 200:
+                data = response.json()
+                logger.debug(f"Venue LAN port settings data type: {type(data)}, length: {len(data) if isinstance(data, list) else 'N/A'}")
+                # Response is an array of model settings
+                if isinstance(data, list):
+                    logger.info(f"Got venue LAN port settings for {len(data)} models")
+                    return data
+                elif isinstance(data, dict) and 'data' in data:
+                    logger.info(f"Got venue LAN port settings for {len(data['data'])} models")
+                    return data['data']
+                else:
+                    logger.warning(f"Unexpected venue LAN port settings format: {type(data)}")
+                    return []
+            else:
+                logger.warning(f"Failed to get venue LAN port settings: {response.status_code} - {response.text[:200]}")
+                return []
+        except Exception as e:
+            logger.warning(f"Error getting venue LAN port settings: {str(e)}")
+            return []
+
+    async def get_ap_lan_port_specific_settings(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str
+    ):
+        """
+        Get AP-level LAN port specific settings (poeMode, poeOut, useVenueSettings).
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            serial_number: AP serial number
+
+        Returns:
+            Dict with poeMode, poeOut, useVenueSettings
+        """
+        try:
+            if self.client.ec_type == "MSP":
+                response = self.client.get(
+                    f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings",
+                    override_tenant_id=tenant_id
+                )
+            else:
+                response = self.client.get(
+                    f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings"
+                )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.warning(f"Failed to get AP LAN port specific settings for {serial_number}: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error getting AP LAN port specific settings for {serial_number}: {str(e)}")
+            return None
+
+    async def get_ap_lan_port_settings(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str,
+        port_id: str
+    ):
+        """
+        Get settings for a specific LAN port on an AP.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            serial_number: AP serial number
+            port_id: Port ID (e.g., "LAN1", "LAN2", "1", "2")
+
+        Returns:
+            Dict with enabled, overwriteUntagId, overwriteVlanMembers, etc.
+        """
+        try:
+            # Normalize port_id - API uses just the number (1, 2, 3, 4)
+            if port_id.upper().startswith('LAN'):
+                port_number = port_id.upper().replace('LAN', '')
+            else:
+                port_number = port_id
+
+            if self.client.ec_type == "MSP":
+                response = self.client.get(
+                    f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
+                    override_tenant_id=tenant_id
+                )
+            else:
+                response = self.client.get(
+                    f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings"
+                )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.debug(f"Failed to get LAN port {port_id} settings for {serial_number}: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.debug(f"Error getting LAN port {port_id} settings for {serial_number}: {str(e)}")
+            return None
+
+    async def get_ap_all_lan_port_settings(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str
+    ):
+        """
+        Get all LAN port settings for an AP (specific settings + per-port settings).
+
+        Automatically discovers available ports by querying LAN1-LAN4 and including
+        only ports that return valid settings.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            serial_number: AP serial number
+
+        Returns:
+            Dict with:
+            {
+                'poeMode': str,
+                'poeOut': bool,
+                'useVenueSettings': bool,
+                'ports': [
+                    {'portId': 'LAN1', 'enabled': bool, 'untagId': int, 'vlanMembers': str},
+                    ...
+                ]
+            }
+        """
+        result = {
+            'poeMode': None,
+            'poeOut': False,
+            'useVenueSettings': True,
+            'ports': []
+        }
+
+        # Get AP-level specific settings
+        specific_settings = await self.get_ap_lan_port_specific_settings(
+            tenant_id, venue_id, serial_number
+        )
+        if specific_settings:
+            result['poeMode'] = specific_settings.get('poeMode')
+            result['poeOut'] = specific_settings.get('poeOut', False)
+            result['useVenueSettings'] = specific_settings.get('useVenueSettings', True)
+
+        # Try to get settings for LAN1-LAN4, only include ports that exist
+        logger.debug(f"Fetching LAN port settings for AP {serial_number}")
+        for i in range(1, 5):
+            port_id = f"LAN{i}"
+            port_settings = await self.get_ap_lan_port_settings(
+                tenant_id, venue_id, serial_number, port_id
+            )
+            logger.debug(f"AP {serial_number} {port_id}: {port_settings}")
+            if port_settings:
+                result['ports'].append({
+                    'portId': port_id,
+                    'enabled': port_settings.get('enabled', True),
+                    'untagId': port_settings.get('overwriteUntagId'),
+                    'vlanMembers': port_settings.get('overwriteVlanMembers', '')
+                })
+
+        logger.debug(f"AP {serial_number} final LAN port settings: {result}")
+        return result
 
     async def set_ap_lan_port_specific_settings(
         self,
@@ -1147,12 +1399,14 @@ class VenueService:
         port_number = port_id.upper().replace('LAN', '')
 
         payload = {
-            "overwriteUntagId": untagged_vlan
+            "overwriteUntagId": untagged_vlan,
+            "overwriteType": "ACCESS"  # Set port as ACCESS (not TRUNK)
         }
 
         # Add vlan_members if specified (for trunk ports)
         if vlan_members:
             payload["overwriteVlanMembers"] = vlan_members
+            payload["overwriteType"] = "TRUNK"  # If vlan_members specified, use TRUNK
         else:
             # Set vlan_members to just the untagged VLAN for access port behavior
             payload["overwriteVlanMembers"] = str(untagged_vlan)

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
@@ -7,34 +7,93 @@ import type { JobResult } from "@/components/JobMonitorModal";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 // LAN Port configuration types
-type PortMode = 'match' | 'specific' | 'disable';
+type PortMode = 'ignore' | 'match' | 'specific' | 'disable' | 'uplink';  // 'uplink' means port is protected
 
 interface PortConfig {
   mode: PortMode;
   vlan?: number;
 }
 
+// Port config metadata from backend
+interface PortConfigMetadata {
+  model_uplink_ports: Record<string, string>;
+  model_port_counts: Record<string, number>;
+  configurable_models: string[];  // All models with configurable LAN ports
+  port_categories: {
+    lan1_uplink: string[];
+    lan2_uplink: string[];
+    lan3_uplink: string[];
+    lan5_uplink: string[];
+  };
+}
+
 interface ModelPortConfigs {
-  one_port: PortConfig[];   // Single-port models: LAN1
-  two_port: PortConfig[];   // H320/H350: LAN1, LAN2
-  four_port: PortConfig[];  // H510/H550: LAN1, LAN2, LAN3, LAN4
+  one_port_lan1_uplink: PortConfig[];  // 1-port models where LAN1 is uplink (R650, R750, etc.)
+  one_port_lan2_uplink: PortConfig[];  // 1-port models where LAN2 is uplink (R550, R560)
+  two_port: PortConfig[];              // H320/H350: LAN1, LAN2 (LAN3 is uplink - outside range)
+  four_port: PortConfig[];             // H510/H550/H670: LAN1-4 (LAN5 is uplink - outside range)
 }
 
 const DEFAULT_MODEL_PORT_CONFIGS: ModelPortConfigs = {
-  one_port: [
-    { mode: 'match' },
+  one_port_lan1_uplink: [
+    { mode: 'uplink' },  // LAN1 is uplink - protected
+    { mode: 'ignore' },  // LAN2 is access port - no changes by default
+  ],
+  one_port_lan2_uplink: [
+    { mode: 'ignore' },  // LAN1 is access port - no changes by default
+    { mode: 'uplink' },  // LAN2 is uplink - protected
   ],
   two_port: [
-    { mode: 'match' },
-    { mode: 'match' },
+    { mode: 'ignore' },  // LAN1 - no changes by default
+    { mode: 'ignore' },  // LAN2 - no changes by default
+    { mode: 'uplink' },  // LAN3 is uplink - protected (shown but disabled)
   ],
   four_port: [
-    { mode: 'match' },
-    { mode: 'match' },
-    { mode: 'match' },
-    { mode: 'match' },
+    { mode: 'ignore' },  // LAN1 - no changes by default
+    { mode: 'ignore' },  // LAN2 - no changes by default
+    { mode: 'ignore' },  // LAN3 - no changes by default
+    { mode: 'ignore' },  // LAN4 - no changes by default
+    { mode: 'uplink' },  // LAN5 is uplink - protected (shown but disabled)
   ],
 };
+
+interface LanPortConfig {
+  portId: string;      // e.g., "1", "2" or "LAN1", "LAN2"
+  enabled: boolean;
+  untagId: number | null;  // Untagged VLAN ID
+  vlanMembers: string;     // Tagged VLANs
+  type?: string;           // ACCESS, GENERAL, TRUNK
+}
+
+interface LanPortSettings {
+  poeMode: string | null;
+  poeOut: boolean;
+  useVenueSettings: boolean;
+  ports: LanPortConfig[];
+}
+
+interface LanPortStatus {
+  port?: string;      // Port ID like "LAN1"
+  id?: string;        // Alternative port ID
+  phyLink?: string;   // Physical link status: "Up", "Down"
+  physicalLink?: string;  // Alternative physical link field
+}
+
+interface ApDetail {
+  serial: string;
+  name: string;
+  model: string | null;
+  lan_port_statuses: LanPortStatus[];  // Live physical link status
+  lan_port_settings: LanPortSettings | null;  // VLAN/enabled configuration
+}
+
+// Venue-level default LAN port settings per AP model
+interface VenueModelLanPortSettings {
+  model: string;
+  poeMode: string | null;
+  poeOut: boolean;
+  lanPorts: LanPortConfig[];
+}
 
 interface AuditData {
   venue_id: string;
@@ -42,6 +101,7 @@ interface AuditData {
   total_ap_groups: number;
   total_aps: number;
   total_ssids: number;
+  venue_lan_port_settings: VenueModelLanPortSettings[];  // Venue-level defaults per model
   ap_groups: Array<{
     ap_group_id: string;
     ap_group_name: string;
@@ -51,10 +111,73 @@ interface AuditData {
     total_aps: number;
     ap_names: string[];
     ap_serials: string[];
+    aps: ApDetail[];  // Full AP details with LAN port statuses
     total_ssids: number;
     ssid_names: string[];
     ssids: any[];
   }>;
+}
+
+// Reusable component for port configuration dropdown
+interface PortConfigCellProps {
+  config: PortConfig | undefined;
+  onChange: (newConfig: PortConfig) => void;
+}
+
+function PortConfigCell({ config, onChange }: PortConfigCellProps) {
+  const mode = config?.mode || 'ignore';
+  const vlan = config?.vlan || 1;
+
+  const getSelectClassName = () => {
+    switch (mode) {
+      case 'disable':
+        return 'border-red-400 bg-red-50 text-red-700';
+      case 'ignore':
+        return 'border-gray-300 bg-gray-100 text-gray-500';
+      case 'match':
+        return 'border-green-400 bg-green-50 text-green-700';
+      case 'specific':
+        return 'border-blue-400 bg-blue-50 text-blue-700';
+      default:
+        return 'border-gray-300';
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <select
+        value={mode}
+        onChange={(e) => {
+          const newMode = e.target.value as PortMode;
+          onChange({
+            mode: newMode,
+            vlan: newMode === 'specific' ? vlan : undefined
+          });
+        }}
+        className={`text-xs border rounded px-1 py-1 w-20 ${getSelectClassName()}`}
+      >
+        <option value="ignore">Ignore</option>
+        <option value="match">Match</option>
+        <option value="specific">Specific</option>
+        <option value="disable">Disable</option>
+      </select>
+      {mode === 'specific' && (
+        <input
+          type="number"
+          min="1"
+          max="4094"
+          value={vlan}
+          onChange={(e) => {
+            onChange({
+              mode: 'specific',
+              vlan: parseInt(e.target.value) || 1
+            });
+          }}
+          className="w-14 text-xs border border-gray-300 rounded px-1 py-1"
+        />
+      )}
+    </div>
+  );
 }
 
 function PerUnitSSID() {
@@ -77,7 +200,9 @@ function PerUnitSSID() {
   // Configuration options
   const [venueId, setVenueId] = useState<string | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
-  const [apGroupPrefix, setApGroupPrefix] = useState("APG-");
+  const [apGroupPrefix, setApGroupPrefix] = useState("");
+  const [apGroupPostfix, setApGroupPostfix] = useState("");
+  const [nameConflictResolution, setNameConflictResolution] = useState<'keep' | 'overwrite'>('overwrite');
 
   // LAN port configuration options (Phase 5)
   const [configureLanPorts, setConfigureLanPorts] = useState(false);
@@ -88,6 +213,77 @@ function PerUnitSSID() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [auditError, setAuditError] = useState("");
+  const [venueDefaultsExpanded, setVenueDefaultsExpanded] = useState(false);  // Collapsed by default
+
+  // Venue defaults filters
+  const [filterEnvironment, setFilterEnvironment] = useState<'all' | 'indoor' | 'outdoor'>('all');
+  const [filterSeries, setFilterSeries] = useState<'all' | 'H' | 'R' | 'T'>('all');
+  const [filterWifi, setFilterWifi] = useState<'all' | '7' | '6E' | '6' | '5'>('all');
+
+  // Confirmation dialog for single-port models
+  const [showSinglePortConfirm, setShowSinglePortConfirm] = useState(false);
+  const [pendingSubmit, setPendingSubmit] = useState(false);
+
+  // Port config metadata from backend (single source of truth)
+  const [portConfigMetadata, setPortConfigMetadata] = useState<PortConfigMetadata | null>(null);
+  const [metadataLoading, setMetadataLoading] = useState(false);
+
+  // Fetch port config metadata from backend on mount
+  useEffect(() => {
+    const fetchPortConfigMetadata = async () => {
+      setMetadataLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/per-unit-ssid/port-config-metadata`, {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setPortConfigMetadata(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch port config metadata:", err);
+      } finally {
+        setMetadataLoading(false);
+      }
+    };
+    fetchPortConfigMetadata();
+  }, []);
+
+  // Helper to categorize AP models
+  const getModelInfo = (model: string) => {
+    const m = model.toUpperCase();
+
+    // Series (H, R, T)
+    const series = m.charAt(0) as 'H' | 'R' | 'T';
+
+    // Environment: T-series is outdoor, H/R are indoor
+    const environment: 'indoor' | 'outdoor' = series === 'T' ? 'outdoor' : 'indoor';
+
+    // WiFi generation based on model patterns
+    let wifi: '7' | '6E' | '6' | '5' = '6'; // default
+    if (m.includes('770') || m.includes('670') || m.includes('575') || m.includes('370')) {
+      wifi = '7';
+    } else if (m.includes('760') || m.includes('560')) {
+      wifi = '6E';
+    } else if (m.includes('850') || m.includes('750') || m.includes('650') || m.includes('550') || m.includes('350')) {
+      wifi = '6';
+    } else if (m.includes('710') || m.includes('610') || m.includes('510') || m.includes('320') || m.includes('720') || m.includes('310')) {
+      wifi = '5';
+    }
+
+    return { series, environment, wifi };
+  };
+
+  // Filter venue LAN port settings
+  const filteredVenueLanSettings = (auditData?.venue_lan_port_settings || []).filter(setting => {
+    const info = getModelInfo(setting.model);
+
+    if (filterEnvironment !== 'all' && info.environment !== filterEnvironment) return false;
+    if (filterSeries !== 'all' && info.series !== filterSeries) return false;
+    if (filterWifi !== 'all' && info.wifi !== filterWifi) return false;
+
+    return true;
+  });
 
   // Determine tenant ID (for MSP, it's null until explicitly set; for EC, use r1_tenant_id)
   const activeController = controllers.find(c => c.id === activeControllerId);
@@ -117,6 +313,36 @@ function PerUnitSSID() {
       return;
     }
 
+    // Confirmation for LAN port configuration
+    if (configureLanPorts) {
+      // Check if any ports are actually configured (not all ignore)
+      const allIgnore = [
+        modelPortConfigs.one_port_lan1_uplink[1]?.mode,
+        modelPortConfigs.one_port_lan2_uplink[0]?.mode,
+        ...modelPortConfigs.two_port.slice(0, 2).map(p => p?.mode),
+        ...modelPortConfigs.four_port.slice(0, 4).map(p => p?.mode),
+      ].every(m => m === 'ignore' || m === 'uplink' || !m);
+
+      if (allIgnore) {
+        setError("All LAN ports are set to 'Ignore'. Please configure at least one port to Match, Specific, or Disable.");
+        return;
+      }
+
+      let confirmMsg = 'You are about to configure LAN ports on APs with configurable ports.\n\n';
+      confirmMsg += 'Port configuration summary:\n';
+      confirmMsg += `• 1-Port (LAN1 uplink): LAN2=${modelPortConfigs.one_port_lan1_uplink[1]?.mode || 'ignore'}\n`;
+      confirmMsg += `• 1-Port (LAN2 uplink): LAN1=${modelPortConfigs.one_port_lan2_uplink[0]?.mode || 'ignore'}\n`;
+      confirmMsg += `• 2-Port (H320/H350/T750): LAN1=${modelPortConfigs.two_port[0]?.mode || 'ignore'}, LAN2=${modelPortConfigs.two_port[1]?.mode || 'ignore'}\n`;
+      confirmMsg += `• 4-Port (H510/H550/H670): ${modelPortConfigs.four_port.slice(0, 4).map((p, i) => `LAN${i+1}=${p?.mode || 'ignore'}`).join(', ')}\n\n`;
+      confirmMsg += 'Ports set to "Ignore" will not be modified.\n';
+      confirmMsg += 'Uplink ports are protected and will not be modified.\n\n';
+      confirmMsg += 'Continue with LAN port configuration?';
+
+      if (!window.confirm(confirmMsg)) {
+        return;
+      }
+    }
+
     setProcessing(true);
     setError("");
 
@@ -132,7 +358,7 @@ function PerUnitSSID() {
       // Parse header
       const headers = lines[0].split(',').map(h => h.trim());
       const requiredHeaders = ['unit_number', 'ssid_name', 'ssid_password', 'security_type', 'default_vlan'];
-      const optionalHeaders = ['ap_serial_or_name'];
+      const optionalHeaders = ['ap_serial_or_name', 'network_name'];
 
       // Validate required headers
       const hasAllRequired = requiredHeaders.every(h => headers.includes(h));
@@ -161,6 +387,7 @@ function PerUnitSSID() {
             unit_number: unitNumber,
             ap_identifiers: [],
             ssid_name: row.ssid_name,
+            network_name: row.network_name || null,  // Optional: internal R1 name (defaults to ssid_name)
             ssid_password: row.ssid_password,
             security_type: row.security_type || 'WPA3',
             default_vlan: row.default_vlan || '1'
@@ -191,6 +418,8 @@ function PerUnitSSID() {
           venue_id: venueId,
           units: units,
           ap_group_prefix: apGroupPrefix,
+          ap_group_postfix: apGroupPostfix,
+          name_conflict_resolution: nameConflictResolution,
           configure_lan_ports: configureLanPorts,
           model_port_configs: modelPortConfigs
         }),
@@ -345,10 +574,10 @@ function PerUnitSSID() {
         </p>
         <div className="text-xs space-y-1 mb-3">
           <div><strong>Required:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">unit_number, ssid_name, ssid_password, security_type, default_vlan</code></div>
-          <div><strong>Optional:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">ap_serial_or_name</code> <span className="text-gray-500">(can be omitted to only create SSIDs and AP Groups)</span></div>
+          <div><strong>Optional:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">ap_serial_or_name, network_name</code></div>
         </div>
         <p className="text-xs text-gray-600 mb-3 italic">
-          💡 <strong>Tip:</strong> Multiple rows with the same <code className="bg-gray-100 px-1 rounded">unit_number</code> will be grouped into the same AP Group. You can omit <code className="bg-gray-100 px-1 rounded">ap_serial_or_name</code> entirely if you just want to pre-create SSIDs and AP Groups.
+          💡 <strong>Tip:</strong> Multiple rows with the same <code className="bg-gray-100 px-1 rounded">unit_number</code> will be grouped into the same AP Group. <code className="bg-gray-100 px-1 rounded">network_name</code> sets the internal R1 name (defaults to <code className="bg-gray-100 px-1 rounded">ssid_name</code> if omitted).
         </p>
         <div className="flex gap-3">
           <button
@@ -429,20 +658,54 @@ function PerUnitSSID() {
           </div>
         )}
 
-        {/* AP Group Prefix Input */}
+        {/* AP Group Naming (Prefix + Postfix) */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            AP Group Prefix
+            AP Group Naming
           </label>
-          <input
-            type="text"
-            value={apGroupPrefix}
-            onChange={(e) => setApGroupPrefix(e.target.value)}
-            placeholder="APG-"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={apGroupPrefix}
+              onChange={(e) => setApGroupPrefix(e.target.value)}
+              placeholder="Prefix"
+              className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+            <span className="text-gray-500 font-mono bg-gray-100 px-3 py-2 rounded border border-gray-200">
+              {'{unit}'}
+            </span>
+            <input
+              type="text"
+              value={apGroupPostfix}
+              onChange={(e) => setApGroupPostfix(e.target.value)}
+              placeholder="Postfix"
+              className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+            <span className="text-gray-400 mx-2">=</span>
+            <span className="text-sm font-mono bg-blue-50 text-blue-700 px-3 py-2 rounded border border-blue-200">
+              {apGroupPrefix || ''}101{apGroupPostfix || ''}
+            </span>
+          </div>
           <p className="text-xs text-gray-500 mt-1">
-            Prefix for AP Group names (e.g., "APG-" creates "APG-101", "APG-102")
+            Optional prefix and/or postfix for AP Group names. Leave blank to use just the unit number.
+          </p>
+        </div>
+
+        {/* Network Name Conflict Resolution */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Network Name Conflict
+          </label>
+          <select
+            value={nameConflictResolution}
+            onChange={(e) => setNameConflictResolution(e.target.value as 'keep' | 'overwrite')}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="keep">Keep existing R1 name</option>
+            <option value="overwrite">Overwrite with ruckus.tools name</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            When SSID exists but internal network name differs: keep R1's name or update to match rtools CSV
           </p>
         </div>
 
@@ -458,186 +721,170 @@ function PerUnitSSID() {
             />
             <div className="flex-1">
               <label htmlFor="configureLanPorts" className="block text-sm font-medium text-gray-700 cursor-pointer">
-                Configure AP LAN Ports (Wall-Plate APs)
+                Configure AP LAN Ports
               </label>
               <p className="text-xs text-gray-500 mt-1">
-                Set LAN port VLANs on H-series wall-plate APs to match each unit's <code className="bg-gray-200 px-1 rounded">default_vlan</code>
+                Set LAN port VLANs on APs to match each unit's <code className="bg-gray-200 px-1 rounded">default_vlan</code>. Supports H-series, R-series, and T-series with configurable ports.
               </p>
 
               {configureLanPorts && (
                 <div className="mt-3">
                   <label className="block text-xs font-medium text-gray-600 mb-2">
                     Port Configuration Matrix
+                    {metadataLoading && <span className="ml-2 text-gray-400">(loading...)</span>}
                   </label>
 
-                  <div className="bg-white rounded border border-gray-200 overflow-hidden">
-                    <table className="w-full text-sm">
+                  <div className="bg-white rounded border border-gray-200 overflow-hidden overflow-x-auto">
+                    <table className="w-full text-sm min-w-[600px]">
                       <thead className="bg-gray-100">
                         <tr>
-                          <th className="px-3 py-2 text-left font-medium text-gray-700 w-36">Model</th>
-                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN1</th>
-                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN2</th>
-                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN3</th>
-                          <th className="px-3 py-2 text-center font-medium text-gray-700">LAN4</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-700 w-44">Model Type</th>
+                          <th className="px-2 py-2 text-center font-medium text-gray-700 w-20">LAN1</th>
+                          <th className="px-2 py-2 text-center font-medium text-gray-700 w-20">LAN2</th>
+                          <th className="px-2 py-2 text-center font-medium text-gray-700 w-20">LAN3</th>
+                          <th className="px-2 py-2 text-center font-medium text-gray-700 w-20">LAN4</th>
+                          <th className="px-2 py-2 text-center font-medium text-gray-700 w-20">LAN5</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {/* 1-Port Models Row */}
-                        <tr className="bg-white border-b">
+                        {/* Row 1: 1-Port Models with LAN1 as UPLINK (R650, R750, etc.) */}
+                        <tr className="bg-amber-50 border-b border-amber-200">
                           <td className="px-3 py-2 font-medium text-gray-700">
-                            <div className="text-sm">1-Port</div>
-                            <div className="text-xs text-gray-500">Single LAN</div>
+                            <div className="text-sm">1-Port (LAN1 Uplink)</div>
+                            <div className="text-xs text-gray-500">
+                              {portConfigMetadata?.port_categories.lan1_uplink.join(', ') || 'R650, R750, R850, T350...'}
+                            </div>
                           </td>
+                          {/* LAN1 = UPLINK */}
                           <td className="px-2 py-2 text-center">
-                            <select
-                              value={modelPortConfigs.one_port[0]?.mode || 'match'}
-                              onChange={(e) => {
+                            <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
+                              UPLINK
+                            </span>
+                          </td>
+                          {/* LAN2 = Access Port */}
+                          <td className="px-2 py-2 text-center">
+                            <PortConfigCell
+                              config={modelPortConfigs.one_port_lan1_uplink[1]}
+                              onChange={(newConfig) => {
                                 const updated = { ...modelPortConfigs };
-                                updated.one_port = [...updated.one_port];
-                                updated.one_port[0] = {
-                                  ...updated.one_port[0],
-                                  mode: e.target.value as PortMode,
-                                  vlan: e.target.value === 'specific' ? (updated.one_port[0]?.vlan || 1) : undefined
-                                };
+                                updated.one_port_lan1_uplink = [...updated.one_port_lan1_uplink];
+                                updated.one_port_lan1_uplink[1] = newConfig;
                                 setModelPortConfigs(updated);
                               }}
-                              className="text-xs border border-gray-300 rounded px-1 py-1 w-20"
-                            >
-                              <option value="match">Match</option>
-                              <option value="specific">Specific</option>
-                              <option value="disable">Disable</option>
-                            </select>
-                            {modelPortConfigs.one_port[0]?.mode === 'specific' && (
-                              <input
-                                type="number"
-                                min="1"
-                                max="4094"
-                                value={modelPortConfigs.one_port[0]?.vlan || 1}
-                                onChange={(e) => {
-                                  const updated = { ...modelPortConfigs };
-                                  updated.one_port = [...updated.one_port];
-                                  updated.one_port[0] = {
-                                    ...updated.one_port[0],
-                                    vlan: parseInt(e.target.value) || 1
-                                  };
-                                  setModelPortConfigs(updated);
-                                }}
-                                className="ml-1 w-14 text-xs border border-gray-300 rounded px-1 py-1"
-                              />
-                            )}
+                            />
                           </td>
-                          {/* Empty cells for LAN2/LAN3/LAN4 */}
                           <td className="px-2 py-2 text-center text-gray-300">—</td>
                           <td className="px-2 py-2 text-center text-gray-300">—</td>
                           <td className="px-2 py-2 text-center text-gray-300">—</td>
                         </tr>
 
-                        {/* 2-Port Models Row (H320/H350) */}
+                        {/* Row 2: 1-Port Models with LAN2 as UPLINK (R550, R560) */}
+                        <tr className="bg-amber-50 border-b border-amber-200">
+                          <td className="px-3 py-2 font-medium text-gray-700">
+                            <div className="text-sm">1-Port (LAN2 Uplink)</div>
+                            <div className="text-xs text-gray-500">
+                              {portConfigMetadata?.port_categories.lan2_uplink.join(', ') || 'R550, R560'}
+                            </div>
+                          </td>
+                          {/* LAN1 = Access Port */}
+                          <td className="px-2 py-2 text-center">
+                            <PortConfigCell
+                              config={modelPortConfigs.one_port_lan2_uplink[0]}
+                              onChange={(newConfig) => {
+                                const updated = { ...modelPortConfigs };
+                                updated.one_port_lan2_uplink = [...updated.one_port_lan2_uplink];
+                                updated.one_port_lan2_uplink[0] = newConfig;
+                                setModelPortConfigs(updated);
+                              }}
+                            />
+                          </td>
+                          {/* LAN2 = UPLINK */}
+                          <td className="px-2 py-2 text-center">
+                            <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
+                              UPLINK
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                          <td className="px-2 py-2 text-center text-gray-300">—</td>
+                        </tr>
+
+                        {/* Row 3: 2-Port Models (H320/H350/T750) - LAN3 is uplink */}
                         <tr className="bg-gray-50 border-b">
                           <td className="px-3 py-2 font-medium text-gray-700">
-                            <div className="text-sm">2-Port</div>
-                            <div className="text-xs text-gray-500">H320, H350</div>
+                            <div className="text-sm">2-Port Models</div>
+                            <div className="text-xs text-gray-500">
+                              {portConfigMetadata?.port_categories.lan3_uplink.join(', ') || 'H320, H350, T750'}
+                            </div>
                           </td>
+                          {/* LAN1, LAN2 = Access Ports */}
                           {[0, 1].map((portIdx) => (
                             <td key={portIdx} className="px-2 py-2 text-center">
-                              <select
-                                value={modelPortConfigs.two_port[portIdx]?.mode || 'match'}
-                                onChange={(e) => {
+                              <PortConfigCell
+                                config={modelPortConfigs.two_port[portIdx]}
+                                onChange={(newConfig) => {
                                   const updated = { ...modelPortConfigs };
                                   updated.two_port = [...updated.two_port];
-                                  updated.two_port[portIdx] = {
-                                    ...updated.two_port[portIdx],
-                                    mode: e.target.value as PortMode,
-                                    vlan: e.target.value === 'specific' ? (updated.two_port[portIdx]?.vlan || 1) : undefined
-                                  };
+                                  updated.two_port[portIdx] = newConfig;
                                   setModelPortConfigs(updated);
                                 }}
-                                className="text-xs border border-gray-300 rounded px-1 py-1 w-20"
-                              >
-                                <option value="match">Match</option>
-                                <option value="specific">Specific</option>
-                                <option value="disable">Disable</option>
-                              </select>
-                              {modelPortConfigs.two_port[portIdx]?.mode === 'specific' && (
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="4094"
-                                  value={modelPortConfigs.two_port[portIdx]?.vlan || 1}
-                                  onChange={(e) => {
-                                    const updated = { ...modelPortConfigs };
-                                    updated.two_port = [...updated.two_port];
-                                    updated.two_port[portIdx] = {
-                                      ...updated.two_port[portIdx],
-                                      vlan: parseInt(e.target.value) || 1
-                                    };
-                                    setModelPortConfigs(updated);
-                                  }}
-                                  className="ml-1 w-14 text-xs border border-gray-300 rounded px-1 py-1"
-                                />
-                              )}
+                              />
                             </td>
                           ))}
-                          {/* Empty cells for LAN3/LAN4 */}
+                          {/* LAN3 = UPLINK */}
+                          <td className="px-2 py-2 text-center">
+                            <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
+                              UPLINK
+                            </span>
+                          </td>
                           <td className="px-2 py-2 text-center text-gray-300">—</td>
                           <td className="px-2 py-2 text-center text-gray-300">—</td>
                         </tr>
 
-                        {/* 4-Port Models Row (H510/H550/H670) */}
+                        {/* Row 4: 4-Port Models (H510/H550/H670) - LAN5 is uplink */}
                         <tr className="bg-white">
                           <td className="px-3 py-2 font-medium text-gray-700">
-                            <div className="text-sm">4-Port</div>
-                            <div className="text-xs text-gray-500">H510, H550, H670</div>
+                            <div className="text-sm">4-Port Models</div>
+                            <div className="text-xs text-gray-500">
+                              {portConfigMetadata?.port_categories.lan5_uplink.join(', ') || 'H510, H550, H670'}
+                            </div>
                           </td>
+                          {/* LAN1-4 = Access Ports */}
                           {[0, 1, 2, 3].map((portIdx) => (
                             <td key={portIdx} className="px-2 py-2 text-center">
-                              <select
-                                value={modelPortConfigs.four_port[portIdx]?.mode || 'match'}
-                                onChange={(e) => {
+                              <PortConfigCell
+                                config={modelPortConfigs.four_port[portIdx]}
+                                onChange={(newConfig) => {
                                   const updated = { ...modelPortConfigs };
                                   updated.four_port = [...updated.four_port];
-                                  updated.four_port[portIdx] = {
-                                    ...updated.four_port[portIdx],
-                                    mode: e.target.value as PortMode,
-                                    vlan: e.target.value === 'specific' ? (updated.four_port[portIdx]?.vlan || 1) : undefined
-                                  };
+                                  updated.four_port[portIdx] = newConfig;
                                   setModelPortConfigs(updated);
                                 }}
-                                className="text-xs border border-gray-300 rounded px-1 py-1 w-20"
-                              >
-                                <option value="match">Match</option>
-                                <option value="specific">Specific</option>
-                                <option value="disable">Disable</option>
-                              </select>
-                              {modelPortConfigs.four_port[portIdx]?.mode === 'specific' && (
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="4094"
-                                  value={modelPortConfigs.four_port[portIdx]?.vlan || 1}
-                                  onChange={(e) => {
-                                    const updated = { ...modelPortConfigs };
-                                    updated.four_port = [...updated.four_port];
-                                    updated.four_port[portIdx] = {
-                                      ...updated.four_port[portIdx],
-                                      vlan: parseInt(e.target.value) || 1
-                                    };
-                                    setModelPortConfigs(updated);
-                                  }}
-                                  className="ml-1 w-14 text-xs border border-gray-300 rounded px-1 py-1"
-                                />
-                              )}
+                              />
                             </td>
                           ))}
+                          {/* LAN5 = UPLINK */}
+                          <td className="px-2 py-2 text-center">
+                            <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded border border-blue-300">
+                              UPLINK
+                            </span>
+                          </td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
 
-                  <div className="mt-2 text-xs text-gray-500">
-                    <strong>Match:</strong> Uses unit's <code className="bg-gray-200 px-1 rounded">default_vlan</code> •
-                    <strong className="ml-2">Specific:</strong> Custom VLAN •
-                    <strong className="ml-2">Disable:</strong> Disable port via API
+                  <div className="mt-2 text-xs text-gray-500 space-y-1">
+                    <div>
+                      <strong>Match:</strong> Uses unit's <code className="bg-gray-200 px-1 rounded">default_vlan</code> •
+                      <strong className="ml-2">Specific:</strong> Custom VLAN •
+                      <strong className="ml-2">Disable:</strong> Disable port via API •
+                      <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-bold">UPLINK</span>
+                      <span className="ml-1">Protected (not configurable)</span>
+                    </div>
+                    <div className="text-gray-400">
+                      <strong>0-Port models</strong> (e.g., ceiling APs with only uplink) have no configurable LAN ports and are skipped.
+                    </div>
                   </div>
                 </div>
               )}
@@ -653,7 +900,7 @@ function PerUnitSSID() {
           <textarea
             value={csvInput}
             onChange={handleCsvInputChange}
-            placeholder="unit_number,ap_serial_or_name,ssid_name,ssid_password,security_type,default_vlan&#10;101,AP-101-Living,Unit-101,SecurePass101!,WPA3,10"
+            placeholder="unit_number,ap_serial_or_name,ssid_name,network_name,ssid_password,security_type,default_vlan&#10;101,AP-101-Living,MyWiFi,Unit-101-Network,SecurePass101!,WPA3,10"
             className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
           />
         </div>
@@ -841,6 +1088,113 @@ function PerUnitSSID() {
                 </div>
               </div>
 
+              {/* Venue Default LAN Port Settings (Collapsible) */}
+              {auditData.venue_lan_port_settings && auditData.venue_lan_port_settings.length > 0 && (
+                <div className="mb-6 border border-amber-200 bg-amber-50 rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setVenueDefaultsExpanded(!venueDefaultsExpanded)}
+                    className="w-full p-4 flex items-center justify-between hover:bg-amber-100 transition-colors"
+                  >
+                    <h4 className="text-lg font-semibold text-amber-800 flex items-center gap-2">
+                      <span>{venueDefaultsExpanded ? '▼' : '▶'}</span>
+                      <span>Venue Default LAN Port Settings</span>
+                      <span className="text-xs font-normal text-amber-600">
+                        ({auditData.venue_lan_port_settings.length} models)
+                      </span>
+                    </h4>
+                    <span className="text-xs text-amber-600">
+                      {venueDefaultsExpanded ? 'Click to collapse' : 'Click to expand'}
+                    </span>
+                  </button>
+                  {venueDefaultsExpanded && (
+                    <div className="p-4 pt-0">
+                      <p className="text-xs text-amber-600 mb-3">These settings are inherited by APs unless overridden at the AP level.</p>
+
+                      {/* Filters */}
+                      <div className="flex flex-wrap gap-4 mb-4 p-3 bg-white rounded border border-amber-100">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-600">Environment:</span>
+                          <div className="flex gap-1">
+                            {(['all', 'indoor', 'outdoor'] as const).map(env => (
+                              <button key={env} onClick={() => setFilterEnvironment(env)} className={`px-2 py-1 text-xs rounded ${filterEnvironment === env ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                                {env === 'all' ? 'All' : env.charAt(0).toUpperCase() + env.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-600">Series:</span>
+                          <div className="flex gap-1">
+                            {(['all', 'H', 'R', 'T'] as const).map(s => (
+                              <button key={s} onClick={() => setFilterSeries(s)} className={`px-2 py-1 text-xs rounded ${filterSeries === s ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                                {s === 'all' ? 'All' : `${s}-series`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-600">WiFi:</span>
+                          <div className="flex gap-1">
+                            {(['all', '7', '6E', '6', '5'] as const).map(w => (
+                              <button key={w} onClick={() => setFilterWifi(w)} className={`px-2 py-1 text-xs rounded ${filterWifi === w ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                                {w === 'all' ? 'All' : `WiFi ${w}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center ml-auto">
+                          <span className="text-xs text-gray-500">Showing {filteredVenueLanSettings.length} of {auditData.venue_lan_port_settings.length}</span>
+                        </div>
+                      </div>
+
+                      {filteredVenueLanSettings.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic text-center py-4">No models match filters.</p>
+                      ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {filteredVenueLanSettings.map((modelSettings, idx) => {
+                          const info = getModelInfo(modelSettings.model);
+                          return (
+                          <div key={idx} className="bg-white border border-amber-100 rounded p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-semibold text-gray-800">{modelSettings.model}</span>
+                              <span className="text-[10px] text-gray-400">{info.environment} / WiFi {info.wifi}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {(modelSettings.lanPorts || []).map((port: LanPortConfig, pIdx: number) => (
+                                <span
+                                  key={pIdx}
+                                  className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                                    port.enabled
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-red-100 text-red-800'
+                                  }`}
+                                  title={port.enabled
+                                    ? `Port ${port.portId}: VLAN ${port.untagId || 'default'} (${port.type || 'ACCESS'})`
+                                    : `Port ${port.portId}: Disabled`}
+                                >
+                                  P{port.portId}
+                                  {port.enabled && port.untagId && (
+                                    <span className="ml-0.5">:{port.untagId}</span>
+                                  )}
+                                  {!port.enabled && (
+                                    <span className="ml-0.5">x</span>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                            {modelSettings.poeMode && (
+                              <div className="text-xs text-gray-500 mt-1">PoE: {modelSettings.poeMode}</div>
+                            )}
+                          </div>
+                          );
+                        })}
+                      </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* AP Groups List */}
               <div className="space-y-4">
                 <h4 className="text-lg font-semibold text-gray-800 mb-3">
@@ -878,7 +1232,7 @@ function PerUnitSSID() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4 mt-3">
+                      <div className="grid grid-cols-3 gap-4 mt-3">
                         {/* APs Column */}
                         <div>
                           <h6 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
@@ -890,20 +1244,102 @@ function PerUnitSSID() {
                             </p>
                           ) : (
                             <ul className="space-y-1">
-                              {group.ap_names.map((apName, idx) => {
-                                const serial = group.ap_serials[idx];
-                                const showSerial = serial && serial !== apName;
+                              {(group.aps || []).map((ap, idx) => {
+                                const showSerial = ap.serial && ap.serial !== ap.name;
                                 return (
                                   <li
                                     key={idx}
-                                    className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded"
+                                    className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded flex items-center justify-between"
                                   >
-                                    {apName}
-                                    {showSerial && (
-                                      <span className="text-gray-400 ml-1">
-                                        ({serial})
+                                    <span>
+                                      {ap.name}
+                                      {showSerial && (
+                                        <span className="text-gray-400 ml-1">
+                                          ({ap.serial})
+                                        </span>
+                                      )}
+                                    </span>
+                                    {ap.model && (
+                                      <span className="text-gray-400 text-[10px] ml-1">
+                                        {ap.model}
                                       </span>
                                     )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
+
+                        {/* Wired Ports Column */}
+                        <div>
+                          <h6 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                            🔌 Wired Ports
+                          </h6>
+                          {group.total_aps === 0 ? (
+                            <p className="text-xs text-gray-500 italic">
+                              No APs
+                            </p>
+                          ) : (
+                            <ul className="space-y-1">
+                              {(group.aps || []).map((ap, idx) => {
+                                const portSettings = ap.lan_port_settings;
+                                const portStatuses = ap.lan_port_statuses || [];
+                                const ports = portSettings?.ports || [];
+
+                                // Helper to get physical link status for a port
+                                const getPhyLink = (portId: string) => {
+                                  const portNum = portId.replace('LAN', '');
+                                  const status = portStatuses.find(
+                                    (s: LanPortStatus) => (s.port || s.id) === portNum || (s.port || s.id) === portId
+                                  );
+                                  return status?.phyLink || status?.physicalLink || null;
+                                };
+
+                                if (ports.length === 0) {
+                                  return (
+                                    <li
+                                      key={idx}
+                                      className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded italic"
+                                    >
+                                      No LAN ports
+                                    </li>
+                                  );
+                                }
+                                return (
+                                  <li
+                                    key={idx}
+                                    className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded flex items-center gap-1 flex-wrap"
+                                  >
+                                    {ports.map((port: LanPortConfig, pIdx: number) => {
+                                      const phyLink = getPhyLink(port.portId);
+                                      const isUp = phyLink?.toLowerCase() === 'up';
+                                      return (
+                                        <span
+                                          key={pIdx}
+                                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                            !port.enabled
+                                              ? 'bg-red-100 text-red-800'
+                                              : isUp
+                                                ? 'bg-green-100 text-green-800 ring-1 ring-green-400'
+                                                : 'bg-gray-100 text-gray-700'
+                                          }`}
+                                          title={`${port.portId}: ${!port.enabled ? 'Disabled' : `VLAN ${port.untagId || 'default'}${port.vlanMembers ? ` (tagged: ${port.vlanMembers})` : ''}`}${phyLink ? ` | Link: ${phyLink}` : ''}`}
+                                        >
+                                          {/* Physical link indicator */}
+                                          {phyLink && (
+                                            <span className={`w-1.5 h-1.5 rounded-full mr-1 ${isUp ? 'bg-green-500' : 'bg-gray-400'}`} />
+                                          )}
+                                          {port.portId.replace('LAN', 'P')}
+                                          {port.enabled && port.untagId && (
+                                            <span className="ml-0.5">:{port.untagId}</span>
+                                          )}
+                                          {!port.enabled && (
+                                            <span className="ml-0.5">x</span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
                                   </li>
                                 );
                               })}

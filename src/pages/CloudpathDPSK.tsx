@@ -51,7 +51,7 @@ function CloudpathDPSK() {
   const [groupByVlan, setGroupByVlan] = useState(false);
   const [includeAdaptivePolicySets, setIncludeAdaptivePolicySets] = useState(false);
   const [simulateDelay, setSimulateDelay] = useState(false);
-  const [expiredDpskHandling, setExpiredDpskHandling] = useState<"renew" | "skip">("renew");
+  const [expiredDpskHandling, setExpiredDpskHandling] = useState<"no_expiration" | "renew" | "skip">("no_expiration");
 
   // Job monitoring modal
   const [showJobModal, setShowJobModal] = useState(false);
@@ -453,6 +453,19 @@ function CloudpathDPSK() {
                 Expired DPSK Handling
               </label>
               <div className="space-y-2 ml-4">
+                <label className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    checked={expiredDpskHandling === "no_expiration"}
+                    onChange={() => setExpiredDpskHandling("no_expiration")}
+                    disabled={processing}
+                    className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">Import without expiration</span>
+                    <p className="text-xs text-gray-500">Import expired DPSKs with no expiration date (never expire)</p>
+                  </div>
+                </label>
                 <label className="flex items-center gap-3">
                   <input
                     type="radio"

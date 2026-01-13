@@ -35,7 +35,8 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
     venue_id = context.get('venue_id')
     tenant_id = context.get('tenant_id')
-    ap_group_prefix = context.get('ap_group_prefix', 'APGroup-')
+    ap_group_prefix = context.get('ap_group_prefix', '')
+    ap_group_postfix = context.get('ap_group_postfix', '')
     r1_client = context.get('r1_client')
     event_publisher = context.get('event_publisher')
     job_id = context.get('job_id')
@@ -70,7 +71,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
     for unit in units:
         unit_number = unit.get('unit_number')
-        ap_group_name = f"{ap_group_prefix}{unit_number}"
+        ap_group_name = f"{ap_group_prefix}{unit_number}{ap_group_postfix}"
 
         logger.info(f"    [{unit_number}] Checking/creating AP Group: {ap_group_name}")
         await emit_message(f"[{unit_number}] Checking AP Group '{ap_group_name}'...", "info")

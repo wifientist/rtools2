@@ -6,7 +6,7 @@ Defines the workflow for configuring per-unit SSIDs in RuckusONE:
 2. Activate SSIDs on venue
 3. Create AP Groups for each unit
 4. Process units (find APs, assign to groups, activate SSIDs on groups)
-5. (Optional) Configure LAN ports on wall-plate APs
+5. (Optional) Configure LAN ports on APs with configurable ports
 """
 
 from typing import List

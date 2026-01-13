@@ -15,7 +15,7 @@ import uuid
 import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 
 from dependencies import get_db, get_current_user
@@ -49,24 +49,30 @@ router = APIRouter(
 # ==================== Request/Response Models ====================
 
 class PortConfig(BaseModel):
-    """Configuration for a single LAN port on wall-plate APs"""
-    mode: str = Field(default="match", description="Port mode: 'match' (use unit VLAN), 'specific' (custom VLAN), 'disable' (disable port)")
+    """Configuration for a single LAN port on APs with configurable LAN ports"""
+    mode: str = Field(default="ignore", description="Port mode: 'ignore' (no changes), 'match' (use unit VLAN), 'specific' (custom VLAN), 'disable' (disable port)")
     vlan: Optional[int] = Field(default=None, description="Custom VLAN ID when mode is 'specific'")
 
 
 class ModelPortConfigs(BaseModel):
     """Port configurations organized by AP model type"""
-    one_port: List[PortConfig] = Field(
-        default_factory=lambda: [PortConfig(mode="match")],
-        description="Config for 1-port models: LAN1"
+    # 1-port models split by uplink location
+    one_port_lan1_uplink: List[PortConfig] = Field(
+        default_factory=lambda: [PortConfig(mode="uplink"), PortConfig(mode="ignore")],
+        description="Config for 1-port models where LAN1 is uplink (R650, R750, etc.): [LAN1=uplink, LAN2=access]"
     )
+    one_port_lan2_uplink: List[PortConfig] = Field(
+        default_factory=lambda: [PortConfig(mode="ignore"), PortConfig(mode="uplink")],
+        description="Config for 1-port models where LAN2 is uplink (R550, R560): [LAN1=access, LAN2=uplink]"
+    )
+    # 2-port and 4-port models (wall-plate H-series and outdoor T750)
     two_port: List[PortConfig] = Field(
-        default_factory=lambda: [PortConfig(mode="match"), PortConfig(mode="match")],
-        description="Config for 2-port models (H320/H350): LAN1, LAN2"
+        default_factory=lambda: [PortConfig(mode="ignore"), PortConfig(mode="ignore"), PortConfig(mode="uplink")],
+        description="Config for 2-port models (H320/H350): LAN1, LAN2, LAN3=uplink"
     )
     four_port: List[PortConfig] = Field(
-        default_factory=lambda: [PortConfig(mode="match"), PortConfig(mode="match"), PortConfig(mode="match"), PortConfig(mode="match")],
-        description="Config for 4-port models (H510/H550): LAN1-LAN4"
+        default_factory=lambda: [PortConfig(mode="ignore"), PortConfig(mode="ignore"), PortConfig(mode="ignore"), PortConfig(mode="ignore"), PortConfig(mode="uplink")],
+        description="Config for 4-port models (H510/H550/H670): LAN1-4, LAN5=uplink"
     )
 
 
@@ -74,7 +80,8 @@ class UnitConfig(BaseModel):
     """Configuration for a single unit"""
     unit_number: str = Field(..., description="Unit number (e.g., '101', '102')")
     ap_identifiers: List[str] = Field(default_factory=list, description="List of AP serial numbers or names in this unit")
-    ssid_name: str = Field(..., description="SSID name for this unit")
+    ssid_name: str = Field(..., description="SSID broadcast name for this unit (what clients see)")
+    network_name: Optional[str] = Field(default=None, description="Internal network name in R1 (defaults to ssid_name if not provided)")
     ssid_password: str = Field(..., description="Unique password for this unit's SSID")
     security_type: str = Field(default="WPA3", description="Security type: WPA2, WPA3, or WPA2/WPA3")
     default_vlan: str = Field(default="1", description="Default VLAN ID for this SSID (e.g., '1', '10', '100')")
@@ -86,9 +93,15 @@ class PerUnitSSIDRequest(BaseModel):
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
     venue_id: str = Field(..., description="Venue ID where APs are located")
     units: List[UnitConfig] = Field(..., description="List of unit configurations")
-    ap_group_prefix: str = Field(default="APGroup-", description="Prefix for AP group names")
-    # Phase 5: LAN port configuration for wall-plate APs
-    configure_lan_ports: bool = Field(default=False, description="Configure LAN port VLANs on H-series wall-plate APs")
+    ap_group_prefix: str = Field(default="", description="Prefix for AP group names (e.g., 'APG-' creates 'APG-101')")
+    ap_group_postfix: str = Field(default="", description="Postfix for AP group names (e.g., '-APG' creates '101-APG')")
+    # SSID/Network name conflict resolution
+    name_conflict_resolution: Literal['keep', 'overwrite'] = Field(
+        default='overwrite',
+        description="When SSID exists but network name differs: 'keep' (use existing R1 name) or 'overwrite' (update to ruckus.tools name)"
+    )
+    # Phase 5: LAN port configuration for APs with configurable ports
+    configure_lan_ports: bool = Field(default=False, description="Configure LAN port VLANs on APs with configurable LAN ports")
     model_port_configs: ModelPortConfigs = Field(
         default_factory=ModelPortConfigs,
         description="LAN port configuration matrix organized by model type (2-port vs 4-port)"
@@ -116,6 +129,7 @@ class VenueAuditResponse(BaseModel):
     total_ap_groups: int
     total_aps: int
     total_ssids: int
+    venue_lan_port_settings: List[Dict[str, Any]] = []  # Venue-level default LAN port settings per model
     ap_groups: List[Dict[str, Any]]
 
 
@@ -265,12 +279,16 @@ async def configure_per_unit_ssids(
         tenant_id=tenant_id,
         options={
             'ap_group_prefix': request.ap_group_prefix,
+            'ap_group_postfix': request.ap_group_postfix,
+            'name_conflict_resolution': request.name_conflict_resolution,
             'configure_lan_ports': request.configure_lan_ports,
             'model_port_configs': model_port_configs_data
         },
         input_data={
             'units': units_data,
             'ap_group_prefix': request.ap_group_prefix,
+            'ap_group_postfix': request.ap_group_postfix,
+            'name_conflict_resolution': request.name_conflict_resolution,
             'configure_lan_ports': request.configure_lan_ports,
             'model_port_configs': model_port_configs_data
         },
@@ -353,6 +371,7 @@ async def audit_venue(
             total_ap_groups=summary['total_ap_groups'],
             total_aps=summary['total_aps'],
             total_ssids=summary['total_ssids'],
+            venue_lan_port_settings=summary.get('venue_lan_port_settings', []),
             ap_groups=summary['ap_groups']
         )
 
@@ -364,3 +383,55 @@ async def audit_venue(
             status_code=500,
             detail=f"Failed to audit venue: {str(e)}"
         )
+
+
+@router.get("/port-config-metadata")
+async def get_port_config_metadata(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get LAN port configuration metadata.
+
+    Returns the authoritative mapping of:
+    - MODEL_UPLINK_PORTS: Which port is the uplink for each AP model
+    - MODEL_PORT_COUNTS: How many configurable LAN ports each model has
+
+    This endpoint is the single source of truth for port configuration,
+    used by the frontend to render the port configuration UI correctly.
+    """
+    from routers.per_unit_ssid.phases.configure_lan_ports import (
+        MODEL_UPLINK_PORTS,
+        MODEL_PORT_COUNTS,
+    )
+
+    # Group models by their uplink port for easier frontend rendering
+    models_by_uplink = {}
+    for model, uplink_port in MODEL_UPLINK_PORTS.items():
+        if uplink_port not in models_by_uplink:
+            models_by_uplink[uplink_port] = []
+        models_by_uplink[uplink_port].append(model)
+
+    # Group models by port count
+    models_by_port_count = {}
+    for model, count in MODEL_PORT_COUNTS.items():
+        if count not in models_by_port_count:
+            models_by_port_count[count] = []
+        models_by_port_count[count].append(model)
+
+    # All models in MODEL_PORT_COUNTS have configurable ports
+    configurable_models = list(MODEL_PORT_COUNTS.keys())
+
+    return {
+        "model_uplink_ports": MODEL_UPLINK_PORTS,
+        "model_port_counts": MODEL_PORT_COUNTS,
+        "configurable_models": configurable_models,  # Replaces wall_plate_models
+        "models_by_uplink": models_by_uplink,
+        "models_by_port_count": models_by_port_count,
+        # Derived info for frontend rendering
+        "port_categories": {
+            "lan1_uplink": [m for m, p in MODEL_UPLINK_PORTS.items() if p == "LAN1"],
+            "lan2_uplink": [m for m, p in MODEL_UPLINK_PORTS.items() if p == "LAN2"],
+            "lan3_uplink": [m for m, p in MODEL_UPLINK_PORTS.items() if p == "LAN3"],
+            "lan5_uplink": [m for m, p in MODEL_UPLINK_PORTS.items() if p == "LAN5"],
+        }
+    }

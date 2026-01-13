@@ -294,6 +294,113 @@ class IdempotentHelper:
             logger.error(f"  ❌ Error in find_or_create_policy_set: {str(e)}")
             raise
 
+    async def find_or_create_template_policy(
+        self,
+        tenant_id: str,
+        template_id: str,
+        name: str,
+        policy_type: str = "RADIUS",
+        on_match_response: str = None,
+        description: str = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Find existing policy in template by name or create new one.
+
+        The POST /policyTemplates/{templateId}/policies endpoint returns 202
+        without a requestId, so we poll the policy by ID to confirm creation.
+
+        Args:
+            tenant_id: Tenant ID
+            template_id: Policy template ID
+            name: Policy name
+            policy_type: RADIUS or DPSK (default: RADIUS)
+            on_match_response: Radius attribute group ID for policy match
+            description: Optional description
+            **kwargs: Additional policy fields
+
+        Returns:
+            Policy data (with 'id' field)
+        """
+        logger.info(f"Finding or creating template policy: {name}")
+
+        try:
+            # Query for existing policies in this template
+            response = await self.r1_client.policy_sets.query_template_policies(
+                template_id=template_id,
+                tenant_id=tenant_id,
+                page=0,
+                limit=100
+            )
+
+            existing_policies = response.get('content', response.get('data', []))
+
+            # Find exact match by name
+            for policy in existing_policies:
+                if policy.get('name') == name:
+                    logger.info(f"  ✅ Found existing policy: {name} (ID: {policy.get('id')})")
+                    return {
+                        'existed': True,
+                        'created': False,
+                        **policy
+                    }
+
+            # Not found - create new one
+            logger.info(f"  🆕 Creating new template policy: {name}")
+
+            policy_data = {
+                'name': name,
+                'policyType': policy_type,
+                **kwargs
+            }
+            if description:
+                policy_data['description'] = description
+            if on_match_response:
+                policy_data['onMatchResponse'] = on_match_response
+
+            new_policy = await self.r1_client.policy_sets.create_template_policy(
+                template_id=template_id,
+                policy_data=policy_data,
+                tenant_id=tenant_id
+            )
+
+            policy_id = new_policy.get('id')
+
+            # Wait for policy creation to complete (202 async pattern)
+            if policy_id and on_match_response:
+                logger.info(f"  ⏳ Waiting for policy creation to complete...")
+                try:
+                    completed_policy = await self.r1_client.policy_sets.await_policy_creation(
+                        template_id=template_id,
+                        policy_id=policy_id,
+                        tenant_id=tenant_id
+                    )
+                    logger.info(f"  ✅ Policy creation completed: {name}")
+                    return {
+                        'existed': False,
+                        'created': True,
+                        **completed_policy
+                    }
+                except TimeoutError as e:
+                    logger.warning(f"  ⚠️  Policy creation timed out, returning partial: {str(e)}")
+                    # Return what we have even if timeout
+                    return {
+                        'existed': False,
+                        'created': True,
+                        'awaited': False,
+                        **new_policy
+                    }
+
+            return {
+                'existed': False,
+                'created': True,
+                **new_policy
+            }
+
+        except Exception as e:
+            logger.error(f"  ❌ Error in find_or_create_template_policy: {str(e)}")
+            raise
+
     async def find_or_create_generic(
         self,
         finder_func: Callable,

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -702,6 +703,71 @@ class PolicySetService:
 
         return response.json()
 
+    async def await_policy_creation(
+        self,
+        template_id: str,
+        policy_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Poll for policy creation completion with ramping retry intervals.
+
+        The POST /policyTemplates/{templateId}/policies endpoint returns 202
+        with the policy object but no requestId for /activities polling.
+        This method polls the GET endpoint until the policy is fully created
+        with its radius attribute group association complete.
+
+        Retry schedule:
+        - 0.5s intervals for first 5s (10 attempts)
+        - 1.0s intervals from 5s to 10s (5 attempts)
+        - 2.0s intervals from 10s to 30s (10 attempts)
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID from the 202 response
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Completed policy data
+
+        Raises:
+            TimeoutError: If policy doesn't complete within ~30 seconds
+        """
+        elapsed = 0.0
+
+        while elapsed < 30.0:
+            # Determine sleep interval based on elapsed time
+            if elapsed < 5.0:
+                sleep_interval = 0.5
+            elif elapsed < 10.0:
+                sleep_interval = 1.0
+            else:
+                sleep_interval = 2.0
+
+            if self.client.ec_type == "MSP" and tenant_id:
+                response = self.client.get(
+                    f"/policyTemplates/{template_id}/policies/{policy_id}",
+                    override_tenant_id=tenant_id
+                )
+            else:
+                response = self.client.get(
+                    f"/policyTemplates/{template_id}/policies/{policy_id}"
+                )
+
+            if response.ok:
+                data = response.json()
+                # Check if onMatchResponse is populated (radius attr group associated)
+                if data.get("onMatchResponse"):
+                    logger.debug(f"Policy {policy_id} creation completed after {elapsed:.1f}s")
+                    return data
+
+            await asyncio.sleep(sleep_interval)
+            elapsed += sleep_interval
+
+        raise TimeoutError(
+            f"Policy {policy_id} did not complete within 30 seconds"
+        )
+
     async def get_template_policy(
         self,
         template_id: str,
@@ -790,3 +856,218 @@ class PolicySetService:
             )
 
         return response.json() if response.content else {"status": "deleted"}
+
+    # ========== Policy Conditions ==========
+
+    async def get_policy_conditions(
+        self,
+        template_id: str,
+        policy_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get all conditions for a policy
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            List of policy conditions
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions"
+            ).json()
+
+    async def get_policy_condition(
+        self,
+        template_id: str,
+        policy_id: str,
+        condition_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Get a specific condition
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            condition_id: Condition ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Condition details
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.get(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}"
+            ).json()
+
+    async def create_policy_condition(
+        self,
+        template_id: str,
+        policy_id: str,
+        condition_data: dict,
+        tenant_id: str = None
+    ):
+        """
+        Create a new condition for a policy
+
+        Conditions define the matching criteria for a policy. Common condition types:
+        - DPSK Pool membership
+        - Device type/OS
+        - Time of day
+        - Location/Venue
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            condition_data: Condition configuration, e.g.:
+                {
+                    "attributeId": "...",
+                    "operator": "EQUALS",
+                    "value": "..."
+                }
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Created condition response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
+                payload=condition_data,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
+                payload=condition_data
+            )
+
+        return response.json()
+
+    async def update_policy_condition(
+        self,
+        template_id: str,
+        policy_id: str,
+        condition_id: str,
+        condition_data: dict,
+        tenant_id: str = None
+    ):
+        """
+        Update a policy condition
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            condition_id: Condition ID
+            condition_data: Updated condition configuration
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Updated condition response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.patch(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
+                payload=condition_data,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.patch(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
+                payload=condition_data
+            )
+
+        return response.json()
+
+    async def delete_policy_condition(
+        self,
+        template_id: str,
+        policy_id: str,
+        condition_id: str,
+        tenant_id: str = None
+    ):
+        """
+        Delete a policy condition
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            condition_id: Condition ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Deletion response
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.delete(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.delete(
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}"
+            )
+
+        return response.json() if response.content else {"status": "deleted"}
+
+    # ========== Cross-Template Policy Query ==========
+
+    async def query_policies_across_templates(
+        self,
+        tenant_id: str = None,
+        filters: dict = None,
+        search_string: str = None,
+        page: int = 0,
+        limit: int = 100
+    ):
+        """
+        Query policies across all templates
+
+        Useful for finding policies without knowing which template they belong to.
+
+        Args:
+            tenant_id: Tenant/EC ID (required for MSP)
+            filters: Optional filters
+            search_string: Optional search string
+            page: Page number
+            limit: Page size
+
+        Returns:
+            Query response with policies from all templates
+        """
+        body = {
+            "page": page,
+            "limit": limit
+        }
+
+        if filters:
+            body["filters"] = filters
+        if search_string:
+            body["searchString"] = search_string
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            return self.client.post(
+                "/policyTemplates/policies/query",
+                payload=body,
+                override_tenant_id=tenant_id
+            ).json()
+        else:
+            return self.client.post(
+                "/policyTemplates/policies/query",
+                payload=body
+            ).json()

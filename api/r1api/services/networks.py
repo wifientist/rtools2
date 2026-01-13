@@ -136,6 +136,40 @@ class NetworksService:
         # Network not found (silent - will be logged by caller)
         return None
 
+    async def find_wifi_network_by_ssid(self, tenant_id: str, venue_id: str, ssid: str):
+        """
+        Search for a WiFi network by SSID (broadcast name)
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID to search within
+            ssid: SSID broadcast name to find
+
+        Returns:
+            Network object if found, None otherwise
+        """
+        body = {
+            'fields': ['id', 'name', 'ssid', 'vlan', 'nwSubType', 'venueApGroups'],
+            'filters': {
+                'ssid': [ssid]
+            },
+            'sortField': 'name',
+            'sortOrder': 'ASC',
+        }
+
+        if self.client.ec_type == "MSP":
+            response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+        else:
+            response = self.client.post("/wifiNetworks/query", payload=body).json()
+
+        # Response format: {"data": [...], "totalCount": N}
+        networks = response.get('data', [])
+
+        if networks and len(networks) > 0:
+            return networks[0]
+
+        return None
+
     async def create_wifi_network(
         self,
         tenant_id: str,
@@ -234,6 +268,66 @@ class NetworksService:
             return result
         else:
             logger.error(f"Failed to create network: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def update_wifi_network_name(
+        self,
+        tenant_id: str,
+        network_id: str,
+        new_name: str,
+        wait_for_completion: bool = True
+    ):
+        """
+        Update a WiFi network's internal name.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            network_id: WiFi Network ID to update
+            new_name: New internal name for the network
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Updated network response from API
+        """
+        # First, get the current network object
+        current_network = await self.get_wifi_network_by_id(network_id, tenant_id)
+
+        if not current_network:
+            raise Exception(f"Network {network_id} not found")
+
+        old_name = current_network.get('name')
+        logger.info(f"Updating network name: '{old_name}' -> '{new_name}'")
+
+        # Update the name
+        current_network['name'] = new_name
+
+        # PUT the updated network object
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}",
+                payload=current_network,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}",
+                payload=current_network
+            )
+
+        # Handle response
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            # If 202 Accepted and wait_for_completion=True, poll for task completion
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            logger.error(f"Failed to update network name: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
