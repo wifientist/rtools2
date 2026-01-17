@@ -961,19 +961,35 @@ class VenueService:
                         ap_group_ids = vag.get('apGroupIds', [])
                         is_all_groups = vag.get('isAllApGroups', False)
 
+                        # Build enriched SSID object with VLAN info
+                        base_vlan = network.get('vlan')
+                        vlan_override = vag.get('vlanId')  # Per-activation VLAN override
+                        effective_vlan = vlan_override if vlan_override is not None else base_vlan
+
+                        ssid_info = {
+                            'id': network.get('id'),
+                            'name': network.get('name'),
+                            'ssid': network.get('ssid'),
+                            'base_vlan': base_vlan,
+                            'vlan_override': vlan_override,
+                            'effective_vlan': effective_vlan,
+                            'is_all_ap_groups': is_all_groups,
+                            'radio_types': vag.get('radioTypes', []),
+                        }
+
                         if is_all_groups:
                             # SSID is activated on all AP Groups in this venue
                             for group in all_ap_groups:
                                 group_id = group.get('id')
                                 if group_id not in apgroup_to_ssids:
                                     apgroup_to_ssids[group_id] = []
-                                apgroup_to_ssids[group_id].append(network)
+                                apgroup_to_ssids[group_id].append(ssid_info)
                         else:
                             # SSID is activated on specific AP Groups
                             for ap_group_id in ap_group_ids:
                                 if ap_group_id not in apgroup_to_ssids:
                                     apgroup_to_ssids[ap_group_id] = []
-                                apgroup_to_ssids[ap_group_id].append(network)
+                                apgroup_to_ssids[ap_group_id].append(ssid_info)
 
             logger.debug(f"SSID-to-AP-Group mapping: {len(apgroup_to_ssids)} groups with SSIDs")
 

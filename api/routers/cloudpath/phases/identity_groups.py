@@ -49,6 +49,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     # Get R1 client and tenant_id from context
     r1_client = context.get('r1_client')
     tenant_id = context.get('tenant_id')
+    venue_id = context.get('venue_id')
 
     if not r1_client:
         raise Exception("R1 client not available in context")
@@ -56,6 +57,8 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         raise Exception("tenant_id not available in context")
 
     logger.warning(f"Creating {len(identity_groups)} identity groups in RuckusONE...")
+    if venue_id:
+        logger.warning(f"  Identity groups will be associated with venue: {venue_id}")
 
     # Create all identity groups
     created_groups = []
@@ -67,10 +70,16 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
         logger.warning(f"  Creating identity group: {name}")
 
+        # Pass venueId if available to associate identity group with venue
+        create_kwargs = {}
+        if venue_id:
+            create_kwargs['venueId'] = venue_id
+
         result = await helper.find_or_create_identity_group(
             tenant_id=tenant_id,
             name=name,
-            description=description
+            description=description,
+            **create_kwargs
         )
 
         logger.warning(f"    {'✅ Existed' if result.get('existed') else '✅ Created'}: {name} (ID: {result.get('id')})")
@@ -90,6 +99,17 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             pool['identity_group_id'] = ig_name_to_id[ig_name]
 
     logger.warning(f"✅ Created {len(created_groups)} identity groups. Forwarding to next phase...")
+
+    # Track created resources in state_manager for cleanup/reference
+    state_manager = context.get('state_manager')
+    job_id = context.get('job_id')
+    logger.warning(f"  🔍 DEBUG: state_manager={state_manager is not None}, job_id={job_id}")
+    if state_manager and job_id:
+        for group in created_groups:
+            await state_manager.add_created_resource(job_id, 'identity_groups', group)
+        logger.warning(f"  📝 Tracked {len(created_groups)} identity groups in job resources")
+    else:
+        logger.warning(f"  ⚠️ Cannot track resources: state_manager={state_manager is not None}, job_id={job_id}")
 
     # Return single completed task with created resources and forwarded data
     task = Task(

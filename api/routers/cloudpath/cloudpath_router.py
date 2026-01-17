@@ -68,7 +68,7 @@ class ImportRequest(BaseModel):
     controller_id: int = Field(..., description="RuckusONE controller ID")
     venue_id: str = Field(..., description="Venue ID")
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (for MSP)")
-    dpsk_data: list = Field(..., description="Cloudpath JSON export data (array of DPSK objects)")
+    dpsk_data: Any = Field(..., description="Cloudpath JSON export data (array of DPSK objects or nested format with pool/dpsks)")
     options: Dict[str, Any] = Field(
         default_factory=lambda: {
             "just_copy_dpsks": True,
@@ -76,7 +76,11 @@ class ImportRequest(BaseModel):
             "group_by_vlan": False,
             "skip_expired_dpsks": False,
             "renew_expired_dpsks": True,
-            "simulate_delay": False
+            "simulate_delay": False,
+            "identity_group_name": None,  # Custom name for identity group (optional)
+            "dpsk_service_name": None,  # Custom name for DPSK service/pool (optional)
+            "ssid_mode": "none",  # "none", "create_new", or "link_existing"
+            "link_to_ssid_id": None  # SSID ID to link to when ssid_mode="link_existing"
         },
         description="Migration options"
     )
@@ -138,6 +142,55 @@ class PreviewCleanupResponse(BaseModel):
     venue_id: str
     inventory: Dict[str, List[Dict[str, Any]]]
     total_resources: int
+
+
+class DPSKSsidsRequest(BaseModel):
+    """Request to fetch DPSK-enabled SSIDs at a venue"""
+    controller_id: int = Field(..., description="RuckusONE controller ID")
+    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
+    venue_id: str = Field(..., description="Venue ID")
+
+
+class DPSKSsidInfo(BaseModel):
+    """Info about a DPSK-enabled SSID"""
+    id: str
+    name: str
+    ssid: str
+    dpsk_pool_ids: List[str] = []
+
+
+class DPSKSsidsResponse(BaseModel):
+    """Response with list of DPSK-enabled SSIDs"""
+    venue_id: str
+    dpsk_ssids: List[DPSKSsidInfo]
+    total_count: int
+
+
+class ExportIdentitiesRequest(BaseModel):
+    """Request to export identities/passphrases"""
+    controller_id: int = Field(..., description="RuckusONE controller ID")
+    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
+    venue_id: Optional[str] = Field(None, description="Optional: Venue ID to filter by")
+    dpsk_pool_id: Optional[str] = Field(None, description="Optional: Filter to a specific DPSK pool")
+
+
+class IdentityExportRow(BaseModel):
+    """Single row in identity export"""
+    cloudpath_guid: str = ""
+    identity_id: str = ""
+    passphrase_id: str = ""
+    username: str = ""
+    passphrase: str = ""
+    identity_group_name: str = ""
+    dpsk_pool_id: str = ""
+    dpsk_pool_name: str = ""
+
+
+class ExportIdentitiesResponse(BaseModel):
+    """Response with identity/passphrase data for preview"""
+    venue_id: Optional[str] = None
+    total_count: int
+    data: List[IdentityExportRow]
 
 
 # ==================== Helper Functions ====================
@@ -463,6 +516,499 @@ async def audit_venue_dpsk(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to audit DPSK configuration: {str(e)}"
+        )
+
+
+async def _fetch_identity_passphrase_data(
+    r1_client,
+    venue_id: str = None,
+    tenant_id: str = None,
+    dpsk_pool_id: str = None
+) -> List[Dict[str, Any]]:
+    """
+    Helper function to fetch and join identity/passphrase data
+
+    Args:
+        r1_client: RuckusONE API client
+        venue_id: Optional Venue ID to filter by (if None, fetches all)
+        tenant_id: Tenant ID
+        dpsk_pool_id: Optional DPSK pool ID to filter to a specific pool
+
+    Returns list of dicts with: cloudpath_guid, identity_id, passphrase_id, username,
+    passphrase, identity_group_name, dpsk_pool_name
+    """
+    # 1. Get identity groups (optionally filtered by venue)
+    if venue_id:
+        logger.info(f"Fetching identity groups for venue {venue_id}...")
+        ig_response = await r1_client.identity.query_identity_groups(
+            tenant_id=tenant_id,
+            filters={"venueId": [venue_id]},
+            page=1,
+            size=1000
+        )
+    else:
+        logger.info("Fetching all identity groups (no venue filter)...")
+        ig_response = await r1_client.identity.query_identity_groups(
+            tenant_id=tenant_id,
+            page=1,
+            size=1000
+        )
+    identity_groups = ig_response.get('content', []) if isinstance(ig_response, dict) else ig_response
+    logger.info(f"  Found {len(identity_groups)} identity groups")
+
+    # 1.5. If filtering by specific pool, only keep identity groups linked to that pool
+    if dpsk_pool_id:
+        identity_groups = [ig for ig in identity_groups if ig.get('dpskPoolId') == dpsk_pool_id]
+        logger.info(f"  Filtered to {len(identity_groups)} groups linked to pool {dpsk_pool_id}")
+
+    # 2. Get DPSK pools linked to these identity groups
+    # Strategy: Query pools both from identity groups AND directly
+    # because identity group's dpskPoolId may not always be set
+    dpsk_pool_ids = set()
+    ig_to_pool_id = {}  # identity_group_id -> dpsk_pool_id
+    ig_id_to_name = {ig.get('id'): ig.get('name') for ig in identity_groups}
+    ig_id_set = set(ig_id_to_name.keys())
+
+    # 2a. Get pool IDs from identity groups that have dpskPoolId set
+    for ig in identity_groups:
+        pool_id = ig.get('dpskPoolId')
+        if pool_id:
+            dpsk_pool_ids.add(pool_id)
+            ig_to_pool_id[ig.get('id')] = pool_id
+    logger.info(f"  Found {len(dpsk_pool_ids)} pools from identity groups' dpskPoolId")
+
+    # 2b. Also query DPSK pools directly and find linked identity groups
+    # This catches pools where identity group doesn't have dpskPoolId set
+    all_pools_from_query = []
+    try:
+        logger.info("  Querying DPSK pools directly...")
+        pools_response = await r1_client.dpsk.query_dpsk_pools(
+            tenant_id=tenant_id,
+            page=1,
+            limit=1000
+        )
+        all_pools_from_query = pools_response.get('data', []) if isinstance(pools_response, dict) else []
+        logger.info(f"  Found {len(all_pools_from_query)} total DPSK pools in tenant")
+
+        for pool in all_pools_from_query:
+            pool_id = pool.get('id')
+            pool_ig_id = pool.get('identityGroupId')
+            if pool_id and pool_ig_id:
+                # Only include if we have the identity group
+                if pool_ig_id in ig_id_set:
+                    if pool_id not in dpsk_pool_ids:
+                        logger.info(f"    Adding pool {pool.get('name')} (found via pool's identityGroupId)")
+                    dpsk_pool_ids.add(pool_id)
+                    ig_to_pool_id[pool_ig_id] = pool_id
+    except Exception as pool_query_error:
+        logger.warning(f"  ⚠️  Direct pool query failed: {str(pool_query_error)}")
+        # Continue with pools found from identity groups
+
+    logger.info(f"  Total DPSK pools to process: {len(dpsk_pool_ids)}")
+
+    # 3. Fetch details of each DPSK pool
+    # Use pools from query if available (already have details), otherwise fetch individually
+    dpsk_pools = []
+    pool_id_to_name = {}  # pool_id -> pool_name
+    pools_from_query_by_id = {p.get('id'): p for p in all_pools_from_query}
+
+    for pool_id in dpsk_pool_ids:
+        try:
+            # Use cached pool from query if available
+            if pool_id in pools_from_query_by_id:
+                pool = pools_from_query_by_id[pool_id]
+            else:
+                pool = await r1_client.dpsk.get_dpsk_pool(pool_id, tenant_id)
+            dpsk_pools.append(pool)
+            pool_id_to_name[pool_id] = pool.get('name', 'Unknown')
+            logger.info(f"  Fetched pool: {pool.get('name')} ({pool_id})")
+        except Exception as e:
+            logger.warning(f"  Failed to fetch pool {pool_id}: {str(e)}")
+
+    # 4. Build identity map: (username, pool_id) -> identity data
+    # We use composite key to handle same username across different pools
+    identity_map = {}  # (username, pool_id) -> {identity_id, cloudpath_guid, identity_group_name, dpsk_pool_id}
+    for ig in identity_groups:
+        ig_id = ig.get('id')
+        ig_name = ig.get('name', 'Unknown')
+        # Get pool_id from ig_to_pool_id mapping (more reliable than ig.dpskPoolId)
+        pool_id = ig_to_pool_id.get(ig_id) or ig.get('dpskPoolId')
+
+        logger.info(f"  Fetching identities from group: {ig_name} ({ig_id}), pool={pool_id}...")
+        identities_response = await r1_client.identity.get_identities_in_group(
+            group_id=ig_id,
+            tenant_id=tenant_id,
+            page=0,
+            size=10000  # Get all identities
+        )
+        identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
+        logger.info(f"    Found {len(identities)} identities")
+
+        for identity in identities:
+            username = identity.get('name')
+            if username and pool_id:
+                # Use composite key (username, pool_id) to handle duplicates across pools
+                identity_map[(username, pool_id)] = {
+                    'identity_id': identity.get('id') or '',
+                    'cloudpath_guid': identity.get('description') or '',  # GUID stored in description
+                    'identity_group_name': ig_name,
+                    'dpsk_pool_id': pool_id
+                }
+
+    # 5. Build passphrase map: (username, pool_id) -> passphrase data
+    passphrase_map = {}  # (username, pool_id) -> {passphrase_id, passphrase, dpsk_pool_id, dpsk_pool_name}
+    for pool in dpsk_pools:
+        pool_id = pool.get('id')
+        pool_name = pool.get('name', 'Unknown')
+
+        logger.info(f"  Fetching passphrases from pool: {pool_name} ({pool_id})...")
+
+        # Try GET endpoint first
+        passphrases_response = await r1_client.dpsk.get_passphrases(
+            pool_id=pool_id,
+            tenant_id=tenant_id,
+            page=1,
+            size=10000  # Get all passphrases
+        )
+
+        # Response may have 'content' or 'data' key depending on API version
+        if isinstance(passphrases_response, dict):
+            passphrases = passphrases_response.get('content', passphrases_response.get('data', []))
+            total_elements = passphrases_response.get('totalElements', len(passphrases))
+        else:
+            passphrases = passphrases_response
+            total_elements = len(passphrases)
+
+        logger.info(f"    GET found {len(passphrases)} passphrases (totalElements: {total_elements})")
+
+        # If GET returned empty, try POST query endpoint as fallback
+        if not passphrases:
+            try:
+                logger.info(f"    Trying POST query endpoint as fallback...")
+                query_response = await r1_client.dpsk.query_passphrases(
+                    pool_id=pool_id,
+                    tenant_id=tenant_id,
+                    page=1,
+                    limit=10000
+                )
+                if isinstance(query_response, dict):
+                    passphrases = query_response.get('content', query_response.get('data', []))
+                else:
+                    passphrases = query_response
+                logger.info(f"    POST query found {len(passphrases)} passphrases")
+            except Exception as query_error:
+                logger.warning(f"    POST query failed: {str(query_error)}")
+
+        for pp in passphrases:
+            username = pp.get('username') or pp.get('userName')
+            if username:
+                # Use composite key (username, pool_id) to handle duplicates across pools
+                passphrase_map[(username, pool_id)] = {
+                    'passphrase_id': pp.get('id') or '',
+                    'passphrase': pp.get('passphrase') or '',
+                    'dpsk_pool_id': pool_id or '',
+                    'dpsk_pool_name': pool_name
+                }
+
+    # 6. Join identities and passphrases by (username, pool_id)
+    # Keys are tuples of (username, pool_id)
+    all_keys = set(identity_map.keys()) | set(passphrase_map.keys())
+    logger.info(f"  Total unique (username, pool_id) combinations: {len(all_keys)}")
+
+    # 7. Build result list - ensure all values are strings (not None)
+    result = []
+    for key in sorted(all_keys, key=lambda x: (x[0], x[1] or '')):
+        username, pool_id = key
+        identity_data = identity_map.get(key, {})
+        passphrase_data = passphrase_map.get(key, {})
+
+        # Get pool ID from key or data
+        final_pool_id = pool_id or passphrase_data.get('dpsk_pool_id') or identity_data.get('dpsk_pool_id') or ''
+
+        # Get pool name from passphrase data, or look it up from the pool_id_to_name map
+        pool_name = passphrase_data.get('dpsk_pool_name') or pool_id_to_name.get(final_pool_id, '') or ''
+
+        result.append({
+            'cloudpath_guid': identity_data.get('cloudpath_guid') or '',
+            'identity_id': identity_data.get('identity_id') or '',
+            'passphrase_id': passphrase_data.get('passphrase_id') or '',
+            'username': username or '',
+            'passphrase': passphrase_data.get('passphrase') or '',
+            'identity_group_name': identity_data.get('identity_group_name') or '',
+            'dpsk_pool_id': final_pool_id,
+            'dpsk_pool_name': pool_name
+        })
+
+    return result
+
+
+@router.post("/export-identities", response_model=ExportIdentitiesResponse)
+async def export_identities(
+    request: ExportIdentitiesRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Export identities and passphrases as JSON (for modal preview)
+
+    Returns JSON with columns:
+    - cloudpath_guid: From identity description field (set during migration)
+    - identity_id: RuckusONE identity ID
+    - passphrase_id: RuckusONE passphrase ID
+    - username: Identity/passphrase username
+    - passphrase: The actual passphrase value
+    - identity_group_name: Name of the identity group
+    - dpsk_pool_name: Name of the DPSK pool
+    """
+    logger.info(f"📥 Export identities request - controller: {request.controller_id}, venue: {request.venue_id}, pool: {request.dpsk_pool_id or 'all'}")
+
+    # Validate controller access
+    controller = validate_controller_access(request.controller_id, current_user, db)
+
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
+        )
+
+    # Create R1 client
+    r1_client = create_r1_client_from_controller(controller.id, db)
+
+    # Determine tenant_id
+    tenant_id = request.tenant_id or controller.r1_tenant_id
+
+    if controller.controller_subtype == "MSP" and not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id is required for MSP controllers"
+        )
+
+    try:
+        data = await _fetch_identity_passphrase_data(
+            r1_client,
+            request.venue_id,
+            tenant_id,
+            dpsk_pool_id=request.dpsk_pool_id
+        )
+        logger.info(f"✅ Fetched {len(data)} identities/passphrases")
+
+        return ExportIdentitiesResponse(
+            venue_id=request.venue_id,
+            total_count=len(data),
+            data=data
+        )
+
+    except Exception as e:
+        logger.exception(f"Export identities failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export identities: {str(e)}"
+        )
+
+
+@router.post("/export-identities-csv")
+async def export_identities_csv(
+    request: ExportIdentitiesRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Export identities and passphrases as CSV file download
+    """
+    import csv
+    import io
+
+    logger.info(f"📥 Export identities CSV request - controller: {request.controller_id}, venue: {request.venue_id}")
+
+    # Validate controller access
+    controller = validate_controller_access(request.controller_id, current_user, db)
+
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
+        )
+
+    # Create R1 client
+    r1_client = create_r1_client_from_controller(controller.id, db)
+
+    # Determine tenant_id
+    tenant_id = request.tenant_id or controller.r1_tenant_id
+
+    if controller.controller_subtype == "MSP" and not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id is required for MSP controllers"
+        )
+
+    try:
+        data = await _fetch_identity_passphrase_data(
+            r1_client,
+            request.venue_id,
+            tenant_id,
+            dpsk_pool_id=request.dpsk_pool_id
+        )
+
+        # Build CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header row
+        writer.writerow([
+            'cloudpath_guid',
+            'identity_id',
+            'passphrase_id',
+            'username',
+            'passphrase',
+            'identity_group_name',
+            'dpsk_pool_id',
+            'dpsk_pool_name'
+        ])
+
+        # Data rows
+        for row in data:
+            writer.writerow([
+                row['cloudpath_guid'],
+                row['identity_id'],
+                row['passphrase_id'],
+                row['username'],
+                row['passphrase'],
+                row['identity_group_name'],
+                row['dpsk_pool_id'],
+                row['dpsk_pool_name']
+            ])
+
+        csv_content = output.getvalue()
+        output.close()
+
+        logger.info(f"✅ Exported {len(data)} identities/passphrases to CSV")
+
+        # Return as CSV file download
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=identities_export_{request.venue_id}.csv"
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Export identities CSV failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export identities: {str(e)}"
+        )
+
+
+@router.post("/dpsk-ssids", response_model=DPSKSsidsResponse)
+async def get_dpsk_ssids(
+    request: DPSKSsidsRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get DPSK-enabled SSIDs at a venue
+
+    Returns list of WiFi networks that have DPSK enabled,
+    which can be used to link imported DPSKs to existing networks.
+    """
+    logger.info(f"🔍 DPSK SSIDs request - controller: {request.controller_id}, venue: {request.venue_id}")
+
+    # Validate controller access
+    controller = validate_controller_access(request.controller_id, current_user, db)
+
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
+        )
+
+    # Create R1 client
+    r1_client = create_r1_client_from_controller(controller.id, db)
+
+    # Determine tenant_id
+    tenant_id = request.tenant_id or controller.r1_tenant_id
+
+    if controller.controller_subtype == "MSP" and not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id is required for MSP controllers"
+        )
+
+    try:
+        # Get all WiFi networks for the tenant
+        wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+        all_networks = wifi_networks_response.get('data', [])
+
+        # Filter networks that are activated at this venue and have DPSK enabled
+        dpsk_ssids = []
+        for network in all_networks:
+            network_name = network.get('name', 'Unknown')
+            network_id = network.get('id')
+            ssid = network.get('ssid', network_name)
+            venue_ap_groups = network.get('venueApGroups', [])
+
+            # Check if this network is activated at our target venue
+            is_at_venue = any(
+                vag.get('venueId') == request.venue_id
+                for vag in venue_ap_groups
+            )
+
+            if not is_at_venue:
+                continue
+
+            # Get full network details to check for DPSK
+            try:
+                network_details = await r1_client.networks.get_wifi_network_by_id(network_id, tenant_id)
+
+                # Check if this SSID has DPSK enabled
+                has_dpsk = False
+                dpsk_pool_ids = []
+
+                if network_details.get('type') == 'dpsk':
+                    has_dpsk = True
+                if network_details.get('useDpskService') == True:
+                    has_dpsk = True
+                if network_details.get('nwSubType') == 'DPSK':
+                    has_dpsk = True
+
+                # Check for DPSK pool/service references
+                if 'dpskPool' in network_details:
+                    has_dpsk = True
+                    dpsk_pool_ids.append(network_details['dpskPool'])
+                if 'dpskService' in network_details:
+                    has_dpsk = True
+                    if isinstance(network_details['dpskService'], list):
+                        dpsk_pool_ids.extend(network_details['dpskService'])
+                    else:
+                        dpsk_pool_ids.append(network_details['dpskService'])
+                if 'dpsk' in network_details:
+                    has_dpsk = True
+
+                if has_dpsk:
+                    dpsk_ssids.append(DPSKSsidInfo(
+                        id=network_id,
+                        name=network_name,
+                        ssid=ssid,
+                        dpsk_pool_ids=dpsk_pool_ids
+                    ))
+
+            except Exception as e:
+                logger.warning(f"Error fetching details for {network_name}: {str(e)}")
+
+        logger.info(f"Found {len(dpsk_ssids)} DPSK SSIDs at venue {request.venue_id}")
+
+        return DPSKSsidsResponse(
+            venue_id=request.venue_id,
+            dpsk_ssids=dpsk_ssids,
+            total_count=len(dpsk_ssids)
+        )
+
+    except Exception as e:
+        logger.exception(f"DPSK SSIDs fetch failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch DPSK SSIDs: {str(e)}"
         )
 
 

@@ -10,7 +10,7 @@ Supports two grouping strategies:
 import logging
 import json
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 from datetime import datetime, timezone
 from workflow.models import Task, TaskStatus
 
@@ -63,74 +63,148 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
     return [task]
 
-def _parse_cloudpath_dpsks(dpsk_array: List[Dict[str, Any]], options: Dict[str, Any]) -> Dict[str, Any]:
+def _parse_cloudpath_dpsks(dpsk_data: Any, options: Dict[str, Any]) -> Dict[str, Any]:
     """
     Parse Cloudpath DPSK export into R1-compatible structure
 
-    Cloudpath format is a flat array:
+    Supports two input formats:
+
+    1. Legacy flat array format:
     [
         {
             "guid": "AccountDpsk-...",
             "name": "DPSK15",
             "passphrase": "cemqwzmzgit",
-            "status": "ACTIVE",
-            "ssidList": [],
-            "expirationDateTime": "2020-12-06T00:00-07:00[America/Denver]",
-            "useDeviceCountLimit": false,
-            "deviceCountLimit": 0,
-            "vlanid": "44"
+            ...
         }
     ]
 
+    2. New nested format with pool metadata:
+    {
+        "metadata": { ... },
+        "pool": {
+            "displayName": "MyPoolOne",
+            "description": "Pool description",
+            "phraseDefaultLength": 8,
+            "phraseRandomCharactersType": "ALPHANUMERIC_MIXED",
+            ...
+        },
+        "dpsks": [ ... ]
+    }
+
     Args:
-        dpsk_array: List of Cloudpath DPSK objects
-        options: Migration options including 'group_by_vlan'
+        dpsk_data: Either a list of DPSK objects (legacy) or a dict with pool/dpsks (new)
+        options: Migration options including 'group_by_vlan', 'identity_group_name'
 
     Returns:
         Dict with parsed structure for R1 import:
         {
             'identity_groups': [{'name': str, 'description': str}, ...],
             'dpsk_pools': [{'name': str, 'identity_group_name': str, 'vlan_id': str, ...}, ...],
-            'passphrases': [{'userName': str, 'passphrase': str, 'dpsk_pool_name': str, ...}, ...]
+            'passphrases': [{'userName': str, 'passphrase': str, 'dpsk_pool_name': str, ...}, ...],
+            'cloudpath_pool': {...}  # Pool metadata from new format (if available)
         }
     """
-    if not isinstance(dpsk_array, list):
-        logger.warning("dpsk_data is not a list, wrapping in array")
-        dpsk_array = [dpsk_array] if dpsk_array else []
+    # Detect format and extract DPSK array and pool metadata
+    dpsk_array = []
+    pool_metadata = None
+
+    if isinstance(dpsk_data, dict):
+        # New nested format - check for 'dpsks' key
+        if 'dpsks' in dpsk_data:
+            logger.info("📋 Detected new nested Cloudpath export format")
+            dpsk_array = dpsk_data.get('dpsks', [])
+            pool_metadata = dpsk_data.get('pool', {})
+            metadata = dpsk_data.get('metadata', {})
+
+            if pool_metadata:
+                logger.info(f"   Pool: {pool_metadata.get('displayName', 'Unknown')}")
+                logger.info(f"   Description: {pool_metadata.get('description', 'N/A')}")
+                logger.info(f"   Passphrase length: {pool_metadata.get('phraseDefaultLength', 'N/A')}")
+                logger.info(f"   Passphrase format: {pool_metadata.get('phraseRandomCharactersType', 'N/A')}")
+                if pool_metadata.get('ssidList'):
+                    logger.info(f"   Associated SSIDs: {pool_metadata.get('ssidList')}")
+            if metadata:
+                logger.info(f"   Extracted from: {metadata.get('cloudpath_fqdn', 'Unknown')}")
+                logger.info(f"   Extraction date: {metadata.get('extracted_at', 'Unknown')}")
+        else:
+            # Single dict without 'dpsks' key - wrap in array (legacy single item)
+            logger.warning("dpsk_data is a dict without 'dpsks' key, treating as single DPSK")
+            dpsk_array = [dpsk_data]
+    elif isinstance(dpsk_data, list):
+        # Legacy flat array format
+        logger.info("📋 Detected legacy flat array Cloudpath export format")
+        dpsk_array = dpsk_data
+    else:
+        logger.warning(f"Unexpected dpsk_data type: {type(dpsk_data)}, using empty array")
+        dpsk_array = []
+
+    logger.info(f"   Total DPSKs to import: {len(dpsk_array)}")
 
     group_by_vlan = options.get('group_by_vlan', False)
+    custom_identity_group_name = options.get('identity_group_name')
+    custom_dpsk_service_name = options.get('dpsk_service_name')
+
+    # If no custom names provided and we have pool metadata, use the pool's displayName
+    if pool_metadata:
+        pool_display_name = pool_metadata.get('displayName')
+        if pool_display_name:
+            if not custom_identity_group_name:
+                logger.info(f"   Using pool displayName as identity group name: {pool_display_name}")
+                custom_identity_group_name = pool_display_name
+            if not custom_dpsk_service_name:
+                logger.info(f"   Using pool displayName as DPSK service name: {pool_display_name}")
+                custom_dpsk_service_name = pool_display_name
 
     if group_by_vlan:
-        return _parse_by_vlan(dpsk_array)
+        result = _parse_by_vlan(dpsk_array, custom_identity_group_name, custom_dpsk_service_name, pool_metadata)
     else:
-        return _parse_single_pool(dpsk_array)
+        result = _parse_single_pool(dpsk_array, custom_identity_group_name, custom_dpsk_service_name, pool_metadata)
+
+    # Include pool metadata in result for reference
+    if pool_metadata:
+        result['cloudpath_pool'] = pool_metadata
+
+    return result
 
 
-def _parse_single_pool(dpsk_array: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _parse_single_pool(dpsk_array: List[Dict[str, Any]], custom_identity_group_name: str = None, custom_dpsk_service_name: str = None, pool_metadata: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Single pool strategy - all DPSKs in one identity group and pool
 
     Creates:
-    - 1 identity group: "Cloudpath Import"
-    - 1 DPSK pool: "Cloudpath DPSKs"
+    - 1 identity group: custom name or pool displayName or "Cloudpath Import"
+    - 1 DPSK pool: custom name or "{identity_group_name} - DPSKs"
     - All passphrases in that pool
 
     Args:
         dpsk_array: List of Cloudpath DPSK objects
+        custom_identity_group_name: Optional custom name for the identity group
+        custom_dpsk_service_name: Optional custom name for the DPSK service/pool
+        pool_metadata: Optional pool metadata from new export format
 
     Returns:
         Parsed structure
     """
     logger.info(f"📦 Using single pool strategy for {len(dpsk_array)} DPSKs")
 
-    identity_group_name = "Cloudpath Import"
-    dpsk_pool_name = "Cloudpath DPSKs"
+    identity_group_name = custom_identity_group_name or "Cloudpath Import"
+    # Use custom DPSK service name if provided, otherwise derive from identity group
+    dpsk_pool_name = custom_dpsk_service_name or f"{identity_group_name} - DPSKs"
+
+    # Build description - use pool description if available
+    if pool_metadata and pool_metadata.get('description'):
+        identity_group_desc = pool_metadata['description']
+        dpsk_pool_desc = pool_metadata['description']
+    else:
+        identity_group_desc = f'Imported from Cloudpath - {len(dpsk_array)} DPSKs'
+        dpsk_pool_desc = f'Cloudpath DPSK import - {len(dpsk_array)} passphrases'
 
     # Create single identity group
     identity_groups = [
         {
             'name': identity_group_name,
-            'description': f'Imported from Cloudpath - {len(dpsk_array)} DPSKs'
+            'description': identity_group_desc
         }
     ]
 
@@ -144,15 +218,37 @@ def _parse_single_pool(dpsk_array: List[Dict[str, Any]]) -> Dict[str, Any]:
     # Analyze passphrase characteristics
     analysis = _analyze_passphrase_characteristics(passphrases)
 
+    # Use pool metadata for settings if available, otherwise use analysis
+    passphrase_format = analysis['passphrase_format']
+    passphrase_length = analysis['passphrase_length']
+
+    if pool_metadata:
+        # Map Cloudpath format types to R1 format types
+        cloudpath_format = pool_metadata.get('phraseRandomCharactersType', '')
+        if cloudpath_format == 'ALPHANUMERIC_MIXED':
+            passphrase_format = 'KEYBOARD_FRIENDLY'
+        elif cloudpath_format == 'ALPHANUMERIC_UPPERCASE':
+            passphrase_format = 'KEYBOARD_FRIENDLY'
+        elif cloudpath_format == 'ALPHANUMERIC_LOWERCASE':
+            passphrase_format = 'KEYBOARD_FRIENDLY'
+        elif cloudpath_format == 'NUMERIC':
+            passphrase_format = 'NUMBERS_ONLY'
+        elif cloudpath_format == 'COMPLEX':
+            passphrase_format = 'MOST_SECURED'
+
+        # Use pool's default length if available
+        if pool_metadata.get('phraseDefaultLength'):
+            passphrase_length = pool_metadata['phraseDefaultLength']
+
     # Create single DPSK pool with analyzed settings
     dpsk_pools = [
         {
             'name': dpsk_pool_name,
             'identity_group_name': identity_group_name,
-            'description': f'Cloudpath DPSK import - {len(dpsk_array)} passphrases',
+            'description': dpsk_pool_desc,
             'vlan_id': None,  # No specific VLAN
-            'passphrase_format': analysis['passphrase_format'],
-            'passphrase_length': analysis['passphrase_length'],
+            'passphrase_format': passphrase_format,
+            'passphrase_length': passphrase_length,
             'expiration_days': analysis['expiration_days'],
             'max_devices': analysis['max_devices'],
             'analysis': analysis  # Include full analysis for reference
@@ -167,17 +263,20 @@ def _parse_single_pool(dpsk_array: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _parse_by_vlan(dpsk_array: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _parse_by_vlan(dpsk_array: List[Dict[str, Any]], custom_name_prefix: str = None, custom_dpsk_service_prefix: str = None, pool_metadata: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Group by VLAN strategy - one identity group/pool per VLAN
 
     Creates:
-    - 1 identity group per VLAN: "VLAN 44", "VLAN 50", etc.
-    - 1 DPSK pool per VLAN
+    - 1 identity group per VLAN: "[prefix] VLAN 44", "[prefix] VLAN 50", etc.
+    - 1 DPSK pool per VLAN: "[dpsk_prefix] - VLAN 44 - DPSKs" or derived from identity group
     - Passphrases distributed by VLAN
 
     Args:
         dpsk_array: List of Cloudpath DPSK objects
+        custom_name_prefix: Optional prefix for identity group names
+        custom_dpsk_service_prefix: Optional prefix for DPSK service names
+        pool_metadata: Optional pool metadata from new export format
 
     Returns:
         Parsed structure
@@ -200,6 +299,15 @@ def _parse_by_vlan(dpsk_array: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     logger.info(f"📊 Found {len(vlan_groups)} unique VLANs: {list(vlan_groups.keys())}")
 
+    # Use custom prefixes or defaults
+    id_group_prefix = f"{custom_name_prefix} - " if custom_name_prefix else ""
+    dpsk_service_prefix = custom_dpsk_service_prefix or custom_name_prefix
+
+    # Get pool description for use in groups
+    pool_desc_suffix = ""
+    if pool_metadata and pool_metadata.get('description'):
+        pool_desc_suffix = f" - {pool_metadata['description']}"
+
     identity_groups = []
     dpsk_pools = []
     passphrases = []
@@ -207,13 +315,17 @@ def _parse_by_vlan(dpsk_array: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     # Create identity group and pool for each VLAN
     for vlan_id, dpsks in vlan_groups.items():
-        identity_group_name = f"VLAN {vlan_id}" if vlan_id != 'No VLAN' else "No VLAN"
-        dpsk_pool_name = f"VLAN {vlan_id} - Cloudpath DPSKs" if vlan_id != 'No VLAN' else "No VLAN - Cloudpath DPSKs"
+        identity_group_name = f"{id_group_prefix}VLAN {vlan_id}" if vlan_id != 'No VLAN' else f"{id_group_prefix}No VLAN"
+        # Use custom DPSK service prefix if provided, otherwise derive from identity group
+        if dpsk_service_prefix:
+            dpsk_pool_name = f"{dpsk_service_prefix} - VLAN {vlan_id}" if vlan_id != 'No VLAN' else f"{dpsk_service_prefix} - No VLAN"
+        else:
+            dpsk_pool_name = f"{identity_group_name} - DPSKs"
 
         # Create identity group
         identity_groups.append({
             'name': identity_group_name,
-            'description': f'Cloudpath import - VLAN {vlan_id} - {len(dpsks)} DPSKs'
+            'description': f'Cloudpath import - VLAN {vlan_id} - {len(dpsks)} DPSKs{pool_desc_suffix}'
         })
 
         # Map passphrases for this VLAN
@@ -281,6 +393,10 @@ def _map_cloudpath_dpsk_to_passphrase(dpsk: Dict[str, Any], dpsk_pool_name: str)
     Returns:
         R1 passphrase dict or None if invalid
     """
+    # Debug: Log incoming DPSK object keys to understand the format
+    logger.warning(f"🔍 DEBUG PARSE - DPSK object keys: {list(dpsk.keys())}")
+    logger.warning(f"🔍 DEBUG PARSE - DPSK guid value: {dpsk.get('guid')}")
+
     if not dpsk.get('passphrase'):
         logger.warning(f"DPSK {dpsk.get('name', 'unknown')} has no passphrase, skipping")
         return None

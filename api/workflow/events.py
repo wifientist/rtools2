@@ -59,10 +59,34 @@ class WorkflowEventPublisher:
 
     async def job_completed(self, job: WorkflowJob):
         """Publish job completed event"""
+        # Calculate progress statistics
+        total_phases = len(job.phases)
+        completed_phases = len([p for p in job.phases if str(p.status) in ('COMPLETED', 'PhaseStatus.COMPLETED')])
+        failed_phases = len([p for p in job.phases if str(p.status) in ('FAILED', 'PhaseStatus.FAILED')])
+
+        total_tasks = sum(len(p.tasks) for p in job.phases)
+        completed_tasks = sum(len([t for t in p.tasks if str(t.status) in ('COMPLETED', 'TaskStatus.COMPLETED')]) for p in job.phases)
+        failed_tasks = sum(len([t for t in p.tasks if str(t.status) in ('FAILED', 'TaskStatus.FAILED')]) for p in job.phases)
+
         await self._publish_event(job.id, "job_completed", {
             "job_id": job.id,
             "status": job.status,
             "summary": job.summary,
+            "created_resources": job.created_resources,
+            "total_phases": total_phases,
+            "completed_phases": completed_phases,
+            "failed_phases": failed_phases,
+            "total_tasks": total_tasks,
+            "completed": completed_tasks,
+            "failed": failed_tasks,
+            "progress": {
+                "total_phases": total_phases,
+                "completed_phases": completed_phases,
+                "failed_phases": failed_phases,
+                "total_tasks": total_tasks,
+                "completed": completed_tasks,
+                "failed": failed_tasks,
+            },
             "duration_seconds": (
                 (job.completed_at - job.created_at).total_seconds()
                 if job.completed_at and job.created_at else None
@@ -71,10 +95,34 @@ class WorkflowEventPublisher:
 
     async def job_failed(self, job: WorkflowJob):
         """Publish job failed event"""
+        # Calculate progress statistics
+        total_phases = len(job.phases)
+        completed_phases = len([p for p in job.phases if str(p.status) in ('COMPLETED', 'PhaseStatus.COMPLETED')])
+        failed_phases = len([p for p in job.phases if str(p.status) in ('FAILED', 'PhaseStatus.FAILED')])
+
+        total_tasks = sum(len(p.tasks) for p in job.phases)
+        completed_tasks = sum(len([t for t in p.tasks if str(t.status) in ('COMPLETED', 'TaskStatus.COMPLETED')]) for p in job.phases)
+        failed_tasks = sum(len([t for t in p.tasks if str(t.status) in ('FAILED', 'TaskStatus.FAILED')]) for p in job.phases)
+
         await self._publish_event(job.id, "job_failed", {
             "job_id": job.id,
+            "status": job.status,
             "errors": job.errors,
-            "summary": job.summary
+            "summary": job.summary,
+            "total_phases": total_phases,
+            "completed_phases": completed_phases,
+            "failed_phases": failed_phases,
+            "total_tasks": total_tasks,
+            "completed": completed_tasks,
+            "failed": failed_tasks,
+            "progress": {
+                "total_phases": total_phases,
+                "completed_phases": completed_phases,
+                "failed_phases": failed_phases,
+                "total_tasks": total_tasks,
+                "completed": completed_tasks,
+                "failed": failed_tasks,
+            }
         })
 
     async def job_cancelled(self, job: WorkflowJob):

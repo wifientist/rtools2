@@ -364,6 +364,117 @@ class IdentityService:
                 f"/identityGroups/{group_id}/identities/{identity_id}"
             ).json()
 
+    async def create_identity(
+        self,
+        group_id: str,
+        name: str,
+        tenant_id: str = None,
+        display_name: str = None,
+        description: str = None,
+        vlan: int = None,
+        phone_number: str = None
+    ):
+        """
+        Create a new identity in an identity group
+
+        Args:
+            group_id: Identity group ID
+            name: Identity name (required)
+            tenant_id: Tenant/EC ID (required for MSP)
+            display_name: Display name (optional)
+            description: Description (optional) - use for Cloudpath GUID
+            vlan: VLAN ID (optional)
+            phone_number: Phone number (optional)
+
+        Returns:
+            Created identity details (async - returns requestId)
+        """
+        payload = {
+            "name": name,
+            "groupId": group_id
+        }
+
+        if display_name:
+            payload["displayName"] = display_name
+        if description:
+            payload["description"] = description
+        if vlan is not None:
+            payload["vlan"] = vlan
+        if phone_number:
+            payload["phoneNumber"] = phone_number
+
+        logger.warning(f"🔍 DEBUG IDENTITY API - create_identity payload: {payload}")
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post(
+                f"/identityGroups/{group_id}/identities",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                f"/identityGroups/{group_id}/identities",
+                payload=payload
+            )
+
+        return response.json()
+
+    async def update_identity(
+        self,
+        group_id: str,
+        identity_id: str,
+        tenant_id: str = None,
+        name: str = None,
+        display_name: str = None,
+        description: str = None,
+        vlan: int = None,
+        phone_number: str = None
+    ):
+        """
+        Update an existing identity
+
+        Args:
+            group_id: Identity group ID
+            identity_id: Identity ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            name: New name (optional)
+            display_name: New display name (optional)
+            description: New description (optional)
+            vlan: New VLAN ID (optional)
+            phone_number: New phone number (optional)
+
+        Returns:
+            Updated identity details
+        """
+        payload = {}
+
+        if name:
+            payload["name"] = name
+        if display_name:
+            payload["displayName"] = display_name
+        if description:
+            payload["description"] = description
+        if vlan is not None:
+            payload["vlan"] = vlan
+        if phone_number:
+            payload["phoneNumber"] = phone_number
+
+        logger.warning(f"🔍 DEBUG IDENTITY API - update_identity payload: {payload}")
+
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.patch(
+                f"/identityGroups/{group_id}/identities/{identity_id}",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.patch(
+                f"/identityGroups/{group_id}/identities/{identity_id}",
+                payload=payload
+            )
+
+        return response.json()
+
     async def delete_identity(
         self,
         group_id: str,

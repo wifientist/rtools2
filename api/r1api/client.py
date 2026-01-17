@@ -162,6 +162,9 @@ class R1Client:
     def delete(self, path, payload=None, override_tenant_id=None):
         return self._request("delete", path, payload=payload, override_tenant_id=override_tenant_id)
 
+    def patch(self, path, payload=None, override_tenant_id=None):
+        return self._request("patch", path, payload=payload, override_tenant_id=override_tenant_id)
+
     def _extract_error_message(self, data: dict) -> str:
         """
         Extract detailed error message from RuckusONE activity response

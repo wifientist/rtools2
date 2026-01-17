@@ -101,14 +101,27 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             'created': result.get('created', False)
         })
 
-    # Update passphrases with dpsk_pool_id mappings
+    # Update passphrases with dpsk_pool_id and identity_group_id mappings
     pool_name_to_id = {p['name']: p['dpsk_pool_id'] for p in created_pools}
+    pool_name_to_ig_id = {p['name']: p['identity_group_id'] for p in created_pools}
     for pp in passphrases:
         pool_name = pp.get('dpsk_pool_name')
         if pool_name in pool_name_to_id:
             pp['dpsk_pool_id'] = pool_name_to_id[pool_name]
+            pp['identity_group_id'] = pool_name_to_ig_id[pool_name]
 
     logger.warning(f"✅ Created {len(created_pools)} DPSK pools. Forwarding to next phase...")
+
+    # Track created resources in state_manager for cleanup/reference
+    state_manager = context.get('state_manager')
+    job_id = context.get('job_id')
+    logger.warning(f"  🔍 DEBUG: state_manager={state_manager is not None}, job_id={job_id}")
+    if state_manager and job_id:
+        for pool in created_pools:
+            await state_manager.add_created_resource(job_id, 'dpsk_pools', pool)
+        logger.warning(f"  📝 Tracked {len(created_pools)} DPSK pools in job resources")
+    else:
+        logger.warning(f"  ⚠️ Cannot track resources: state_manager={state_manager is not None}, job_id={job_id}")
 
     # Return single completed task with created resources and forwarded data
     task = Task(

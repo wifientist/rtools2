@@ -95,6 +95,17 @@ interface VenueModelLanPortSettings {
   lanPorts: LanPortConfig[];
 }
 
+interface SSIDInfo {
+  id: string;
+  name: string;
+  ssid: string;
+  base_vlan: number | null;
+  vlan_override: number | null;
+  effective_vlan: number | null;
+  is_all_ap_groups: boolean;
+  radio_types: string[];
+}
+
 interface AuditData {
   venue_id: string;
   venue_name: string;
@@ -114,7 +125,7 @@ interface AuditData {
     aps: ApDetail[];  // Full AP details with LAN port statuses
     total_ssids: number;
     ssid_names: string[];
-    ssids: any[];
+    ssids: SSIDInfo[];
   }>;
 }
 
@@ -276,6 +287,29 @@ function PerUnitSSID() {
     }
 
     return { series, environment, wifi };
+  };
+
+  // Helper to get all unique VLANs configured on LAN ports for a group's APs
+  const getGroupLanPortVlans = (group: AuditData['ap_groups'][0]): Set<number> => {
+    const vlans = new Set<number>();
+    for (const ap of group.aps) {
+      if (ap.lan_port_settings?.lanPorts) {
+        for (const port of ap.lan_port_settings.lanPorts) {
+          if (port.enabled && port.untagId) {
+            vlans.add(port.untagId);
+          }
+        }
+      }
+    }
+    return vlans;
+  };
+
+  // Helper to check if an SSID VLAN has a potential mismatch with LAN port config
+  const checkVlanMismatch = (ssidVlan: number | null, lanPortVlans: Set<number>): 'match' | 'mismatch' | 'no-lan-config' | 'no-ssid-vlan' => {
+    if (ssidVlan === null) return 'no-ssid-vlan';
+    if (lanPortVlans.size === 0) return 'no-lan-config';
+    if (lanPortVlans.has(ssidVlan)) return 'match';
+    return 'mismatch';
   };
 
   // Filter venue LAN port settings
@@ -1320,9 +1354,26 @@ function PerUnitSSID() {
 
               {/* AP Groups List */}
               <div className="space-y-4">
-                <h4 className="text-lg font-semibold text-gray-800 mb-3">
-                  AP Groups Configuration
-                </h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-lg font-semibold text-gray-800">
+                    AP Groups Configuration
+                  </h4>
+                  {/* VLAN Legend */}
+                  <div className="flex items-center gap-3 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded font-medium">V1</span>
+                      VLAN
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">V1*</span>
+                      Override
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-amber-600">⚠️</span>
+                      VLAN mismatch
+                    </span>
+                  </div>
+                </div>
 
                 {auditData.ap_groups.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -1481,14 +1532,56 @@ function PerUnitSSID() {
                             </p>
                           ) : (
                             <ul className="space-y-1">
-                              {group.ssid_names.map((ssidName, idx) => (
-                                <li
-                                  key={idx}
-                                  className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded"
-                                >
-                                  {ssidName}
-                                </li>
-                              ))}
+                              {(() => {
+                                const lanPortVlans = getGroupLanPortVlans(group);
+                                return group.ssids.map((ssid, idx) => {
+                                  const mismatchStatus = checkVlanMismatch(ssid.effective_vlan, lanPortVlans);
+                                  const hasMismatch = mismatchStatus === 'mismatch';
+                                  const hasOverride = ssid.vlan_override !== null;
+
+                                  return (
+                                    <li
+                                      key={idx}
+                                      className={`text-xs px-2 py-1.5 rounded flex items-center justify-between gap-2 ${
+                                        hasMismatch
+                                          ? 'bg-amber-50 border border-amber-200'
+                                          : 'bg-gray-50 text-gray-600'
+                                      }`}
+                                      title={
+                                        hasMismatch
+                                          ? `VLAN ${ssid.effective_vlan} not found on any enabled LAN port (have: ${Array.from(lanPortVlans).join(', ') || 'none'})`
+                                          : hasOverride
+                                            ? `Base VLAN: ${ssid.base_vlan ?? 'unset'}, Override: ${ssid.vlan_override}`
+                                            : undefined
+                                      }
+                                    >
+                                      <span className="truncate flex-1">
+                                        {ssid.name}
+                                        {ssid.is_all_ap_groups && (
+                                          <span className="ml-1 text-purple-500" title="Activated on ALL AP Groups">*</span>
+                                        )}
+                                      </span>
+                                      <span className="flex items-center gap-1 flex-shrink-0">
+                                        {ssid.effective_vlan !== null && (
+                                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                            hasMismatch
+                                              ? 'bg-amber-100 text-amber-700'
+                                              : hasOverride
+                                                ? 'bg-blue-100 text-blue-700'
+                                                : 'bg-gray-200 text-gray-600'
+                                          }`}>
+                                            V{ssid.effective_vlan}
+                                            {hasOverride && <span className="ml-0.5">*</span>}
+                                          </span>
+                                        )}
+                                        {hasMismatch && (
+                                          <span className="text-amber-600" title="VLAN mismatch with LAN ports">⚠️</span>
+                                        )}
+                                      </span>
+                                    </li>
+                                  );
+                                });
+                              })()}
                             </ul>
                           )}
                         </div>

@@ -90,6 +90,7 @@ export interface JobResult {
     failed: number;
   };
   summary?: Record<string, any>;
+  created_resources?: Record<string, any[]>;
   errors?: string[];
 }
 
@@ -259,6 +260,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
             failed: data.failed || 0,
           },
           summary: data.summary,
+          created_resources: data.created_resources,
           errors: data.errors,
         });
       }

@@ -390,7 +390,7 @@ class DpskService:
             except (ValueError, TypeError):
                 pass  # Skip invalid VLAN IDs
 
-        logger.debug(f"create_passphrase payload: {payload}")
+        logger.warning(f"🔍 DEBUG DPSK API - create_passphrase payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.post(

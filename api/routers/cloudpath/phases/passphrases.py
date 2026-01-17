@@ -175,15 +175,23 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         # Debug: Log what we're about to send
         max_usage = pp_data.get('max_usage')
         vlan_id = pp_data.get('vlan_id')
-        logger.warning(f"  Creating passphrase: {username} (length: {len(passphrase)} chars, max_usage: {max_usage}, vlan: {vlan_id})")
+        cloudpath_guid = pp_data.get('cloudpath_guid')
+        logger.warning(f"  Creating passphrase: {username}")
+        logger.warning(f"    - passphrase length: {len(passphrase)} chars")
+        logger.warning(f"    - max_usage: {max_usage}")
+        logger.warning(f"    - vlan: {vlan_id}")
+        logger.warning(f"    - cloudpath_guid: {cloudpath_guid}")
+        logger.warning(f"    - pp_data keys: {list(pp_data.keys())}")
 
         try:
             # Create passphrase via R1 DPSK API
+            # Use cloudpath_guid as the description field for reference
             result = await r1_client.dpsk.create_passphrase(
                 pool_id=dpsk_pool_id,
                 tenant_id=tenant_id,
                 passphrase=passphrase,
                 user_name=username,
+                description=cloudpath_guid,  # Copy GUID to description field
                 expiration_date=expiration,
                 max_devices=max_usage,
                 vlan_id=vlan_id
@@ -194,13 +202,57 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             passphrase_id = result.get('id') or result.get('passphraseId') or result.get('dpskId')
             logger.warning(f"    ✅ Created: {username} (ID: {passphrase_id})")
 
+            # Now find and update the identity with the cloudpath_guid as description
+            # The passphrase endpoint doesn't support description, but the identity endpoint does
+            identity_group_id = pp_data.get('identity_group_id')
+            identity_updated = False
+
+            if identity_group_id and cloudpath_guid:
+                try:
+                    # Query identities in the group to find the one matching username
+                    identities_response = await r1_client.identity.get_identities_in_group(
+                        group_id=identity_group_id,
+                        tenant_id=tenant_id,
+                        page=0,
+                        size=1000  # Should be enough for most pools
+                    )
+
+                    # Find the identity matching this username
+                    identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
+                    matching_identity = None
+                    for identity in identities:
+                        if identity.get('name') == username:
+                            matching_identity = identity
+                            break
+
+                    if matching_identity:
+                        identity_id = matching_identity.get('id')
+                        logger.warning(f"    🔍 Found identity {identity_id} for {username}, updating description...")
+
+                        # Update the identity with the cloudpath_guid as description
+                        await r1_client.identity.update_identity(
+                            group_id=identity_group_id,
+                            identity_id=identity_id,
+                            tenant_id=tenant_id,
+                            description=cloudpath_guid
+                        )
+                        logger.warning(f"    ✅ Updated identity description with GUID: {cloudpath_guid}")
+                        identity_updated = True
+                    else:
+                        logger.warning(f"    ⚠️  Could not find identity for {username} in group {identity_group_id}")
+
+                except Exception as identity_error:
+                    logger.warning(f"    ⚠️  Failed to update identity description: {str(identity_error)}")
+
             created_passphrases.append({
                 'dpsk_id': passphrase_id,
                 'userName': username,
                 'dpsk_pool_id': dpsk_pool_id,
                 'passphrase': passphrase,
                 'expiration_warning': exp_warning if exp_warning else None,
-                'created': True
+                'created': True,
+                'identity_updated': identity_updated,
+                'cloudpath_guid': cloudpath_guid if identity_updated else None
             })
 
             # Simulate delay for testing/demos
@@ -242,6 +294,14 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             logger.warning(f"\n  🔄 API Failures ({len(api_failures)} passphrases - MAY BE RETRYABLE):")
             for fp in api_failures:
                 logger.warning(f"    - {fp['userName']}: {fp['reason']}")
+
+    # Track created resources in state_manager for cleanup/reference
+    state_manager = context.get('state_manager')
+    job_id = context.get('job_id')
+    if state_manager and job_id:
+        for pp in created_passphrases:
+            await state_manager.add_created_resource(job_id, 'passphrases', pp)
+        logger.info(f"  📝 Tracked {len(created_passphrases)} passphrases in job resources")
 
     # Return single completed task with created resources
     task = Task(

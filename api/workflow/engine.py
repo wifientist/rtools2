@@ -122,6 +122,13 @@ class WorkflowEngine:
                             job.phases[i] = phase
                             break
 
+                    # Preserve created_resources added by phases before saving
+                    # Phases call state_manager.add_created_resource() which saves to Redis,
+                    # so we need to reload to avoid overwriting with stale in-memory job
+                    refreshed = await self.state_manager.get_job(job.id)
+                    if refreshed:
+                        job.created_resources = refreshed.created_resources
+
                     await self.state_manager.save_job(job)
 
                     # Check if critical phase failed
@@ -152,6 +159,14 @@ class WorkflowEngine:
             job.current_phase_id = None
             job = self._determine_final_status(job)
             job.completed_at = datetime.utcnow()
+
+            # Reload job from Redis to get created_resources added by phases
+            # Phases call state_manager.add_created_resource() which saves to Redis,
+            # so we need to reload to get the latest state before publishing events
+            refreshed_job = await self.state_manager.get_job(job.id)
+            if refreshed_job:
+                job.created_resources = refreshed_job.created_resources
+                logger.debug(f"Reloaded created_resources: {list(job.created_resources.keys())}")
 
             # Calculate summary
             job.summary = self._calculate_summary(job)
@@ -223,6 +238,7 @@ class WorkflowEngine:
                 'previous_phase_results': self._get_previous_phase_results(job, phase),
                 'r1_client': self.task_executor.r1_client if self.task_executor else None,
                 'event_publisher': self.event_publisher,  # Allow phases to emit custom messages
+                'state_manager': self.state_manager,  # Allow phases to track created resources
                 'activation_semaphore': self.task_executor.activation_semaphore if self.task_executor else None,
                 **context,
                 **(job.input_data if job.input_data else {})  # Unpack input_data for easy access
