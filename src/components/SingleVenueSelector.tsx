@@ -28,7 +28,11 @@ export default function SingleVenueSelector({
   selectedApGroup = "Default"
 }: SingleVenueSelectorProps) {
   const { venueData, loading, error } = useSingleVenue(controllerId, tenantId);
-  const { apGroups, loading: loadingApGroups } = useApGroups(controllerId, tenantId);
+  // Only fetch AP groups if the callback is provided (avoids unnecessary API calls)
+  const { apGroups, loading: loadingApGroups } = useApGroups(
+    onApGroupChange ? controllerId : null,
+    onApGroupChange ? tenantId : null
+  );
   const [globalFilter, setGlobalFilter] = useState("");
 
   // Filter AP groups to only show those belonging to the selected venue

@@ -1,5 +1,6 @@
 aiohttp==3.9.1
 alembic==1.15.1
+APScheduler==3.10.4
 annotated-types==0.7.0
 anyio==4.8.0
 bcrypt==4.3.0

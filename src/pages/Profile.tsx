@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/context/AuthContext";
+import { apiGet, apiPost } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -17,19 +18,11 @@ const Profile = () => {
     useEffect(() => {
         const fetchProfile = async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/user_profile`, {
-                    method: "GET",
-                    credentials: "include",
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Error ${response.status}: ${errorText}`);
-                }
-
-                const data = await response.json();
+                // Uses apiFetch with auto-refresh on 401
+                const data = await apiGet<{ email: string; role: string; beta_enabled: boolean }>(
+                    `${API_BASE_URL}/user_profile`
+                );
                 setUser(data);
-
             } catch (err: any) {
                 setError(err.message);
             }
@@ -37,16 +30,10 @@ const Profile = () => {
 
         const fetchCompany = async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/companies/my`, {
-                    method: "GET",
-                    credentials: "include",
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Error ${response.status}`);
-                }
-
-                const data = await response.json();
+                // Uses apiFetch with auto-refresh on 401
+                const data = await apiGet<{ id: number; name: string }>(
+                    `${API_BASE_URL}/companies/my`
+                );
                 setCompany(data);
             } catch (err: any) {
                 console.error("Company fetch error:", err.message);
@@ -61,20 +48,11 @@ const Profile = () => {
         setUpdating(true);
         try {
             const newBetaState = !betaEnabled;
-            const response = await fetch(`${API_BASE_URL}/toggle_beta`, {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ beta_enabled: newBetaState }),
-            });
-
-            if (!response.ok) {
-                throw new Error("Failed to update beta settings");
-            }
-
-            const data = await response.json();
+            // Uses apiFetch with auto-refresh on 401
+            const data = await apiPost<{ beta_enabled: boolean }>(
+                `${API_BASE_URL}/toggle_beta`,
+                { beta_enabled: newBetaState }
+            );
             setBetaEnabled(data.beta_enabled);
 
             // Refresh auth context to update token

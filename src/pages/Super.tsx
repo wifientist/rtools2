@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Database, Activity, Terminal, Zap } from "lucide-react";
 import Admin from "./Admin";
+import SchedulerTile from "@/components/SchedulerTile";
 
 const Super = () => {
 
@@ -79,6 +80,12 @@ const Super = () => {
               )}
             </Link>
           ))}
+        </div>
+
+        {/* Scheduler Overview */}
+        <h2 className="text-xl font-semibold mb-4">Background Services</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <SchedulerTile />
         </div>
       </div>
 

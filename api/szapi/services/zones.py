@@ -60,3 +60,82 @@ class ZoneService:
 
         data = await self.client._request("GET", f"/{self.client.api_version}/rkszones", params=params)
         return data.get("list", [])
+
+    async def get_zone_details(self, zone_id: str) -> Dict[str, Any]:
+        """
+        Get detailed information for a specific zone
+
+        Args:
+            zone_id: Zone UUID
+
+        Returns:
+            Zone detail object including:
+            - id, name, description
+            - login, timezone, countryCode
+            - latitude, longitude (location)
+            - ipMode, ipv6IpMode
+            - And other zone configuration details
+        """
+        endpoint = f"/{self.client.api_version}/rkszones/{zone_id}"
+        return await self.client._request("GET", endpoint)
+
+    @staticmethod
+    def extract_external_ip(zone_details: Dict[str, Any]) -> str | None:
+        """
+        Extract external/public IP from zone details
+
+        The external IP may be in several places depending on zone configuration:
+        - tunnel profile settings
+        - AP registration settings
+
+        Args:
+            zone_details: Zone detail object from get_zone_details()
+
+        Returns:
+            External IP string or None if not configured
+        """
+        # Check for tunnel profile external IP
+        tunnel_profile = zone_details.get("tunnelProfile", {})
+        if tunnel_profile:
+            tunnel_ip = tunnel_profile.get("tunnelMtuAutoEnabled")
+            # Note: The actual external IP field may vary by SZ version
+
+        # Check AP registration settings
+        ap_registration = zone_details.get("apRegistrationRules", {})
+
+        # Check for syslog/external reporting IP
+        syslog = zone_details.get("syslog", {})
+        if syslog:
+            syslog_ip = syslog.get("primaryServer", {}).get("host")
+
+        # SmartZone zone doesn't directly expose "external IP" but we can
+        # check the AP control plane settings or simply return None
+        # The cluster management IP is more relevant for external access
+
+        return None  # Zone-level external IP typically not directly exposed
+
+    async def get_all_zones_with_domains(self) -> List[Dict[str, Any]]:
+        """
+        Get all zones across all domains with domain information included
+
+        Returns:
+            List of zone objects with domain info attached
+        """
+        all_zones = []
+
+        # First get all domains recursively
+        domains = await self.get_domains(recursively=True, include_self=True)
+
+        # For each domain, get zones
+        for domain in domains:
+            domain_id = domain.get("id")
+            domain_name = domain.get("name")
+
+            zones = await self.get_zones(domain_id=domain_id)
+
+            for zone in zones:
+                zone["_domain_id"] = domain_id
+                zone["_domain_name"] = domain_name
+                all_zones.append(zone)
+
+        return all_zones

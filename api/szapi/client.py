@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from szapi.services.zones import ZoneService
 from szapi.services.aps import ApService
 from szapi.services.switches import SwitchService
+from szapi.services.wlans import WlanService
+from szapi.services.apgroups import ApGroupService
+from szapi.services.system import SystemService
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,8 @@ class SZClient:
 
         protocol = "https" if use_https else "http"
         self.base_url = f"{protocol}://{host}:{port}/wsg/api/public"
+        # Root URL without API prefix (for switchm and other alternate APIs)
+        self.root_url = f"{protocol}://{host}:{port}"
 
         self.session_id: Optional[str] = None
         self.session_expiry: Optional[datetime] = None
@@ -73,6 +78,9 @@ class SZClient:
         self.zones = ZoneService(self)
         self.aps = ApService(self)
         self.switches = SwitchService(self)
+        self.wlans = WlanService(self)
+        self.apgroups = ApGroupService(self)
+        self.system = SystemService(self)
 
         logger.info(f"SZClient initialized for {host}:{port} with API version {api_version}")
 
@@ -179,6 +187,7 @@ class SZClient:
         self,
         method: str,
         endpoint: str,
+        use_root_url: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -187,6 +196,7 @@ class SZClient:
         Args:
             method: HTTP method (GET, POST, etc.)
             endpoint: API endpoint (without base URL)
+            use_root_url: If True, use root_url instead of base_url (for switchm, etc.)
             **kwargs: Additional arguments for httpx request
 
         Returns:
@@ -194,32 +204,34 @@ class SZClient:
         """
         await self.ensure_authenticated()
 
-        url = f"{self.base_url}{endpoint}"
+        # Use root URL for alternate APIs like switchm
+        base = self.root_url if use_root_url else self.base_url
+        url = f"{base}{endpoint}"
 
         # Add session ticket to query params
         params = kwargs.get("params", {})
         params["serviceTicket"] = self.session_id
         kwargs["params"] = params
 
-        # Log the request
-        logger.info(f"SmartZone API Request: {method} {url}")
+        # Log the request (debug level to reduce noise)
+        logger.debug(f"SmartZone API Request: {method} {url}")
         logger.debug(f"  Params: {params}")
         if kwargs.get("json"):
             logger.debug(f"  Body: {kwargs.get('json')}")
 
         try:
             response = await self.client.request(method, url, **kwargs)
-            logger.info(f"SmartZone API Response: {response.status_code} from {method} {endpoint}")
+            logger.debug(f"SmartZone API Response: {response.status_code} from {method} {endpoint}")
 
             response.raise_for_status()
             response_data = response.json()
 
-            # Log response summary
+            # Log response summary (debug level)
             if isinstance(response_data, dict):
                 if "list" in response_data:
-                    logger.info(f"  Returned {len(response_data['list'])} items (totalCount: {response_data.get('totalCount', 'N/A')})")
+                    logger.debug(f"  Returned {len(response_data['list'])} items (totalCount: {response_data.get('totalCount', 'N/A')})")
                 elif "totalCount" in response_data:
-                    logger.info(f"  Total count: {response_data['totalCount']}")
+                    logger.debug(f"  Total count: {response_data['totalCount']}")
 
             return response_data
 

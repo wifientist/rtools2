@@ -80,6 +80,22 @@ def get_logging_config(log_level: str = "INFO") -> Dict[str, Any]:
                 "handlers": ["console"],
                 "propagate": False,
             },
+            # HTTP client libraries - reduce noise
+            "httpcore": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "httpx": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "httpcore.http11": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
         },
         # Root logger - catches everything not caught by specific loggers
         "root": {

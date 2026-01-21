@@ -5,10 +5,11 @@ from .msp_router import router as msp_router
 from .venues_router import router as venues_router
 from .networks_router import router as networks_router
 from .tenant_router import router as tenant_router
+from .dpsk_router import router as dpsk_router
 from clients.r1_client import get_dynamic_r1_client #, get_scoped_r1_client
 
 # List of all sub-routers
-subrouters = [msp_router, venues_router, networks_router, tenant_router]
+subrouters = [msp_router, venues_router, networks_router, tenant_router, dpsk_router]
 
 # def create_r1_router(scope: str) -> APIRouter:
 #     """Create legacy routers for backward compatibility (/r1a, /r1b)"""

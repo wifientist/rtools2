@@ -2,6 +2,11 @@
 SmartZone APs Service
 
 Handles all AP (Access Point) related operations for SmartZone.
+
+Uses v11_1 API endpoints:
+- GET /v11_1/aps - Basic AP list (minimal fields)
+- POST /v11_1/query/ap - Query APs with full details
+- GET /v11_1/aps/{apMac} - Individual AP details
 """
 
 from typing import Dict, List, Any
@@ -21,31 +26,78 @@ class ApService:
         limit: int = 1000
     ) -> Dict[str, Any]:
         """
-        Get all APs in a specific zone
+        Get all APs in a specific zone with full details using query endpoint.
 
         Args:
-            zone_id: Zone/domain UUID
+            zone_id: Zone UUID
             page: Page number (default 0)
             limit: Results per page (default 1000, max 1000)
 
         Returns:
             Dict with 'list' of AP objects and pagination info
         """
-        # Different API versions use different endpoint structures
-        # For v11_1, the endpoint is typically one of:
-        # - /v11_1/aps (with zoneId as query param)
-        # - /v11_1/rkszones/{zoneId}/aps
-        # For v12_0+: /v12_0/rkszones/{zoneId}/aps
+        # Try POST /query/ap first - returns full details
+        try:
+            return await self._query_aps_by_zone(zone_id, page, limit)
+        except Exception as e:
+            logger.debug(f"Query endpoint failed, falling back to GET: {e}")
 
-        # Using query parameter approach for v11_1
+        # Fallback to basic GET endpoint
         endpoint = f"/{self.client.api_version}/aps"
         params = {
             "index": page,
             "listSize": min(limit, 1000),
-            "zoneId": zone_id  # Zone ID as query parameter
+            "zoneId": zone_id
+        }
+        return await self.client._request("GET", endpoint, params=params)
+
+    async def _query_aps_by_zone(
+        self,
+        zone_id: str,
+        page: int = 0,
+        limit: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Query APs using POST endpoint which returns full details.
+
+        Endpoint: POST /v11_1/query/ap
+
+        Args:
+            zone_id: Zone UUID
+            page: Page number (0-indexed)
+            limit: Results per page
+
+        Returns:
+            Dict with 'list' of AP objects with full details
+        """
+        endpoint = f"/{self.client.api_version}/query/ap"
+
+        body = {
+            "filters": [
+                {
+                    "type": "ZONE",
+                    "value": zone_id
+                }
+            ],
+            "fullTextSearch": {
+                "type": "AND",
+                "value": ""
+            },
+            "sortInfo": {
+                "sortColumn": "apMac",
+                "dir": "ASC"
+            },
+            "page": page + 1,  # API uses 1-based pagination
+            "limit": min(limit, 1000)
         }
 
-        return await self.client._request("GET", endpoint, params=params)
+        result = await self.client._request("POST", endpoint, json=body)
+
+        # Normalize to match GET endpoint format
+        if "list" not in result and "data" in result:
+            result["list"] = result.pop("data")
+
+        return result
 
     async def get_all_aps(self) -> List[Dict[str, Any]]:
         """

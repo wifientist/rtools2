@@ -36,18 +36,21 @@ class DpskService:
         Returns:
             Query response with pools array and pagination info
         """
-        # Match production API format exactly
+        # Build request body matching OpenAPI spec exactly
+        # NOTE: Extra fields like defaultPageSize, total cause 500 errors
         body = {
-            "filters": {},
             "page": page,
             "pageSize": limit,
-            "defaultPageSize": limit,
-            "total": 0,
             "sortField": "name",
-            "sortOrder": "ASC",
-            "searchTargetFields": ["name"],
-            "searchString": search_string or ""
+            "sortOrder": "ASC"
         }
+
+        # Only add optional fields if they have values
+        if search_string:
+            body["searchString"] = search_string
+            body["searchTargetFields"] = ["name"]
+
+        logger.debug(f"query_dpsk_pools request body: {body}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             return self.client.post("/dpskServices/query", payload=body, override_tenant_id=tenant_id).json()
@@ -277,22 +280,25 @@ class DpskService:
         Returns:
             Query response with passphrases
         """
-        # Match production API format exactly
+        # Build request body matching OpenAPI spec
+        # NOTE: Extra fields like defaultPageSize, total, maxDevicesPerPassphrase cause 500 errors
         body = {
-            "maxDevicesPerPassphrase": 25,
             "page": page,
             "pageSize": limit,
-            "defaultPageSize": limit,
-            "total": 0,
             "sortField": sort_field,
-            "sortOrder": sort_order,
-            "searchTargetFields": ["username", "mac"],
-            "searchString": search_string or ""
+            "sortOrder": sort_order
         }
+
+        # Only add optional fields if they have values
+        if search_string:
+            body["searchString"] = search_string
+            body["searchTargetFields"] = ["username", "mac"]
 
         # Add filters if provided (e.g., {"status": ["ACTIVE"]})
         if filters:
             body["filters"] = filters
+
+        logger.debug(f"query_passphrases request body: {body}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             return self.client.post(
@@ -360,7 +366,7 @@ class DpskService:
             vlan_id: Optional VLAN ID
 
         Returns:
-            Created passphrase response
+            Created passphrase response with id and identityId
         """
         payload = {}
 
@@ -383,14 +389,16 @@ class DpskService:
             # Explicitly set to UNLIMITED when no device limit
             payload["numberOfDevicesType"] = "UNLIMITED"
 
-        # VLAN ID
+        # VLAN ID - normalize for comparison later
+        normalized_vlan = None
         if vlan_id is not None and vlan_id != '' and vlan_id != '0':
             try:
-                payload["vlanId"] = int(vlan_id)
+                normalized_vlan = int(vlan_id)
+                payload["vlanId"] = normalized_vlan
             except (ValueError, TypeError):
                 pass  # Skip invalid VLAN IDs
 
-        logger.warning(f"🔍 DEBUG DPSK API - create_passphrase payload: {payload}")
+        logger.debug(f"create_passphrase payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.post(
@@ -404,7 +412,85 @@ class DpskService:
                 payload=payload
             )
 
-        return response.json()
+        # Raise exception on HTTP errors so callers can handle failures properly
+        if not response.ok:
+            error_data = response.json()
+            error_msg = error_data.get('error', {}).get('message', response.text[:200])
+            raise Exception(f"Failed to create passphrase: {error_msg}")
+
+        result = response.json()
+
+        # Handle 202 Accepted - async operation that returns requestId
+        # We need to poll /activities/{requestId} until completion
+        if response.status_code == 202:
+            request_id = result.get('requestId')
+            if request_id:
+                logger.debug(f"create_passphrase returned 202, polling for completion: {request_id}")
+
+                # Wait for the async task to complete
+                await self.client.await_task_completion(
+                    request_id=request_id,
+                    override_tenant_id=tenant_id,
+                    max_attempts=20,
+                    sleep_seconds=2
+                )
+
+                # Task completed - now we need to find the created passphrase
+                # Note: The passphrase field is NOT searchable (security) - we must fetch all and filter
+                if passphrase:
+                    # Fetch all passphrases from pool (no search filter)
+                    # The passphrase string is unique per pool, so we filter client-side
+                    query_result = await self.query_passphrases(
+                        pool_id=pool_id,
+                        tenant_id=tenant_id,
+                        page=1,
+                        limit=500  # Fetch enough to find our passphrase
+                    )
+
+                    # Find the exact match by passphrase string (+ vlan for extra safety)
+                    found_passphrases = query_result.get('data', [])
+                    logger.debug(f"Searching {len(found_passphrases)} passphrases for '{passphrase[:8]}...'")
+
+                    for pp in found_passphrases:
+                        pp_passphrase = pp.get('passphrase', '')
+
+                        # Match by passphrase string (primary key)
+                        if pp_passphrase == passphrase:
+                            # Verify VLAN matches too (extra safety)
+                            pp_vlan = pp.get('vlanId')
+                            if pp_vlan is not None:
+                                try:
+                                    pp_vlan = int(pp_vlan) if pp_vlan != '' and pp_vlan != 0 else None
+                                except (ValueError, TypeError):
+                                    pp_vlan = None
+
+                            if pp_vlan == normalized_vlan:
+                                logger.debug(f"Found created passphrase: id={pp.get('id')}, identityId={pp.get('identityId')}")
+                                return pp
+                            else:
+                                # Passphrase matches but VLAN doesn't - still return it
+                                logger.debug(f"Found passphrase by string (VLAN mismatch): id={pp.get('id')}")
+                                return pp
+
+                    # Passphrase not found after creation - this shouldn't happen
+                    logger.warning(f"Passphrase created but not found in pool: {passphrase[:8]}... (checked {len(found_passphrases)} passphrases)")
+                    return {
+                        "requestId": request_id,
+                        "status": "created",
+                        "passphrase": passphrase,
+                        "_note": "Created async but could not fetch details"
+                    }
+                else:
+                    # Auto-generated passphrase - can't easily find it
+                    # Return the request info
+                    logger.warning("Auto-generated passphrase created async - ID unknown")
+                    return {
+                        "requestId": request_id,
+                        "status": "created",
+                        "_note": "Created async with auto-generated passphrase"
+                    }
+
+        return result
 
     async def update_passphrase(
         self,

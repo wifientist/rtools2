@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,12 +16,16 @@ setup_logging(log_level=log_level)
 
 logger = logging.getLogger(__name__)
 
-from database import engine
+from database import engine, SessionLocal
 import models
+from scheduler.service import init_scheduler
 from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid
 from routers.sz.sz_router import router as sz_router
+from routers.sz.audit_router import router as sz_audit_router
 from routers.cloudpath.cloudpath_router import router as cloudpath_router
 from routers.workflows_router import router as workflows_router
+from routers.orchestrator import orchestrator_router, webhook_router
+from routers.scheduler_router import router as scheduler_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -30,12 +35,39 @@ from routers.fer1agg.fer1_router import dynamic_fe_router, feagg_ec_router #, fe
 from dotenv import load_dotenv
 load_dotenv()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan handler.
+
+    Manages startup and shutdown of long-running services like the scheduler.
+    """
+    # === Startup ===
+    logger.info("Starting application services...")
+
+    # Initialize and start the scheduler service
+    scheduler = init_scheduler()
+    await scheduler.start(SessionLocal)
+    logger.info("Scheduler service started")
+
+    yield
+
+    # === Shutdown ===
+    logger.info("Shutting down application services...")
+
+    # Stop the scheduler
+    await scheduler.shutdown()
+    logger.info("Scheduler service stopped")
+
+
 app = FastAPI(
     title="Ruckus.Tools API",
     version="1.0.2",
     openapi_version="3.1.0",
     description="Backend API endpoints for the ruckus tools ecosystem",
-    root_path="/api"
+    root_path="/api",
+    lifespan=lifespan
 )
 
 origins = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -87,6 +119,9 @@ app.include_router(feagg_ec_router)
 # SmartZone Router - for SZ controller management and migration
 app.include_router(sz_router, tags=["SmartZone"])
 
+# SmartZone Audit Router - comprehensive controller auditing
+app.include_router(sz_audit_router, tags=["SmartZone Audit"])
+
 # Migration Router - for SZ→R1 and R1→R1 migrations
 app.include_router(migrate.router, tags=["Migration"])
 
@@ -101,6 +136,13 @@ app.include_router(workflows_router)
 
 # Cloudpath DPSK Router - workflow-specific operations (audit, import)
 app.include_router(cloudpath_router, tags=["Cloudpath DPSK"])
+
+# DPSK Orchestrator Routers - sync per-unit pools to site-wide pool
+app.include_router(orchestrator_router, tags=["DPSK Orchestrator"])
+app.include_router(webhook_router, tags=["Orchestrator Webhooks"])
+
+# Scheduler Admin Router - super admin only
+app.include_router(scheduler_router, tags=["Scheduler Admin"])
 
 # Debug: Log all routes to check for conflicts
 logger.info("=== ALL ROUTES ===")

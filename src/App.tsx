@@ -30,8 +30,10 @@ import PerUnitSSID from "@/pages/PerUnitSSID";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathDPSK from "@/pages/CloudpathDPSK";
+import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
 import JobMonitor from "@/pages/JobMonitor";
 import JobList from "@/pages/JobList";
+import SZAudit from "@/pages/SZAudit";
 
 const App = () => {
   
@@ -50,18 +52,20 @@ const App = () => {
           <Route path="/super" element={<AdminRoute element={<Super />} />} />
           <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
           <Route path="/users" element={<AdminRoute element={<Users />} />} />
-          <Route path="/controllers" element={<Controllers />} />
-          <Route path="/diff" element={<DiffTenant />} />
-          <Route path="/diff-venue" element={<DiffVenue />} />
+          <Route path="/controllers" element={<ProtectedRoute element={<Controllers />} />} />
+          <Route path="/diff" element={<ProtectedRoute element={<DiffTenant />} />} />
+          <Route path="/diff-venue" element={<ProtectedRoute element={<DiffVenue />} />} />
           <Route path="/speed-explainer" element={<SpeedExplainer />} />
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/cloudpath-dpsk" element={<BetaRoute element={<CloudpathDPSK />} />} />
-          <Route path="/jobs" element={<JobList />} />
-          <Route path="/jobs/:jobId" element={<JobMonitor />} />
-          <Route path="/migrate" element={<MigrateR1ToR1 />} />
-          <Route path="/migrate-sz-to-r1" element={<MigrateSzToR1 />} />
-          <Route path="/snapshot" element={<Snapshot />} />
+          <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
+          <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
+          <Route path="/jobs" element={<ProtectedRoute element={<JobList />} />} />
+          <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
+          <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />
+          <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
+          <Route path="/snapshot" element={<ProtectedRoute element={<Snapshot />} />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
           
