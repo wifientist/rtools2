@@ -261,12 +261,34 @@ class R1Client:
         # Last resort: return full data as string
         return 'Unknown error'
 
+    def _get_poll_delay(self, attempt: int) -> float:
+        """
+        Get polling delay with gentle stepped backoff.
+
+        Fast initial checks (most activities complete quickly), then back off
+        to reduce API pressure under heavy load.
+
+        Schedule:
+          - Attempts 1-5:   1 second  (5 sec cumulative - catch fast completions)
+          - Attempts 6-15:  2 seconds (20 sec cumulative - normal ops)
+          - Attempts 16+:   3 seconds (for long waits / eventual consistency)
+
+        Returns:
+            Sleep duration in seconds
+        """
+        if attempt <= 5:
+            return 1.0
+        elif attempt <= 15:
+            return 2.0
+        else:
+            return 3.0
+
     async def await_task_completion(
         self,
         request_id: str,
         override_tenant_id: str = None,
-        max_attempts: int = 20,
-        sleep_seconds: int = 3
+        max_attempts: int = 40,
+        assume_success_on_timeout: bool = False
     ):
         """
         Poll /activities/{requestId} until async task completes
@@ -275,11 +297,16 @@ class R1Client:
         This method polls the /activities endpoint to check task status until
         completion (SUCCESS or FAIL).
 
+        Uses stepped backoff: 1s for first 5 attempts, 2s for next 10, then 3s.
+        This catches fast completions quickly while reducing API pressure for slow ops.
+
         Args:
             request_id: The requestId returned from a 202 response
             override_tenant_id: Optional tenant ID for MSP multi-tenant calls
-            max_attempts: Maximum number of polling attempts (default: 20)
-            sleep_seconds: Seconds to wait between polls (default: 3)
+            max_attempts: Maximum number of polling attempts (default: 40 ≈ 100 sec)
+            assume_success_on_timeout: If True and activity never appeared (all 404s),
+                return a synthetic success response instead of raising TimeoutError.
+                Use this when the POST succeeded and you're confident the op went through.
 
         Returns:
             dict: Final task status response from /activities/{requestId}
@@ -290,6 +317,9 @@ class R1Client:
         """
         logger.info(f"Waiting for task {request_id} to complete...")
 
+        activity_found = False  # Track if we ever got past 404
+        total_wait_time = 0.0
+
         for attempt in range(1, max_attempts + 1):
             response = self.get(f"/activities/{request_id}", override_tenant_id=override_tenant_id)
 
@@ -297,11 +327,14 @@ class R1Client:
                 # Activity might not exist yet - this is normal for the first few attempts
                 if attempt == 1:
                     logger.debug(f"Waiting for activity {request_id} to be created...")
-                elif attempt % 5 == 0:
-                    logger.debug(f"Still waiting for {request_id}... (attempt {attempt}/{max_attempts})")
-                await asyncio.sleep(sleep_seconds)
+                elif attempt % 10 == 0:
+                    logger.debug(f"Still waiting for {request_id}... (attempt {attempt}/{max_attempts}, {total_wait_time:.0f}s)")
+                delay = self._get_poll_delay(attempt)
+                await asyncio.sleep(delay)
+                total_wait_time += delay
                 continue
 
+            activity_found = True
             data = response.json()
             status = data.get('status')
 
@@ -314,7 +347,7 @@ class R1Client:
                 logger.debug(f"Activity data for {request_id}: {data}")
 
             if status == 'SUCCESS':
-                logger.info(f"Task {request_id} completed successfully")
+                logger.info(f"Task {request_id} completed successfully ({total_wait_time:.0f}s)")
                 logger.debug(f"Success response for {request_id}: {data}")
                 return data
 
@@ -327,12 +360,27 @@ class R1Client:
 
             # Status is still PENDING or IN_PROGRESS
             if attempt < max_attempts:
-                await asyncio.sleep(sleep_seconds)
+                delay = self._get_poll_delay(attempt)
+                await asyncio.sleep(delay)
+                total_wait_time += delay
 
         # Max attempts reached
+        if not activity_found and assume_success_on_timeout:
+            # Activity never appeared but POST succeeded - assume it went through
+            # This handles R1's eventual consistency under heavy load
+            logger.warning(
+                f"Task {request_id} activity never appeared after {max_attempts} attempts ({total_wait_time:.0f}s), "
+                f"but POST succeeded - assuming success (R1 eventual consistency)"
+            )
+            return {
+                'requestId': request_id,
+                'status': 'ASSUMED_SUCCESS',
+                'message': 'Activity polling timed out but creation request was accepted'
+            }
+
         raise TimeoutError(
             f"Task {request_id} did not complete after {max_attempts} attempts "
-            f"({max_attempts * sleep_seconds} seconds)"
+            f"({total_wait_time:.0f} seconds)"
         )
 
     async def await_task_completion_bulk(
@@ -340,7 +388,6 @@ class R1Client:
         request_ids: list[str],
         override_tenant_id: str = None,
         max_attempts: int = 60,
-        sleep_seconds: int = 3,
         max_concurrent: int = 100,
         progress_callback=None,
         global_timeout_seconds: int = None
@@ -352,7 +399,6 @@ class R1Client:
             request_ids: List of requestId strings to poll
             override_tenant_id: Optional tenant ID for MSP multi-tenant calls
             max_attempts: Maximum polling attempts per task (default: 60)
-            sleep_seconds: Seconds between polls (default: 3)
             max_concurrent: Max concurrent polls (default: 100)
             progress_callback: Optional callback(completed_count, total_count, result)
             global_timeout_seconds: Optional global timeout for all tasks
@@ -364,6 +410,7 @@ class R1Client:
             - Failed tasks are included in results with their exception
             - Use return_exceptions=True to handle mixed success/failure
             - Progress callback receives updates as tasks complete
+            - Uses stepped backoff internally (1s, 2s, 3s)
         """
         if not request_ids:
             return {}
@@ -384,8 +431,7 @@ class R1Client:
                     result = await self.await_task_completion(
                         request_id=request_id,
                         override_tenant_id=override_tenant_id,
-                        max_attempts=max_attempts,
-                        sleep_seconds=sleep_seconds
+                        max_attempts=max_attempts
                     )
 
                     # Store successful result
@@ -445,5 +491,127 @@ class R1Client:
         success_count = sum(1 for r in results.values() if r.get("success"))
         fail_count = len(results) - success_count
         logger.info(f"Bulk polling complete: {success_count} succeeded, {fail_count} failed")
+
+        return results
+
+    async def await_tasks_bulk_query(
+        self,
+        request_ids: list[str],
+        override_tenant_id: str = None,
+        max_poll_seconds: int = 120,
+        poll_interval: int = 3,
+        assume_success_on_timeout: bool = False,
+        progress_callback=None
+    ) -> dict:
+        """
+        Poll multiple activities using a single bulk query instead of individual GETs.
+
+        Uses POST /activities/query to fetch all activities at once, dramatically
+        reducing API load compared to individual GET /activities/{id} calls.
+
+        Args:
+            request_ids: List of activity requestIds to poll
+            override_tenant_id: Optional tenant ID for MSP multi-tenant calls
+            max_poll_seconds: Maximum total polling time (default: 120s)
+            poll_interval: Seconds between bulk polls (default: 3s)
+            assume_success_on_timeout: If True, treat activities that never appeared as success
+            progress_callback: Optional callback(completed, total, latest_results)
+
+        Returns:
+            dict: {request_id: {"status": "SUCCESS"|"FAIL"|"TIMEOUT", "data": {...}}}
+        """
+        if not request_ids:
+            return {}
+
+        logger.info(f"Bulk query polling {len(request_ids)} activities (interval={poll_interval}s, max={max_poll_seconds}s)")
+
+        pending_ids = set(request_ids)
+        results = {}
+        start_time = asyncio.get_event_loop().time()
+        poll_count = 0
+
+        while pending_ids and (asyncio.get_event_loop().time() - start_time) < max_poll_seconds:
+            poll_count += 1
+
+            # Build query payload - filter by requestId IN pending_ids
+            # R1 query filter syntax: {"field": {"operator": value}}
+            query_payload = {
+                "page": 1,
+                "pageSize": len(pending_ids),
+                "filters": {
+                    "requestId": list(pending_ids)
+                }
+            }
+
+            try:
+                response = self.post("/activities/query", payload=query_payload, override_tenant_id=override_tenant_id)
+
+                if response.ok:
+                    data = response.json()
+                    activities = data.get("data", [])
+
+                    # Process returned activities
+                    newly_completed = []
+                    for activity in activities:
+                        req_id = activity.get("requestId")
+                        status = activity.get("status")
+
+                        if req_id and req_id in pending_ids:
+                            if status == "SUCCESS":
+                                results[req_id] = {"status": "SUCCESS", "data": activity}
+                                pending_ids.discard(req_id)
+                                newly_completed.append(req_id)
+                            elif status == "FAIL":
+                                error_msg = activity.get("error") or "Unknown error"
+                                results[req_id] = {"status": "FAIL", "data": activity, "error": error_msg}
+                                pending_ids.discard(req_id)
+                                newly_completed.append(req_id)
+                            # PENDING/INPROGRESS - keep polling
+
+                    # Log progress
+                    completed = len(results)
+                    total = len(request_ids)
+                    if newly_completed or poll_count % 5 == 0:
+                        logger.debug(f"Bulk poll #{poll_count}: {completed}/{total} complete, {len(pending_ids)} pending")
+
+                    # Progress callback
+                    if progress_callback and newly_completed:
+                        progress_callback(completed, total, {r: results[r] for r in newly_completed})
+
+                else:
+                    logger.warning(f"Bulk query failed: {response.status_code} - {response.text[:200]}")
+
+            except Exception as e:
+                logger.warning(f"Bulk query error: {e}")
+
+            # Wait before next poll (unless we're done)
+            if pending_ids:
+                await asyncio.sleep(poll_interval)
+
+        # Handle remaining pending IDs
+        elapsed = asyncio.get_event_loop().time() - start_time
+        if pending_ids:
+            logger.warning(f"Bulk polling timed out after {elapsed:.0f}s with {len(pending_ids)} activities still pending")
+
+            for req_id in pending_ids:
+                if assume_success_on_timeout:
+                    results[req_id] = {
+                        "status": "ASSUMED_SUCCESS",
+                        "data": {"requestId": req_id},
+                        "message": "Activity polling timed out but creation was accepted"
+                    }
+                else:
+                    results[req_id] = {
+                        "status": "TIMEOUT",
+                        "data": {"requestId": req_id},
+                        "error": f"Polling timed out after {elapsed:.0f}s"
+                    }
+
+        success_count = sum(1 for r in results.values() if r["status"] in ("SUCCESS", "ASSUMED_SUCCESS"))
+        fail_count = sum(1 for r in results.values() if r["status"] == "FAIL")
+        timeout_count = sum(1 for r in results.values() if r["status"] == "TIMEOUT")
+
+        logger.info(f"Bulk query complete in {elapsed:.0f}s ({poll_count} polls): "
+                   f"{success_count} success, {fail_count} failed, {timeout_count} timeout")
 
         return results

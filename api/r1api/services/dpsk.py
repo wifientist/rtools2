@@ -428,11 +428,14 @@ class DpskService:
                 logger.debug(f"create_passphrase returned 202, polling for completion: {request_id}")
 
                 # Wait for the async task to complete
+                # Use assume_success_on_timeout=True since POST succeeded - under heavy load
+                # the activity may take longer to appear due to R1's eventual consistency
+                # Stepped backoff: 1s×5 + 2s×10 + 3s×25 ≈ 100 seconds total
                 await self.client.await_task_completion(
                     request_id=request_id,
                     override_tenant_id=tenant_id,
-                    max_attempts=20,
-                    sleep_seconds=2
+                    max_attempts=40,
+                    assume_success_on_timeout=True
                 )
 
                 # Task completed - now we need to find the created passphrase

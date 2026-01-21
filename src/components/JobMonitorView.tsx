@@ -41,7 +41,7 @@ interface Progress {
 
 interface ChildJob {
   job_id: string;
-  item_id: string;
+  item_id: string | number;
   status: string;
   current_phase: string | null;
   progress: Progress;
@@ -239,6 +239,21 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       };
       const icon = icons[data.level] || 'ℹ️';
       addLiveEvent(`${icon} ${data.message}`);
+    });
+
+    // Child job events (for parallel execution)
+    eventSource.addEventListener('child_completed', (e) => {
+      const data = JSON.parse(e.data);
+      console.log('Child completed:', data);
+      addLiveEvent(`✓ Batch ${data.item_id} completed`);
+      refreshJobStatus();
+    });
+
+    eventSource.addEventListener('child_failed', (e) => {
+      const data = JSON.parse(e.data);
+      console.log('Child failed:', data);
+      addLiveEvent(`❌ Batch ${data.item_id} failed: ${data.errors?.[0] || 'Unknown error'}`);
+      refreshJobStatus();
     });
 
     eventSource.addEventListener('job_completed', async (e) => {
@@ -565,49 +580,29 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
           </div>
         </div>
 
-        {/* Parallel Job Live Summary */}
+        {/* Parallel Job Quick Summary - counts only, details in phase */}
         {jobStatus.is_parallel && jobStatus.child_jobs && jobStatus.status === 'RUNNING' && (
-          <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-purple-800 font-medium">Parallel Execution Progress</p>
-              <div className="flex gap-3 text-xs">
+          <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded flex items-center justify-between">
+            <p className="text-sm text-purple-800 font-medium">Parallel Batches</p>
+            <div className="flex gap-3 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                {jobStatus.parallel_progress?.completed || 0} done
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                {jobStatus.parallel_progress?.running || 0} running
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-gray-300"></span>
+                {jobStatus.parallel_progress?.pending || 0} pending
+              </span>
+              {(jobStatus.parallel_progress?.failed || 0) > 0 && (
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                  {jobStatus.parallel_progress?.completed || 0} done
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  {jobStatus.parallel_progress?.failed} failed
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                  {jobStatus.parallel_progress?.running || 0} running
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-gray-300"></span>
-                  {jobStatus.parallel_progress?.pending || 0} pending
-                </span>
-                {(jobStatus.parallel_progress?.failed || 0) > 0 && (
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                    {jobStatus.parallel_progress?.failed} failed
-                  </span>
-                )}
-              </div>
-            </div>
-            {/* Mini grid showing unit status tiles */}
-            <div className="flex flex-wrap gap-1 mt-2">
-              {jobStatus.child_jobs.map((child) => (
-                <div
-                  key={child.job_id}
-                  title={`Unit ${child.item_id}: ${child.status}${child.current_phase ? ` (${child.current_phase})` : ''}`}
-                  className={`w-12 h-7 rounded text-xs flex items-center justify-center font-medium cursor-pointer transition-transform hover:scale-105 ${
-                    child.status === 'COMPLETED' ? 'bg-green-500 text-white' :
-                    child.status === 'RUNNING' ? 'bg-blue-500 text-white animate-pulse' :
-                    child.status === 'FAILED' ? 'bg-red-500 text-white' :
-                    'bg-gray-200 text-gray-600'
-                  }`}
-                  onClick={() => toggleChildJob(child.job_id)}
-                >
-                  {child.item_id?.slice(-4) || '?'}
-                </div>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -660,10 +655,17 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Panel - Child Jobs for parallel, Phases for sequential */}
+        {/* Main Panel - Show phases OR unit progress depending on parallel pattern */}
         <div className="lg:col-span-2">
-          {jobStatus.is_parallel && jobStatus.child_jobs ? (
-            /* Child Jobs Panel for Parallel Execution */
+          {/*
+            Two parallel patterns:
+            1. Batch parallelism: Parent has phases defined, child jobs are batches within one phase
+            2. Unit parallelism: Parent has NO phases, each child runs full workflow independently
+
+            Always show phases view if parent has phases defined (phases.length > 0)
+          */}
+          {jobStatus.is_parallel && jobStatus.child_jobs && jobStatus.phases.length === 0 ? (
+            /* Unit Parallelism - Full workflows per unit (e.g., per-unit SSID) */
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-bold text-gray-900">Unit Progress</h2>
@@ -695,7 +697,6 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {/* Progress indicator for child job */}
                         {child.progress && (child.progress.total_phases ?? 0) > 0 && (
                           <div className="flex items-center gap-2">
                             <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
@@ -717,56 +718,19 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                         </span>
                       </div>
                     </div>
-
-                    {/* Expanded Child Job Details */}
                     {expandedChildJobs.has(child.job_id) && (
-                      <div className="mt-3 ml-8 space-y-3">
-                        {/* Phase progress for this child */}
-                        {child.progress && (child.progress.total_phases ?? 0) > 0 && (
-                          <div className="p-3 bg-gray-50 rounded border border-gray-200">
-                            <p className="text-xs font-medium text-gray-700 mb-2">Phase Progress:</p>
-                            <div className="text-xs text-gray-600 space-y-1">
-                              <div className="flex justify-between">
-                                <span>Completed:</span>
-                                <span className="font-medium text-green-600">{child.progress.completed_phases ?? 0}</span>
-                              </div>
-                              {(child.progress.running_phases ?? 0) > 0 && (
-                                <div className="flex justify-between">
-                                  <span>Running:</span>
-                                  <span className="font-medium text-blue-600">{child.progress.running_phases}</span>
-                                </div>
-                              )}
-                              {(child.progress.failed_phases ?? 0) > 0 && (
-                                <div className="flex justify-between">
-                                  <span>Failed:</span>
-                                  <span className="font-medium text-red-600">{child.progress.failed_phases}</span>
-                                </div>
-                              )}
-                              <div className="flex justify-between">
-                                <span>Total:</span>
-                                <span className="font-medium">{child.progress.total_phases ?? 0}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Errors for this child */}
+                      <div className="mt-3 ml-8 space-y-2">
                         {child.errors && child.errors.length > 0 && (
                           <div className="p-3 bg-red-50 rounded border border-red-200">
-                            <p className="text-xs font-medium text-red-800 mb-2">Errors:</p>
-                            <div className="space-y-1">
-                              {child.errors.map((error, idx) => (
-                                <p key={idx} className="text-xs text-red-600">{error}</p>
-                              ))}
-                            </div>
+                            <p className="text-xs font-medium text-red-800 mb-1">Errors:</p>
+                            {child.errors.map((error, idx) => (
+                              <p key={idx} className="text-xs text-red-600">{error}</p>
+                            ))}
                           </div>
                         )}
-
-                        {/* Current phase info */}
                         {child.current_phase && child.status === 'RUNNING' && (
                           <div className="p-3 bg-blue-50 rounded border border-blue-200">
-                            <p className="text-xs font-medium text-blue-800">Currently Running:</p>
-                            <p className="text-sm text-blue-900 mt-1">{child.current_phase}</p>
+                            <p className="text-xs text-blue-800">Running: {child.current_phase}</p>
                           </div>
                         )}
                       </div>
@@ -776,7 +740,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
               </div>
             </div>
           ) : (
-            /* Phases Panel for Sequential Execution */
+            /* Sequential OR Batch Parallelism - Show phases (with batches under parallel phase) */
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-bold text-gray-900">Phases</h2>
@@ -853,7 +817,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                           </div>
                         )}
 
-                        {/* Tasks List */}
+                        {/* Tasks List (for non-parallel phases) */}
                         {phase.tasks && phase.tasks.length > 0 ? (
                           <div className="space-y-2">
                             {phase.tasks.map((task) => (
@@ -894,11 +858,74 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                               </div>
                             ))}
                           </div>
-                        ) : !phase.result ? (
-                          <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm text-gray-500 italic">
-                            No task details available for this phase
-                          </div>
                         ) : null}
+
+                        {/* Child Jobs (for parallel phases) */}
+                        {jobStatus.is_parallel && jobStatus.child_jobs && phase.id.includes('parallel') && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs font-medium text-purple-700">
+                                Parallel Batches: {jobStatus.child_jobs.filter(c => c.status === 'COMPLETED').length}/{jobStatus.child_jobs.length} complete
+                              </p>
+                              {jobStatus.parallel_progress?.running ? (
+                                <span className="text-xs text-blue-600">{jobStatus.parallel_progress.running} running</span>
+                              ) : null}
+                            </div>
+                            {/* Batch grid */}
+                            <div className="flex flex-wrap gap-1">
+                              {jobStatus.child_jobs.map((child) => (
+                                <div
+                                  key={child.job_id}
+                                  title={`Batch ${child.item_id}: ${child.status}`}
+                                  className={`w-8 h-6 rounded text-xs flex items-center justify-center font-medium cursor-pointer transition-transform hover:scale-110 ${
+                                    child.status === 'COMPLETED' ? 'bg-green-500 text-white' :
+                                    child.status === 'RUNNING' ? 'bg-blue-500 text-white animate-pulse' :
+                                    child.status === 'FAILED' ? 'bg-red-500 text-white' :
+                                    'bg-gray-200 text-gray-600'
+                                  }`}
+                                  onClick={(e) => { e.stopPropagation(); toggleChildJob(child.job_id); }}
+                                >
+                                  {child.item_id}
+                                </div>
+                              ))}
+                            </div>
+                            {/* Expanded child details */}
+                            {jobStatus.child_jobs.filter(c => expandedChildJobs.has(c.job_id)).map((child) => (
+                              <div key={child.job_id} className="mt-2 p-3 bg-purple-50 rounded border border-purple-200">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-medium text-purple-900">Batch {child.item_id}</span>
+                                  <span className={`text-xs px-2 py-0.5 rounded ${getStatusColor(child.status)}`}>
+                                    {child.status}
+                                  </span>
+                                </div>
+                                {child.errors && child.errors.length > 0 && (
+                                  <div className="text-xs text-red-600 mt-1">
+                                    {child.errors.map((err, i) => <p key={i}>{err}</p>)}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* No details message - only show for pending/running phases without tasks */}
+                        {(!phase.tasks || phase.tasks.length === 0) &&
+                         !phase.result &&
+                         !(jobStatus.is_parallel && phase.id.includes('parallel')) &&
+                         phase.status !== 'COMPLETED' && phase.status !== 'SKIPPED' && (
+                          <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm text-gray-500 italic">
+                            {phase.status === 'RUNNING' ? 'Processing...' : 'Waiting to start...'}
+                          </div>
+                        )}
+                        {/* Completed inline phase - show success */}
+                        {(!phase.tasks || phase.tasks.length === 0) &&
+                         !phase.result &&
+                         !(jobStatus.is_parallel && phase.id.includes('parallel')) &&
+                         phase.status === 'COMPLETED' && (
+                          <div className="p-3 bg-green-50 rounded border border-green-200 text-sm text-green-700">
+                            ✓ Phase completed successfully
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

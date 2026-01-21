@@ -53,16 +53,23 @@ export default function Option43Calculator() {
 
       <label className="block mb-2 text-sm font-medium">Vendor</label>
       <select
-        value={vendor}
-        onChange={(e) => setVendor(e.target.value)}
+        onChange={(e) => {
+          const selection = e.target.value;
+          if (selection === 'ruckus-one') {
+            setVendor('ruckus');
+            setIps('device.ruckus.cloud');
+          } else {
+            setVendor(selection);
+          }
+        }}
         className="w-full mb-4 p-2 border rounded"
       >
         <option value="ruckus">Ruckus (SmartZone)</option>
-        {/* Add more vendors here */}
+        <option value="ruckus-one">Ruckus ONE</option>
       </select>
 
       <label className="block mb-2 text-sm font-medium">
-        IP Addresses (comma separated)
+        IP Addresses or FQDN (comma separated)
       </label>
       <input
         type="text"

@@ -172,16 +172,11 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         if exp_warning:
             logger.warning(f"  ⚠️  {username}: {exp_warning}")
 
-        # Debug: Log what we're about to send
+        # Get optional fields
         max_usage = pp_data.get('max_usage')
         vlan_id = pp_data.get('vlan_id')
         cloudpath_guid = pp_data.get('cloudpath_guid')
-        logger.warning(f"  Creating passphrase: {username}")
-        logger.warning(f"    - passphrase length: {len(passphrase)} chars")
-        logger.warning(f"    - max_usage: {max_usage}")
-        logger.warning(f"    - vlan: {vlan_id}")
-        logger.warning(f"    - cloudpath_guid: {cloudpath_guid}")
-        logger.warning(f"    - pp_data keys: {list(pp_data.keys())}")
+        logger.debug(f"Creating {username}: len={len(passphrase)}, vlan={vlan_id}, max={max_usage}, guid={cloudpath_guid[:8] if cloudpath_guid else None}...")
 
         try:
             # Create passphrase via R1 DPSK API
@@ -197,10 +192,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 vlan_id=vlan_id
             )
 
-            # Debug: Log the full response to understand the structure
-            logger.warning(f"    🔍 DEBUG - create_passphrase response: {result}")
             passphrase_id = result.get('id') or result.get('passphraseId') or result.get('dpskId')
-            logger.warning(f"    ✅ Created: {username} (ID: {passphrase_id})")
 
             # Now find and update the identity with the cloudpath_guid as description
             # The passphrase endpoint doesn't support description, but the identity endpoint does
@@ -227,8 +219,6 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
                     if matching_identity:
                         identity_id = matching_identity.get('id')
-                        logger.warning(f"    🔍 Found identity {identity_id} for {username}, updating description...")
-
                         # Update the identity with the cloudpath_guid as description
                         await r1_client.identity.update_identity(
                             group_id=identity_group_id,
@@ -236,13 +226,10 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                             tenant_id=tenant_id,
                             description=cloudpath_guid
                         )
-                        logger.warning(f"    ✅ Updated identity description with GUID: {cloudpath_guid}")
                         identity_updated = True
-                    else:
-                        logger.warning(f"    ⚠️  Could not find identity for {username} in group {identity_group_id}")
 
                 except Exception as identity_error:
-                    logger.warning(f"    ⚠️  Failed to update identity description: {str(identity_error)}")
+                    logger.debug(f"Failed to update identity description for {username}: {identity_error}")
 
             created_passphrases.append({
                 'dpsk_id': passphrase_id,
@@ -260,7 +247,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 await asyncio.sleep(0.3)  # 300ms delay per passphrase
 
         except Exception as e:
-            logger.warning(f"    ❌ Failed to create {username}: {str(e)}")
+            logger.debug(f"Failed to create {username}: {e}")
             failed_passphrases.append({
                 'userName': username,
                 'passphrase': passphrase,
@@ -270,12 +257,10 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             })
 
     total_processed = len(created_passphrases) + len(failed_passphrases) + len(skipped_passphrases)
-    logger.warning(f"✅ Created {len(created_passphrases)}/{total_processed} passphrases")
+    logger.info(f"Created {len(created_passphrases)}/{total_processed} passphrases")
 
     if skipped_passphrases:
-        logger.warning(f"⏭️  {len(skipped_passphrases)} expired passphrases skipped:")
-        for sp in skipped_passphrases:
-            logger.warning(f"    - {sp['userName']} (expired: {sp['original_expiration']})")
+        logger.info(f"Skipped {len(skipped_passphrases)} expired passphrases")
 
     if failed_passphrases:
         logger.warning(f"⚠️  {len(failed_passphrases)} passphrases failed:")

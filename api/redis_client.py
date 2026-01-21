@@ -4,6 +4,7 @@ Redis client configuration for workflow state management
 import logging
 import os
 import redis.asyncio as redis
+from redis.asyncio.connection import ConnectionPool
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,7 @@ class RedisClient:
     """Singleton Redis client for workflow state storage"""
 
     _instance: Optional[redis.Redis] = None
+    _pool: Optional[ConnectionPool] = None
 
     @classmethod
     async def get_client(cls) -> redis.Redis:
@@ -22,39 +24,47 @@ class RedisClient:
             db = int(os.getenv("REDIS_DB", "1"))
             password = os.getenv("REDIS_PASSWORD", None)
 
-            # Only pass password if it's set (not empty string)
-            redis_kwargs = {
+            # Connection pool settings for parallel workloads
+            # Default max_connections=10 is too small for 30+ parallel batches
+            # Each batch does frequent Redis ops + SSE streams + progress tracking
+            pool_kwargs = {
                 "host": host,
                 "port": port,
                 "db": db,
-                "decode_responses": True,  # Automatically decode bytes to strings
-                "socket_connect_timeout": 5,
-                "socket_timeout": 5,
+                "decode_responses": True,
+                "socket_connect_timeout": 10,
+                "socket_timeout": 10,
+                "max_connections": 100,  # Support 30+ parallel batches + SSE + progress
             }
 
             if password:
-                redis_kwargs["password"] = password
+                pool_kwargs["password"] = password
 
-            cls._instance = redis.Redis(**redis_kwargs)
+            cls._pool = ConnectionPool(**pool_kwargs)
+            cls._instance = redis.Redis(connection_pool=cls._pool)
 
             # Test connection
             try:
                 await cls._instance.ping()
-                logger.info(f"Redis connected: {host}:{port} (DB {db})")
+                logger.info(f"Redis connected: {host}:{port} (DB {db}, max_connections=100)")
             except redis.ConnectionError as e:
                 logger.error(f"Redis connection failed: {e}")
                 cls._instance = None
+                cls._pool = None
                 raise
 
         return cls._instance
 
     @classmethod
     async def close(cls):
-        """Close Redis connection"""
+        """Close Redis connection and pool"""
         if cls._instance:
             await cls._instance.close()
             cls._instance = None
-            logger.info("Redis connection closed")
+        if cls._pool:
+            await cls._pool.disconnect()
+            cls._pool = None
+        logger.info("Redis connection closed")
 
 # Convenience functions for FastAPI dependency injection
 async def get_redis() -> redis.Redis:

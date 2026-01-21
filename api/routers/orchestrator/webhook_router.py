@@ -17,16 +17,19 @@ the activity via /activities/{id} polling ourselves rather than relying on webho
 status. This handles R1's quirk where entityId changes between IN_PROGRESS and SUCCESS.
 """
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 import threading
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from starlette.requests import ClientDisconnect
 from sqlalchemy.orm import Session
 
 from dependencies import get_db
 from models.controller import Controller
+from redis_client import get_redis_client
 from models.orchestrator import DPSKOrchestrator, OrchestratorSourcePool, PassphraseMapping, OrchestratorSyncEvent
 from routers.orchestrator.sync_engine import SyncEngine
 from routers.orchestrator.sync_pool import (
@@ -54,6 +57,14 @@ WEBHOOK_SECRET_HEADERS = ["Authorization", "X-Webhook-Secret"]
 _tracked_activities: Set[str] = set()  # activity_ids currently being monitored
 _activity_lock = threading.Lock()
 _ACTIVITY_TTL_MINUTES = 30  # How long to keep tracking an activity
+
+# Redis key prefix for webhook pause tracking
+WEBHOOK_PAUSE_KEY_PREFIX = "webhook_pause:"
+WEBHOOK_PAUSE_TTL_SECONDS = 3600  # 1 hour max pause (safety fallback)
+
+# Simple in-memory cache for orchestrator lookups (avoids DB during webhook floods)
+_orchestrator_cache: Dict[str, tuple] = {}  # secret -> (orchestrator_id, name, enabled, timestamp)
+_CACHE_TTL_SECONDS = 60  # Cache for 1 minute
 
 
 def is_activity_tracked(activity_id: str) -> bool:
@@ -87,12 +98,136 @@ def untrack_activity(activity_id: str) -> None:
         logger.debug(f"Stopped tracking activity {activity_id}")
 
 
+# ========== Webhook Pause Tracking ==========
+# Allows workflows (Cloudpath import, per-unit DPSK) to temporarily pause
+# webhook processing to avoid conflicts during bulk operations.
+
+def pause_webhooks_for_orchestrator(orchestrator_id: int, reason: str = "bulk_import", ttl_seconds: int = None) -> bool:
+    """
+    Pause webhook processing for an orchestrator.
+
+    Used by bulk import workflows to prevent webhook floods from causing conflicts.
+
+    Args:
+        orchestrator_id: ID of the orchestrator to pause
+        reason: Reason for pausing (for logging)
+        ttl_seconds: How long to pause (default: WEBHOOK_PAUSE_TTL_SECONDS)
+
+    Returns:
+        True if pause was set, False on error
+    """
+    try:
+        redis = get_redis_client()
+        key = f"{WEBHOOK_PAUSE_KEY_PREFIX}{orchestrator_id}"
+        ttl = ttl_seconds or WEBHOOK_PAUSE_TTL_SECONDS
+        redis.setex(key, ttl, reason)
+        logger.info(f"Paused webhooks for orchestrator {orchestrator_id}: {reason} (TTL: {ttl}s)")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to pause webhooks for orchestrator {orchestrator_id}: {e}")
+        return False
+
+
+def resume_webhooks_for_orchestrator(orchestrator_id: int) -> bool:
+    """
+    Resume webhook processing for an orchestrator.
+
+    Args:
+        orchestrator_id: ID of the orchestrator to resume
+
+    Returns:
+        True if resumed (or wasn't paused), False on error
+    """
+    try:
+        redis = get_redis_client()
+        key = f"{WEBHOOK_PAUSE_KEY_PREFIX}{orchestrator_id}"
+        redis.delete(key)
+        logger.info(f"Resumed webhooks for orchestrator {orchestrator_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to resume webhooks for orchestrator {orchestrator_id}: {e}")
+        return False
+
+
+def is_webhook_paused(orchestrator_id: int) -> tuple[bool, Optional[str]]:
+    """
+    Check if webhook processing is paused for an orchestrator.
+
+    Args:
+        orchestrator_id: ID of the orchestrator to check
+
+    Returns:
+        Tuple of (is_paused, reason_if_paused)
+    """
+    try:
+        redis = get_redis_client()
+        key = f"{WEBHOOK_PAUSE_KEY_PREFIX}{orchestrator_id}"
+        reason = redis.get(key)
+        if reason:
+            return True, reason.decode('utf-8') if isinstance(reason, bytes) else reason
+        return False, None
+    except Exception as e:
+        logger.error(f"Failed to check webhook pause for orchestrator {orchestrator_id}: {e}")
+        return False, None  # Fail open - don't block webhooks on Redis errors
+
+
+class CachedOrchestrator:
+    """Minimal orchestrator info for cache-based early exit."""
+    def __init__(self, id: int, name: str, enabled: bool):
+        self.id = id
+        self.name = name
+        self.enabled = enabled
+
+
+def find_orchestrator_by_secret_cached(secret: str) -> Optional[CachedOrchestrator]:
+    """
+    Check cache for orchestrator by secret (no DB hit).
+
+    Returns cached minimal info if available and fresh, None otherwise.
+    Used for quick early exit when orchestrator is disabled.
+    """
+    import time
+
+    if not secret:
+        return None
+
+    cached = _orchestrator_cache.get(secret)
+    if cached:
+        orch_id, name, enabled, timestamp = cached
+        if time.time() - timestamp < _CACHE_TTL_SECONDS:
+            return CachedOrchestrator(orch_id, name, enabled)
+    return None
+
+
+def invalidate_orchestrator_cache(secret: str = None, orchestrator_id: int = None) -> None:
+    """
+    Invalidate cached orchestrator data.
+
+    Call this when orchestrator enabled/disabled status changes.
+
+    Args:
+        secret: Webhook secret to invalidate (if known)
+        orchestrator_id: Orchestrator ID to invalidate (searches all cached entries)
+    """
+    if secret and secret in _orchestrator_cache:
+        del _orchestrator_cache[secret]
+        logger.debug(f"Invalidated orchestrator cache for secret")
+        return
+
+    if orchestrator_id:
+        # Search for matching orchestrator_id
+        to_delete = [s for s, (oid, _, _, _) in _orchestrator_cache.items() if oid == orchestrator_id]
+        for s in to_delete:
+            del _orchestrator_cache[s]
+        if to_delete:
+            logger.debug(f"Invalidated orchestrator cache for ID {orchestrator_id}")
+
+
 def find_orchestrator_by_secret(db: Session, secret: str) -> Optional[DPSKOrchestrator]:
     """
     Find an orchestrator by its webhook secret.
 
-    Note: This does NOT filter by enabled status - caller should check that separately.
-    This allows proper webhook acknowledgment even for disabled orchestrators.
+    Updates the cache on lookup for future quick checks.
 
     Args:
         db: Database session
@@ -101,15 +236,23 @@ def find_orchestrator_by_secret(db: Session, secret: str) -> Optional[DPSKOrches
     Returns:
         Matching orchestrator or None if not found
     """
+    import time
+
     if not secret:
         return None
 
-    # Find orchestrator with matching secret (regardless of enabled status)
-    # Note: In production with many orchestrators, you might want to hash secrets
-    # and use a more efficient lookup
-    return db.query(DPSKOrchestrator).filter(
+    # Find orchestrator with matching secret
+    orchestrator = db.query(DPSKOrchestrator).filter(
         DPSKOrchestrator.webhook_secret == secret
     ).first()
+
+    # Update cache
+    if orchestrator:
+        _orchestrator_cache[secret] = (orchestrator.id, orchestrator.name, orchestrator.enabled, time.time())
+    elif secret in _orchestrator_cache:
+        del _orchestrator_cache[secret]
+
+    return orchestrator
 
 
 def normalize_uuid(uuid_str: str) -> str:
@@ -184,8 +327,7 @@ async def track_and_process_activity(
             activity_data = await r1_client.await_task_completion(
                 request_id=activity_id,
                 override_tenant_id=orchestrator.tenant_id,
-                max_attempts=60,  # ~3 minutes with 3s sleep
-                sleep_seconds=3
+                max_attempts=60  # ~100s with stepped backoff
             )
         except TimeoutError:
             logger.warning(f"Activity {activity_id} timed out")
@@ -636,25 +778,11 @@ async def receive_webhook(
     }
     ```
     """
-    # Log incoming request details for debugging
-    logger.info(f"=== WEBHOOK RECEIVED ===")
-    logger.info(f"Method: {request.method}")
-    logger.info(f"URL: {request.url}")
-    logger.info(f"Headers: {dict(request.headers)}")
-
-    # Try to get body for logging (won't consume it)
-    try:
-        body = await request.body()
-        logger.info(f"Body preview: {body[:500].decode('utf-8', errors='replace') if body else '(empty)'}")
-    except Exception as e:
-        logger.info(f"Could not read body for logging: {e}")
-
-    # 1. Get the webhook secret from header (check multiple possible header names)
+    # 1. Get the webhook secret from header FIRST (before reading body)
     secret = None
     for header_name in WEBHOOK_SECRET_HEADERS:
         secret = request.headers.get(header_name)
         if secret:
-            logger.info(f"Found secret in '{header_name}' header")
             break
 
     if not secret:
@@ -664,7 +792,21 @@ async def receive_webhook(
             detail=f"Missing secret header. Expected one of: {WEBHOOK_SECRET_HEADERS}. Configure a webhook secret in the orchestrator settings."
         )
 
-    # 2. Find orchestrator by secret
+    # 2. CACHE CHECK: Quick early exit for disabled orchestrators (no DB hit)
+    cached = find_orchestrator_by_secret_cached(secret)
+    if cached and not cached.enabled:
+        # Cached disabled orchestrator - skip DB lookup entirely
+        logger.debug(f"Webhook for disabled orchestrator {cached.name} (cached) - skipping")
+        return {"status": "acknowledged", "reason": "orchestrator_disabled"}
+
+    if cached:
+        # Cache hit for enabled - still check pause status before DB lookup
+        paused, pause_reason = is_webhook_paused(cached.id)
+        if paused:
+            logger.debug(f"Webhook for paused orchestrator {cached.name} ({pause_reason}) - skipping")
+            return {"status": "acknowledged", "reason": f"orchestrator_paused:{pause_reason}"}
+
+    # 3. Find orchestrator by secret (DB lookup - also updates cache)
     orchestrator = find_orchestrator_by_secret(db, secret)
     if not orchestrator:
         logger.warning("Webhook received with unknown secret")
@@ -673,16 +815,40 @@ async def receive_webhook(
             detail="Invalid webhook secret. No matching orchestrator found."
         )
 
-    logger.info(f"Webhook authenticated for orchestrator: {orchestrator.name} (ID: {orchestrator.id}, enabled: {orchestrator.enabled})")
+    # 4. EARLY EXIT: Check enabled/paused BEFORE reading body (zero processing)
+    # (Double-check in case cache was stale)
+    if not orchestrator.enabled:
+        logger.debug(f"Webhook for disabled orchestrator {orchestrator.name} - skipping body read")
+        return {"status": "acknowledged", "reason": "orchestrator_disabled"}
 
-    # 3. Parse JSON payload
+    # Check pause status (skip if already checked via cache above)
+    if not cached:
+        paused, pause_reason = is_webhook_paused(orchestrator.id)
+        if paused:
+            logger.debug(f"Webhook for paused orchestrator {orchestrator.name} ({pause_reason}) - skipping body read")
+            return {"status": "acknowledged", "reason": f"orchestrator_paused:{pause_reason}"}
+
+    # 4. Read body once and parse JSON (only if enabled and not paused)
     try:
-        data = await request.json()
-    except Exception as e:
+        body = await request.body()
+        data = json.loads(body) if body else {}
+    except ClientDisconnect:
+        # Client closed connection before we could read body
+        # This commonly happens during rapid webhook floods from RuckusONE
+        # Just log and return - we can't respond anyway
+        logger.debug(f"Webhook client disconnected before body read (orchestrator: {orchestrator.name})")
+        return {"status": "client_disconnected"}
+    except json.JSONDecodeError as e:
         logger.error(f"Failed to parse webhook JSON: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    except Exception as e:
+        logger.error(f"Failed to read webhook body: {e!r}")  # Use !r for better exception repr
+        raise HTTPException(status_code=400, detail="Failed to read request body")
 
-    # 4. Extract relevant fields
+    # Log webhook receipt
+    logger.debug(f"Webhook for orchestrator {orchestrator.name}: {body[:200].decode('utf-8', errors='replace') if body else '(empty)'}...")
+
+    # 5. Extract relevant fields
     payload = data.get("payload", {})
     webhook_type = data.get("type", "")
     use_case = payload.get("useCase", "")
@@ -690,48 +856,16 @@ async def receive_webhook(
     entity_id = payload.get("entityId", "")
     activity_id = payload.get("requestId") or payload.get("id", "")
 
-    # Log full payload structure for debugging
-    logger.info(f"Full payload keys: {list(payload.keys())}")
-    logger.info(f"entityId from payload: {entity_id}")
-    logger.info(f"activity_id: {activity_id}")
-    # Log other potentially useful fields
-    if "dpskPoolId" in payload:
-        logger.info(f"dpskPoolId: {payload.get('dpskPoolId')}")
-    if "identityGroupId" in payload:
-        logger.info(f"identityGroupId: {payload.get('identityGroupId')}")
-    if "results" in payload:
-        logger.info(f"results count: {len(payload.get('results', []))}")
-    # Log first result if available (may contain entity IDs)
-    results = payload.get("results", [])
-    if results and isinstance(results, list) and len(results) > 0:
-        logger.info(f"First result: {results[0]}")
-    # Log steps field - may contain the actual entity info
-    steps = payload.get("steps", [])
-    if steps:
-        logger.info(f"Steps count: {len(steps)}")
-        for i, step in enumerate(steps[:3]):  # Log first 3 steps
-            logger.info(f"Step {i}: {step}")
+    logger.debug(f"Webhook payload: useCase={use_case}, entityId={entity_id}, activity_id={activity_id}")
 
-    # 5. Handle test messages (always acknowledge)
+    # 6. Handle test messages
     if webhook_type == "test":
         logger.info(f"Test webhook received for orchestrator {orchestrator.name}")
         return {
             "status": "ok",
             "message": "Test webhook received successfully",
             "orchestrator_id": orchestrator.id,
-            "orchestrator_name": orchestrator.name,
-            "orchestrator_enabled": orchestrator.enabled
-        }
-
-    # 6. Check if orchestrator is enabled (after acknowledging test webhooks)
-    if not orchestrator.enabled:
-        logger.info(f"Orchestrator {orchestrator.name} is disabled - webhook acknowledged but not processed")
-        return {
-            "status": "acknowledged",
-            "message": "Webhook received but orchestrator is disabled",
-            "orchestrator_id": orchestrator.id,
-            "orchestrator_name": orchestrator.name,
-            "use_case": use_case
+            "orchestrator_name": orchestrator.name
         }
 
     logger.info(f"Webhook for orchestrator {orchestrator.id}: useCase={use_case}, status={status}, entityId={entity_id}, activityId={activity_id}")
@@ -750,6 +884,12 @@ async def receive_webhook(
     if not activity_id:
         logger.warning("Webhook missing activity_id, cannot track")
         return {"status": "ignored", "reason": "No activity_id to track"}
+
+    # Log active tracking count for debugging webhook floods
+    with _activity_lock:
+        active_count = len(_tracked_activities)
+    if active_count > 10:
+        logger.warning(f"High webhook load: {active_count} activities being tracked")
 
     # 7b. Check if already tracking this activity (multiple webhooks for same activity)
     if is_activity_tracked(activity_id):
@@ -1098,4 +1238,106 @@ async def sync_all_source_pools(
         "parallel": parallel,
         "pools": pool_info,
         "note": f"{'Parallel' if parallel else 'Sequential'} sync started for all source pools"
+    }
+
+
+# ========== Webhook Pause Management Endpoints ==========
+
+@router.post("/pause/{orchestrator_id}")
+async def pause_orchestrator_webhooks(
+    orchestrator_id: int,
+    reason: str = "manual",
+    ttl_seconds: int = 3600,
+    db: Session = Depends(get_db)
+):
+    """
+    Temporarily pause webhook processing for an orchestrator.
+
+    Use this before running bulk import operations that would flood webhooks.
+    Paused orchestrators still acknowledge webhooks (200 OK) but skip all processing.
+
+    Args:
+        orchestrator_id: ID of the orchestrator to pause
+        reason: Reason for pausing (for logging)
+        ttl_seconds: How long to pause (default: 1 hour, max: 24 hours)
+
+    Example:
+        POST /api/orchestrator/webhook/pause/2?reason=bulk_import&ttl_seconds=1800
+    """
+    orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
+    if not orchestrator:
+        raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    # Limit TTL to 24 hours max
+    ttl_seconds = min(ttl_seconds, 86400)
+
+    if pause_webhooks_for_orchestrator(orchestrator_id, reason, ttl_seconds):
+        return {
+            "status": "paused",
+            "orchestrator_id": orchestrator.id,
+            "orchestrator_name": orchestrator.name,
+            "reason": reason,
+            "ttl_seconds": ttl_seconds,
+            "note": f"Webhooks paused for {ttl_seconds}s. Call /resume/{orchestrator_id} to resume early."
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to pause webhooks (Redis error)")
+
+
+@router.post("/resume/{orchestrator_id}")
+async def resume_orchestrator_webhooks(
+    orchestrator_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Resume webhook processing for a paused orchestrator.
+
+    Args:
+        orchestrator_id: ID of the orchestrator to resume
+
+    Example:
+        POST /api/orchestrator/webhook/resume/2
+    """
+    orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
+    if not orchestrator:
+        raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    if resume_webhooks_for_orchestrator(orchestrator_id):
+        return {
+            "status": "resumed",
+            "orchestrator_id": orchestrator.id,
+            "orchestrator_name": orchestrator.name,
+            "note": "Webhook processing resumed"
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to resume webhooks (Redis error)")
+
+
+@router.get("/pause-status/{orchestrator_id}")
+async def get_orchestrator_pause_status(
+    orchestrator_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Check if webhook processing is paused for an orchestrator.
+
+    Args:
+        orchestrator_id: ID of the orchestrator to check
+
+    Example:
+        GET /api/orchestrator/webhook/pause-status/2
+    """
+    orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
+    if not orchestrator:
+        raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    paused, reason = is_webhook_paused(orchestrator_id)
+
+    return {
+        "orchestrator_id": orchestrator.id,
+        "orchestrator_name": orchestrator.name,
+        "enabled": orchestrator.enabled,
+        "webhook_paused": paused,
+        "pause_reason": reason,
+        "status": "paused" if paused else ("disabled" if not orchestrator.enabled else "active")
     }

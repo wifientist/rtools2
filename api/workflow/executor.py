@@ -172,7 +172,6 @@ class TaskExecutor:
 
         tenant_id = context.get('tenant_id')
         max_polls = task.max_polls or 60
-        sleep_seconds = 3
 
         logger.info(f"Polling async task {task.request_id} (max {max_polls} attempts)")
 
@@ -180,8 +179,7 @@ class TaskExecutor:
             result = await self.r1_client.await_task_completion(
                 request_id=task.request_id,
                 override_tenant_id=tenant_id,
-                max_attempts=max_polls,
-                sleep_seconds=sleep_seconds
+                max_attempts=max_polls
             )
             task.poll_count += max_polls  # Update poll count
             return result

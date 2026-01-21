@@ -93,6 +93,15 @@ class WorkflowEventPublisher:
             )
         })
 
+        # If this is a child job, notify the parent's channel
+        if job.parent_job_id:
+            await self._publish_event(job.parent_job_id, "child_completed", {
+                "child_job_id": job.id,
+                "item_id": job.get_item_identifier(),
+                "status": str(job.status),
+                "summary": job.summary
+            })
+
     async def job_failed(self, job: WorkflowJob):
         """Publish job failed event"""
         # Calculate progress statistics
@@ -124,6 +133,15 @@ class WorkflowEventPublisher:
                 "failed": failed_tasks,
             }
         })
+
+        # If this is a child job, notify the parent's channel
+        if job.parent_job_id:
+            await self._publish_event(job.parent_job_id, "child_failed", {
+                "child_job_id": job.id,
+                "item_id": job.get_item_identifier(),
+                "status": str(job.status),
+                "errors": job.errors[:3] if job.errors else []
+            })
 
     async def job_cancelled(self, job: WorkflowJob):
         """Publish job cancelled event"""

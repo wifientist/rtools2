@@ -154,12 +154,11 @@ class IdempotentHelper:
                 logger.warning(f"  ⏳ Waiting for pool to be ready before creating passphrases...")
 
                 try:
-                    # Wait for the async task to complete
+                    # Wait for the async task to complete (uses stepped backoff internally)
                     await self.r1_client.await_task_completion(
                         request_id=request_id,
                         override_tenant_id=tenant_id,
-                        max_attempts=20,
-                        sleep_seconds=3
+                        max_attempts=30
                     )
 
                     logger.warning(f"  ✅ DPSK pool creation completed!")

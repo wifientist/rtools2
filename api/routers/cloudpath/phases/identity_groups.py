@@ -18,25 +18,41 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     """
     Create identity groups in RuckusONE
 
+    Supports two modes:
+    - Sequential: Gets parsed_data from parse_validate phase results
+    - Parallel: Gets parsed_data directly from input_data (pre-parsed by parent)
+
     Args:
-        context: Execution context with parsed data from Phase 1
+        context: Execution context with parsed data
 
     Returns:
         Single completed task with created identity group IDs and forwarded data
     """
     logger.warning("Phase 2: Create Identity Groups")
 
-    # Get parsed data from Phase 1
-    phase1_results = context.get('previous_phase_results', {}).get('parse_validate', {})
-    aggregated = phase1_results.get('aggregated', {})
-    parsed_data_list = aggregated.get('parsed_data', [{}])
+    # Try to get parsed_data from input_data (parallel mode)
+    # ParallelJobOrchestrator puts item data under 'item' key
+    # Then fall back to previous_phase_results (sequential mode)
+    input_data = context.get('input_data', {})
+    parsed_data = input_data.get('parsed_data')
 
-    if isinstance(parsed_data_list, list) and len(parsed_data_list) > 0:
-        parsed_data = parsed_data_list[0]
-    else:
-        parsed_data = {}
-        logger.warning("  ⚠️  No parsed data available")
-        return []
+    # Check if data is nested under 'item' (from ParallelJobOrchestrator)
+    if not parsed_data and input_data.get('item'):
+        parsed_data = input_data['item'].get('parsed_data')
+        logger.warning(f"  📦 Found parsed_data under 'item' key (parallel child job)")
+
+    if not parsed_data:
+        # Sequential mode: get from parse_validate phase
+        phase1_results = context.get('previous_phase_results', {}).get('parse_validate', {})
+        aggregated = phase1_results.get('aggregated', {})
+        parsed_data_list = aggregated.get('parsed_data', [{}])
+
+        if isinstance(parsed_data_list, list) and len(parsed_data_list) > 0:
+            parsed_data = parsed_data_list[0]
+        else:
+            parsed_data = {}
+            logger.warning("  ⚠️  No parsed data available")
+            return []
 
     identity_groups = parsed_data.get('identity_groups', [])
     dpsk_pools = parsed_data.get('dpsk_pools', [])

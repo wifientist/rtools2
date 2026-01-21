@@ -84,6 +84,10 @@ function CloudpathDPSK() {
   const [ssidMode, setSsidMode] = useState<"none" | "create_new" | "link_existing">("none");
   const [selectedSsidId, setSelectedSsidId] = useState<string | null>(null);
 
+  // Parallel execution options
+  const [parallelExecution, setParallelExecution] = useState(true);
+  const [maxConcurrent, setMaxConcurrent] = useState(10);
+
   // DPSK SSID options for linking
   const [dpskSsids, setDpskSsids] = useState<DPSKSsidInfo[]>([]);
   const [loadingDpskSsids, setLoadingDpskSsids] = useState(false);
@@ -308,6 +312,8 @@ function CloudpathDPSK() {
             ssid_mode: ssidMode,
             link_to_ssid_id: ssidMode === "link_existing" ? selectedSsidId : null,
           },
+          parallel_execution: parallelExecution,
+          max_concurrent: maxConcurrent,
         }),
       });
 
@@ -940,6 +946,43 @@ function CloudpathDPSK() {
                 <p className="text-xs text-gray-500">Add artificial delays to observe migration progress more clearly (300ms per passphrase)</p>
               </div>
             </label>
+
+            {/* Parallel Execution */}
+            <div className="border-t pt-4 mt-4">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={parallelExecution}
+                  onChange={(e) => setParallelExecution(e.target.checked)}
+                  disabled={processing}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Parallel Execution (Faster)</span>
+                  <p className="text-xs text-gray-500">Process multiple DPSK pools concurrently for faster migration (5-8x speedup for large datasets)</p>
+                </div>
+              </label>
+
+              {parallelExecution && (
+                <div className="mt-3 ml-7">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Concurrent Batches: {maxConcurrent}
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="30"
+                    value={maxConcurrent}
+                    onChange={(e) => setMaxConcurrent(parseInt(e.target.value))}
+                    disabled={processing}
+                    className="w-48 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Passphrases are split into batches of 10. Higher values = faster. Recommended: 10-20.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

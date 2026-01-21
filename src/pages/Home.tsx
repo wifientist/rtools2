@@ -28,12 +28,10 @@ const Home = () => {
         
       </section>
 
-      {/* Key Tools */}
-      <section className="mb-12">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Available Tools</h2>
-
+      {/* Informational Tools */}
+      <section className="mb-10">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Informational Tools</h2>
         <div className="grid gap-4 md:grid-cols-2">
-          {/* Diff Tools */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
             <h3 className="text-lg font-semibold text-blue-900 mb-2">🔍 Comparison Tools</h3>
             <p className="text-sm text-blue-800">
@@ -42,7 +40,36 @@ const Home = () => {
             </p>
           </div>
 
-          {/* Speed Explainer */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">📋 SZ Audit</h3>
+            <p className="text-sm text-blue-800">
+              Comprehensive SmartZone controller auditing. View zones, domains, APs, WLANs, switch groups,
+              and firmware versions. Export to CSV with manual zone-to-switch-group mapping.
+            </p>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">📸 MSP Snapshot</h3>
+            <p className="text-sm text-blue-800">
+              Capture and analyze MSP tenant configurations. Get a quick overview of all tenants,
+              venues, APs, and network settings across your managed service provider account.
+            </p>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">🎨 Network Diagrams</h3>
+            <p className="text-sm text-blue-800">
+              Integrated fossFLOW diagramming tool for visualizing network topologies,
+              documenting deployments, and creating technical diagrams.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Explainers */}
+      <section className="mb-10">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Explainers</h2>
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-5">
             <h3 className="text-lg font-semibold text-purple-900 mb-2">📊 Speed Explainer</h3>
             <p className="text-sm text-purple-800">
@@ -50,22 +77,50 @@ const Home = () => {
               signal quality, airtime utilization, interference, backhaul, and client capabilities.
             </p>
           </div>
+        </div>
+      </section>
 
-          {/* Migration Tools */}
+      {/* Helper Tools */}
+      <section className="mb-10">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Helper Tools</h2>
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="bg-green-50 border border-green-200 rounded-lg p-5">
-            <h3 className="text-lg font-semibold text-green-900 mb-2">🚀 Migration Assistant</h3>
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🚀 Migration Tools</h3>
             <p className="text-sm text-green-800">
-              Streamline migrations from SmartZone to Ruckus ONE. Automate tenant creation,
-              configuration mapping, and bulk operations with intelligent conflict resolution.
+              Streamline migrations between Ruckus ONE tenants or from SmartZone to Ruckus ONE.
+              Automate configuration mapping and bulk operations with intelligent conflict resolution.
             </p>
           </div>
 
-          {/* Diagramming */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">📡 Per-Unit SSID</h3>
+            <p className="text-sm text-green-800">
+              Bulk provisioning for MDU/MTU deployments. Create per-unit AP Groups, SSIDs, and
+              network activations from CSV. Supports WPA2/WPA3 and DPSK authentication modes.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🔑 Cloudpath DPSK</h3>
+            <p className="text-sm text-green-800">
+              Migrate DPSK configurations from Cloudpath to Ruckus ONE. Transfer identity groups,
+              DPSK pools, and passphrases with intelligent idempotent operations.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🔄 DPSK Orchestrator</h3>
+            <p className="text-sm text-green-800">
+              Automate DPSK synchronization workflows. Real-time webhook driven updates and scheduled recurring syncs between
+              Ruckus ONE source pools to a single destination pool to keep passphrases and identity groups in sync.
+            </p>
+          </div>
+
           <div className="bg-orange-50 border border-orange-200 rounded-lg p-5">
-            <h3 className="text-lg font-semibold text-orange-900 mb-2">🎨 Network Diagramming</h3>
+            <h3 className="text-lg font-semibold text-orange-900 mb-2">🧮 Option 43 Calculator</h3>
             <p className="text-sm text-orange-800">
-              Integrated fossFLOW diagramming tool for visualizing network topologies,
-              documenting deployments, and creating technical diagrams.
+              Generate DHCP Option 43 strings for Ruckus AP discovery. Supports multiple controller
+              addresses and outputs in various formats for different DHCP server platforms.
             </p>
           </div>
         </div>
@@ -122,7 +177,7 @@ const Home = () => {
 
       {/* Footer */}
       <div className="text-center text-sm text-gray-500">
-        <p>Have ideas or feedback? <a href="https://github.com/anthropics/claude-code/issues" className="text-blue-600 hover:underline">Open an issue on GitHub</a></p>
+        <p>Have ideas or feedback? <a href="https://github.com/wifientist/rtools2/issues" className="text-blue-600 hover:underline">Open an issue on GitHub</a></p>
       </div>
     </div>
   );

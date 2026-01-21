@@ -1,8 +1,9 @@
 # Default logging configuration for all services
+# Keeps ~6MB total per service (2MB x 3 files) - roughly 4 hours of chatty logs
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
+    max-size: "2m"
     max-file: "3"
 
 services:

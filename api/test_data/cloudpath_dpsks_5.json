@@ -1,57 +1,88 @@
-[
-  {
-    "guid": "AccountDpsk-a1b2c3d4-1234-5678-9abc-def012345678",
-    "name": "DPSK_Guest_WiFi_01",
-    "passphrase": "xj9kw2mqlpr",
-    "status": "ACTIVE",
-    "ssidList": [],
-    "expirationDateTime": "2026-06-15T00:00-07:00[America/Denver]",
-    "useDeviceCountLimit": false,
+{
+  "metadata": {
+    "extracted_at": "2026-01-21T10:00:00.000000",
+    "cloudpath_fqdn": "test-cloudpath.example.com",
+    "extractor_version": "1.0.0",
+    "mode": "dpsk_only",
+    "pool_id": "AccountDpskPool-test-5-dpsks",
+    "extraction_duration_seconds": 0.05
+  },
+  "pool": {
+    "guid": "AccountDpskPool-test-5-dpsks",
+    "displayName": "TestPool5",
+    "description": "Test DPSK Pool with 5 entries",
+    "enabled": true,
+    "phraseDefaultLength": 11,
+    "phraseRandomCharactersType": "ALPHANUMERIC_MIXED",
+    "ssidList": ["TestDPSKssid"],
+    "enforceExpirationDate": true,
+    "expirationDateType": "MONTHS_AFTER_TIME",
+    "expirationDateValue": "12",
+    "enforceDeviceCountLimit": false,
     "deviceCountLimit": 0,
-    "vlanid": "44"
+    "supportsPolicies": true,
+    "defaultAccess": "ACCEPT"
   },
-  {
-    "guid": "AccountDpsk-b2c3d4e5-2345-6789-abcd-ef0123456789",
-    "name": "DPSK_IoT_Device_02",
-    "passphrase": "m4pqt8zkwvn",
-    "status": "ACTIVE",
-    "ssidList": [],
-    "expirationDateTime": "2025-12-31T00:00-07:00[America/Denver]",
-    "useDeviceCountLimit": true,
-    "deviceCountLimit": 5,
-    "vlanid": "50"
-  },
-  {
-    "guid": "AccountDpsk-c3d4e5f6-3456-789a-bcde-f01234567890",
-    "name": "DPSK_Employee_03",
-    "passphrase": "rnb7x3fhgkj",
-    "status": "ACTIVE",
-    "ssidList": [],
-    "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
-    "useDeviceCountLimit": false,
-    "deviceCountLimit": 0,
-    "vlanid": "44"
-  },
-  {
-    "guid": "AccountDpsk-d4e5f6a7-4567-89ab-cdef-012345678901",
-    "name": "DPSK_Contractor_04",
-    "passphrase": "qs2cv9htljw",
-    "status": "ACTIVE",
-    "ssidList": [],
-    "expirationDateTime": "2025-09-30T00:00-07:00[America/Denver]",
-    "useDeviceCountLimit": true,
-    "deviceCountLimit": 3,
-    "vlanid": "66"
-  },
-  {
-    "guid": "AccountDpsk-e5f6a7b8-5678-9abc-def0-123456789012",
-    "name": "DPSK_Camera_System_05",
-    "passphrase": "dhk5yw8nprz",
-    "status": "ACTIVE",
-    "ssidList": [],
-    "expirationDateTime": "2027-01-15T00:00-07:00[America/Denver]",
-    "useDeviceCountLimit": false,
-    "deviceCountLimit": 0,
-    "vlanid": "50"
-  }
-]
+  "dpsks": [
+    {
+      "guid": "AccountDpsk-a1b2c3d4-1234-5678-9abc-def012345678",
+      "name": "DPSK_Guest_WiFi_01",
+      "passphrase": "xj9kw2mqlpr",
+      "status": "ACTIVE",
+      "ssidList": [],
+      "expirationDateTime": "2026-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "44"
+    },
+    {
+      "guid": "AccountDpsk-b2c3d4e5-2345-6789-abcd-ef0123456789",
+      "name": "DPSK_IoT_Device_02",
+      "passphrase": "m4pqt8zkwvn",
+      "status": "ACTIVE",
+      "ssidList": [],
+      "expirationDateTime": "2025-12-31T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "50"
+    },
+    {
+      "guid": "AccountDpsk-c3d4e5f6-3456-789a-bcde-f01234567890",
+      "name": "DPSK_Employee_03",
+      "passphrase": "rnb7x3fhgkj",
+      "status": "ACTIVE",
+      "ssidList": [],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "44"
+    },
+    {
+      "guid": "AccountDpsk-d4e5f6a7-4567-89ab-cdef-012345678901",
+      "name": "DPSK_Contractor_04",
+      "passphrase": "qs2cv9htljw",
+      "status": "ACTIVE",
+      "ssidList": [],
+      "expirationDateTime": "2025-09-30T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 3,
+      "deviceCount": 1,
+      "vlanid": "66"
+    },
+    {
+      "guid": "AccountDpsk-e5f6a7b8-5678-9abc-def0-123456789012",
+      "name": "DPSK_Camera_System_05",
+      "passphrase": "dhk5yw8nprz",
+      "status": "ACTIVE",
+      "ssidList": [],
+      "expirationDateTime": "2027-01-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "50"
+    }
+  ]
+}
