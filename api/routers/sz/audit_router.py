@@ -3,17 +3,21 @@ SmartZone Audit Router
 
 Provides comprehensive audit endpoints for SmartZone controllers.
 Collects data on domains, zones, APs, WLANs, switches, and firmware.
+
+Supports both sync (blocking) and async (background job) audit modes.
 """
 import asyncio
 import csv
 import io
 import logging
+import uuid
 from collections import Counter
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_user
@@ -37,6 +41,13 @@ from schemas.sz_audit import (
     FirmwareDistribution,
     ModelDistribution,
 )
+from redis_client import get_redis_client
+from workflow.models import WorkflowJob, Phase, JobStatus, PhaseStatus
+from workflow.state_manager import RedisStateManager
+from workflow.events import WorkflowEventPublisher
+from routers.sz.audit_workflow_definition import get_workflow_definition
+from routers.sz.phases import initialize, fetch_switches, audit_zones, finalize
+from routers.sz.zone_cache import ZoneCacheManager, RefreshMode
 import re
 
 logger = logging.getLogger(__name__)
@@ -195,6 +206,693 @@ router = APIRouter(
     tags=["SmartZone Audit"]
 )
 
+# TTL for audit results in Redis (24 hours)
+AUDIT_RESULT_TTL = 60 * 60 * 24
+
+
+# ============================================================================
+# Async Audit Response Models
+# ============================================================================
+
+class AsyncAuditRequest(BaseModel):
+    """Request to start async audit"""
+    controller_id: int
+    refresh_mode: RefreshMode = RefreshMode.FULL  # full, incremental, cached_only
+    force_refresh_zones: List[str] = []  # Zone IDs to refresh even if cached (for incremental mode)
+
+
+class AsyncAuditResponse(BaseModel):
+    """Response when starting async audit"""
+    job_id: str
+    status: str
+    message: str
+
+
+class AuditJobStatus(BaseModel):
+    """Status of an audit job"""
+    job_id: str
+    status: str
+    controller_id: Optional[int] = None
+    controller_name: Optional[str] = None
+    current_phase: Optional[str] = None
+    current_activity: Optional[str] = None  # Detailed progress message
+    phases: List[Dict[str, Any]] = []
+    progress: Dict[str, Any] = {}
+    errors: List[str] = []
+    created_at: Optional[str] = None
+    refresh_mode: Optional[str] = None  # full, incremental, cached_only
+    cache_stats: Optional[Dict[str, Any]] = None  # zones_from_cache, zones_refreshed, etc.
+    api_stats: Optional[Dict[str, Any]] = None  # total_calls, avg_rate_per_second, etc.
+
+
+class AuditHistoryItem(BaseModel):
+    """Summary of a past audit job"""
+    job_id: str
+    controller_id: int
+    controller_name: str
+    status: str
+    created_at: str
+    completed_at: Optional[str] = None
+    total_zones: Optional[int] = None
+    total_aps: Optional[int] = None
+    errors: List[str] = []
+
+
+class AuditHistoryResponse(BaseModel):
+    """Response for audit history"""
+    audits: List[AuditHistoryItem]
+    total: int
+
+
+# ============================================================================
+# Async Workflow Functions
+# ============================================================================
+
+async def run_audit_workflow_background(
+    job: WorkflowJob,
+    controller_id: int,
+    db: Session
+):
+    """
+    Background task to run audit workflow.
+
+    Uses a simplified execution model (not full WorkflowEngine) since audit
+    doesn't need task-level parallelism or retries - just sequential phases.
+    """
+    redis_client = None
+    state_manager = None
+
+    try:
+        logger.info(f"Starting background audit workflow for job {job.id}")
+
+        # Create workflow components
+        redis_client = await get_redis_client()
+        state_manager = RedisStateManager(redis_client)
+        event_publisher = WorkflowEventPublisher(redis_client)
+
+        # Update job status to running
+        job.status = JobStatus.RUNNING
+        await state_manager.save_job(job)
+
+        if event_publisher:
+            await event_publisher.job_started(job)
+
+        # Create SmartZone client
+        sz_client = create_sz_client_from_controller(controller_id, db)
+
+        # Get controller info
+        controller = db.query(Controller).filter(Controller.id == controller_id).first()
+
+        # Create zone cache manager
+        zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+        # Get refresh mode from job input
+        refresh_mode_str = job.input_data.get('refresh_mode', 'full')
+        refresh_mode = RefreshMode(refresh_mode_str)
+
+        # Initialize cache stats tracking
+        job.summary['cache_stats'] = {
+            'refresh_mode': refresh_mode_str,
+            'zones_from_cache': 0,
+            'zones_refreshed': 0,
+            'cache_hit_rate': 0
+        }
+        await state_manager.save_job(job)
+
+        # Phase executors in order
+        phases_config = [
+            ('initialize', initialize.execute),
+            ('fetch_switches', fetch_switches.execute),
+            ('audit_zones', audit_zones.execute),
+            ('finalize', finalize.execute),
+        ]
+
+        # Shared context for all phases (results from previous phases)
+        phase_results = {}
+
+        # Helper to update activity message (callable from phases)
+        async def update_activity(message: str):
+            """Update the current activity message for frontend display."""
+            job.summary['current_activity'] = message
+            # Also update API stats while we're at it
+            job.summary['api_stats'] = sz_client.get_api_stats()
+            await state_manager.save_job(job)
+
+        try:
+            await sz_client.login()
+        except ValueError as e:
+            # Handle auth failures gracefully without noisy traceback
+            error_msg = str(e)
+            logger.warning(f"Audit workflow {job.id} - authentication failed: {error_msg}")
+            job.status = JobStatus.FAILED
+            job.errors.append(f"Authentication failed: {error_msg}")
+            job.summary['current_activity'] = "Authentication failed"
+            await state_manager.save_job(job)
+            return
+
+        try:
+            for phase_id, executor_func in phases_config:
+                # Check for cancellation before each phase
+                if await state_manager.is_cancelled(job.id):
+                    logger.info(f"🛑 Audit job {job.id} cancelled - stopping before phase {phase_id}")
+                    job.status = JobStatus.CANCELLED
+                    job.errors.append("Audit cancelled by user")
+                    job.summary['current_activity'] = "Cancelled"
+                    await state_manager.save_job(job)
+                    return
+
+                # Find phase in job
+                phase = job.get_phase_by_id(phase_id)
+                if not phase:
+                    logger.warning(f"Phase {phase_id} not found in job")
+                    continue
+
+                logger.info(f"▶️  Executing phase {phase_id} ({phase.name})")
+
+                # Update phase status
+                phase.status = PhaseStatus.RUNNING
+                job.current_phase_id = phase_id
+                job.summary['current_activity'] = f"Starting {phase.name}..."
+                await state_manager.save_job(job)
+
+                if event_publisher:
+                    await event_publisher.phase_started(job.id, phase)
+
+                try:
+                    # Get force_refresh_zones from input_data
+                    force_refresh_zones = set(job.input_data.get('force_refresh_zones', []))
+
+                    # Build context for this phase (not serialized - passed directly)
+                    context = {
+                        'job_id': job.id,
+                        'controller_id': controller_id,
+                        'sz_client': sz_client,
+                        'controller': controller,
+                        'redis_client': redis_client,
+                        'phase_results': phase_results,  # Results from previous phases
+                        'options': job.options,
+                        'input_data': job.input_data,
+                        'update_activity': update_activity,  # Progress callback
+                        'zone_cache': zone_cache,  # Zone caching manager
+                        'refresh_mode': refresh_mode,  # RefreshMode enum
+                        'force_refresh_zones': force_refresh_zones,  # Zone IDs to always refresh
+                        'job': job,  # For updating cache stats
+                        'state_manager': state_manager,  # For saving job updates
+                    }
+
+                    # Execute phase
+                    tasks = await executor_func(context)
+
+                    # Extract output from tasks
+                    phase_output = {}
+                    for task in tasks:
+                        if task.output_data:
+                            phase_output.update(task.output_data)
+
+                    # Store result for subsequent phases
+                    phase_results[phase_id] = phase_output
+
+                    # Update phase status
+                    phase.status = PhaseStatus.COMPLETED
+                    phase.tasks = tasks
+                    # Update API stats after each phase
+                    job.summary['api_stats'] = sz_client.get_api_stats()
+                    await state_manager.save_job(job)
+
+                    if event_publisher:
+                        await event_publisher.phase_completed(job.id, phase)
+
+                    logger.info(f"✅ Phase {phase_id} completed")
+
+                except Exception as e:
+                    logger.exception(f"Phase {phase_id} failed: {str(e)}")
+                    phase.status = PhaseStatus.FAILED
+                    phase.errors.append(str(e))
+                    job.errors.append(f"Phase {phase.name} failed: {str(e)}")
+                    await state_manager.save_job(job)
+
+                    if phase.critical:
+                        raise  # Stop workflow on critical phase failure
+
+            # Workflow complete
+            job.status = JobStatus.COMPLETED
+            job.current_phase_id = None
+            await state_manager.save_job(job)
+
+            if event_publisher:
+                await event_publisher.job_completed(job)
+
+            logger.info(f"✅ Audit workflow {job.id} completed successfully")
+
+        finally:
+            # Always clean up the SmartZone client
+            try:
+                await sz_client.logout()
+                await sz_client.client.aclose()
+            except Exception:
+                pass  # Ignore cleanup errors
+
+    except ValueError as e:
+        # Handle expected errors (connection issues, API errors) without noisy traceback
+        error_msg = str(e)
+        logger.warning(f"Audit workflow {job.id} failed: {error_msg}")
+        try:
+            if state_manager:
+                job.status = JobStatus.FAILED
+                if error_msg not in job.errors:
+                    job.errors.append(error_msg)
+                await state_manager.save_job(job)
+        except Exception as save_error:
+            logger.error(f"Failed to save error state: {save_error}")
+
+    except Exception as e:
+        # Unexpected errors - log full traceback for debugging
+        logger.exception(f"Audit workflow {job.id} failed unexpectedly: {str(e)}")
+        try:
+            if state_manager:
+                job.status = JobStatus.FAILED
+                if str(e) not in job.errors:
+                    job.errors.append(str(e))
+                await state_manager.save_job(job)
+        except Exception as save_error:
+            logger.error(f"Failed to save error state: {save_error}")
+
+
+# ============================================================================
+# Async Audit Endpoints
+# ============================================================================
+
+@router.post("/audit/async", response_model=AsyncAuditResponse)
+async def start_async_audit(
+    request: AsyncAuditRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> AsyncAuditResponse:
+    """
+    Start an asynchronous audit of a SmartZone controller.
+
+    Returns immediately with a job_id. Use /audit/jobs/{job_id}/status
+    to poll for progress and /audit/jobs/{job_id}/result to get results.
+
+    Results are stored in Redis for 24 hours.
+    """
+    # Validate access
+    controller = validate_controller_access(request.controller_id, current_user, db)
+
+    if controller.controller_type != "SmartZone":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller {controller.name} is not a SmartZone controller"
+        )
+
+    # Create job ID
+    job_id = str(uuid.uuid4())
+
+    # Get workflow definition and create phases
+    workflow_def = get_workflow_definition()
+    phases = [
+        Phase(
+            id=phase_def.id,
+            name=phase_def.name,
+            dependencies=phase_def.dependencies,
+            parallelizable=phase_def.parallelizable,
+            critical=phase_def.critical,
+            skip_condition=phase_def.skip_condition,
+            status=PhaseStatus.PENDING
+        )
+        for phase_def in workflow_def.phases
+    ]
+
+    # Create WorkflowJob
+    job = WorkflowJob(
+        id=job_id,
+        workflow_name="sz_audit",
+        user_id=current_user.id,
+        controller_id=request.controller_id,
+        input_data={
+            'controller_id': request.controller_id,
+            'controller_name': controller.name,
+            'refresh_mode': request.refresh_mode.value,
+            'force_refresh_zones': request.force_refresh_zones  # Zone IDs to always refresh
+        },
+        phases=phases
+    )
+
+    # Save job to Redis
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManager(redis_client)
+    await state_manager.save_job(job)
+
+    # Add to user-specific audit history index (sorted by created_at timestamp)
+    user_index_key = f"sz_audit:user:{current_user.id}:jobs"
+    await redis_client.zadd(user_index_key, {job_id: job.created_at.timestamp()})
+    # Set TTL on user index (7 days - longer than individual jobs to allow listing)
+    await redis_client.expire(user_index_key, 60 * 60 * 24 * 7)
+
+    logger.info(f"Created async audit job {job_id} for controller {controller.name}")
+
+    # Start background task
+    background_tasks.add_task(
+        run_audit_workflow_background,
+        job,
+        request.controller_id,
+        db
+    )
+
+    return AsyncAuditResponse(
+        job_id=job_id,
+        status="RUNNING",
+        message=f"Audit started for {controller.name}. Poll /audit/jobs/{job_id}/status for progress."
+    )
+
+
+@router.get("/audit/jobs/{job_id}/status", response_model=AuditJobStatus)
+async def get_audit_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user)
+) -> AuditJobStatus:
+    """
+    Get the status of an audit job.
+
+    Returns current phase, progress, and any errors.
+    """
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManager(redis_client)
+
+    job = await state_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Verify user owns this job
+    if job.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Build phase info
+    phases_info = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'status': p.status.value if hasattr(p.status, 'value') else str(p.status),
+            'tasks_total': len(p.tasks),
+            'tasks_completed': sum(1 for t in p.tasks if t.status.value == 'COMPLETED')
+        }
+        for p in job.phases
+    ]
+
+    # Calculate progress
+    total_phases = len(job.phases)
+    completed_phases = sum(1 for p in job.phases if p.status == PhaseStatus.COMPLETED)
+    progress = {
+        'phases_total': total_phases,
+        'phases_completed': completed_phases,
+        'percent': int((completed_phases / total_phases) * 100) if total_phases > 0 else 0
+    }
+
+    return AuditJobStatus(
+        job_id=job_id,
+        status=job.status.value if hasattr(job.status, 'value') else str(job.status),
+        controller_id=job.input_data.get('controller_id'),
+        controller_name=job.input_data.get('controller_name'),
+        current_phase=job.current_phase_id,
+        current_activity=job.summary.get('current_activity'),  # Detailed progress message
+        phases=phases_info,
+        progress=progress,
+        errors=job.errors,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        refresh_mode=job.input_data.get('refresh_mode', 'full'),
+        cache_stats=job.summary.get('cache_stats'),  # zones_from_cache, zones_refreshed
+        api_stats=job.summary.get('api_stats')  # total_calls, avg_rate
+    )
+
+
+@router.post("/audit/jobs/{job_id}/cancel")
+async def cancel_audit_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Cancel a running audit job.
+
+    The job will stop at the next phase boundary.
+    """
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManager(redis_client)
+
+    job = await state_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Verify user owns this job
+    if job.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check if job is in a cancellable state
+    if job.status not in [JobStatus.PENDING, JobStatus.RUNNING]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel job in {job.status} state"
+        )
+
+    # Set cancellation flag
+    await state_manager.set_cancelled(job_id)
+
+    logger.info(f"Audit job {job_id} cancellation requested by user {current_user.id}")
+
+    return {
+        "job_id": job_id,
+        "status": "cancelling",
+        "message": "Cancellation requested. Job will stop at the next phase."
+    }
+
+
+class CacheStatusResponse(BaseModel):
+    """Cache status for a controller"""
+    controller_id: int
+    has_cache: bool
+    cached_zones: int
+    last_audit_time: Optional[str] = None
+    cache_age_minutes: Optional[int] = None
+    zone_count: Optional[int] = None
+
+
+@router.get("/audit/cache/{controller_id}")
+async def get_cache_status(
+    controller_id: int,
+    current_user: User = Depends(get_current_user)
+) -> CacheStatusResponse:
+    """
+    Get cache status for a controller.
+
+    Returns information about cached audit data availability.
+    """
+    redis_client = await get_redis_client()
+    zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+    stats = await zone_cache.get_cache_stats()
+    meta = await zone_cache.get_cache_meta()
+
+    # Calculate cache age if we have last audit time
+    cache_age_minutes = None
+    if stats.get('last_audit_time'):
+        try:
+            from datetime import datetime
+            last_audit = datetime.fromisoformat(stats['last_audit_time'])
+            age_seconds = (datetime.utcnow() - last_audit).total_seconds()
+            cache_age_minutes = int(age_seconds / 60)
+        except Exception:
+            pass
+
+    return CacheStatusResponse(
+        controller_id=controller_id,
+        has_cache=stats.get('has_cache', False),
+        cached_zones=stats.get('cached_zones', 0),
+        last_audit_time=stats.get('last_audit_time'),
+        cache_age_minutes=cache_age_minutes,
+        zone_count=meta.get('zone_count') if meta else None
+    )
+
+
+@router.delete("/audit/cache/{controller_id}")
+async def clear_cache(
+    controller_id: int,
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Clear cached audit data for a controller.
+
+    Use this to force a full refresh on the next audit.
+    """
+    redis_client = await get_redis_client()
+    zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+    deleted = await zone_cache.invalidate_all()
+
+    logger.info(f"User {current_user.id} cleared cache for controller {controller_id}: {deleted} keys deleted")
+
+    return {
+        "controller_id": controller_id,
+        "keys_deleted": deleted,
+        "message": f"Cache cleared. {deleted} cached items removed."
+    }
+
+
+class CachedZoneInfo(BaseModel):
+    """Summary info about a cached zone"""
+    zone_id: str
+    zone_name: str
+    domain_name: str
+    cached_at: Optional[str] = None
+    ap_count: int = 0
+    wlan_count: int = 0
+
+
+@router.get("/audit/cache/{controller_id}/zones")
+async def list_cached_zones(
+    controller_id: int,
+    current_user: User = Depends(get_current_user)
+) -> List[CachedZoneInfo]:
+    """
+    List all cached zones for a controller.
+
+    Returns zone summaries for the UI to display zone selection
+    when running incremental audits with force-refresh.
+    """
+    redis_client = await get_redis_client()
+    zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+    zones = await zone_cache.list_cached_zones()
+
+    return [CachedZoneInfo(**z) for z in zones]
+
+
+@router.get("/audit/jobs/{job_id}/result")
+async def get_audit_job_result(
+    job_id: str,
+    current_user: User = Depends(get_current_user)
+) -> SZAuditResult:
+    """
+    Get the result of a completed audit job.
+
+    Returns the full audit result if the job is complete.
+    Results are available for 24 hours after completion.
+    """
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManager(redis_client)
+
+    # Check job exists and is complete
+    job = await state_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job not complete. Current status: {job.status}"
+        )
+
+    # Get result from Redis
+    result_key = f"sz_audit:results:{job_id}"
+    result_json = await redis_client.get(result_key)
+
+    if not result_json:
+        raise HTTPException(
+            status_code=404,
+            detail="Result not found. Results expire after 24 hours."
+        )
+
+    # Parse and return result
+    import json
+    result_data = json.loads(result_json)
+    return SZAuditResult(**result_data)
+
+
+@router.get("/audit/history", response_model=AuditHistoryResponse)
+async def get_audit_history(
+    limit: int = 20,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user)
+) -> AuditHistoryResponse:
+    """
+    Get audit history for the current user.
+
+    Returns a list of past audit jobs with their status and summary info.
+    Results are available for up to 7 days.
+
+    Args:
+        limit: Maximum number of audits to return (default 20, max 100)
+        offset: Offset for pagination (default 0)
+    """
+    import json
+
+    # Clamp limit
+    limit = min(limit, 100)
+
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManager(redis_client)
+
+    # Get job IDs from user's audit history index (newest first)
+    user_index_key = f"sz_audit:user:{current_user.id}:jobs"
+    job_ids = await redis_client.zrevrange(user_index_key, offset, offset + limit - 1)
+
+    # Get total count
+    total = await redis_client.zcard(user_index_key)
+
+    if not job_ids:
+        return AuditHistoryResponse(audits=[], total=total)
+
+    # Fetch job details
+    audits = []
+    for job_id in job_ids:
+        # Decode if bytes
+        if isinstance(job_id, bytes):
+            job_id = job_id.decode('utf-8')
+
+        job = await state_manager.get_job(job_id)
+        if not job:
+            # Job expired but still in index - clean it up
+            await redis_client.zrem(user_index_key, job_id)
+            continue
+
+        # Skip jobs that don't belong to this user (shouldn't happen, but safety check)
+        if job.user_id != current_user.id:
+            continue
+
+        # Try to get summary from result if completed
+        total_zones = None
+        total_aps = None
+        if job.status == JobStatus.COMPLETED:
+            result_key = f"sz_audit:results:{job_id}"
+            result_json = await redis_client.get(result_key)
+            if result_json:
+                try:
+                    result_data = json.loads(result_json)
+                    total_zones = result_data.get('total_zones')
+                    total_aps = result_data.get('total_aps')
+                except Exception:
+                    pass
+
+        audits.append(AuditHistoryItem(
+            job_id=job_id,
+            controller_id=job.input_data.get('controller_id', 0),
+            controller_name=job.input_data.get('controller_name', 'Unknown'),
+            status=job.status.value if hasattr(job.status, 'value') else str(job.status),
+            created_at=job.created_at.isoformat() if job.created_at else '',
+            completed_at=job.completed_at.isoformat() if job.completed_at else None,
+            total_zones=total_zones,
+            total_aps=total_aps,
+            errors=job.errors[:3] if job.errors else []  # Limit errors in history view
+        ))
+
+    return AuditHistoryResponse(audits=audits, total=total)
+
+
+# ============================================================================
+# Original Sync Functions (kept for backward compatibility)
+# ============================================================================
 
 async def audit_zone(
     sz_client: SZClient,
@@ -233,6 +931,7 @@ async def audit_zone(
     try:
         aps_result = await sz_client.aps.get_aps_by_zone(zone_id)
         aps = aps_result.get("list", []) if isinstance(aps_result, dict) else aps_result
+        logger.info(f"Zone '{zone_name}': Fetched {len(aps)} APs")
 
         # Log first AP's fields for debugging (only once per audit)
         if aps and logger.isEnabledFor(logging.DEBUG):
@@ -350,6 +1049,7 @@ async def audit_zone(
     # Fetch WLANs - need to get details for each WLAN to get encryption/auth info
     try:
         wlans_list = await sz_client.wlans.get_wlans_by_zone(zone_id)
+        logger.info(f"Zone '{zone_name}': Fetching details for {len(wlans_list)} WLANs")
         wlan_type_counter = Counter()
 
         # The list endpoint only returns basic info (id, name, ssid)
@@ -611,6 +1311,7 @@ async def perform_audit(
     domains_raw = []
     try:
         domains_raw = await sz_client.zones.get_domains(recursively=True, include_self=True)
+        logger.info(f"Audit: Found {len(domains_raw)} domains")
     except Exception as e:
         partial_errors.append(f"Failed to get domains: {str(e)}")
 
@@ -683,7 +1384,9 @@ async def perform_audit(
     all_zones_audit = []
     all_zone_data = []
     seen_zone_ids = set()  # Track which zones we've already processed
+    total_zones_processed = 0
 
+    logger.info(f"Audit: Starting zone collection across {len(domains_raw)} domains")
     for domain in domains_raw:
         domain_id = domain.get("id")
         domain_name = domain.get("name", "Unknown")
@@ -712,9 +1415,13 @@ async def perform_audit(
                 all_zones_audit.append(zone_audit)
                 partial_errors.extend(zone_errors)
                 all_zone_data.append({"zone": zone, "domain_id": domain_id, "domain_name": domain_name})
+                total_zones_processed += 1
+                logger.info(f"Audit: Completed zone {total_zones_processed}: '{zone_name}' ({zone_audit.ap_status.total} APs, {zone_audit.wlan_count} WLANs)")
 
         except Exception as e:
             partial_errors.append(f"Failed to get zones for domain {domain_name}: {str(e)}")
+
+    logger.info(f"Audit: Zone collection complete - {len(all_zones_audit)} zones processed")
 
     # Audit domains (pass pre-fetched switches and switch groups)
     domains_audit = []
@@ -792,6 +1499,8 @@ async def perform_audit(
             wlan_type_counter[wlan_type] += count
 
     wlan_type_summary = dict(wlan_type_counter)
+
+    logger.info(f"Audit complete: {len(domains_audit)} domains, {len(all_zones_audit)} zones, {total_aps} APs, {total_wlans} WLANs, {total_switches} switches")
 
     return SZAuditResult(
         controller_id=controller.id,

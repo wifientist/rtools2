@@ -116,9 +116,9 @@ class WorkflowJob(BaseModel):
 
     # Configuration
     user_id: int = Field(..., description="User ID who created this job")
-    controller_id: int = Field(..., description="RuckusONE controller ID")
-    venue_id: str = Field(..., description="Venue ID")
-    tenant_id: str = Field(..., description="Tenant/EC ID")
+    controller_id: int = Field(..., description="Controller ID")
+    venue_id: str = Field(default="", description="Venue ID (Cloudpath/R1 workflows)")
+    tenant_id: str = Field(default="", description="Tenant/EC ID (Cloudpath/R1 workflows)")
     options: Dict[str, Any] = Field(default_factory=dict, description="Workflow-specific options")
 
     # Parent/Child job hierarchy (for parallel per-item execution)

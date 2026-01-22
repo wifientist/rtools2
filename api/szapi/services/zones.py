@@ -43,23 +43,50 @@ class ZoneService:
         data = await self.client._request("GET", f"/{self.client.api_version}/domains", params=params)
         return data.get("list", [])
 
-    async def get_zones(self, domain_id: str = None) -> List[Dict[str, Any]]:
+    async def get_zones(
+        self,
+        domain_id: str = None,
+        paginate: bool = False,
+        list_size: int = 100
+    ) -> List[Dict[str, Any]]:
         """
         Get zones in the SmartZone
 
         Args:
             domain_id: Optional domain ID. If provided, returns zones within that domain.
                       If not provided, returns zones from current logon domain.
+            paginate: If True, fetch all zones across multiple pages. Default False for backwards compat.
+            list_size: Number of zones per page (default 100, max 1000)
 
         Returns:
             List of zone/domain objects with id, name, description
         """
-        params = {}
+        params = {"listSize": str(list_size)}
         if domain_id:
             params["domainId"] = domain_id
 
-        data = await self.client._request("GET", f"/{self.client.api_version}/rkszones", params=params)
-        return data.get("list", [])
+        if not paginate:
+            data = await self.client._request("GET", f"/{self.client.api_version}/rkszones", params=params)
+            return data.get("list", [])
+
+        # Paginate through all zones
+        all_zones = []
+        index = 0
+
+        while True:
+            params["index"] = str(index)
+            data = await self.client._request("GET", f"/{self.client.api_version}/rkszones", params=params)
+            zones = data.get("list", [])
+            total_count = data.get("totalCount", 0)
+
+            all_zones.extend(zones)
+
+            if len(all_zones) >= total_count or not zones:
+                break
+
+            index += len(zones)
+
+        return all_zones
 
     async def get_zone_details(self, zone_id: str) -> Dict[str, Any]:
         """

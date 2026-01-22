@@ -659,6 +659,94 @@ function ZoneRow({ zone, expanded, onToggle }: { zone: ZoneRowData; expanded: bo
   );
 }
 
+// Refresh mode options
+type RefreshMode = 'full' | 'incremental' | 'cached_only';
+
+const REFRESH_MODE_INFO: Record<RefreshMode, { label: string; description: string; icon: string }> = {
+  full: {
+    label: 'Full Refresh',
+    description: 'Fetch all zones from SmartZone API, updating cache',
+    icon: '🔄'
+  },
+  incremental: {
+    label: 'Incremental',
+    description: 'Use cached zones if available, only fetch new/changed zones',
+    icon: '⚡'
+  },
+  cached_only: {
+    label: 'Cached Only',
+    description: 'Return cached data instantly, no API calls (requires previous audit)',
+    icon: '💾'
+  }
+};
+
+// Cache status from backend
+interface CacheStatus {
+  controller_id: number;
+  has_cache: boolean;
+  cached_zones: number;
+  last_audit_time: string | null;
+  cache_age_minutes: number | null;
+  zone_count: number | null;
+}
+
+// Cached zone info for selection UI
+interface CachedZoneInfo {
+  zone_id: string;
+  zone_name: string;
+  domain_name: string;
+  cached_at: string | null;
+  ap_count: number;
+  wlan_count: number;
+}
+
+// Final audit stats to display after completion
+interface AuditFinalStats {
+  api_stats?: {
+    total_calls: number;
+    errors: number;
+    elapsed_seconds: number;
+    avg_calls_per_second: number;
+  };
+  cache_stats?: {
+    refresh_mode: string;
+    zones_from_cache: number;
+    zones_refreshed: number;
+    cache_hit_rate: number;
+  };
+}
+
+// Types for async job tracking
+interface AuditJob {
+  job_id: string;
+  controller_id: number;
+  controller_name: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  current_phase?: string;
+  current_activity?: string;  // Detailed progress message
+  progress?: {
+    phases_total: number;
+    phases_completed: number;
+    percent: number;
+  };
+  errors: string[];
+  refresh_mode?: RefreshMode;
+  cache_stats?: {
+    refresh_mode: string;
+    zones_from_cache: number;
+    zones_refreshed: number;
+    cache_hit_rate: number;
+  };
+  api_stats?: {
+    total_calls: number;
+    errors: number;
+    elapsed_seconds: number;
+    avg_calls_per_second: number;
+    calls_last_minute: number;
+    current_rate_per_second: number;
+  };
+}
+
 // Main Page Component
 export default function SZAudit() {
   const { controllers } = useAuth();
@@ -667,6 +755,23 @@ export default function SZAudit() {
   const [results, setResults] = useState<SZAuditResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [expandedZones, setExpandedZones] = useState<Set<string>>(new Set());
+
+  // Async job tracking
+  const [activeJobs, setActiveJobs] = useState<AuditJob[]>([]);
+
+  // Refresh mode
+  const [refreshMode, setRefreshMode] = useState<RefreshMode>('full');
+
+  // Cache status for selected controllers
+  const [cacheStatus, setCacheStatus] = useState<Record<number, CacheStatus>>({});
+
+  // Cached zones for selection (when in incremental mode)
+  const [cachedZones, setCachedZones] = useState<Record<number, CachedZoneInfo[]>>({});
+  const [forceRefreshZones, setForceRefreshZones] = useState<Set<string>>(new Set());
+  const [showZoneSelector, setShowZoneSelector] = useState(false);
+
+  // Final stats from completed audit (to show above results)
+  const [finalStats, setFinalStats] = useState<AuditFinalStats | null>(null);
 
   // Switch group mapping state
   const [mapperOpen, setMapperOpen] = useState(false);
@@ -691,6 +796,60 @@ export default function SZAudit() {
       setSgMappings(newMappings);
     }
   }, [results]);
+
+  // Fetch cache status and cached zones when controllers are selected
+  useEffect(() => {
+    const fetchCacheData = async () => {
+      const newStatus: Record<number, CacheStatus> = {};
+      const newCachedZones: Record<number, CachedZoneInfo[]> = {};
+
+      for (const controllerId of selectedControllers) {
+        try {
+          // Fetch cache status
+          const statusResponse = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}`, {
+            credentials: 'include'
+          });
+          if (statusResponse.ok) {
+            const data = await statusResponse.json();
+            newStatus[controllerId] = data;
+
+            // If there are cached zones, fetch their details
+            if (data.has_cache && data.cached_zones > 0) {
+              const zonesResponse = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/zones`, {
+                credentials: 'include'
+              });
+              if (zonesResponse.ok) {
+                newCachedZones[controllerId] = await zonesResponse.json();
+              }
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to fetch cache data for controller ${controllerId}:`, err);
+        }
+      }
+
+      setCacheStatus(newStatus);
+      setCachedZones(newCachedZones);
+    };
+
+    if (selectedControllers.size > 0) {
+      fetchCacheData();
+    } else {
+      setCacheStatus({});
+      setCachedZones({});
+    }
+    // Clear force refresh selection when controllers change
+    setForceRefreshZones(new Set());
+    setShowZoneSelector(false);
+  }, [selectedControllers]);
+
+  // Clear force refresh zones when mode changes away from incremental
+  useEffect(() => {
+    if (refreshMode !== 'incremental') {
+      setForceRefreshZones(new Set());
+      setShowZoneSelector(false);
+    }
+  }, [refreshMode]);
 
   const toggleController = (id: number) => {
     setSelectedControllers(prev => {
@@ -731,28 +890,196 @@ export default function SZAudit() {
     setError(null);
     setResults([]);
     setExpandedZones(new Set());
+    setActiveJobs([]);
+    setFinalStats(null);
+
+    const controllerIds = Array.from(selectedControllers);
+    const jobs: AuditJob[] = [];
 
     try {
-      const response = await fetch(`${API_BASE_URL}/sz/audit/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          controller_ids: Array.from(selectedControllers)
-        })
-      });
+      // Start async audit jobs for all selected controllers
+      for (const controllerId of controllerIds) {
+        const controller = szControllers.find(c => c.id === controllerId);
+        try {
+          const response = await fetch(`${API_BASE_URL}/sz/audit/async`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              controller_id: controllerId,
+              refresh_mode: refreshMode,
+              force_refresh_zones: Array.from(forceRefreshZones)
+            })
+          });
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.error || `HTTP ${response.status}`);
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || errData.error || `HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          jobs.push({
+            job_id: data.job_id,
+            controller_id: controllerId,
+            controller_name: controller?.name || `Controller ${controllerId}`,
+            status: 'RUNNING',
+            progress: { phases_total: 4, phases_completed: 0, percent: 0 },
+            errors: []
+          });
+        } catch (err) {
+          // If we can't even start the job, track it as failed
+          jobs.push({
+            job_id: '',
+            controller_id: controllerId,
+            controller_name: controller?.name || `Controller ${controllerId}`,
+            status: 'FAILED',
+            errors: [err instanceof Error ? err.message : 'Failed to start audit']
+          });
+        }
       }
 
-      const data = await response.json();
-      setResults(data.results || []);
+      setActiveJobs([...jobs]);
+
+      // Poll for completion
+      const completedResults: SZAuditResult[] = [];
+      const pendingJobs = jobs.filter(j => j.status === 'RUNNING');
+
+      while (pendingJobs.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+
+        for (let i = pendingJobs.length - 1; i >= 0; i--) {
+          const job = pendingJobs[i];
+          if (!job.job_id) continue;
+
+          try {
+            // Get job status
+            const statusResponse = await fetch(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/status`, {
+              credentials: 'include'
+            });
+
+            if (!statusResponse.ok) {
+              throw new Error(`Status check failed: HTTP ${statusResponse.status}`);
+            }
+
+            const statusData = await statusResponse.json();
+            job.status = statusData.status;
+            job.current_phase = statusData.current_phase;
+            job.current_activity = statusData.current_activity;
+            job.progress = statusData.progress;
+            job.errors = statusData.errors || [];
+            job.refresh_mode = statusData.refresh_mode;
+            job.cache_stats = statusData.cache_stats;
+            job.api_stats = statusData.api_stats;
+
+            // Update UI with latest status
+            setActiveJobs(prev => prev.map(j => j.job_id === job.job_id ? { ...job } : j));
+
+            if (statusData.status === 'COMPLETED') {
+              // Capture final stats before moving on
+              setFinalStats({
+                api_stats: statusData.api_stats,
+                cache_stats: statusData.cache_stats
+              });
+
+              // Fetch the result
+              const resultResponse = await fetch(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/result`, {
+                credentials: 'include'
+              });
+
+              if (resultResponse.ok) {
+                const result = await resultResponse.json();
+                completedResults.push(result);
+                setResults([...completedResults]);
+              }
+
+              pendingJobs.splice(i, 1);
+            } else if (statusData.status === 'FAILED' || statusData.status === 'CANCELLED') {
+              // Create a failed/cancelled result entry
+              completedResults.push({
+                controller_id: job.controller_id,
+                controller_name: job.controller_name,
+                host: '',
+                timestamp: new Date().toISOString(),
+                error: statusData.status === 'CANCELLED'
+                  ? 'Audit cancelled'
+                  : (job.errors.join('; ') || 'Audit failed'),
+                domains: [],
+                zones: [],
+                total_domains: 0,
+                total_zones: 0,
+                total_aps: 0,
+                total_wlans: 0,
+                total_switches: 0,
+                ap_model_summary: [],
+                ap_firmware_summary: [],
+                switch_firmware_summary: [],
+                wlan_type_summary: {},
+                cluster_ip: null,
+                controller_firmware: null,
+                partial_errors: []
+              });
+              setResults([...completedResults]);
+              pendingJobs.splice(i, 1);
+            }
+          } catch (err) {
+            console.error(`Failed to check status for job ${job.job_id}:`, err);
+          }
+        }
+      }
+
+      // Handle any jobs that failed to start
+      for (const job of jobs) {
+        if (job.status === 'FAILED' && !job.job_id) {
+          completedResults.push({
+            controller_id: job.controller_id,
+            controller_name: job.controller_name,
+            host: '',
+            timestamp: new Date().toISOString(),
+            error: job.errors.join('; ') || 'Failed to start audit',
+            domains: [],
+            zones: [],
+            total_domains: 0,
+            total_zones: 0,
+            total_aps: 0,
+            total_wlans: 0,
+            total_switches: 0,
+            ap_model_summary: [],
+            ap_firmware_summary: [],
+            switch_firmware_summary: [],
+            wlan_type_summary: {},
+            cluster_ip: null,
+            controller_firmware: null,
+            partial_errors: []
+          });
+        }
+      }
+
+      setResults(completedResults);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
+      setActiveJobs([]);
+    }
+  };
+
+  const cancelJob = async (jobId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/sz/audit/jobs/${jobId}/cancel`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        // Update the job status to show cancelling
+        setActiveJobs(prev => prev.map(j =>
+          j.job_id === jobId
+            ? { ...j, current_activity: 'Cancelling...' }
+            : j
+        ));
+      }
+    } catch (err) {
+      console.error(`Failed to cancel job ${jobId}:`, err);
     }
   };
 
@@ -1130,7 +1457,51 @@ export default function SZAudit() {
             <span className="text-sm text-gray-500">
               {selectedControllers.size} controller{selectedControllers.size !== 1 ? 's' : ''} selected
             </span>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3">
+              {/* Refresh Mode Selector with Cache Info */}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Mode:</label>
+                  <select
+                    value={refreshMode}
+                    onChange={(e) => setRefreshMode(e.target.value as RefreshMode)}
+                    disabled={loading}
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                  >
+                    <option value="full">{REFRESH_MODE_INFO.full.icon} {REFRESH_MODE_INFO.full.label}</option>
+                    <option value="incremental">{REFRESH_MODE_INFO.incremental.icon} {REFRESH_MODE_INFO.incremental.label}</option>
+                    <option value="cached_only">{REFRESH_MODE_INFO.cached_only.icon} {REFRESH_MODE_INFO.cached_only.label}</option>
+                  </select>
+                </div>
+                {/* Mode description and cache status */}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-500">{REFRESH_MODE_INFO[refreshMode].description}</span>
+                  {selectedControllers.size > 0 && Object.keys(cacheStatus).length > 0 && (
+                    <>
+                      <span className="text-blue-600">
+                        {(() => {
+                          const statuses = Object.values(cacheStatus);
+                          const withCache = statuses.filter(s => s.has_cache);
+                          if (withCache.length === 0) return '• No cached data';
+                          const totalZones = withCache.reduce((sum, s) => sum + s.cached_zones, 0);
+                          const oldestAge = Math.max(...withCache.map(s => s.cache_age_minutes || 0));
+                          return `• ${totalZones} zones cached${oldestAge > 0 ? ` (${oldestAge < 60 ? `${oldestAge}m` : `${Math.round(oldestAge/60)}h`} old)` : ''}`;
+                        })()}
+                      </span>
+                      {/* Zone selector toggle - only show for incremental mode with cached zones */}
+                      {refreshMode === 'incremental' && Object.values(cachedZones).flat().length > 0 && (
+                        <button
+                          onClick={() => setShowZoneSelector(!showZoneSelector)}
+                          className="text-blue-600 hover:text-blue-800 underline"
+                        >
+                          {showZoneSelector ? 'Hide' : 'Select'} zones to refresh
+                          {forceRefreshZones.size > 0 && ` (${forceRefreshZones.size})`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
               <button
                 onClick={exportCsv}
                 disabled={results.length === 0 || loading}
@@ -1163,7 +1534,176 @@ export default function SZAudit() {
               </button>
             </div>
           </div>
+
+          {/* Zone Selector Panel - for incremental mode */}
+          {showZoneSelector && refreshMode === 'incremental' && Object.values(cachedZones).flat().length > 0 && (
+            <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-gray-700">
+                  Select zones to force-refresh (others will use cache)
+                </h4>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      // Select all
+                      const allZoneIds = Object.values(cachedZones).flat().map(z => z.zone_id);
+                      setForceRefreshZones(new Set(allZoneIds));
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    onClick={() => setForceRefreshZones(new Set())}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {Object.entries(cachedZones).map(([controllerId, zones]) => {
+                  const controller = szControllers.find(c => c.id === parseInt(controllerId));
+                  return (
+                    <div key={controllerId}>
+                      {Object.keys(cachedZones).length > 1 && (
+                        <div className="text-xs font-medium text-gray-500 mt-2 mb-1">
+                          {controller?.name || `Controller ${controllerId}`}
+                        </div>
+                      )}
+                      {zones.map(zone => (
+                        <label
+                          key={zone.zone_id}
+                          className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-gray-100 ${
+                            forceRefreshZones.has(zone.zone_id) ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={forceRefreshZones.has(zone.zone_id)}
+                            onChange={(e) => {
+                              const newSet = new Set(forceRefreshZones);
+                              if (e.target.checked) {
+                                newSet.add(zone.zone_id);
+                              } else {
+                                newSet.delete(zone.zone_id);
+                              }
+                              setForceRefreshZones(newSet);
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900 truncate">
+                              {zone.zone_name}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {zone.domain_name} • {zone.ap_count} APs • {zone.wlan_count} WLANs
+                              {zone.cached_at && (
+                                <span className="ml-1">
+                                  • cached {(() => {
+                                    const mins = Math.round((Date.now() - new Date(zone.cached_at).getTime()) / 60000);
+                                    return mins < 60 ? `${mins}m ago` : `${Math.round(mins/60)}h ago`;
+                                  })()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+              {forceRefreshZones.size > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-600">
+                  {forceRefreshZones.size} zone{forceRefreshZones.size !== 1 ? 's' : ''} will be refreshed from API
+                </div>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Active Jobs Progress */}
+        {loading && activeJobs.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <h3 className="text-sm font-medium text-blue-800 mb-3 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Audit in Progress
+            </h3>
+            <div className="space-y-3">
+              {activeJobs.map(job => (
+                <div key={job.job_id || job.controller_id} className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-blue-900 truncate">
+                        {job.controller_name}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-blue-600">
+                          {job.status === 'COMPLETED' && <CheckCircle2 className="w-4 h-4 text-green-600 inline" />}
+                          {job.status === 'FAILED' && <AlertCircle className="w-4 h-4 text-red-600 inline" />}
+                          {job.status === 'RUNNING' && job.current_phase && (
+                            <span className="capitalize">{job.current_phase.replace(/_/g, ' ')}</span>
+                          )}
+                        </span>
+                        {job.status === 'RUNNING' && job.job_id && (
+                          <button
+                            onClick={() => cancelJob(job.job_id)}
+                            className="p-1 rounded hover:bg-red-100 text-red-500 hover:text-red-700 transition"
+                            title="Cancel audit"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {/* Activity detail */}
+                    {job.status === 'RUNNING' && job.current_activity && (
+                      <div className="text-xs text-blue-700 mb-1 truncate" title={job.current_activity}>
+                        {job.current_activity}
+                      </div>
+                    )}
+                    <div className="w-full bg-blue-200 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          job.status === 'COMPLETED' ? 'bg-green-500' :
+                          job.status === 'FAILED' ? 'bg-red-500' :
+                          job.status === 'CANCELLED' ? 'bg-orange-500' :
+                          'bg-blue-600'
+                        }`}
+                        style={{ width: `${job.progress?.percent || 0}%` }}
+                      />
+                    </div>
+                    {/* Cache & API Stats */}
+                    {job.status === 'RUNNING' && (job.cache_stats || job.api_stats) && (
+                      <div className="mt-1 flex items-center gap-4 text-xs">
+                        {job.cache_stats && job.cache_stats.zones_from_cache + job.cache_stats.zones_refreshed > 0 && (
+                          <span className="text-blue-600">
+                            Cache: {job.cache_stats.zones_from_cache} cached / {job.cache_stats.zones_refreshed} refreshed
+                            {job.cache_stats.cache_hit_rate > 0 && (
+                              <span className="text-blue-400 ml-1">({job.cache_stats.cache_hit_rate}% hit)</span>
+                            )}
+                          </span>
+                        )}
+                        {job.api_stats && (
+                          <span className="text-gray-500">
+                            API: {job.api_stats.total_calls} calls
+                            {job.api_stats.elapsed_seconds > 0 && (
+                              <span className="text-gray-400 ml-1">
+                                ({job.api_stats.avg_calls_per_second}/s avg, {job.api_stats.current_rate_per_second}/s now)
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Error Display */}
         {error && (
@@ -1179,6 +1719,76 @@ export default function SZAudit() {
         {/* Results */}
         {results.length > 0 && (
           <>
+            {/* Final Audit Stats */}
+            {finalStats && (finalStats.api_stats || finalStats.cache_stats) && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-700">Audit Performance</h3>
+                  <span className="text-xs text-gray-400">
+                    {finalStats.cache_stats?.refresh_mode && (
+                      <span className="capitalize">{finalStats.cache_stats.refresh_mode} mode</span>
+                    )}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-6">
+                  {finalStats.api_stats && (
+                    <div className="flex items-center gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-gray-900">
+                          {finalStats.api_stats.total_calls.toLocaleString()}
+                        </div>
+                        <div className="text-xs text-gray-500">API Calls</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-gray-900">
+                          {finalStats.api_stats.elapsed_seconds}s
+                        </div>
+                        <div className="text-xs text-gray-500">Duration</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-gray-900">
+                          {finalStats.api_stats.avg_calls_per_second}/s
+                        </div>
+                        <div className="text-xs text-gray-500">Avg Rate</div>
+                      </div>
+                      {finalStats.api_stats.errors > 0 && (
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-red-600">
+                            {finalStats.api_stats.errors}
+                          </div>
+                          <div className="text-xs text-red-500">Errors</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {finalStats.cache_stats && (finalStats.cache_stats.zones_from_cache > 0 || finalStats.cache_stats.zones_refreshed > 0) && (
+                    <div className="flex items-center gap-4 border-l border-gray-200 pl-6">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {finalStats.cache_stats.zones_from_cache}
+                        </div>
+                        <div className="text-xs text-gray-500">From Cache</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-green-600">
+                          {finalStats.cache_stats.zones_refreshed}
+                        </div>
+                        <div className="text-xs text-gray-500">Refreshed</div>
+                      </div>
+                      {finalStats.cache_stats.cache_hit_rate > 0 && (
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-purple-600">
+                            {finalStats.cache_stats.cache_hit_rate}%
+                          </div>
+                          <div className="text-xs text-gray-500">Cache Hit</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Global Summary */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Global Summary</h2>

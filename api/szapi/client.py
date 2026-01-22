@@ -5,8 +5,10 @@ Provides a client for interacting with Ruckus SmartZone controllers.
 Supports AP inventory queries needed for migration to RuckusONE.
 """
 
+import asyncio
 import httpx
 import logging
+import time
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from szapi.services.zones import ZoneService
@@ -17,6 +19,53 @@ from szapi.services.apgroups import ApGroupService
 from szapi.services.system import SystemService
 
 logger = logging.getLogger(__name__)
+
+
+class AsyncRateLimiter:
+    """
+    Token bucket rate limiter for async operations.
+
+    Allows bursts up to `rate` requests, then throttles to
+    maintain average of `rate` requests per `per` seconds.
+    """
+
+    def __init__(self, rate: float = 120.0, per: float = 1.0):
+        """
+        Initialize rate limiter.
+
+        Args:
+            rate: Maximum requests allowed per time period (default 120)
+            per: Time period in seconds (default 1.0)
+        """
+        self.rate = rate
+        self.per = per
+        self.allowance = rate  # Start with full bucket
+        self.last_check = time.monotonic()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self):
+        """
+        Acquire permission to make a request.
+        Blocks if rate limit would be exceeded.
+        """
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.last_check
+            self.last_check = now
+
+            # Replenish tokens based on elapsed time
+            self.allowance += elapsed * (self.rate / self.per)
+            if self.allowance > self.rate:
+                self.allowance = self.rate
+
+            if self.allowance < 1.0:
+                # Need to wait for tokens to replenish
+                wait_time = (1.0 - self.allowance) * (self.per / self.rate)
+                logger.debug(f"Rate limit: waiting {wait_time:.3f}s")
+                await asyncio.sleep(wait_time)
+                self.allowance = 0
+            else:
+                self.allowance -= 1.0
 
 
 class SZClient:
@@ -35,7 +84,8 @@ class SZClient:
         port: int = 8443,
         use_https: bool = True,
         verify_ssl: bool = False,
-        api_version: str = "v12_0"
+        api_version: str = "v12_0",
+        rate_limit: float = 100.0
     ):
         """
         Initialize SmartZone API client
@@ -48,6 +98,7 @@ class SZClient:
             use_https: Use HTTPS protocol (default True)
             verify_ssl: Verify SSL certificates (default False for self-signed certs)
             api_version: SmartZone API version (e.g., v11_1, v12_0, v13_0). Default v12_0
+            rate_limit: Max API requests per second (default 100, SmartZone limit is ~120)
         """
         self.host = host
         self.port = port
@@ -64,6 +115,21 @@ class SZClient:
 
         self.session_id: Optional[str] = None
         self.session_expiry: Optional[datetime] = None
+
+        # Rate limiter to avoid overwhelming the SmartZone API
+        # Default 100 req/s gives headroom under SmartZone's ~120 req/s limit
+        self._rate_limiter = AsyncRateLimiter(rate=rate_limit, per=1.0)
+
+        # API stats tracking
+        self._stats = {
+            'total_calls': 0,
+            'start_time': None,
+            'last_call_time': None,
+            'calls_per_minute': [],  # Rolling window of timestamps
+            'errors': 0,
+            'endpoints': {}  # Per-endpoint call counts
+        }
+        self._stats_lock = asyncio.Lock()
 
         # HTTP client with timeout and SSL verification settings
         self.client = httpx.AsyncClient(
@@ -82,7 +148,7 @@ class SZClient:
         self.apgroups = ApGroupService(self)
         self.system = SystemService(self)
 
-        logger.info(f"SZClient initialized for {host}:{port} with API version {api_version}")
+        logger.info(f"SZClient initialized for {host}:{port} with API version {api_version}, rate limit {rate_limit}/s")
 
     def __repr__(self):
         return f"<SZClient host={self.host}:{self.port}, api_version={self.api_version}>"
@@ -183,6 +249,75 @@ class SZClient:
         ):
             await self.login()
 
+    async def _track_api_call(self, endpoint: str):
+        """Track an API call for statistics"""
+        async with self._stats_lock:
+            now = time.time()
+
+            # Initialize start time on first call
+            if self._stats['start_time'] is None:
+                self._stats['start_time'] = now
+
+            self._stats['total_calls'] += 1
+            self._stats['last_call_time'] = now
+
+            # Track calls per minute (rolling 60-second window)
+            self._stats['calls_per_minute'].append(now)
+            # Remove calls older than 60 seconds
+            cutoff = now - 60
+            self._stats['calls_per_minute'] = [
+                t for t in self._stats['calls_per_minute'] if t > cutoff
+            ]
+
+            # Track per-endpoint counts (simplified endpoint)
+            # Extract base endpoint (e.g., "/v12_0/rkszones" from "/v12_0/rkszones/abc/wlans")
+            endpoint_parts = endpoint.split('/')
+            if len(endpoint_parts) >= 3:
+                base_endpoint = '/'.join(endpoint_parts[:3])
+            else:
+                base_endpoint = endpoint
+
+            self._stats['endpoints'][base_endpoint] = self._stats['endpoints'].get(base_endpoint, 0) + 1
+
+    async def _track_api_error(self):
+        """Track an API error"""
+        async with self._stats_lock:
+            self._stats['errors'] += 1
+
+    def get_api_stats(self) -> Dict[str, Any]:
+        """
+        Get current API statistics
+
+        Returns:
+            Dict with API call statistics
+        """
+        now = time.time()
+        elapsed = now - self._stats['start_time'] if self._stats['start_time'] else 0
+        calls_in_last_minute = len(self._stats['calls_per_minute'])
+
+        return {
+            'total_calls': self._stats['total_calls'],
+            'errors': self._stats['errors'],
+            'elapsed_seconds': round(elapsed, 1),
+            'avg_calls_per_second': round(self._stats['total_calls'] / elapsed, 2) if elapsed > 0 else 0,
+            'calls_last_minute': calls_in_last_minute,
+            'current_rate_per_second': round(calls_in_last_minute / 60, 2),
+            'top_endpoints': dict(
+                sorted(self._stats['endpoints'].items(), key=lambda x: x[1], reverse=True)[:5]
+            )
+        }
+
+    def reset_api_stats(self):
+        """Reset API statistics"""
+        self._stats = {
+            'total_calls': 0,
+            'start_time': None,
+            'last_call_time': None,
+            'calls_per_minute': [],
+            'errors': 0,
+            'endpoints': {}
+        }
+
     async def _request(
         self,
         method: str,
@@ -202,7 +337,13 @@ class SZClient:
         Returns:
             JSON response data
         """
+        # Rate limit to avoid overwhelming the SmartZone API
+        await self._rate_limiter.acquire()
+
         await self.ensure_authenticated()
+
+        # Update API stats
+        await self._track_api_call(endpoint)
 
         # Use root URL for alternate APIs like switchm
         base = self.root_url if use_root_url else self.base_url
@@ -236,17 +377,30 @@ class SZClient:
             return response_data
 
         except httpx.HTTPStatusError as e:
+            await self._track_api_error()
             status_code = e.response.status_code
             logger.error(f"SmartZone API Error: {status_code} from {method} {endpoint}")
 
             # Try to get error details from response
+            error_message = None
+            error_type = None
             try:
                 error_body = e.response.json()
                 logger.error(f"  Error details: {error_body}")
-            except:
+                error_message = error_body.get("message")
+                error_type = error_body.get("errorType")
+            except Exception:
                 logger.error(f"  Error body: {e.response.text[:500]}")
 
-            raise
+            # Build a user-friendly error message
+            if error_message:
+                friendly_msg = f"SmartZone API error ({status_code}): {error_message}"
+                if error_type:
+                    friendly_msg += f" [{error_type}]"
+            else:
+                friendly_msg = f"SmartZone API error ({status_code}) on {method} {endpoint}"
+
+            raise ValueError(friendly_msg) from e
         except Exception as e:
             logger.error(f"SmartZone API Exception: {type(e).__name__} from {method} {endpoint}: {str(e)}")
             raise
