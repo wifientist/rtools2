@@ -195,17 +195,32 @@ class ZoneCacheManager:
         Args:
             zone_ids: List of zone IDs that were cached
             partial: True if this was an incremental/partial update
+                     When partial, merges with existing zone IDs to preserve
+                     zones from previous audits that weren't processed this time
 
         Returns:
             True if updated successfully
         """
         key = self._meta_key()
 
+        # For partial updates, merge with existing zone IDs to preserve
+        # zones that were cached previously but not processed in this run
+        # (e.g., when audit is cancelled partway through)
+        final_zone_ids = zone_ids
+        if partial:
+            existing_meta = await self.get_cache_meta()
+            if existing_meta and existing_meta.get('zone_ids'):
+                # Merge: keep existing zones, add/update new ones
+                existing_set = set(existing_meta['zone_ids'])
+                new_set = set(zone_ids)
+                final_zone_ids = list(existing_set | new_set)
+                logger.info(f"Cache meta merge: {len(existing_set)} existing + {len(new_set)} current = {len(final_zone_ids)} total")
+
         meta = {
             'controller_id': self.controller_id,
             'last_audit_time': datetime.utcnow().isoformat(),
-            'zone_count': len(zone_ids),
-            'zone_ids': zone_ids,
+            'zone_count': len(final_zone_ids),
+            'zone_ids': final_zone_ids,
             'partial_update': partial,
             'version': 1  # For future schema changes
         }

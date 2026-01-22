@@ -41,5 +41,5 @@ def generate_and_store_signup_otp(email: str, db: Session = Depends(get_db)):
         db.add(pending)
 
     db.commit()
-    logger.info(f'Signup OTP generated for {email}')
+    logger.info(f'Signup OTP generated for {email}: {otp}')
     return otp

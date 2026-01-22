@@ -154,6 +154,9 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             cached_zone_data = await zone_cache.get_cached_zones(cache_meta['zone_ids'])
             logger.info(f"Audit: Found {len(cached_zone_data)} zones in cache")
 
+    # Track if audit was cancelled (for cache metadata update)
+    was_cancelled = False
+
     # Check if we have prefetched zones (from fallback in initialize phase)
     if prefetched_zones:
         logger.info(f"Audit: Using {len(prefetched_zones)} prefetched zones (fallback mode)")
@@ -165,6 +168,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             if await is_cancelled():
                 logger.info("Audit: Cancellation detected, stopping zone processing")
                 partial_errors.append("Audit cancelled by user")
+                was_cancelled = True
                 break
 
             zone_id = zone.get("id")
@@ -256,6 +260,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             if await is_cancelled():
                 logger.info("Audit: Cancellation detected, stopping domain processing")
                 partial_errors.append("Audit cancelled by user")
+                was_cancelled = True
                 break
 
             domain_id = domain.get("id")
@@ -270,6 +275,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                         logger.info("Audit: Cancellation detected, stopping zone processing")
                         partial_errors.append("Audit cancelled by user")
                         cancelled = True
+                        was_cancelled = True
                         break
 
                     zone_id = zone.get("id")
@@ -349,12 +355,16 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     logger.info(f"Audit: Cache stats - {zones_from_cache} from cache, {zones_refreshed} refreshed")
 
     # Update cache metadata
+    # Mark as partial if incremental mode OR if cancelled (to preserve existing cached zones)
     if zone_cache and zones_refreshed > 0:
         zone_ids = [z.get('zone_id') for z in all_zones_audit if z.get('zone_id')]
+        is_partial = (refresh_mode == RefreshMode.INCREMENTAL) or was_cancelled
         await zone_cache.update_cache_meta(
             zone_ids=zone_ids,
-            partial=(refresh_mode == RefreshMode.INCREMENTAL)
+            partial=is_partial
         )
+        if was_cancelled:
+            logger.info(f"Audit cancelled - cached {zones_refreshed} zones that completed")
 
     # Final cache stats update
     await update_cache_stats()

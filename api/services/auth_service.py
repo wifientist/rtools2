@@ -24,7 +24,7 @@ def generate_and_send_otp(email: str, db: Session = Depends(get_db)):
     user.otp_expires_at = expires_at
     db.commit()
 
-    logger.info(f"Generated login OTP for {email}")
+    logger.info(f"Generated login OTP for {email}: {otp}")
 
     send_otp_email_via_api(user.email, otp)
 
