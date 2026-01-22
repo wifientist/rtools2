@@ -355,7 +355,7 @@ export default function ControllerManager() {
               />
               <input
                 className="w-full border p-2 rounded"
-                placeholder="Version (e.g., 6.1.2)"
+                placeholder="API Version (e.g., v11_1)"
                 name="sz_version"
                 value={formData.sz_version}
                 onChange={handleInputChange}
