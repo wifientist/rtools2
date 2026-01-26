@@ -40,6 +40,9 @@ from schemas.sz_audit import (
     SwitchGroupSummary,
     FirmwareDistribution,
     ModelDistribution,
+    MatchCandidate,
+    ZoneMatchCandidates,
+    ControllerMatchCandidates,
 )
 from redis_client import get_redis_client
 from workflow.models import WorkflowJob, Phase, JobStatus, PhaseStatus
@@ -47,6 +50,7 @@ from workflow.state_manager import RedisStateManager
 from workflow.events import WorkflowEventPublisher
 from routers.sz.audit_workflow_definition import get_workflow_definition
 from routers.sz.phases import initialize, fetch_switches, audit_zones, finalize
+from routers.sz.phases.finalize import get_match_candidates
 from routers.sz.zone_cache import ZoneCacheManager, RefreshMode
 import re
 
@@ -217,7 +221,7 @@ AUDIT_RESULT_TTL = 60 * 60 * 24
 class AsyncAuditRequest(BaseModel):
     """Request to start async audit"""
     controller_id: int
-    refresh_mode: RefreshMode = RefreshMode.FULL  # full, incremental, cached_only
+    refresh_mode: RefreshMode = RefreshMode.FULL  # full, incremental, cached_only, switches_only
     force_refresh_zones: List[str] = []  # Zone IDs to refresh even if cached (for incremental mode)
 
 
@@ -600,13 +604,41 @@ async def get_audit_job_status(
         for p in job.phases
     ]
 
-    # Calculate progress
+    # Calculate progress with weighted phases
+    # Phase weights: initialize=5%, fetch_switches=10%, audit_zones=75%, finalize=10%
+    phase_weights = {
+        'initialize': 5,
+        'fetch_switches': 10,
+        'audit_zones': 75,
+        'finalize': 10
+    }
+
     total_phases = len(job.phases)
     completed_phases = sum(1 for p in job.phases if p.status == PhaseStatus.COMPLETED)
+
+    # Calculate weighted percent
+    percent = 0
+    for p in job.phases:
+        weight = phase_weights.get(p.id, 25)  # Default 25% if unknown phase
+        if p.status == PhaseStatus.COMPLETED:
+            percent += weight
+        elif p.status == PhaseStatus.RUNNING:
+            # For audit_zones, use zone-level progress
+            if p.id == 'audit_zones':
+                zone_progress = job.summary.get('zone_progress', {})
+                zones_total = zone_progress.get('total', 0)
+                zones_completed = zone_progress.get('completed', 0)
+                if zones_total > 0:
+                    percent += int(weight * zones_completed / zones_total)
+            # For other phases, count as 50% done if running
+            else:
+                percent += weight // 2
+
     progress = {
         'phases_total': total_phases,
         'phases_completed': completed_phases,
-        'percent': int((completed_phases / total_phases) * 100) if total_phases > 0 else 0
+        'percent': min(percent, 100),  # Cap at 100%
+        'zone_progress': job.summary.get('zone_progress')  # Include zone details if available
     }
 
     return AuditJobStatus(
@@ -674,6 +706,9 @@ class CacheStatusResponse(BaseModel):
     last_audit_time: Optional[str] = None
     cache_age_minutes: Optional[int] = None
     zone_count: Optional[int] = None
+    # Switch group match info
+    zones_with_switch_matches: int = 0
+    total_switch_groups_matched: int = 0
 
 
 @router.get("/audit/cache/{controller_id}")
@@ -703,13 +738,26 @@ async def get_cache_status(
         except Exception:
             pass
 
+    # Count zones with switch group matches
+    zones_with_switch_matches = 0
+    total_switch_groups_matched = 0
+    if meta and meta.get('zone_ids'):
+        cached_zones = await zone_cache.get_cached_zones(meta['zone_ids'])
+        for zone_data in cached_zones.values():
+            matches = zone_data.get('matched_switch_groups', [])
+            if matches:
+                zones_with_switch_matches += 1
+                total_switch_groups_matched += len(matches)
+
     return CacheStatusResponse(
         controller_id=controller_id,
         has_cache=stats.get('has_cache', False),
         cached_zones=stats.get('cached_zones', 0),
         last_audit_time=stats.get('last_audit_time'),
         cache_age_minutes=cache_age_minutes,
-        zone_count=meta.get('zone_count') if meta else None
+        zone_count=meta.get('zone_count') if meta else None,
+        zones_with_switch_matches=zones_with_switch_matches,
+        total_switch_groups_matched=total_switch_groups_matched
     )
 
 
@@ -764,6 +812,433 @@ async def list_cached_zones(
     zones = await zone_cache.list_cached_zones()
 
     return [CachedZoneInfo(**z) for z in zones]
+
+
+@router.get("/audit/result/{controller_id}")
+async def get_audit_result_from_cache(
+    controller_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> SZAuditResult:
+    """
+    Get audit result from cache.
+
+    This is the primary endpoint for retrieving audit data.
+    All refresh modes (full, incremental, switches_only) update the cache,
+    and this endpoint reads from that cache to return the result.
+
+    Returns 404 if no cached data exists for the controller.
+    """
+    # Validate controller access
+    controller = db.query(Controller).filter(Controller.id == controller_id).first()
+    if not controller:
+        raise HTTPException(status_code=404, detail="Controller not found")
+    if controller.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    redis_client = await get_redis_client()
+    zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+    # Check if cache exists
+    stats = await zone_cache.get_cache_stats()
+    if not stats.get('has_cache'):
+        raise HTTPException(
+            status_code=404,
+            detail="No cached data available. Run an audit first."
+        )
+
+    # Get cache metadata and zones
+    meta = await zone_cache.get_cache_meta()
+    if not meta or not meta.get('zone_ids'):
+        raise HTTPException(
+            status_code=404,
+            detail="Cache metadata not found. Run a new audit."
+        )
+
+    # Load all cached zones
+    cached_zones = await zone_cache.get_cached_zones(meta['zone_ids'])
+    if not cached_zones:
+        raise HTTPException(
+            status_code=404,
+            detail="No zones found in cache. Run a new audit."
+        )
+
+    # Build ZoneAudit objects from cached data
+    all_zones_audit = []
+    for zone_id, zone_data in cached_zones.items():
+        # Remove cache metadata before converting
+        zone_data.pop('_cached_at', None)
+        try:
+            all_zones_audit.append(ZoneAudit(**zone_data))
+        except Exception as e:
+            logger.warning(f"Failed to parse cached zone {zone_id}: {e}")
+            continue
+
+    # Derive domains from zones
+    domain_map = {}
+    for zone in all_zones_audit:
+        if zone.domain_id and zone.domain_id not in domain_map:
+            domain_map[zone.domain_id] = {
+                'id': zone.domain_id,
+                'name': zone.domain_name or 'Unknown Domain'
+            }
+    domains_raw = list(domain_map.values())
+
+    # Load cached switch groups (ALL switch groups, not just matched ones)
+    cached_sg_data = await zone_cache.get_cached_switch_groups()
+    all_switch_groups_by_domain = cached_sg_data.get('switch_groups', {}) if cached_sg_data else {}
+
+    # Helper to convert cached switch group dict to SwitchGroupSummary
+    def to_sg_summary(sg: Dict) -> SwitchGroupSummary:
+        return SwitchGroupSummary(
+            id=sg.get('id'),
+            name=sg.get('name'),
+            switch_count=sg.get('switch_count', 0),
+            switches_online=sg.get('switches_online', 0),
+            switches_offline=sg.get('switches_offline', 0),
+            firmware_versions=[
+                FirmwareDistribution(version=fv.get('version'), count=fv.get('count', 0))
+                for fv in sg.get('firmware_versions', [])
+            ]
+        )
+
+    # Build flat list of ALL switch groups (deduped) for firmware aggregation
+    all_switch_groups_flat = []
+    seen_sg_ids_global = set()
+    for domain_id_key, groups in all_switch_groups_by_domain.items():
+        for sg in groups:
+            sg_id = sg.get('id')
+            if sg_id and sg_id not in seen_sg_ids_global:
+                seen_sg_ids_global.add(sg_id)
+                all_switch_groups_flat.append(to_sg_summary(sg))
+
+    # Build domain audit objects
+    domains_audit = []
+    for domain in domains_raw:
+        domain_id = domain.get('id')
+        domain_name = domain.get('name', 'Unknown')
+
+        # Get zones for this domain
+        domain_zones = [z for z in all_zones_audit if z.domain_id == domain_id]
+
+        # Aggregate stats from zones
+        total_aps = sum(z.ap_status.total for z in domain_zones)
+        total_wlans = sum(z.wlan_count for z in domain_zones)
+
+        # Get switch groups for this domain from cache
+        # First check for domain-specific groups
+        domain_switch_groups_raw = list(all_switch_groups_by_domain.get(domain_id, []))
+
+        # If no domain-specific groups, check synthetic keys (but only for first domain to avoid dups)
+        if not domain_switch_groups_raw and domain == domains_raw[0]:
+            for special_key in ['_all_', '_prefetched_', '_cached_']:
+                if special_key in all_switch_groups_by_domain:
+                    domain_switch_groups_raw.extend(all_switch_groups_by_domain[special_key])
+
+        # Convert to SwitchGroupSummary objects (dedup by id)
+        seen_sg_ids = set()
+        switch_groups = []
+        for sg in domain_switch_groups_raw:
+            sg_id = sg.get('id')
+            if sg_id and sg_id not in seen_sg_ids:
+                seen_sg_ids.add(sg_id)
+                switch_groups.append(to_sg_summary(sg))
+
+        total_switches = sum(sg.switch_count for sg in switch_groups)
+
+        domain_audit = DomainAudit(
+            domain_id=domain_id,
+            domain_name=domain_name,
+            zone_count=len(domain_zones),
+            total_aps=total_aps,
+            total_wlans=total_wlans,
+            switch_groups=switch_groups,
+            total_switches=total_switches,
+            children=[]
+        )
+        domains_audit.append(domain_audit)
+
+    # Aggregate global stats
+    total_aps = sum(z.ap_status.total for z in all_zones_audit)
+    total_wlans = sum(z.wlan_count for z in all_zones_audit)
+    total_switches = sum(d.total_switches for d in domains_audit)
+
+    # Aggregate AP models
+    model_counter = Counter()
+    for zone in all_zones_audit:
+        for md in zone.ap_model_distribution:
+            model_counter[md.model] += md.count
+    ap_model_summary = [
+        ModelDistribution(model=m, count=c)
+        for m, c in model_counter.most_common()
+    ]
+
+    # Aggregate AP firmware
+    firmware_counter = Counter()
+    for zone in all_zones_audit:
+        for fd in zone.ap_firmware_distribution:
+            firmware_counter[fd.version] += fd.count
+    ap_firmware_summary = [
+        FirmwareDistribution(version=v, count=c)
+        for v, c in firmware_counter.most_common()
+    ]
+
+    # Aggregate switch firmware from all switch groups
+    switch_firmware_counter = Counter()
+    for sg in all_switch_groups_flat:
+        for fd in sg.firmware_versions:
+            switch_firmware_counter[fd.version] += fd.count
+    switch_firmware_summary = [
+        FirmwareDistribution(version=v, count=c)
+        for v, c in switch_firmware_counter.most_common()
+    ]
+
+    # Aggregate WLAN types
+    wlan_type_counter = Counter()
+    for zone in all_zones_audit:
+        for wlan_type, count in zone.wlan_type_breakdown.items():
+            wlan_type_counter[wlan_type] += count
+    wlan_type_summary = dict(wlan_type_counter)
+
+    # Build final result
+    result = SZAuditResult(
+        controller_id=controller.id,
+        controller_name=controller.name,
+        host=controller.sz_host,
+        timestamp=datetime.fromisoformat(stats['last_audit_time']) if stats.get('last_audit_time') else datetime.utcnow(),
+        cluster_ip=meta.get('cluster_ip'),
+        controller_firmware=meta.get('controller_firmware'),
+        domains=domains_audit,
+        zones=all_zones_audit,
+        total_domains=len(domains_audit),
+        total_zones=len(all_zones_audit),
+        total_aps=total_aps,
+        total_wlans=total_wlans,
+        total_switches=total_switches,
+        ap_model_summary=ap_model_summary,
+        ap_firmware_summary=ap_firmware_summary,
+        switch_firmware_summary=switch_firmware_summary,
+        wlan_type_summary=wlan_type_summary,
+        error=None,
+        partial_errors=[]
+    )
+
+    return result
+
+
+class SwitchGroupMappingInfo(BaseModel):
+    """Switch group info for mapping (minimal required data)"""
+    id: str
+    name: str
+    switch_count: int = 0
+    switches_online: int = 0
+    switches_offline: int = 0
+
+
+class BulkMappingUpdate(BaseModel):
+    """Bulk update zone-to-switchgroup mappings"""
+    # zone_id -> switch group info (None to clear)
+    mappings: Dict[str, Optional[SwitchGroupMappingInfo]]
+
+
+@router.put("/audit/cache/{controller_id}/mappings")
+async def update_zone_mappings(
+    controller_id: int,
+    update: BulkMappingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Update zone-to-switchgroup mappings in cache.
+
+    This endpoint allows the frontend to persist manual mapping changes
+    to the backend cache, ensuring consistency across sessions.
+    """
+    # Validate controller access
+    controller = db.query(Controller).filter(Controller.id == controller_id).first()
+    if not controller:
+        raise HTTPException(status_code=404, detail="Controller not found")
+    if controller.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    redis_client = await get_redis_client()
+    zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+    # Get cache metadata
+    meta = await zone_cache.get_cache_meta()
+    if not meta or not meta.get('zone_ids'):
+        raise HTTPException(
+            status_code=404,
+            detail="No cached data available. Run an audit first."
+        )
+
+    # Track updates
+    updated_zones = 0
+    errors = []
+
+    for zone_id, switch_group_info in update.mappings.items():
+        try:
+            # Get cached zone
+            cached = await zone_cache.get_cached_zone(zone_id)
+            if not cached:
+                errors.append(f"Zone {zone_id} not found in cache")
+                continue
+
+            if switch_group_info is None:
+                # Clear mapping - remove user_set flag as well
+                cached['matched_switch_groups'] = []
+                cached.pop('user_set_mapping', None)
+            else:
+                # Set mapping with full switch group info
+                # Mark as user_set so auto-matcher doesn't overwrite
+                cached['matched_switch_groups'] = [{
+                    'id': switch_group_info.id,
+                    'name': switch_group_info.name,
+                    'switch_count': switch_group_info.switch_count,
+                    'switches_online': switch_group_info.switches_online,
+                    'switches_offline': switch_group_info.switches_offline,
+                    'firmware_versions': [],
+                    'user_set': True
+                }]
+                cached['user_set_mapping'] = True
+
+            # Save back to cache
+            await zone_cache.cache_zone(zone_id, cached)
+            updated_zones += 1
+
+        except Exception as e:
+            errors.append(f"Failed to update zone {zone_id}: {str(e)}")
+
+    logger.info(f"Updated {updated_zones} zone mappings for controller {controller_id}")
+
+    return {
+        "controller_id": controller_id,
+        "updated_zones": updated_zones,
+        "errors": errors if errors else None
+    }
+
+
+@router.get("/audit/cache/{controller_id}/candidates")
+async def get_zone_match_candidates(
+    controller_id: int,
+    top_n: int = 3,
+    min_score: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> ControllerMatchCandidates:
+    """
+    Get match candidates for all zones in a controller.
+
+    Returns top N switch group candidates for each zone, scored by match quality.
+    Uses cached zone and switch group data.
+
+    Query Parameters:
+        top_n: Number of candidates per zone (default: 3)
+        min_score: Minimum score to include (default: 20)
+    """
+    # Validate controller access
+    controller = db.query(Controller).filter(Controller.id == controller_id).first()
+    if not controller:
+        raise HTTPException(status_code=404, detail="Controller not found")
+    if controller.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    redis_client = await get_redis_client()
+    zone_cache = ZoneCacheManager(redis_client, controller_id)
+
+    # Get cache metadata
+    meta = await zone_cache.get_cache_meta()
+    if not meta or not meta.get('zone_ids'):
+        raise HTTPException(
+            status_code=404,
+            detail="No cached data available. Run an audit first."
+        )
+
+    # Load all cached zones
+    cached_zones = await zone_cache.get_cached_zones(meta['zone_ids'])
+    if not cached_zones:
+        raise HTTPException(
+            status_code=404,
+            detail="No zones found in cache. Run a new audit."
+        )
+
+    # Load cached switch groups
+    cached_sg_data = await zone_cache.get_cached_switch_groups()
+    if not cached_sg_data or not cached_sg_data.get('switch_groups'):
+        raise HTTPException(
+            status_code=404,
+            detail="No switch groups found in cache. Run an audit with switches."
+        )
+
+    # Build flat list of switch groups with domain info
+    all_switch_groups = []
+    for domain_id, groups in cached_sg_data['switch_groups'].items():
+        for sg in groups:
+            all_switch_groups.append({
+                "id": sg.get("id"),
+                "name": sg.get("name", ""),
+                "domain_id": domain_id,
+                "switch_count": sg.get("switch_count", 0),
+                "switches_online": sg.get("switches_online", 0),
+                "switches_offline": sg.get("switches_offline", 0)
+            })
+
+    # Get candidates for each zone
+    zones_with_candidates = []
+
+    for zone_id, zone_data in cached_zones.items():
+        zone_name = zone_data.get('zone_name', '')
+        zone_domain_id = zone_data.get('domain_id', '')
+        domain_name = zone_data.get('domain_name', 'Unknown')
+
+        # Get current match if any
+        current_match = None
+        matched_sgs = zone_data.get('matched_switch_groups', [])
+        if matched_sgs:
+            sg = matched_sgs[0]  # Take first match
+            current_match = SwitchGroupSummary(
+                id=sg.get('id', ''),
+                name=sg.get('name', ''),
+                switch_count=sg.get('switch_count', 0),
+                switches_online=sg.get('switches_online', 0),
+                switches_offline=sg.get('switches_offline', 0),
+                firmware_versions=[],
+                user_set=sg.get('user_set', False)
+            )
+
+        is_user_set = zone_data.get('user_set_mapping', False)
+
+        # Get match candidates
+        candidates = get_match_candidates(
+            zone_name=zone_name,
+            zone_domain_id=zone_domain_id,
+            all_switch_groups=all_switch_groups,
+            top_n=top_n,
+            min_score=min_score
+        )
+
+        zones_with_candidates.append(ZoneMatchCandidates(
+            zone_id=zone_id,
+            zone_name=zone_name,
+            domain_id=zone_domain_id,
+            domain_name=domain_name,
+            current_match=current_match,
+            is_user_set=is_user_set,
+            candidates=[MatchCandidate(**c) for c in candidates]
+        ))
+
+    # Sort by zone name
+    zones_with_candidates.sort(key=lambda z: z.zone_name.lower())
+
+    logger.info(
+        f"Generated match candidates for {len(zones_with_candidates)} zones "
+        f"(controller {controller_id}, top_n={top_n})"
+    )
+
+    return ControllerMatchCandidates(
+        controller_id=controller_id,
+        zones=zones_with_candidates
+    )
 
 
 @router.get("/audit/jobs/{job_id}/result")

@@ -85,6 +85,12 @@ class ZoneAudit(BaseModel):
         description="Switch groups matched to this zone by name similarity"
     )
 
+    # Flag indicating user manually set the mapping (takes priority over auto-matching)
+    user_set_mapping: bool = Field(
+        default=False,
+        description="True if user manually set the switch group mapping (prevents auto-match override)"
+    )
+
 
 class SwitchGroupSummary(BaseModel):
     """Summary of a Switch Group"""
@@ -96,6 +102,10 @@ class SwitchGroupSummary(BaseModel):
     firmware_versions: List[FirmwareDistribution] = Field(
         default_factory=list,
         description="Firmware distribution for switches in this group"
+    )
+    user_set: bool = Field(
+        default=False,
+        description="True if user manually assigned this switch group to a zone"
     )
 
 
@@ -209,3 +219,42 @@ class BatchAuditResponse(BaseModel):
     total_requested: int
     successful: int
     failed: int
+
+
+class MatchCandidate(BaseModel):
+    """A potential switch group match for a zone"""
+    switch_group_id: str
+    switch_group_name: str
+    switch_count: int = Field(default=0)
+    switches_online: int = Field(default=0)
+    switches_offline: int = Field(default=0)
+    score: int = Field(description="Match score (0-100+)")
+    match_type: str = Field(description="Type of match: exact, normalized, contains, word-overlap, prefix")
+    match_reason: str = Field(description="Human-readable explanation of the match")
+    same_domain: bool = Field(default=False, description="Whether switch group is in same domain as zone")
+
+
+class ZoneMatchCandidates(BaseModel):
+    """Match candidates for a single zone"""
+    zone_id: str
+    zone_name: str
+    domain_id: str
+    domain_name: str
+    current_match: Optional[SwitchGroupSummary] = Field(
+        default=None,
+        description="Currently assigned switch group (if any)"
+    )
+    is_user_set: bool = Field(
+        default=False,
+        description="Whether current match was manually set by user"
+    )
+    candidates: List[MatchCandidate] = Field(
+        default_factory=list,
+        description="Top match candidates sorted by score descending"
+    )
+
+
+class ControllerMatchCandidates(BaseModel):
+    """Match candidates for all zones in a controller"""
+    controller_id: int
+    zones: List[ZoneMatchCandidates] = Field(default_factory=list)

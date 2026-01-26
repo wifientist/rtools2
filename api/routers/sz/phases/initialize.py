@@ -41,12 +41,14 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     domains_raw = []
     prefetched_zones = None  # Stores zones when fallback is used (to avoid re-fetching)
 
-    # In cached_only mode, skip all API calls and return minimal data
-    # The audit_zones phase will load everything from cache
-    if refresh_mode == RefreshMode.CACHED_ONLY and zone_cache:
-        logger.info("Initialize: cached_only mode - skipping API calls")
+    # In cached_only or switches_only mode, use cached zone data
+    # switches_only will still fetch switches, but zones come from cache
+    if refresh_mode in (RefreshMode.CACHED_ONLY, RefreshMode.SWITCHES_ONLY) and zone_cache:
+        mode_name = "switches_only" if refresh_mode == RefreshMode.SWITCHES_ONLY else "cached_only"
+        logger.info(f"Initialize: {mode_name} mode - using cached zone data")
         if update_activity:
-            await update_activity("Using cached data (no API calls)")
+            msg = "Refreshing switches only..." if refresh_mode == RefreshMode.SWITCHES_ONLY else "Using cached data (no API calls)"
+            await update_activity(msg)
 
         # Get cached metadata and derive real domain IDs from cached zones
         cache_meta = await zone_cache.get_cache_meta()
@@ -64,16 +66,35 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                         "name": zone_data.get('domain_name') or 'Unknown Domain'
                     }
 
-            if domain_map:
+            # Check if we have real domain IDs or just "_prefetched_"
+            has_real_domains = domain_map and not all(
+                d_id in ("_prefetched_", "_cached_") for d_id in domain_map.keys()
+            )
+
+            if has_real_domains:
                 domains_raw = list(domain_map.values())
-                logger.info(f"Initialize: cached_only mode - derived {len(domains_raw)} domains from {len(cached_zones)} cached zones")
+                logger.info(f"Initialize: {mode_name} mode - derived {len(domains_raw)} domains from {len(cached_zones)} cached zones")
+            elif refresh_mode == RefreshMode.SWITCHES_ONLY:
+                # For switches_only mode with _prefetched_ zones, we MUST fetch real domains
+                # otherwise switch fetching will fail
+                logger.info(f"Initialize: {mode_name} mode - cached zones have synthetic domain IDs, fetching real domains for switch data")
+                if update_activity:
+                    await update_activity("Fetching domains for switch data...")
+                try:
+                    domains_raw = await sz_client.zones.get_domains(recursively=True, include_self=True)
+                    logger.info(f"Initialize: {mode_name} mode - fetched {len(domains_raw)} real domains for switch data")
+                except Exception as e:
+                    logger.warning(f"Initialize: {mode_name} mode - failed to fetch domains: {e}")
+                    # Fall back to synthetic - switches won't work but zones will
+                    domains_raw = [{"id": "_cached_", "name": "Cached Data"}]
+                    partial_errors.append(f"Could not fetch domains for switch data: {str(e)}")
             else:
-                # Fallback: no domain info in cached zones, use synthetic entry
+                # cached_only mode - use synthetic entry
                 domains_raw = [{"id": "_cached_", "name": "Cached Data"}]
-                logger.warning("Initialize: cached_only mode - no domain info in cached zones")
+                logger.warning(f"Initialize: {mode_name} mode - no real domain info in cached zones")
         else:
             partial_errors.append("No cached data available")
-            logger.warning("Initialize: cached_only mode but no cache metadata found")
+            logger.warning(f"Initialize: {mode_name} mode but no cache metadata found")
 
         task = Task(
             id="initialize",

@@ -20,7 +20,7 @@ import redis.asyncio as redis
 logger = logging.getLogger(__name__)
 
 # Cache TTL settings
-ZONE_CACHE_TTL_SECONDS = 60 * 60 * 4  # 4 hours default
+ZONE_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days
 CACHE_META_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days for metadata
 
 
@@ -29,6 +29,7 @@ class RefreshMode(str, Enum):
     FULL = "full"  # Force refresh everything
     INCREMENTAL = "incremental"  # Use cached zones if fresh, only audit stale/new
     CACHED_ONLY = "cached_only"  # Return cached data immediately, no API calls
+    SWITCHES_ONLY = "switches_only"  # Use cached zones, but refresh switches
 
 
 class ZoneCacheManager:
@@ -339,3 +340,139 @@ class ZoneCacheManager:
         # Sort by zone name
         zones_list.sort(key=lambda z: z['zone_name'].lower())
         return zones_list
+
+    # =========================================================================
+    # Switch Group Caching
+    # =========================================================================
+
+    def _switch_groups_key(self) -> str:
+        """Get Redis key for switch groups cache"""
+        return f"{self.cache_prefix}:switch_groups"
+
+    async def cache_switch_groups(
+        self,
+        switch_groups: Dict[str, List[Dict[str, Any]]],
+        switches: List[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Cache all switch groups with their switch data.
+
+        Args:
+            switch_groups: Dict of domain_id -> list of switch group dicts
+            switches: Optional list of all switches (to compute counts per group)
+        """
+        # Build switch count per group from switches if provided
+        switch_counts = {}  # sg_id -> {total, online, offline, firmware_versions}
+        if switches:
+            for s in switches:
+                sg_id = s.get("switchGroupId") or s.get("groupId") or "ungrouped"
+                if sg_id not in switch_counts:
+                    switch_counts[sg_id] = {
+                        "total": 0,
+                        "online": 0,
+                        "offline": 0,
+                        "firmware_versions": {}
+                    }
+                switch_counts[sg_id]["total"] += 1
+
+                # Count online/offline
+                status = s.get("status", "").upper()
+                if status in ("ONLINE", "UP", "CONNECTED"):
+                    switch_counts[sg_id]["online"] += 1
+                else:
+                    switch_counts[sg_id]["offline"] += 1
+
+                # Track firmware versions
+                fw = s.get("firmwareVersion") or s.get("firmware") or "Unknown"
+                switch_counts[sg_id]["firmware_versions"][fw] = \
+                    switch_counts[sg_id]["firmware_versions"].get(fw, 0) + 1
+
+        # Enrich switch groups with counts
+        enriched_groups = {}
+        for domain_id, groups in switch_groups.items():
+            enriched_groups[domain_id] = []
+            for sg in groups:
+                sg_id = sg.get("id")
+                counts = switch_counts.get(sg_id, {})
+
+                # If we computed counts from switches, use those
+                # Otherwise preserve existing counts from the switch group
+                if counts:
+                    enriched_sg = {
+                        "id": sg_id,
+                        "name": sg.get("name", sg_id),
+                        "switch_count": counts.get("total", 0),
+                        "switches_online": counts.get("online", 0),
+                        "switches_offline": counts.get("offline", 0),
+                        "firmware_versions": [
+                            {"version": v, "count": c}
+                            for v, c in counts.get("firmware_versions", {}).items()
+                        ]
+                    }
+                else:
+                    # Preserve existing data from the switch group
+                    enriched_sg = {
+                        "id": sg_id,
+                        "name": sg.get("name", sg_id),
+                        "switch_count": sg.get("switch_count", 0),
+                        "switches_online": sg.get("switches_online", 0),
+                        "switches_offline": sg.get("switches_offline", 0),
+                        "firmware_versions": sg.get("firmware_versions", [])
+                    }
+                enriched_groups[domain_id].append(enriched_sg)
+
+        # Calculate total switches
+        if switches:
+            total_switches = len(switches)
+        else:
+            # Sum from enriched groups if switches not provided
+            total_switches = sum(
+                sg.get("switch_count", 0)
+                for groups in enriched_groups.values()
+                for sg in groups
+            )
+
+        # Cache to Redis
+        key = self._switch_groups_key()
+        cache_data = {
+            "switch_groups": enriched_groups,
+            "total_switches": total_switches,
+            "_cached_at": datetime.utcnow().isoformat()
+        }
+
+        await self.redis.set(
+            key,
+            json.dumps(cache_data),
+            ex=ZONE_CACHE_TTL_SECONDS
+        )
+
+        total_groups = sum(len(groups) for groups in enriched_groups.values())
+        logger.info(
+            f"Cached {total_groups} switch groups across {len(enriched_groups)} domains "
+            f"({len(switches) if switches else 0} switches)"
+        )
+
+    async def get_cached_switch_groups(self) -> Optional[Dict[str, Any]]:
+        """
+        Get cached switch groups.
+
+        Returns:
+            Dict with 'switch_groups' (domain_id -> list of switch group dicts),
+            'total_switches', and '_cached_at', or None if not cached
+        """
+        key = self._switch_groups_key()
+        data = await self.redis.get(key)
+
+        if not data:
+            return None
+
+        try:
+            return json.loads(data)
+        except Exception as e:
+            logger.warning(f"Failed to parse cached switch groups: {e}")
+            return None
+
+    async def clear_switch_groups_cache(self) -> None:
+        """Clear the switch groups cache"""
+        key = self._switch_groups_key()
+        await self.redis.delete(key)

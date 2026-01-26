@@ -91,6 +91,18 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     zones_from_cache = 0
     zones_refreshed = 0
 
+    # Zone progress tracking
+    total_zones_expected = 0  # Set when we know how many zones to process
+
+    # Helper to update zone progress in job summary (for progress bar)
+    async def update_zone_progress(completed: int, total: int):
+        if job and state_manager:
+            job.summary['zone_progress'] = {
+                'completed': completed,
+                'total': total
+            }
+            await state_manager.save_job(job)
+
     # Helper to update cache stats in job summary
     async def update_cache_stats():
         if job and state_manager:
@@ -104,9 +116,11 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             }
             await state_manager.save_job(job)
 
-    # Handle cached_only mode - return cached data without any API calls
-    if refresh_mode == RefreshMode.CACHED_ONLY and zone_cache:
-        logger.info("Audit: cached_only mode - returning cached zones without API calls")
+    # Handle cached_only and switches_only modes - use cached zone data
+    # For switches_only, we clear matched_switch_groups so they can be re-matched with fresh switch data
+    if refresh_mode in (RefreshMode.CACHED_ONLY, RefreshMode.SWITCHES_ONLY) and zone_cache:
+        mode_name = "switches_only" if refresh_mode == RefreshMode.SWITCHES_ONLY else "cached_only"
+        logger.info(f"Audit: {mode_name} mode - returning cached zones")
         if update_activity:
             await update_activity("Loading zones from cache...")
 
@@ -117,6 +131,9 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             for zone_id, zone_data in cached_zones.items():
                 # Remove cache metadata before returning
                 zone_data.pop('_cached_at', None)
+                # For switches_only mode, clear cached switch matches so they're re-computed
+                if refresh_mode == RefreshMode.SWITCHES_ONLY:
+                    zone_data.pop('matched_switch_groups', None)
                 all_zones_audit.append(zone_data)
                 zones_from_cache += 1
 
@@ -125,7 +142,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 await update_activity(f"Loaded {len(all_zones_audit)} zones from cache")
         else:
             partial_errors.append("No cached data available - run a full audit first")
-            logger.warning("cached_only mode requested but no cache data available")
+            logger.warning(f"{mode_name} mode requested but no cache data available")
 
         await update_cache_stats()
 
@@ -159,9 +176,11 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
     # Check if we have prefetched zones (from fallback in initialize phase)
     if prefetched_zones:
-        logger.info(f"Audit: Using {len(prefetched_zones)} prefetched zones (fallback mode)")
+        total_zones_expected = len(prefetched_zones)
+        logger.info(f"Audit: Using {total_zones_expected} prefetched zones (fallback mode)")
+        await update_zone_progress(0, total_zones_expected)
         if update_activity:
-            await update_activity(f"Auditing {len(prefetched_zones)} zones...")
+            await update_activity(f"Auditing {total_zones_expected} zones...")
 
         for zone in prefetched_zones:
             # Check for cancellation
@@ -241,6 +260,9 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 f"({zone_audit.ap_status.total} APs, {zone_audit.wlan_count} WLANs)"
             )
 
+            # Update progress after each zone
+            await update_zone_progress(total_zones_processed, total_zones_expected)
+
             # Update cache stats periodically
             if total_zones_processed % 10 == 0:
                 await update_cache_stats()
@@ -250,6 +272,10 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
         if update_activity:
             await update_activity("Discovering zones...")
+
+        # For normal path, we'll track zones as we discover them
+        zones_discovered = 0
+        await update_zone_progress(0, 0)
 
         cancelled = False
         for domain in domains_raw:
@@ -268,6 +294,10 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
             try:
                 zones = await sz_client.zones.get_zones(domain_id=domain_id)
+                # Update discovered count (excluding system zones)
+                non_system_zones = [z for z in zones if z.get("name", "").lower() != "staging zone"]
+                zones_discovered += len(non_system_zones)
+                await update_zone_progress(total_zones_processed, zones_discovered)
 
                 for zone in zones:
                     # Check for cancellation before each zone
@@ -343,6 +373,9 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                         f"Audit: Completed zone {total_zones_processed}: '{zone_name}' "
                         f"({zone_audit.ap_status.total} APs, {zone_audit.wlan_count} WLANs)"
                     )
+
+                    # Update progress after each zone
+                    await update_zone_progress(total_zones_processed, zones_discovered)
 
                     # Update cache stats periodically
                     if total_zones_processed % 10 == 0:

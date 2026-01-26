@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, Server, Wifi, Router, HardDrive, Layers, Info, Download, Link2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, Server, Wifi, Router, HardDrive, Layers, Info, Download, Link2, X, Sparkles, Zap } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -50,6 +50,20 @@ interface SwitchGroupSummary {
   switches_online: number;
   switches_offline: number;
   firmware_versions?: FirmwareDistribution[];
+  user_set?: boolean;  // True if user manually assigned this switch group
+}
+
+// Match candidate for multi-match feature
+interface MatchCandidate {
+  switch_group_id: string;
+  switch_group_name: string;
+  switch_count: number;
+  switches_online: number;
+  switches_offline: number;
+  score: number;
+  match_type: string;  // exact, normalized, contains, word-overlap, prefix
+  match_reason: string;
+  same_domain: boolean;
 }
 
 interface ZoneAudit {
@@ -67,6 +81,7 @@ interface ZoneAudit {
   wlans: WlanSummary[];
   wlan_type_breakdown: Record<string, number>;
   matched_switch_groups: SwitchGroupSummary[];  // Switch groups matched by name to this zone
+  user_set_mapping?: boolean;  // True if user manually set the switch group mapping
 }
 
 interface DomainAudit {
@@ -180,26 +195,81 @@ function WlanTypesCell({ breakdown }: { breakdown: Record<string, number> }) {
   );
 }
 
-// Type for zone-to-switch-group mappings (stored per controller in localStorage)
+// Type for zone-to-switch-group mappings (local state uses IDs)
 interface ZoneSwitchGroupMapping {
   [zoneId: string]: string;  // zoneId -> switchGroupId
 }
 
-// Helper to load/save mappings from localStorage
-function loadMappings(controllerId: number): ZoneSwitchGroupMapping {
+// Type for backend mapping payload (includes full switch group info)
+interface SwitchGroupMappingInfo {
+  id: string;
+  name: string;
+  switch_count: number;
+  switches_online: number;
+  switches_offline: number;
+}
+
+// Helper to save mappings to backend cache
+// This is fire-and-forget - UI updates optimistically
+// Requires switch groups list to look up full info for each mapping
+async function saveMappingsToBackend(
+  controllerId: number,
+  mappings: ZoneSwitchGroupMapping,
+  switchGroups: SwitchGroupSummary[]
+) {
   try {
-    const saved = localStorage.getItem(`sz_audit_sg_mapping_${controllerId}`);
-    return saved ? JSON.parse(saved) : {};
-  } catch {
-    return {};
+    // Build payload with full switch group info
+    const sgMap = new Map(switchGroups.map(sg => [sg.id, sg]));
+    const payload: Record<string, SwitchGroupMappingInfo | null> = {};
+
+    for (const [zoneId, sgId] of Object.entries(mappings)) {
+      const sg = sgMap.get(sgId);
+      if (sg) {
+        payload[zoneId] = {
+          id: sg.id,
+          name: sg.name,
+          switch_count: sg.switch_count,
+          switches_online: sg.switches_online,
+          switches_offline: sg.switches_offline
+        };
+      }
+    }
+
+    const response = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ mappings: payload })
+    });
+    if (!response.ok) {
+      console.error(`[SZAudit] Failed to save mappings: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    console.error('[SZAudit] Failed to save mappings:', error);
   }
 }
 
-function saveMappings(controllerId: number, mappings: ZoneSwitchGroupMapping) {
-  localStorage.setItem(`sz_audit_sg_mapping_${controllerId}`, JSON.stringify(mappings));
+// Helper to clear a specific zone's mapping in backend cache
+// Sends null to clear the mapping and remove user_set flag
+async function clearZoneMappingInBackend(controllerId: number, zoneId: string) {
+  try {
+    const payload: Record<string, null> = { [zoneId]: null };
+    const response = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ mappings: payload })
+    });
+    if (!response.ok) {
+      console.error(`[SZAudit] Failed to clear mapping for zone ${zoneId}: HTTP ${response.status}`);
+    }
+  } catch (error) {
+    console.error('[SZAudit] Failed to clear mapping:', error);
+  }
 }
 
 // Component: Filtered Switch Group Selector for a single zone
+// Simplified: if selected, it's confirmed. No lock/unlock states.
 function SwitchGroupSelector({
   currentMapping,
   availableSwitchGroups,
@@ -224,18 +294,20 @@ function SwitchGroupSelector({
   );
 
   if (mappedSg) {
-    // Show the mapped switch group with X to clear
+    // Show the confirmed mapping - blue background with X to clear
     return (
-      <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded px-2 py-1.5">
+      <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-green-800 truncate">{mappedSg.name}</div>
-          <div className="text-xs text-green-600">
+          <div className="text-sm font-medium text-blue-800 truncate">
+            {mappedSg.name}
+          </div>
+          <div className="text-xs text-blue-600">
             {mappedSg.switch_count} switches ({mappedSg.switches_online} online)
           </div>
         </div>
         <button
           onClick={onClear}
-          className="p-1 hover:bg-green-100 rounded text-green-600 hover:text-green-800"
+          className="p-1 hover:bg-blue-100 rounded text-blue-600 hover:text-blue-800"
           title="Remove mapping"
         >
           <X className="w-4 h-4" />
@@ -310,30 +382,86 @@ function SwitchGroupMapper({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  zones: { zone_id: string; zone_name: string; domain_name: string }[];
+  zones: { zone_id: string; zone_name: string; domain_name: string; matched_switch_groups?: SwitchGroupSummary[] }[];
   switchGroups: SwitchGroupSummary[];
   mappings: ZoneSwitchGroupMapping;
   onMappingsChange: (mappings: ZoneSwitchGroupMapping) => void;
   controllerId: number;
 }) {
+  // Match candidates state
+  const [candidates, setCandidates] = useState<Record<string, MatchCandidate[]>>({});
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(true);
+
+  // Fetch candidates when modal opens
+  useEffect(() => {
+    if (isOpen && Object.keys(candidates).length === 0) {
+      fetchCandidates();
+    }
+  }, [isOpen]);
+
+  const fetchCandidates = async () => {
+    setLoadingCandidates(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/sz/audit/cache/${controllerId}/candidates?top_n=3&min_score=20`,
+        { credentials: 'include' }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const candidateMap: Record<string, MatchCandidate[]> = {};
+        for (const zone of data.zones || []) {
+          candidateMap[zone.zone_id] = zone.candidates || [];
+        }
+        setCandidates(candidateMap);
+        console.log(`[SwitchGroupMapper] Loaded candidates for ${Object.keys(candidateMap).length} zones`);
+      }
+    } catch (error) {
+      console.error('[SwitchGroupMapper] Failed to fetch candidates:', error);
+    } finally {
+      setLoadingCandidates(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const handleMapZone = (zoneId: string, switchGroupId: string) => {
     const newMappings = { ...mappings, [zoneId]: switchGroupId };
     onMappingsChange(newMappings);
-    saveMappings(controllerId, newMappings);
+    // Save to backend - all selections are user-confirmed
+    saveMappingsToBackend(controllerId, { [zoneId]: switchGroupId }, switchGroups);
   };
 
   const handleClearZone = (zoneId: string) => {
     const newMappings = { ...mappings };
     delete newMappings[zoneId];
     onMappingsChange(newMappings);
-    saveMappings(controllerId, newMappings);
+    // Clear this zone's mapping in backend
+    clearZoneMappingInBackend(controllerId, zoneId);
   };
 
-  const clearAllMappings = () => {
+  const clearAllMappings = async () => {
+    // Build payload with null for all currently mapped zones
+    const clearPayload: Record<string, null> = {};
+    for (const zoneId of Object.keys(mappings)) {
+      clearPayload[zoneId] = null;
+    }
+
     onMappingsChange({});
-    saveMappings(controllerId, {});
+
+    // Send explicit null for each zone to clear user_set flags
+    if (Object.keys(clearPayload).length > 0) {
+      try {
+        await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ mappings: clearPayload })
+        });
+      } catch (error) {
+        console.error('[SZAudit] Failed to clear all mappings:', error);
+      }
+    }
   };
 
   // Get which switch groups are already mapped
@@ -349,10 +477,20 @@ function SwitchGroupMapper({
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Map Switch Groups to Zones</h3>
             <p className="text-sm text-gray-500">
-              {Object.keys(mappings).length} of {zones.length} zones mapped
+              {Object.keys(mappings).length} of {zones.length} zones confirmed
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCandidates(!showCandidates)}
+              className={`px-3 py-1 text-sm rounded flex items-center gap-1 ${
+                showCandidates ? 'bg-purple-100 text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title="Toggle match suggestions"
+            >
+              <Sparkles className="w-4 h-4" />
+              {showCandidates ? 'Hide Suggestions' : 'Show Suggestions'}
+            </button>
             <button
               onClick={clearAllMappings}
               className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded"
@@ -370,23 +508,68 @@ function SwitchGroupMapper({
           <div className="flex-1 overflow-auto p-4 border-r border-gray-200">
             <h4 className="text-xs font-medium text-gray-500 uppercase mb-3">Zones</h4>
             <div className="space-y-2">
-              {zones.map(zone => (
-                <div key={zone.zone_id} className="flex items-start gap-3 p-2 bg-gray-50 rounded-lg">
-                  <div className="flex-shrink-0 w-40">
-                    <div className="text-sm font-medium text-gray-900 truncate" title={zone.zone_name}>{zone.zone_name}</div>
-                    <div className="text-xs text-gray-500 truncate">{zone.domain_name}</div>
+              {[...zones].sort((a, b) => a.zone_name.localeCompare(b.zone_name)).map(zone => {
+                const zoneCandidates = candidates[zone.zone_id] || [];
+                const hasMapping = !!mappings[zone.zone_id];
+                // Filter candidates to exclude already-mapped switch groups
+                const availableCandidates = zoneCandidates.filter(c => !mappedSgIds.has(c.switch_group_id));
+
+                return (
+                  <div key={zone.zone_id} className="p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-40">
+                        <div className="text-sm font-medium text-gray-900 truncate" title={zone.zone_name}>{zone.zone_name}</div>
+                        <div className="text-xs text-gray-500 truncate">{zone.domain_name}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <SwitchGroupSelector
+                          currentMapping={mappings[zone.zone_id] || null}
+                          availableSwitchGroups={availableSwitchGroups}
+                          allSwitchGroups={switchGroups}
+                          onSelect={(sgId) => handleMapZone(zone.zone_id, sgId)}
+                          onClear={() => handleClearZone(zone.zone_id)}
+                        />
+                      </div>
+                    </div>
+                    {/* Candidates section - show when no mapping and candidates available */}
+                    {showCandidates && !hasMapping && availableCandidates.length > 0 && (
+                      <div className="mt-2 ml-[172px] flex flex-wrap gap-1">
+                        {availableCandidates.map((candidate) => (
+                          <button
+                            key={candidate.switch_group_id}
+                            onClick={() => handleMapZone(zone.zone_id, candidate.switch_group_id)}
+                            className="group flex items-center gap-1 px-2 py-1 text-xs bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-md transition-colors"
+                            title={`${candidate.match_reason}\n${candidate.switch_count} switches (${candidate.switches_online} online)`}
+                          >
+                            <span className="font-medium text-purple-800 truncate max-w-32">
+                              {candidate.switch_group_name}
+                            </span>
+                            <span className={`px-1 py-0.5 rounded text-[10px] font-bold ${
+                              candidate.score >= 80 ? 'bg-green-100 text-green-700' :
+                              candidate.score >= 50 ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {candidate.score}
+                            </span>
+                            {candidate.same_domain && (
+                              <span title="Same domain">
+                                <Zap className="w-3 h-3 text-purple-500" />
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Loading state for candidates */}
+                    {showCandidates && !hasMapping && loadingCandidates && (
+                      <div className="mt-2 ml-[172px] text-xs text-gray-400 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Loading suggestions...
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <SwitchGroupSelector
-                      currentMapping={mappings[zone.zone_id] || null}
-                      availableSwitchGroups={availableSwitchGroups}
-                      allSwitchGroups={switchGroups}
-                      onSelect={(sgId) => handleMapZone(zone.zone_id, sgId)}
-                      onClear={() => handleClearZone(zone.zone_id)}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {zones.length === 0 && (
@@ -660,7 +843,7 @@ function ZoneRow({ zone, expanded, onToggle }: { zone: ZoneRowData; expanded: bo
 }
 
 // Refresh mode options
-type RefreshMode = 'full' | 'incremental' | 'cached_only';
+type RefreshMode = 'full' | 'incremental' | 'cached_only' | 'switches_only';
 
 const REFRESH_MODE_INFO: Record<RefreshMode, { label: string; description: string; icon: string }> = {
   full: {
@@ -677,6 +860,11 @@ const REFRESH_MODE_INFO: Record<RefreshMode, { label: string; description: strin
     label: 'Cached Only',
     description: 'Return cached data instantly, no API calls (requires previous audit)',
     icon: '💾'
+  },
+  switches_only: {
+    label: 'Switches Only',
+    description: 'Use cached zones, refresh only switch data and re-match',
+    icon: '🔌'
   }
 };
 
@@ -688,6 +876,8 @@ interface CacheStatus {
   last_audit_time: string | null;
   cache_age_minutes: number | null;
   zone_count: number | null;
+  zones_with_switch_matches: number;
+  total_switch_groups_matched: number;
 }
 
 // Cached zone info for selection UI
@@ -784,13 +974,25 @@ export default function SZAudit() {
     [controllers]
   );
 
-  // Load saved mappings when results come in
+  // Extract mappings from zones when results come in
+  // Only load user-confirmed mappings (user_set_mapping: true)
+  // Auto-matched zones show as suggestions, not pre-populated selections
   useEffect(() => {
     if (results.length > 0) {
       const newMappings: Record<number, ZoneSwitchGroupMapping> = {};
       for (const result of results) {
-        if (!result.error) {
-          newMappings[result.controller_id] = loadMappings(result.controller_id);
+        if (!result.error && result.zones) {
+          const mappings: ZoneSwitchGroupMapping = {};
+          let userSetCount = 0;
+          for (const zone of result.zones) {
+            // Only load mappings that user explicitly confirmed
+            if (zone.user_set_mapping && zone.matched_switch_groups && zone.matched_switch_groups.length > 0) {
+              userSetCount++;
+              mappings[zone.zone_id] = zone.matched_switch_groups[0].id;
+            }
+          }
+          console.log(`[SZAudit] Loaded ${userSetCount} user-confirmed mappings for controller ${result.controller_id}`);
+          newMappings[result.controller_id] = mappings;
         }
       }
       setSgMappings(newMappings);
@@ -981,8 +1183,8 @@ export default function SZAudit() {
                 cache_stats: statusData.cache_stats
               });
 
-              // Fetch the result
-              const resultResponse = await fetch(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/result`, {
+              // Fetch the result from cache (audit updates cache, we read from it)
+              const resultResponse = await fetch(`${API_BASE_URL}/sz/audit/result/${job.controller_id}`, {
                 credentials: 'include'
               });
 
@@ -1470,37 +1672,52 @@ export default function SZAudit() {
                   >
                     <option value="full">{REFRESH_MODE_INFO.full.icon} {REFRESH_MODE_INFO.full.label}</option>
                     <option value="incremental">{REFRESH_MODE_INFO.incremental.icon} {REFRESH_MODE_INFO.incremental.label}</option>
+                    <option value="switches_only">{REFRESH_MODE_INFO.switches_only.icon} {REFRESH_MODE_INFO.switches_only.label}</option>
                     <option value="cached_only">{REFRESH_MODE_INFO.cached_only.icon} {REFRESH_MODE_INFO.cached_only.label}</option>
                   </select>
                 </div>
-                {/* Mode description and cache status */}
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-500">{REFRESH_MODE_INFO[refreshMode].description}</span>
-                  {selectedControllers.size > 0 && Object.keys(cacheStatus).length > 0 && (
-                    <>
-                      <span className="text-blue-600">
-                        {(() => {
-                          const statuses = Object.values(cacheStatus);
-                          const withCache = statuses.filter(s => s.has_cache);
-                          if (withCache.length === 0) return '• No cached data';
-                          const totalZones = withCache.reduce((sum, s) => sum + s.cached_zones, 0);
-                          const oldestAge = Math.max(...withCache.map(s => s.cache_age_minutes || 0));
-                          return `• ${totalZones} zones cached${oldestAge > 0 ? ` (${oldestAge < 60 ? `${oldestAge}m` : `${Math.round(oldestAge/60)}h`} old)` : ''}`;
-                        })()}
-                      </span>
-                      {/* Zone selector toggle - only show for incremental mode with cached zones */}
-                      {refreshMode === 'incremental' && Object.values(cachedZones).flat().length > 0 && (
-                        <button
-                          onClick={() => setShowZoneSelector(!showZoneSelector)}
-                          className="text-blue-600 hover:text-blue-800 underline"
-                        >
-                          {showZoneSelector ? 'Hide' : 'Select'} zones to refresh
-                          {forceRefreshZones.size > 0 && ` (${forceRefreshZones.size})`}
-                        </button>
-                      )}
-                    </>
-                  )}
+                {/* Mode description */}
+                <div className="text-xs text-gray-500">
+                  {REFRESH_MODE_INFO[refreshMode].description}
                 </div>
+                {/* Cache status on separate line */}
+                {selectedControllers.size > 0 && Object.keys(cacheStatus).length > 0 && (
+                  <div className="flex items-center gap-4 text-xs">
+                    {(() => {
+                      const statuses = Object.values(cacheStatus);
+                      const withCache = statuses.filter(s => s.has_cache);
+                      if (withCache.length === 0) {
+                        return <span className="text-gray-400">No cached data</span>;
+                      }
+                      const totalZones = withCache.reduce((sum, s) => sum + s.cached_zones, 0);
+                      const oldestAge = Math.max(...withCache.map(s => s.cache_age_minutes || 0));
+                      const totalSwitchMatches = withCache.reduce((sum, s) => sum + s.total_switch_groups_matched, 0);
+                      const zonesWithMatches = withCache.reduce((sum, s) => sum + s.zones_with_switch_matches, 0);
+                      const ageStr = oldestAge > 0 ? ` (${oldestAge < 60 ? `${oldestAge}m` : `${Math.round(oldestAge/60)}h`} old)` : '';
+
+                      return (
+                        <>
+                          <span className="text-blue-600">
+                            📦 {totalZones} zones cached{ageStr}
+                          </span>
+                          <span className="text-emerald-600">
+                            🔌 {totalSwitchMatches} switch groups matched to {zonesWithMatches} zones
+                          </span>
+                        </>
+                      );
+                    })()}
+                    {/* Zone selector toggle - only show for incremental mode with cached zones */}
+                    {refreshMode === 'incremental' && Object.values(cachedZones).flat().length > 0 && (
+                      <button
+                        onClick={() => setShowZoneSelector(!showZoneSelector)}
+                        className="text-blue-600 hover:text-blue-800 underline"
+                      >
+                        {showZoneSelector ? 'Hide' : 'Select'} zones to refresh
+                        {forceRefreshZones.size > 0 && ` (${forceRefreshZones.size})`}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 onClick={exportCsv}
@@ -1867,30 +2084,33 @@ export default function SZAudit() {
                   <p className="text-sm text-gray-500">Click a row to expand details</p>
                 </div>
                 {/* Map Switch Groups buttons - one per controller */}
-                <div className="flex gap-2">
-                  {results.filter(r => !r.error).map(result => {
-                    const mappingCount = Object.keys(sgMappings[result.controller_id] || {}).length;
-                    const zoneCount = result.zones.length;
-                    return (
-                      <button
-                        key={result.controller_id}
-                        onClick={() => {
-                          setMapperControllerId(result.controller_id);
-                          setMapperOpen(true);
-                        }}
-                        className="px-3 py-1.5 text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded flex items-center gap-1.5"
-                        title={`Map switch groups for ${result.controller_name}`}
-                      >
-                        <Link2 className="w-4 h-4" />
-                        {results.length > 1 ? result.controller_name.slice(0, 10) : 'Map Switch Groups'}
-                        {mappingCount > 0 && (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-600 flex items-center gap-1">
+                    <Link2 className="w-4 h-4" />
+                    Map Switch Groups:
+                  </span>
+                  <div className="flex gap-2">
+                    {results.filter(r => !r.error).map(result => {
+                      const mappingCount = Object.keys(sgMappings[result.controller_id] || {}).length;
+                      const zoneCount = result.zones.length;
+                      return (
+                        <button
+                          key={result.controller_id}
+                          onClick={() => {
+                            setMapperControllerId(result.controller_id);
+                            setMapperOpen(true);
+                          }}
+                          className="px-3 py-1.5 text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded flex items-center gap-1.5"
+                          title={`Map switch groups for ${result.controller_name}`}
+                        >
+                          {result.controller_name}
                           <span className="text-xs bg-indigo-600 text-white px-1.5 rounded-full">
                             {mappingCount}/{zoneCount}
                           </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -1956,11 +2176,12 @@ export default function SZAudit() {
         };
         collectSwitchGroups(result.domains);
 
-        // Build zone list for mapper
+        // Build zone list for mapper (include matched_switch_groups for auto-matching)
         const zones = result.zones.map(z => ({
           zone_id: z.zone_id,
           zone_name: z.zone_name,
-          domain_name: z.domain_name
+          domain_name: z.domain_name,
+          matched_switch_groups: z.matched_switch_groups
         }));
 
         return (
