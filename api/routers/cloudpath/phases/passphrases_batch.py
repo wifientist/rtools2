@@ -129,6 +129,8 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         vlan_id = pp_data.get('vlan_id')
         cloudpath_guid = pp_data.get('cloudpath_guid')
 
+        identity_group_id = pp_data.get('identity_group_id')
+
         try:
             result = await r1_client.dpsk.create_passphrase(
                 pool_id=dpsk_pool_id,
@@ -143,11 +145,49 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
             passphrase_id = result.get('id') or result.get('passphraseId') or result.get('dpskId')
 
+            # Update the identity with the cloudpath_guid as description
+            identity_updated = False
+            if identity_group_id and cloudpath_guid:
+                try:
+                    # Query identities in the group to find the one matching username
+                    identities_response = await r1_client.identity.get_identities_in_group(
+                        group_id=identity_group_id,
+                        tenant_id=tenant_id,
+                        page=0,
+                        size=1000
+                    )
+
+                    # Find the identity matching this username
+                    identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
+                    matching_identity = None
+                    for identity in identities:
+                        if identity.get('name') == username:
+                            matching_identity = identity
+                            break
+
+                    if matching_identity:
+                        identity_id = matching_identity.get('id')
+                        # Update the identity with the cloudpath_guid as description
+                        await r1_client.identity.update_identity(
+                            group_id=identity_group_id,
+                            identity_id=identity_id,
+                            tenant_id=tenant_id,
+                            description=cloudpath_guid
+                        )
+                        identity_updated = True
+                    else:
+                        logger.debug(f"    Could not find identity for {username} in group {identity_group_id}")
+
+                except Exception as identity_error:
+                    logger.warning(f"    Failed to update identity description for {username}: {identity_error}")
+
             created_passphrases.append({
                 'dpsk_id': passphrase_id,
                 'userName': username,
                 'dpsk_pool_id': dpsk_pool_id,
                 'created': True,
+                'identity_updated': identity_updated,
+                'cloudpath_guid': cloudpath_guid if identity_updated else None,
                 'expiration_warning': exp_warning if exp_warning else None
             })
 
