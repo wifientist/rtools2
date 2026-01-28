@@ -72,6 +72,7 @@ const Sidebar = () => {
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/cloudpath-dpsk", icon: <Key size={20} />, label: "Cloudpath DPSK", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/option43", icon: <Camera size={20} />, label: "Option 43 Calc", requiresAuth: false },

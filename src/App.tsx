@@ -27,6 +27,7 @@ import Option43Calculator from "@/pages/Option43Calculator";
 import CompanyManager from "@/components/CompanyManager";
 import Users from "@/pages/Users";
 import PerUnitSSID from "@/pages/PerUnitSSID";
+import APPortConfig from "@/pages/APPortConfig";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathDPSK from "@/pages/CloudpathDPSK";
@@ -58,6 +59,7 @@ const App = () => {
           <Route path="/speed-explainer" element={<SpeedExplainer />} />
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
+          <Route path="/ap-port-config" element={<BetaRoute element={<APPortConfig />} />} />
           <Route path="/cloudpath-dpsk" element={<BetaRoute element={<CloudpathDPSK />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />

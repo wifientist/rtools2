@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from database import engine, SessionLocal
 import models
 from scheduler.service import init_scheduler
-from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid, ap_port_config
 from routers.sz.sz_router import router as sz_router
 from routers.sz.audit_router import router as sz_audit_router
 from routers.cloudpath.cloudpath_router import router as cloudpath_router
@@ -130,6 +130,9 @@ app.include_router(diagrams.router, tags=["Diagrams"])
 
 # Per-Unit SSID Router - for automating per-unit SSID configuration
 app.include_router(per_unit_ssid.router, tags=["Per-Unit SSID"])
+
+# AP Port Config Router - standalone AP LAN port configuration
+app.include_router(ap_port_config.router, tags=["AP Port Config"])
 
 # Workflow Job Management Router - generic job management for all workflows
 app.include_router(workflows_router)
