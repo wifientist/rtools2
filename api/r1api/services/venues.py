@@ -1,4 +1,6 @@
 import asyncio
+import csv
+import io
 import logging
 
 logger = logging.getLogger(__name__)
@@ -337,6 +339,197 @@ class VenueService:
             )
 
         return response.json()
+
+    async def bulk_add_aps_to_venue(
+        self,
+        venue_id: str,
+        aps: list,
+        tenant_id: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Bulk add APs to a venue using CSV import.
+
+        This is much more efficient than adding APs one at a time.
+
+        Args:
+            venue_id: The venue ID to add the APs to
+            aps: List of AP dicts with keys:
+                - name (required): AP name
+                - serial (required): AP serial number
+                - description (optional): AP description
+                - ap_group (optional): AP Group name
+                - tags (optional): List of tags or semicolon-separated string
+                - latitude (optional): GPS latitude
+                - longitude (optional): GPS longitude
+                - vlan (optional): Global untagged VLAN ID
+            tenant_id: Optional tenant ID (required for MSP)
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response from the R1 API with import results
+        """
+        # Build CSV in memory
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+
+        # Write header row
+        writer.writerow([
+            'AP Name',
+            'Serial Number',
+            'Description',
+            'AP Group',
+            'Tags',
+            'Latitude',
+            'Longitude',
+            'Global Untagged VLAN ID'
+        ])
+
+        # Write AP rows
+        for ap in aps:
+            # Handle tags - can be list or string
+            tags = ap.get('tags', '')
+            if isinstance(tags, list):
+                tags = ';'.join(tags)
+
+            writer.writerow([
+                ap.get('name', ''),
+                ap.get('serial', ''),
+                ap.get('description', ''),
+                ap.get('ap_group', ''),
+                tags,
+                ap.get('latitude', ''),
+                ap.get('longitude', ''),
+                ap.get('vlan', '')
+            ])
+
+        csv_content = csv_buffer.getvalue()
+        csv_buffer.close()
+
+        logger.info(f"Bulk importing {len(aps)} APs to venue {venue_id}")
+        logger.debug(f"CSV content:\n{csv_content}")
+
+        # Create file-like object for upload
+        files = {
+            'file': ('aps_import.csv', csv_content, 'text/csv')
+        }
+
+        # Make API call with multipart form data
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post_multipart(
+                f"/venues/{venue_id}/aps",
+                files=files,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post_multipart(
+                f"/venues/{venue_id}/aps",
+                files=files
+            )
+
+        logger.info(f"Bulk import response: {response.status_code}")
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            # If 202 Accepted and wait_for_completion=True, poll for task completion
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    logger.info(f"Waiting for bulk import task {request_id}...")
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+                    logger.info(f"Bulk import task complete")
+
+            return result
+        else:
+            logger.error(f"Bulk import failed: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def bulk_add_switches_to_venue(
+        self,
+        venue_id: str,
+        switches: list,
+        tenant_id: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Bulk add switches to a venue using CSV import.
+
+        Args:
+            venue_id: The venue ID to add the switches to
+            switches: List of switch dicts with keys:
+                - name (required): Switch name
+                - serial (required): Switch serial number
+                - reason (optional): Import reason/notes
+            tenant_id: Optional tenant ID (required for MSP)
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response from the R1 API with import results
+        """
+        # Build CSV in memory
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+
+        # Write header row
+        writer.writerow([
+            'Switch Name',
+            'Serial Number',
+            'Reason'
+        ])
+
+        # Write switch rows
+        for switch in switches:
+            writer.writerow([
+                switch.get('name', ''),
+                switch.get('serial', ''),
+                switch.get('reason', '')
+            ])
+
+        csv_content = csv_buffer.getvalue()
+        csv_buffer.close()
+
+        logger.info(f"Bulk importing {len(switches)} switches to venue {venue_id}")
+        logger.debug(f"CSV content:\n{csv_content}")
+
+        # Create file-like object for upload
+        files = {
+            'file': ('switches_import.csv', csv_content, 'text/csv')
+        }
+
+        # Make API call with multipart form data
+        # Endpoint: POST /venues/{venue_id}/switches/importRequests
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.post_multipart(
+                f"/venues/{venue_id}/switches/importRequests",
+                files=files,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post_multipart(
+                f"/venues/{venue_id}/switches/importRequests",
+                files=files
+            )
+
+        logger.info(f"Bulk switch import response: {response.status_code}")
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            # If 202 Accepted and wait_for_completion=True, poll for task completion
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    logger.info(f"Waiting for bulk switch import task {request_id}...")
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+                    logger.info(f"Bulk switch import task complete")
+
+            return result
+        else:
+            logger.error(f"Bulk switch import failed: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
 
     # ========== AP Group Methods ==========
 

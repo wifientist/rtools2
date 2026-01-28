@@ -80,6 +80,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
     options = context.get('options', {})
     skip_expired_dpsks = options.get('skip_expired_dpsks', False)
     renew_expired_dpsks = options.get('renew_expired_dpsks', True)
+    simulate_delay = options.get('simulate_delay', False)
 
     created_passphrases = []
     failed_passphrases = []
@@ -94,8 +95,10 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             logger.warning(f"    Skipping {username} - no DPSK pool ID")
             failed_passphrases.append({
                 'userName': username,
+                'passphrase': passphrase,
                 'reason': 'no_pool_id',
-                'can_retry': False
+                'can_retry': False,
+                'action_needed': 'DPSK pool mapping failed - check pool creation phase'
             })
             continue
 
@@ -103,8 +106,10 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             logger.warning(f"    Skipping {username} - no passphrase")
             failed_passphrases.append({
                 'userName': username,
+                'passphrase': passphrase,
                 'reason': 'no_passphrase',
-                'can_retry': False
+                'can_retry': False,
+                'action_needed': 'Passphrase must be provided in Cloudpath data'
             })
             continue
 
@@ -117,12 +122,17 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
 
         # Skip expired DPSKs if option is enabled
         if is_expired and skip_expired_dpsks:
+            logger.warning(f"    Skipping expired DPSK: {username}")
             skipped_passphrases.append({
                 'userName': username,
+                'passphrase': passphrase,
                 'reason': 'expired',
                 'original_expiration': pp_data.get('expiration')
             })
             continue
+
+        if exp_warning:
+            logger.warning(f"    {username}: {exp_warning}")
 
         # Get optional fields
         max_usage = pp_data.get('max_usage')
@@ -130,6 +140,8 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
         cloudpath_guid = pp_data.get('cloudpath_guid')
 
         identity_group_id = pp_data.get('identity_group_id')
+
+        logger.debug(f"    Creating {username}: len={len(passphrase)}, vlan={vlan_id}, max={max_usage}, guid={cloudpath_guid[:8] if cloudpath_guid else None}...")
 
         try:
             result = await r1_client.dpsk.create_passphrase(
@@ -185,25 +197,53 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 'dpsk_id': passphrase_id,
                 'userName': username,
                 'dpsk_pool_id': dpsk_pool_id,
+                'passphrase': passphrase,
+                'expiration_warning': exp_warning if exp_warning else None,
                 'created': True,
                 'identity_updated': identity_updated,
-                'cloudpath_guid': cloudpath_guid if identity_updated else None,
-                'expiration_warning': exp_warning if exp_warning else None
+                'cloudpath_guid': cloudpath_guid if identity_updated else None
             })
+
+            # Simulate delay for testing/demos
+            if simulate_delay:
+                await asyncio.sleep(0.3)  # 300ms delay per passphrase
 
         except Exception as e:
             logger.warning(f"    Failed to create {username}: {str(e)}")
             failed_passphrases.append({
                 'userName': username,
+                'passphrase': passphrase,
                 'reason': str(e),
-                'can_retry': True
+                'can_retry': True,
+                'action_needed': 'Review error and retry if needed'
             })
 
     total = len(created_passphrases) + len(failed_passphrases) + len(skipped_passphrases)
     logger.info(f"  Batch {batch_number}: Created {len(created_passphrases)}/{total} passphrases")
 
+    if skipped_passphrases:
+        logger.info(f"  Batch {batch_number}: Skipped {len(skipped_passphrases)} expired passphrases")
+
     if failed_passphrases:
-        logger.warning(f"  Batch {batch_number}: {len(failed_passphrases)} failed")
+        logger.warning(f"  Batch {batch_number}: {len(failed_passphrases)} passphrases failed")
+
+        # Group by reason for detailed reporting
+        validation_failures = [fp for fp in failed_passphrases if not fp.get('can_retry', False)]
+        api_failures = [fp for fp in failed_passphrases if fp.get('can_retry', False)]
+
+        if validation_failures:
+            logger.warning(f"    Validation Failures ({len(validation_failures)} - CANNOT BE IMPORTED):")
+            for fp in validation_failures[:5]:  # Limit to first 5 to avoid log spam
+                logger.warning(f"      - {fp['userName']}: {fp['reason']}")
+            if len(validation_failures) > 5:
+                logger.warning(f"      ... and {len(validation_failures) - 5} more")
+
+        if api_failures:
+            logger.warning(f"    API Failures ({len(api_failures)} - MAY BE RETRYABLE):")
+            for fp in api_failures[:5]:  # Limit to first 5 to avoid log spam
+                logger.warning(f"      - {fp['userName']}: {fp['reason']}")
+            if len(api_failures) > 5:
+                logger.warning(f"      ... and {len(api_failures) - 5} more")
 
     # Track created resources
     state_manager = context.get('state_manager')

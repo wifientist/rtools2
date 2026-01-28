@@ -143,7 +143,7 @@ async def check_license_availability(
 class APMigrationItem(BaseModel):
     """Single AP to migrate"""
     serial: str = Field(..., description="AP serial number")
-    name: str = Field(..., description="AP name")
+    name: Optional[str] = Field(None, description="AP name (auto-generated if not provided)")
     description: Optional[str] = Field(None, description="AP description")
     mac: Optional[str] = Field(None, description="AP MAC address")
     model: Optional[str] = Field(None, description="AP model")
@@ -154,7 +154,7 @@ class APMigrationItem(BaseModel):
 class SwitchMigrationItem(BaseModel):
     """Single Switch to migrate"""
     serial: str = Field(..., description="Switch serial number")
-    name: str = Field(..., description="Switch name")
+    name: Optional[str] = Field(None, description="Switch name (auto-generated if not provided)")
     description: Optional[str] = Field(None, description="Switch description")
     mac: Optional[str] = Field(None, description="Switch MAC address")
     model: Optional[str] = Field(None, description="Switch model")
@@ -254,11 +254,14 @@ async def migrate_sz_to_r1(
     details = []
 
     try:
-        # Create SmartZone client (to fetch additional AP details if needed)
+        # Create SmartZone client (only needed if we want to fetch additional details)
+        logger.info(f"Creating SZ client for controller {source_controller.id}")
         sz_client = create_sz_client_from_controller(source_controller.id, db)
 
         # Create R1 client for destination
+        logger.info(f"Creating R1 client for controller {dest_controller.id}")
         r1_client = create_r1_client_from_controller(dest_controller.id, db)
+        logger.info(f"R1 client created successfully")
 
         # Determine tenant_id for destination
         # Use provided tenant_id from request, or fall back to controller's tenant_id
@@ -277,9 +280,11 @@ async def migrate_sz_to_r1(
 
         license_info = {}
         try:
+            logger.info(f"Checking license availability for tenant {dest_tenant_id}")
             license_data = await r1_client.entitlements.get_available_ap_licenses(
                 tenant_id=dest_tenant_id
             )
+            logger.info(f"License data received: {license_data}")
             available_licenses = license_data['available']
 
             required_licenses = total_devices
@@ -311,80 +316,153 @@ async def migrate_sz_to_r1(
             # Don't fail the migration if license check fails - just warn
             # The actual device creation will fail if there are no licenses
 
+        logger.info(f"Entering SZ client context...")
         async with sz_client:
-            # Process each AP
-            for ap in request.aps:
+            logger.info(f"SZ client context entered successfully")
+            # Bulk import APs if there are any
+            if request.aps:
+                # Build list of APs for bulk import
+                bulk_aps = []
+                for idx, ap in enumerate(request.aps, start=1):
+                    # Use provided name, or generate unique name like "AP1", "AP2", etc.
+                    ap_name = ap.name if ap.name else f"AP{idx}"
+                    bulk_ap = {
+                        'name': ap_name,
+                        'serial': ap.serial,
+                        'description': ap.description or '',
+                        'ap_group': request.dest_ap_group or '',
+                        'tags': '',  # Tags handled separately from AP Group
+                        'latitude': str(ap.latitude) if ap.latitude else '',
+                        'longitude': str(ap.longitude) if ap.longitude else '',
+                        'vlan': ''  # Global untagged VLAN - not used in migration
+                    }
+                    bulk_aps.append(bulk_ap)
+
                 try:
-                    # Add AP to R1 venue using the venues service
-                    result = await r1_client.venues.add_ap_to_venue(
+                    logger.info(f"Bulk importing {len(bulk_aps)} APs to venue {request.dest_venue_id}")
+                    result = await r1_client.venues.bulk_add_aps_to_venue(
                         venue_id=request.dest_venue_id,
-                        name=ap.name,
-                        serial_number=ap.serial,
+                        aps=bulk_aps,
                         tenant_id=dest_tenant_id,
-                        description=ap.description,
-                        model=ap.model,
-                        tags=[request.dest_ap_group] if request.dest_ap_group else None,
-                        latitude=str(ap.latitude) if ap.latitude else None,
-                        longitude=str(ap.longitude) if ap.longitude else None
+                        wait_for_completion=True
                     )
 
-                    logger.info(f"Successfully added AP {ap.serial} to R1 venue {request.dest_venue_id}")
-                    logger.debug(f"R1 API response: {result}")
+                    logger.info(f"Bulk import result: {result}")
 
-                    migrated_count += 1
-                    details.append({
-                        "serial": ap.serial,
-                        "status": "success",
-                        "message": f"AP successfully added to venue"
-                    })
+                    # Parse bulk import results
+                    # R1 returns: {"requestId": "...", "success": N, "failed": N, "errors": [...]}
+                    bulk_success = result.get('success', 0)
+                    bulk_failed = result.get('failed', 0)
+                    bulk_errors = result.get('errors', [])
+
+                    # If we got a simple success response without counts, assume all succeeded
+                    if bulk_success == 0 and bulk_failed == 0 and not bulk_errors:
+                        bulk_success = len(bulk_aps)
+
+                    migrated_count += bulk_success
+                    failed_count += bulk_failed
+
+                    # Add success details for migrated APs
+                    for i, ap in enumerate(request.aps):
+                        if i < bulk_success:
+                            details.append({
+                                "serial": ap.serial,
+                                "status": "success",
+                                "message": "AP successfully added to venue (bulk import)"
+                            })
+
+                    # Add failure details from errors
+                    for error in bulk_errors:
+                        serial = error.get('serialNumber', error.get('serial', 'unknown'))
+                        error_msg = error.get('message', error.get('error', 'Unknown error'))
+                        details.append({
+                            "serial": serial,
+                            "status": "failed",
+                            "message": error_msg
+                        })
 
                 except Exception as e:
-                    failed_count += 1
+                    # If bulk import fails entirely, mark all APs as failed
                     error_msg = str(e)
-                    logger.error(f"Failed to add AP {ap.serial}: {error_msg}")
-                    details.append({
-                        "serial": ap.serial,
-                        "status": "failed",
-                        "message": error_msg
-                    })
+                    logger.error(f"Bulk import failed: {error_msg}")
+                    failed_count += len(request.aps)
+                    for ap in request.aps:
+                        details.append({
+                            "serial": ap.serial,
+                            "status": "failed",
+                            "message": f"Bulk import failed: {error_msg}"
+                        })
 
-            # Process each Switch
-            for switch in request.switches:
+            # Bulk import switches if there are any
+            if request.switches:
+                # Build list of switches for bulk import
+                bulk_switches = []
+                for idx, switch in enumerate(request.switches, start=1):
+                    # Use provided name, or generate unique name like "Switch1", "Switch2", etc.
+                    switch_name = switch.name if switch.name else f"Switch{idx}"
+                    bulk_switch = {
+                        'name': switch_name,
+                        'serial': switch.serial,
+                        'reason': ''  # Optional reason field - leave blank for migration
+                    }
+                    bulk_switches.append(bulk_switch)
+
                 try:
-                    # TODO: Implement add_switch_to_venue method in R1 venues service
-                    # For now, we'll log the switch and mark as not implemented
-                    logger.warning(f"Switch migration not yet fully implemented: {switch.serial} (name={switch.name}, model={switch.model})")
+                    logger.info(f"Bulk importing {len(bulk_switches)} switches to venue {request.dest_venue_id}")
+                    result = await r1_client.venues.bulk_add_switches_to_venue(
+                        venue_id=request.dest_venue_id,
+                        switches=bulk_switches,
+                        tenant_id=dest_tenant_id,
+                        wait_for_completion=True
+                    )
 
-                    # Placeholder: In the future, call r1_client.venues.add_switch_to_venue()
-                    # result = await r1_client.venues.add_switch_to_venue(
-                    #     venue_id=request.dest_venue_id,
-                    #     name=switch.name,
-                    #     serial_number=switch.serial,
-                    #     tenant_id=dest_tenant_id,
-                    #     description=switch.description,
-                    #     model=switch.model,
-                    #     tags=[request.dest_ap_group] if request.dest_ap_group else None
-                    # )
+                    logger.info(f"Bulk switch import result: {result}")
 
-                    # For now, mark as failed with "not implemented" message
-                    failed_count += 1
-                    details.append({
-                        "serial": switch.serial,
-                        "device_type": "switch",
-                        "status": "failed",
-                        "message": "Switch migration to RuckusONE not yet implemented. Please contact support for switch migration."
-                    })
+                    # Parse bulk import results
+                    bulk_success = result.get('success', 0)
+                    bulk_failed = result.get('failed', 0)
+                    bulk_errors = result.get('errors', [])
+
+                    # If we got a simple success response without counts, assume all succeeded
+                    if bulk_success == 0 and bulk_failed == 0 and not bulk_errors:
+                        bulk_success = len(bulk_switches)
+
+                    migrated_count += bulk_success
+                    failed_count += bulk_failed
+
+                    # Add success details for migrated switches
+                    for i, switch in enumerate(request.switches):
+                        if i < bulk_success:
+                            details.append({
+                                "serial": switch.serial,
+                                "device_type": "switch",
+                                "status": "success",
+                                "message": "Switch successfully added to venue (bulk import)"
+                            })
+
+                    # Add failure details from errors
+                    for error in bulk_errors:
+                        serial = error.get('serialNumber', error.get('serial', 'unknown'))
+                        error_msg = error.get('message', error.get('error', 'Unknown error'))
+                        details.append({
+                            "serial": serial,
+                            "device_type": "switch",
+                            "status": "failed",
+                            "message": error_msg
+                        })
 
                 except Exception as e:
-                    failed_count += 1
+                    # If bulk import fails entirely, mark all switches as failed
                     error_msg = str(e)
-                    logger.error(f"Failed to process switch {switch.serial}: {error_msg}")
-                    details.append({
-                        "serial": switch.serial,
-                        "device_type": "switch",
-                        "status": "failed",
-                        "message": error_msg
-                    })
+                    logger.error(f"Bulk switch import failed: {error_msg}")
+                    failed_count += len(request.switches)
+                    for switch in request.switches:
+                        details.append({
+                            "serial": switch.serial,
+                            "device_type": "switch",
+                            "status": "failed",
+                            "message": f"Bulk import failed: {error_msg}"
+                        })
 
         return MigrationResponse(
             status="completed" if failed_count == 0 else "partial",
@@ -395,7 +473,10 @@ async def migrate_sz_to_r1(
             license_info=license_info
         )
 
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
+        logger.error(f"Migration failed with unexpected error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
 
 

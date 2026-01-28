@@ -635,12 +635,18 @@ function MigrateSzToR1() {
                 : "bg-green-600 text-white hover:bg-green-700"
             }`}
           >
-            {isLoading ? "Migrating..." : `Migrate ${selectedAPs.length} APs to RuckusONE`}
+            {isLoading ? "Migrating..." : `Migrate ${
+              selectedAPs.length > 0 && selectedSwitches.length > 0
+                ? `${selectedAPs.length} APs + ${selectedSwitches.length} Switches`
+                : selectedAPs.length > 0
+                  ? `${selectedAPs.length} AP${selectedAPs.length !== 1 ? 's' : ''}`
+                  : `${selectedSwitches.length} Switch${selectedSwitches.length !== 1 ? 'es' : ''}`
+            } to RuckusONE`}
           </button>
 
           {licenseCheck !== null && !licenseCheck.sufficient && (
             <div className="mt-3 text-sm text-red-600">
-              Migration is disabled due to insufficient licenses. Please purchase additional licenses or reduce the number of APs.
+              Migration is disabled due to insufficient licenses. Please purchase additional licenses or reduce the number of devices.
             </div>
           )}
 

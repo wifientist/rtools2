@@ -284,7 +284,7 @@ async def get_switchgroup_details(
 
 @router.get("/switches")
 async def get_all_switches(
-    page: int = 0,
+    page: int = 1,
     limit: int = 1000,
     sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
@@ -292,7 +292,7 @@ async def get_all_switches(
     Get all switches managed by SmartZone
 
     Args:
-        page: Page number (default 0)
+        page: Page number (default 1, SmartZone uses 1-based pagination)
         limit: Results per page (default 1000, max 1000)
 
     Returns:
@@ -319,7 +319,7 @@ async def get_all_switches(
 @router.get("/domains/{domain_id}/switches")
 async def get_domain_switches(
     domain_id: str,
-    page: int = 0,
+    page: int = 1,
     limit: int = 1000,
     sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
@@ -328,7 +328,7 @@ async def get_domain_switches(
 
     Args:
         domain_id: Domain UUID
-        page: Page number (default 0)
+        page: Page number (default 1, SmartZone uses 1-based pagination)
         limit: Results per page (default 1000, max 1000)
 
     Returns:
@@ -358,7 +358,7 @@ async def get_domain_switches(
 @router.get("/switchgroups/{switchgroup_id}/switches")
 async def get_switchgroup_switches(
     switchgroup_id: str,
-    page: int = 0,
+    page: int = 1,
     limit: int = 1000,
     sz_client: SZClient = Depends(get_dynamic_sz_client)
 ) -> Dict[str, Any]:
@@ -367,7 +367,7 @@ async def get_switchgroup_switches(
 
     Args:
         switchgroup_id: Switch Group UUID
-        page: Page number (default 0)
+        page: Page number (default 1, SmartZone uses 1-based pagination)
         limit: Results per page (default 1000, max 1000)
 
     Returns:

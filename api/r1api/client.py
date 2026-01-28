@@ -165,6 +165,42 @@ class R1Client:
     def patch(self, path, payload=None, override_tenant_id=None):
         return self._request("patch", path, payload=payload, override_tenant_id=override_tenant_id)
 
+    def post_multipart(self, path, files, override_tenant_id=None):
+        """
+        POST request with multipart/form-data (for file uploads like CSV import).
+
+        Args:
+            path: API path
+            files: Dict of files in format {'field_name': ('filename', content, 'content_type')}
+            override_tenant_id: Optional tenant ID override for MSP
+
+        Returns:
+            Response object
+        """
+        url = f"https://{self.host}{path}"
+
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            # Don't set Content-Type - requests will set it with boundary for multipart
+        }
+        if override_tenant_id:
+            headers["x-rks-tenantid"] = override_tenant_id
+
+        logger.debug(f"R1Client Multipart POST: {path}")
+
+        response = self.session.post(
+            url,
+            headers=headers,
+            files=files,
+            verify=True
+        )
+
+        logger.debug(f"POST (multipart) {url} --> {response.status_code}")
+        if not response.ok:
+            logger.warning(f"Multipart request error: {response.status_code} - {response.text[:500]}")
+
+        return response
+
     def _extract_error_message(self, data: dict) -> str:
         """
         Extract detailed error message from RuckusONE activity response
@@ -504,16 +540,16 @@ class R1Client:
         progress_callback=None
     ) -> dict:
         """
-        Poll multiple activities using a single bulk query instead of individual GETs.
+        Poll multiple activities concurrently using parallel individual GET requests.
 
-        Uses POST /activities/query to fetch all activities at once, dramatically
-        reducing API load compared to individual GET /activities/{id} calls.
+        Uses concurrent GET /activities/{id} requests via asyncio thread pool to
+        efficiently poll multiple activities in parallel while respecting rate limits.
 
         Args:
             request_ids: List of activity requestIds to poll
             override_tenant_id: Optional tenant ID for MSP multi-tenant calls
             max_poll_seconds: Maximum total polling time (default: 120s)
-            poll_interval: Seconds between bulk polls (default: 3s)
+            poll_interval: Seconds between polling rounds (default: 3s)
             assume_success_on_timeout: If True, treat activities that never appeared as success
             progress_callback: Optional callback(completed, total, latest_results)
 
@@ -523,66 +559,77 @@ class R1Client:
         if not request_ids:
             return {}
 
-        logger.info(f"Bulk query polling {len(request_ids)} activities (interval={poll_interval}s, max={max_poll_seconds}s)")
+        logger.info(f"Concurrent polling {len(request_ids)} activities (interval={poll_interval}s, max={max_poll_seconds}s)")
 
         pending_ids = set(request_ids)
         results = {}
         start_time = asyncio.get_event_loop().time()
         poll_count = 0
 
+        # Helper to fetch a single activity (runs in thread pool since requests is sync)
+        def fetch_activity(req_id: str):
+            try:
+                response = self.get(f"/activities/{req_id}", override_tenant_id=override_tenant_id)
+                if response.ok:
+                    return req_id, response.json()
+                elif response.status_code == 404:
+                    # Activity not created yet - normal for first few polls
+                    return req_id, None
+                else:
+                    return req_id, {"error": f"HTTP {response.status_code}"}
+            except Exception as e:
+                return req_id, {"error": str(e)}
+
         while pending_ids and (asyncio.get_event_loop().time() - start_time) < max_poll_seconds:
             poll_count += 1
 
-            # Build query payload - filter by requestId IN pending_ids
-            # R1 query filter syntax: {"field": {"operator": value}}
-            query_payload = {
-                "page": 1,
-                "pageSize": len(pending_ids),
-                "filters": {
-                    "requestId": list(pending_ids)
-                }
-            }
+            # Fetch all pending activities concurrently using thread pool
+            loop = asyncio.get_event_loop()
+            fetch_tasks = [
+                loop.run_in_executor(None, fetch_activity, req_id)
+                for req_id in list(pending_ids)
+            ]
+            fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
-            try:
-                response = self.post("/activities/query", payload=query_payload, override_tenant_id=override_tenant_id)
+            # Process results
+            newly_completed = []
+            for result in fetch_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Activity fetch error: {result}")
+                    continue
 
-                if response.ok:
-                    data = response.json()
-                    activities = data.get("data", [])
+                req_id, activity = result
+                if activity is None:
+                    # Activity not found yet - keep polling
+                    continue
+                if "error" in activity and "status" not in activity:
+                    # Fetch error - keep polling
+                    logger.debug(f"Activity {req_id} fetch error: {activity.get('error')}")
+                    continue
 
-                    # Process returned activities
-                    newly_completed = []
-                    for activity in activities:
-                        req_id = activity.get("requestId")
-                        status = activity.get("status")
+                status = activity.get("status")
+                if status == "SUCCESS":
+                    results[req_id] = {"status": "SUCCESS", "data": activity}
+                    pending_ids.discard(req_id)
+                    newly_completed.append(req_id)
+                elif status == "FAIL":
+                    error_msg = activity.get("error") or "Unknown error"
+                    results[req_id] = {"status": "FAIL", "data": activity, "error": error_msg}
+                    pending_ids.discard(req_id)
+                    newly_completed.append(req_id)
+                # PENDING/INPROGRESS - keep polling
 
-                        if req_id and req_id in pending_ids:
-                            if status == "SUCCESS":
-                                results[req_id] = {"status": "SUCCESS", "data": activity}
-                                pending_ids.discard(req_id)
-                                newly_completed.append(req_id)
-                            elif status == "FAIL":
-                                error_msg = activity.get("error") or "Unknown error"
-                                results[req_id] = {"status": "FAIL", "data": activity, "error": error_msg}
-                                pending_ids.discard(req_id)
-                                newly_completed.append(req_id)
-                            # PENDING/INPROGRESS - keep polling
+            # Log progress
+            completed = len(results)
+            total = len(request_ids)
+            if newly_completed or poll_count % 5 == 0:
+                logger.debug(f"Concurrent poll #{poll_count}: {completed}/{total} complete, {len(pending_ids)} pending")
 
-                    # Log progress
-                    completed = len(results)
-                    total = len(request_ids)
-                    if newly_completed or poll_count % 5 == 0:
-                        logger.debug(f"Bulk poll #{poll_count}: {completed}/{total} complete, {len(pending_ids)} pending")
-
-                    # Progress callback
-                    if progress_callback and newly_completed:
-                        progress_callback(completed, total, {r: results[r] for r in newly_completed})
-
-                else:
-                    logger.warning(f"Bulk query failed: {response.status_code} - {response.text[:200]}")
-
-            except Exception as e:
-                logger.warning(f"Bulk query error: {e}")
+            # Progress callback (may be async)
+            if progress_callback and newly_completed:
+                result = progress_callback(completed, total, {r: results[r] for r in newly_completed})
+                if asyncio.iscoroutine(result):
+                    await result
 
             # Wait before next poll (unless we're done)
             if pending_ids:
@@ -611,7 +658,7 @@ class R1Client:
         fail_count = sum(1 for r in results.values() if r["status"] == "FAIL")
         timeout_count = sum(1 for r in results.values() if r["status"] == "TIMEOUT")
 
-        logger.info(f"Bulk query complete in {elapsed:.0f}s ({poll_count} polls): "
+        logger.info(f"Concurrent polling complete in {elapsed:.0f}s ({poll_count} rounds): "
                    f"{success_count} success, {fail_count} failed, {timeout_count} timeout")
 
         return results
