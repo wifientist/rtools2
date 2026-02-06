@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine } from "lucide-react";
 import { useState } from "react";
 
 interface NavItem {
@@ -71,9 +71,11 @@ const Sidebar = () => {
       items: [
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/cloudpath-dpsk", icon: <Key size={20} />, label: "Cloudpath DPSK", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, rolesAllowed: ["admin","super"], requiresBeta: true },
         { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/option43", icon: <Camera size={20} />, label: "Option 43 Calc", requiresAuth: false },
       ],

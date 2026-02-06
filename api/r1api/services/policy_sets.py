@@ -877,14 +877,17 @@ class PolicySetService:
             List of policy conditions
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            result = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
                 override_tenant_id=tenant_id
             ).json()
         else:
-            return self.client.get(
+            result = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions"
             ).json()
+
+        logger.debug(f"get_policy_conditions response type={type(result)}, value={result}")
+        return result
 
     async def get_policy_condition(
         self,
@@ -957,7 +960,63 @@ class PolicySetService:
                 payload=condition_data
             )
 
+        if not response.ok:
+            logger.error(
+                f"create_policy_condition failed: status={response.status_code}, "
+                f"payload={condition_data}, response={response.text}"
+            )
+
         return response.json()
+
+    async def create_string_condition(
+        self,
+        template_id: str,
+        policy_id: str,
+        attribute_id: int,
+        regex_pattern: str,
+        tenant_id: str = None
+    ):
+        """
+        Create a string-matching policy condition.
+
+        Convenience method for creating regex-based string conditions.
+
+        Args:
+            template_id: Policy template ID
+            policy_id: Policy ID
+            attribute_id: Template attribute ID (e.g., 1012 for username, 1013 for SSID)
+            regex_pattern: Regex pattern for matching (e.g., "username" - no anchors needed)
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Created condition response
+        """
+        # Map attribute IDs to names and types
+        attr_names = {
+            1012: "DPSK Username",
+            1013: "Wireless SSID",
+        }
+
+        condition_data = {
+            "name": attr_names.get(attribute_id, f"Attribute {attribute_id}"),
+            "templateAttributeId": attribute_id,
+            "evaluationRule": {
+                "criteriaType": "StringCriteria",
+                "regexStringCriteria": regex_pattern
+            },
+            "templateAttribute": {
+                "attributeType": "STRING"
+            },
+            "policyId": policy_id
+        }
+        logger.info(f"create_string_condition: policy={policy_id}, attr={attribute_id}, pattern='{regex_pattern}'")
+        logger.debug(f"create_string_condition full payload: {condition_data}")
+        return await self.create_policy_condition(
+            template_id=template_id,
+            policy_id=policy_id,
+            condition_data=condition_data,
+            tenant_id=tenant_id
+        )
 
     async def update_policy_condition(
         self,

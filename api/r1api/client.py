@@ -419,6 +419,68 @@ class R1Client:
             f"({total_wait_time:.0f} seconds)"
         )
 
+    def query_activities_bulk(
+        self,
+        activity_ids: list[str],
+        override_tenant_id: str = None,
+    ) -> dict[str, dict]:
+        """
+        Query multiple activities in a SINGLE API call using POST /activities/query.
+
+        This is the efficient bulk endpoint - ONE request returns status for ALL activities.
+        Use this instead of N individual GET /activities/{id} calls.
+
+        Args:
+            activity_ids: List of activity/request IDs to query
+            override_tenant_id: Optional tenant ID for MSP multi-tenant calls
+
+        Returns:
+            Dict mapping activity_id -> activity data (status, resourceId, etc.)
+            Activities not found will not be in the result dict.
+        """
+        if not activity_ids:
+            return {}
+
+        # POST /activities/query with filter on activity IDs
+        payload = {
+            "filters": {
+                "id": {
+                    "in": activity_ids
+                }
+            },
+            "pageSize": len(activity_ids),  # Get all in one page
+            "page": 1,
+            "sortField": "createdAt",
+            "sortOrder": "DESC",
+        }
+
+        response = self.post(
+            "/activities/query",
+            payload=payload,
+            override_tenant_id=override_tenant_id
+        )
+
+        if not response.ok:
+            logger.warning(f"POST /activities/query failed: {response.status_code}")
+            return {}
+
+        data = response.json()
+        activities = data.get('data', [])
+
+        # Build lookup dict by activity ID
+        result = {}
+        for activity in activities:
+            aid = activity.get('id')
+            if aid:
+                result[aid] = activity
+
+        logger.debug(
+            f"Bulk query: requested {len(activity_ids)}, "
+            f"returned {len(result)} activities"
+        )
+
+        return result
+
     async def await_task_completion_bulk(
         self,
         request_ids: list[str],

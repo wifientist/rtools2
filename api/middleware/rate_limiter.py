@@ -38,12 +38,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ]
         )
 
+        # Skip rate limiting for SSE streams (long-lived connections)
+        is_sse_stream = endpoint.endswith("/stream")
+        if is_sse_stream:
+            return await call_next(request)
+
+        # Skip rate limiting for job status polling (high-frequency monitoring)
+        is_job_status = "/jobs/" in endpoint and endpoint.endswith("/status")
+        if is_job_status:
+            return await call_next(request)
+
         # Set limits based on endpoint type
         if is_auth_endpoint:
             max_requests = 5  # 5 requests per minute for auth
             window_seconds = 60
         else:
-            max_requests = 100  # 100 requests per minute for everything else
+            max_requests = 300  # 300 requests per minute for everything else
             window_seconds = 60
 
         # Check rate limit

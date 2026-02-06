@@ -10,7 +10,7 @@ import logging
 from collections import Counter
 from typing import Dict, Any, List, Optional
 
-from workflow.models import Task, TaskStatus
+from workflow.v2.models import Task, TaskStatus
 from szapi.services.wlans import WlanService
 from schemas.sz_audit import (
     ZoneAudit,

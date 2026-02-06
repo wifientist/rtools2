@@ -28,13 +28,15 @@ import CompanyManager from "@/components/CompanyManager";
 import Users from "@/pages/Users";
 import PerUnitSSID from "@/pages/PerUnitSSID";
 import APPortConfig from "@/pages/APPortConfig";
+import APRename from "@/pages/APRename";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
-import CloudpathDPSK from "@/pages/CloudpathDPSK";
+import CloudpathImport from "@/pages/CloudpathImport";
 import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
 import JobMonitor from "@/pages/JobMonitor";
 import JobList from "@/pages/JobList";
 import SZAudit from "@/pages/SZAudit";
+import DangerZone from "@/pages/DangerZone";
 
 const App = () => {
   
@@ -60,9 +62,11 @@ const App = () => {
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/ap-port-config" element={<BetaRoute element={<APPortConfig />} />} />
-          <Route path="/cloudpath-dpsk" element={<BetaRoute element={<CloudpathDPSK />} />} />
+          <Route path="/ap-rename" element={<BetaRoute element={<APRename />} />} />
+          <Route path="/cloudpath-import" element={<BetaRoute element={<CloudpathImport />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
+          <Route path="/danger-zone" element={<BetaRoute element={<DangerZone />} />} />
           <Route path="/jobs" element={<ProtectedRoute element={<JobList />} />} />
           <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />

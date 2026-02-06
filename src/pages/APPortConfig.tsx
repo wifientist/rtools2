@@ -215,6 +215,11 @@ function APPortConfig() {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [showJobModal, setShowJobModal] = useState(false);
 
+  // V2 plan/confirm state
+  const [v2JobId, setV2JobId] = useState<string | null>(null);
+  const [v2PlanStatus, setV2PlanStatus] = useState<string | null>(null); // null | VALIDATING | AWAITING_CONFIRMATION | FAILED
+  const [v2PlanResult, setV2PlanResult] = useState<any>(null);
+
   // Handle venue selection
   const handleVenueSelect = (id: string | null, venue: any) => {
     setVenueId(id);
@@ -442,44 +447,117 @@ function APPortConfig() {
         setConfiguring(false);
 
       } else {
-        // Apply uses batch endpoint with workflow job framework
-        const response = await fetch(`${API_BASE_URL}/ap-port-config/${activeControllerId}/configure-batch`, {
+        // V2 plan/confirm flow
+        // Transform CSV mappings into V2 units format
+        const units = apVlanMappings.map(m => ({
+          unit_number: m.ap_identifier,
+          ap_identifiers: [m.ap_identifier],
+          default_vlan: String(m.vlan),
+        }));
+
+        const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/plan`, {
           method: "POST",
           credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            controller_id: activeControllerId,
             venue_id: venueId,
             ...(effectiveTenantId && { tenant_id: effectiveTenantId }),
-            ap_configs,
-            batch_config: batchConfig,
-            dry_run: false
+            units,
+            model_port_configs: modelPortConfigs,
           }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || `Job failed to start: ${response.statusText}`);
+          throw new Error(errorData.detail || `Plan failed: ${response.statusText}`);
         }
 
         const data = await response.json();
-
-        // Show job monitor modal
-        setCurrentJobId(data.job_id);
-        setShowJobModal(true);
+        setV2JobId(data.job_id);
+        setV2PlanStatus("VALIDATING");
+        setV2PlanResult(null);
         setConfiguring(false);
 
-        // Log not_found for debugging
-        if (not_found.length > 0) {
-          console.log('APs not found in venue:', not_found);
-        }
+        // Start polling for plan results
+        pollV2Plan(data.job_id);
       }
 
     } catch (err: any) {
       setError(err.message || "Configuration failed");
       setConfiguring(false);
     }
+  };
+
+  // V2: Poll plan results
+  const pollV2Plan = async (jobId: string) => {
+    const maxAttempts = 60; // 60 * 2s = 2min timeout
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/${jobId}/plan`, {
+          credentials: "include",
+        });
+        if (!response.ok) continue;
+
+        const data = await response.json();
+        setV2PlanStatus(data.status);
+
+        if (data.status === "AWAITING_CONFIRMATION") {
+          setV2PlanResult(data);
+          return;
+        }
+        if (data.status === "FAILED") {
+          setV2PlanResult(data);
+          setError("Validation failed. Check conflicts below.");
+          return;
+        }
+      } catch {
+        // Continue polling on network errors
+      }
+    }
+    setError("Validation timed out. Please try again.");
+    setV2PlanStatus("FAILED");
+  };
+
+  // V2: Confirm plan and start execution
+  const confirmV2Plan = async () => {
+    if (!v2JobId) return;
+
+    setConfiguring(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/${v2JobId}/confirm`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Confirm failed: ${response.statusText}`);
+      }
+
+      // Open job monitor for execution tracking
+      setCurrentJobId(v2JobId);
+      setShowJobModal(true);
+      setV2PlanStatus(null);
+      setV2PlanResult(null);
+      setV2JobId(null);
+    } catch (err: any) {
+      setError(err.message || "Confirm failed");
+    } finally {
+      setConfiguring(false);
+    }
+  };
+
+  // Cancel V2 plan
+  const cancelV2Plan = () => {
+    setV2JobId(null);
+    setV2PlanStatus(null);
+    setV2PlanResult(null);
   };
 
   // Handle job modal close
@@ -921,10 +999,10 @@ function APPortConfig() {
               </button>
               <button
                 onClick={() => handleConfigure(false)}
-                disabled={configuring || !canApply}
+                disabled={configuring || !canApply || v2PlanStatus === "VALIDATING"}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               >
-                {configuring ? "Starting..." : `Apply Configuration (${apVlanMappings.length} APs)`}
+                {configuring ? "Starting..." : v2PlanStatus === "VALIDATING" ? "Validating..." : `Plan & Apply (${apVlanMappings.length} APs)`}
               </button>
             </div>
 
@@ -938,6 +1016,92 @@ function APPortConfig() {
               </p>
             )}
           </div>
+
+          {/* V2 Plan Review */}
+          {v2PlanStatus && (
+            <div className={`rounded-lg shadow p-4 mb-6 ${
+              v2PlanStatus === "VALIDATING" ? "bg-blue-50 border border-blue-200" :
+              v2PlanStatus === "AWAITING_CONFIRMATION" ? "bg-green-50 border border-green-200" :
+              "bg-red-50 border border-red-200"
+            }`}>
+              <h2 className="text-lg font-semibold mb-4">
+                {v2PlanStatus === "VALIDATING" ? "Validating Configuration..." :
+                 v2PlanStatus === "AWAITING_CONFIRMATION" ? "Plan Ready — Review & Confirm" :
+                 "Validation Failed"}
+              </h2>
+
+              {v2PlanStatus === "VALIDATING" && (
+                <div className="flex items-center gap-3 text-blue-700">
+                  <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full" />
+                  <span>Checking AP port capabilities and building execution plan...</span>
+                </div>
+              )}
+
+              {v2PlanStatus === "AWAITING_CONFIRMATION" && v2PlanResult && (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                    <div className="bg-white rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-blue-600">{v2PlanResult.unit_count}</div>
+                      <div className="text-sm text-gray-600">Units (APs)</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-green-600">{v2PlanResult.estimated_api_calls}</div>
+                      <div className="text-sm text-gray-600">Estimated API Calls</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 text-center">
+                      <div className="text-2xl font-bold text-purple-600">{v2PlanResult.valid ? "Valid" : "Invalid"}</div>
+                      <div className="text-sm text-gray-600">Status</div>
+                    </div>
+                  </div>
+
+                  {v2PlanResult.conflicts?.length > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                      <h3 className="font-medium text-yellow-800 mb-2">Warnings</h3>
+                      <ul className="text-sm text-yellow-700 list-disc list-inside">
+                        {v2PlanResult.conflicts.map((c: any, i: number) => (
+                          <li key={i}>{c.description}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={confirmV2Plan}
+                      disabled={configuring || !v2PlanResult.valid}
+                      className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 font-medium"
+                    >
+                      {configuring ? "Starting..." : "Confirm & Apply"}
+                    </button>
+                    <button
+                      onClick={cancelV2Plan}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {v2PlanStatus === "FAILED" && v2PlanResult && (
+                <>
+                  {v2PlanResult.conflicts?.length > 0 && (
+                    <ul className="text-sm text-red-700 list-disc list-inside mb-4">
+                      {v2PlanResult.conflicts.map((c: any, i: number) => (
+                        <li key={i}>{c.description}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    onClick={cancelV2Plan}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                  >
+                    Dismiss
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Results */}
           {result && (

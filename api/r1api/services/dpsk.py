@@ -171,12 +171,14 @@ class DpskService:
             payload["name"] = name
         if description:
             payload["description"] = description
-        if passphrase_length:
-            payload["passphraseLengthInCharacters"] = passphrase_length
-        if max_devices_per_passphrase:
-            payload["maxDevicesPerPassphrase"] = max_devices_per_passphrase
-        if expiration_days:
-            payload["expirationInDays"] = expiration_days
+        if passphrase_length is not None:
+            # Use same field name as create - passphraseLength
+            payload["passphraseLength"] = passphrase_length
+        if max_devices_per_passphrase is not None:
+            payload["deviceCountLimit"] = max_devices_per_passphrase
+        if expiration_days is not None:
+            payload["expirationType"] = "DAYS_AFTER_TIME"
+            payload["expirationOffset"] = expiration_days
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.patch(
@@ -505,7 +507,8 @@ class DpskService:
         description: str = None,
         expiration_date: str = None,
         max_devices: int = None,
-        enabled: bool = None
+        enabled: bool = None,
+        vlan_id: int = None
     ):
         """
         Update an existing DPSK passphrase
@@ -520,6 +523,7 @@ class DpskService:
             expiration_date: Optional new expiration date
             max_devices: Optional new max devices
             enabled: Optional enabled/disabled state
+            vlan_id: Optional VLAN ID override
 
         Returns:
             Updated passphrase response
@@ -538,6 +542,8 @@ class DpskService:
             payload["maxDevices"] = max_devices
         if enabled is not None:
             payload["enabled"] = enabled
+        if vlan_id is not None:
+            payload["vlanId"] = int(vlan_id)
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.patch(

@@ -45,8 +45,8 @@ from schemas.sz_audit import (
     ControllerMatchCandidates,
 )
 from redis_client import get_redis_client
-from workflow.models import WorkflowJob, Phase, JobStatus, PhaseStatus
-from workflow.state_manager import RedisStateManager
+from workflow.v2.models import WorkflowJobV2, JobStatus, PhaseStatus, PhaseDefinitionV2
+from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.events import WorkflowEventPublisher
 from routers.sz.audit_workflow_definition import get_workflow_definition
 from routers.sz.phases import initialize, fetch_switches, audit_zones, finalize
@@ -273,7 +273,7 @@ class AuditHistoryResponse(BaseModel):
 # ============================================================================
 
 async def run_audit_workflow_background(
-    job: WorkflowJob,
+    job: WorkflowJobV2,
     controller_id: int,
     db: Session
 ):
@@ -291,7 +291,7 @@ async def run_audit_workflow_background(
 
         # Create workflow components
         redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
+        state_manager = RedisStateManagerV2(redis_client)
         event_publisher = WorkflowEventPublisher(redis_client)
 
         # Update job status to running
@@ -314,8 +314,8 @@ async def run_audit_workflow_background(
         refresh_mode_str = job.input_data.get('refresh_mode', 'full')
         refresh_mode = RefreshMode(refresh_mode_str)
 
-        # Initialize cache stats tracking
-        job.summary['cache_stats'] = {
+        # Initialize cache stats tracking in options (V2 doesn't have summary)
+        job.options['cache_stats'] = {
             'refresh_mode': refresh_mode_str,
             'zones_from_cache': 0,
             'zones_refreshed': 0,
@@ -337,9 +337,9 @@ async def run_audit_workflow_background(
         # Helper to update activity message (callable from phases)
         async def update_activity(message: str):
             """Update the current activity message for frontend display."""
-            job.summary['current_activity'] = message
+            job.options['current_activity'] = message
             # Also update API stats while we're at it
-            job.summary['api_stats'] = sz_client.get_api_stats()
+            job.options['api_stats'] = sz_client.get_api_stats()
             await state_manager.save_job(job)
 
         try:
@@ -350,7 +350,7 @@ async def run_audit_workflow_background(
             logger.warning(f"Audit workflow {job.id} - authentication failed: {error_msg}")
             job.status = JobStatus.FAILED
             job.errors.append(f"Authentication failed: {error_msg}")
-            job.summary['current_activity'] = "Authentication failed"
+            job.options['current_activity'] = "Authentication failed"
             await state_manager.save_job(job)
             return
 
@@ -361,26 +361,27 @@ async def run_audit_workflow_background(
                     logger.info(f"🛑 Audit job {job.id} cancelled - stopping before phase {phase_id}")
                     job.status = JobStatus.CANCELLED
                     job.errors.append("Audit cancelled by user")
-                    job.summary['current_activity'] = "Cancelled"
+                    job.options['current_activity'] = "Cancelled"
                     await state_manager.save_job(job)
                     return
 
-                # Find phase in job
-                phase = job.get_phase_by_id(phase_id)
-                if not phase:
-                    logger.warning(f"Phase {phase_id} not found in job")
-                    continue
+                # Find phase definition
+                phase_def = job.get_phase_definition(phase_id)
+                phase_name = phase_def.name if phase_def else phase_id
 
-                logger.info(f"▶️  Executing phase {phase_id} ({phase.name})")
+                logger.info(f"▶️  Executing phase {phase_id} ({phase_name})")
 
                 # Update phase status
-                phase.status = PhaseStatus.RUNNING
-                job.current_phase_id = phase_id
-                job.summary['current_activity'] = f"Starting {phase.name}..."
+                job.global_phase_status[phase_id] = PhaseStatus.RUNNING
+                job.options['current_phase_id'] = phase_id
+                job.options['current_activity'] = f"Starting {phase_name}..."
                 await state_manager.save_job(job)
 
                 if event_publisher:
-                    await event_publisher.phase_started(job.id, phase)
+                    await event_publisher.publish_event(job.id, "phase_started", {
+                        "phase_id": phase_id,
+                        "phase_name": phase_name,
+                    })
 
                 try:
                     # Get force_refresh_zones from input_data
@@ -417,30 +418,39 @@ async def run_audit_workflow_background(
                     phase_results[phase_id] = phase_output
 
                     # Update phase status
-                    phase.status = PhaseStatus.COMPLETED
-                    phase.tasks = tasks
+                    job.global_phase_status[phase_id] = PhaseStatus.COMPLETED
+                    job.global_phase_results[phase_id] = {
+                        'tasks': [t.model_dump() if hasattr(t, 'model_dump') else t for t in tasks],
+                        'output': phase_output,
+                    }
                     # Update API stats after each phase
-                    job.summary['api_stats'] = sz_client.get_api_stats()
+                    job.options['api_stats'] = sz_client.get_api_stats()
                     await state_manager.save_job(job)
 
                     if event_publisher:
-                        await event_publisher.phase_completed(job.id, phase)
+                        await event_publisher.publish_event(job.id, "phase_completed", {
+                            "phase_id": phase_id,
+                            "phase_name": phase_name,
+                        })
 
                     logger.info(f"✅ Phase {phase_id} completed")
 
                 except Exception as e:
                     logger.exception(f"Phase {phase_id} failed: {str(e)}")
-                    phase.status = PhaseStatus.FAILED
-                    phase.errors.append(str(e))
-                    job.errors.append(f"Phase {phase.name} failed: {str(e)}")
+                    job.global_phase_status[phase_id] = PhaseStatus.FAILED
+                    job.global_phase_results[phase_id] = {'error': str(e)}
+                    job.errors.append(f"Phase {phase_name} failed: {str(e)}")
                     await state_manager.save_job(job)
 
-                    if phase.critical:
+                    # Check if phase is critical
+                    is_critical = phase_def.critical if phase_def else True
+                    if is_critical:
                         raise  # Stop workflow on critical phase failure
 
             # Workflow complete
             job.status = JobStatus.COMPLETED
-            job.current_phase_id = None
+            job.completed_at = datetime.utcnow()
+            job.options['current_phase_id'] = None
             await state_manager.save_job(job)
 
             if event_publisher:
@@ -513,23 +523,26 @@ async def start_async_audit(
     # Create job ID
     job_id = str(uuid.uuid4())
 
-    # Get workflow definition and create phases
+    # Get workflow definition and create V2 phase definitions
     workflow_def = get_workflow_definition()
-    phases = [
-        Phase(
+    phase_definitions = [
+        PhaseDefinitionV2(
             id=phase_def.id,
             name=phase_def.name,
-            dependencies=phase_def.dependencies,
-            parallelizable=phase_def.parallelizable,
+            depends_on=phase_def.dependencies,
+            executor=phase_def.executor,
             critical=phase_def.critical,
-            skip_condition=phase_def.skip_condition,
-            status=PhaseStatus.PENDING
+            per_unit=False,  # Audit is not per-unit
+            skip_if=phase_def.skip_condition,
         )
         for phase_def in workflow_def.phases
     ]
 
-    # Create WorkflowJob
-    job = WorkflowJob(
+    # Initialize global phase status
+    global_phase_status = {phase_def.id: PhaseStatus.PENDING for phase_def in workflow_def.phases}
+
+    # Create WorkflowJobV2
+    job = WorkflowJobV2(
         id=job_id,
         workflow_name="sz_audit",
         user_id=current_user.id,
@@ -540,12 +553,13 @@ async def start_async_audit(
             'refresh_mode': request.refresh_mode.value,
             'force_refresh_zones': request.force_refresh_zones  # Zone IDs to always refresh
         },
-        phases=phases
+        phase_definitions=phase_definitions,
+        global_phase_status=global_phase_status,
     )
 
     # Save job to Redis
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
     await state_manager.save_job(job)
 
     # Add to user-specific audit history index (sorted by created_at timestamp)
@@ -582,7 +596,7 @@ async def get_audit_job_status(
     Returns current phase, progress, and any errors.
     """
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
 
     job = await state_manager.get_job(job_id)
     if not job:
@@ -592,17 +606,19 @@ async def get_audit_job_status(
     if job.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # Build phase info
-    phases_info = [
-        {
+    # Build phase info from V2 structure
+    phases_info = []
+    for p in job.phase_definitions:
+        status = job.global_phase_status.get(p.id, PhaseStatus.PENDING)
+        result = job.global_phase_results.get(p.id, {})
+        tasks = result.get('tasks', [])
+        phases_info.append({
             'id': p.id,
             'name': p.name,
-            'status': p.status.value if hasattr(p.status, 'value') else str(p.status),
-            'tasks_total': len(p.tasks),
-            'tasks_completed': sum(1 for t in p.tasks if t.status.value == 'COMPLETED')
-        }
-        for p in job.phases
-    ]
+            'status': status.value if hasattr(status, 'value') else str(status),
+            'tasks_total': len(tasks),
+            'tasks_completed': sum(1 for t in tasks if isinstance(t, dict) and t.get('status') == 'COMPLETED')
+        })
 
     # Calculate progress with weighted phases
     # Phase weights: initialize=5%, fetch_switches=10%, audit_zones=75%, finalize=10%
@@ -613,19 +629,20 @@ async def get_audit_job_status(
         'finalize': 10
     }
 
-    total_phases = len(job.phases)
-    completed_phases = sum(1 for p in job.phases if p.status == PhaseStatus.COMPLETED)
+    total_phases = len(job.phase_definitions)
+    completed_phases = sum(1 for p in job.phase_definitions if job.global_phase_status.get(p.id) == PhaseStatus.COMPLETED)
 
     # Calculate weighted percent
     percent = 0
-    for p in job.phases:
+    for p in job.phase_definitions:
+        status = job.global_phase_status.get(p.id, PhaseStatus.PENDING)
         weight = phase_weights.get(p.id, 25)  # Default 25% if unknown phase
-        if p.status == PhaseStatus.COMPLETED:
+        if status == PhaseStatus.COMPLETED:
             percent += weight
-        elif p.status == PhaseStatus.RUNNING:
+        elif status == PhaseStatus.RUNNING:
             # For audit_zones, use zone-level progress
             if p.id == 'audit_zones':
-                zone_progress = job.summary.get('zone_progress', {})
+                zone_progress = job.options.get('zone_progress', {})
                 zones_total = zone_progress.get('total', 0)
                 zones_completed = zone_progress.get('completed', 0)
                 if zones_total > 0:
@@ -638,7 +655,7 @@ async def get_audit_job_status(
         'phases_total': total_phases,
         'phases_completed': completed_phases,
         'percent': min(percent, 100),  # Cap at 100%
-        'zone_progress': job.summary.get('zone_progress')  # Include zone details if available
+        'zone_progress': job.options.get('zone_progress')  # Include zone details if available
     }
 
     return AuditJobStatus(
@@ -646,15 +663,15 @@ async def get_audit_job_status(
         status=job.status.value if hasattr(job.status, 'value') else str(job.status),
         controller_id=job.input_data.get('controller_id'),
         controller_name=job.input_data.get('controller_name'),
-        current_phase=job.current_phase_id,
-        current_activity=job.summary.get('current_activity'),  # Detailed progress message
+        current_phase=job.options.get('current_phase_id'),
+        current_activity=job.options.get('current_activity'),  # Detailed progress message
         phases=phases_info,
         progress=progress,
         errors=job.errors,
         created_at=job.created_at.isoformat() if job.created_at else None,
         refresh_mode=job.input_data.get('refresh_mode', 'full'),
-        cache_stats=job.summary.get('cache_stats'),  # zones_from_cache, zones_refreshed
-        api_stats=job.summary.get('api_stats')  # total_calls, avg_rate
+        cache_stats=job.options.get('cache_stats'),  # zones_from_cache, zones_refreshed
+        api_stats=job.options.get('api_stats')  # total_calls, avg_rate
     )
 
 
@@ -669,7 +686,7 @@ async def cancel_audit_job(
     The job will stop at the next phase boundary.
     """
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
 
     job = await state_manager.get_job(job_id)
     if not job:
@@ -1253,7 +1270,7 @@ async def get_audit_job_result(
     Results are available for 24 hours after completion.
     """
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
 
     # Check job exists and is complete
     job = await state_manager.get_job(job_id)
@@ -1307,7 +1324,7 @@ async def get_audit_history(
     limit = min(limit, 100)
 
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
 
     # Get job IDs from user's audit history index (newest first)
     user_index_key = f"sz_audit:user:{current_user.id}:jobs"

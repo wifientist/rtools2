@@ -26,26 +26,19 @@ from models.controller import Controller
 from clients.r1_client import create_r1_client_from_controller
 from redis_client import get_redis_client
 
-from workflow.models import WorkflowJob, Phase, JobStatus
-from workflow.state_manager import RedisStateManager
-from workflow.executor import TaskExecutor
-from workflow.engine import WorkflowEngine
+from workflow.v2.models import JobStatus
+from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.events import WorkflowEventPublisher
-from workflow.parallel_orchestrator import ParallelJobOrchestrator
 from routers.per_unit_ssid.workflow_definition import get_workflow_definition
 
-# Import phase executors
-from routers.per_unit_ssid.phases import create_ssids
-from routers.per_unit_ssid.phases import activate_ssids
-from routers.per_unit_ssid.phases import create_ap_groups
-from routers.per_unit_ssid.phases import process_units
-from routers.per_unit_ssid.phases import configure_lan_ports
+# V1 workflow engine has been removed - use V2 endpoints instead
+# /per-unit-ssid/v2/plan, /per-unit-ssid/v2/{id}/confirm
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/per-unit-ssid",
-    tags=["Per-Unit SSID Configuration"]
+    tags=["Per-Unit SSID"]
 )
 
 
@@ -79,15 +72,27 @@ class ModelPortConfigs(BaseModel):
     )
 
 
+class DpskPoolSettings(BaseModel):
+    """DPSK pool configuration settings"""
+    passphrase_length: int = Field(default=12, description="Length for auto-generated passphrases (not used when CSV provides passphrase)")
+    passphrase_format: str = Field(default="KEYBOARD_FRIENDLY", description="Format: NUMBERS_ONLY, KEYBOARD_FRIENDLY, or MOST_SECURED")
+    max_devices_per_passphrase: int = Field(default=0, description="Max devices per passphrase (0 = unlimited)")
+    expiration_days: Optional[int] = Field(default=None, description="Passphrase expiration in days (None = no expiration)")
+
+
 class UnitConfig(BaseModel):
-    """Configuration for a single unit"""
+    """Configuration for a single unit (or DPSK passphrase row in DPSK mode)"""
     unit_number: str = Field(..., description="Unit number (e.g., '101', '102')")
     ap_identifiers: List[str] = Field(default_factory=list, description="List of AP serial numbers or names in this unit")
     ssid_name: str = Field(..., description="SSID broadcast name for this unit (what clients see)")
     network_name: Optional[str] = Field(default=None, description="Internal network name in R1 (defaults to ssid_name if not provided)")
-    ssid_password: str = Field(..., description="Unique password for this unit's SSID")
-    security_type: str = Field(default="WPA3", description="Security type: WPA2, WPA3, or WPA2/WPA3")
+    ssid_password: Optional[str] = Field(default=None, description="Password for PSK mode (required), or passphrase for DPSK mode (optional - can be in CSV)")
+    security_type: str = Field(default="WPA3", description="Security type: WPA2, WPA3, WPA2/WPA3, or DPSK")
     default_vlan: str = Field(default="1", description="Default VLAN ID for this SSID (e.g., '1', '10', '100')")
+    # DPSK-specific optional fields (used when security_type is DPSK)
+    username: Optional[str] = Field(default=None, description="Identity/passphrase username (DPSK mode)")
+    email: Optional[str] = Field(default=None, description="User email for passphrase (DPSK mode)")
+    description: Optional[str] = Field(default=None, description="Description for passphrase (DPSK mode)")
 
 
 class PerUnitSSIDRequest(BaseModel):
@@ -102,6 +107,23 @@ class PerUnitSSIDRequest(BaseModel):
     name_conflict_resolution: Literal['keep', 'overwrite'] = Field(
         default='overwrite',
         description="When SSID exists but network name differs: 'keep' (use existing R1 name) or 'overwrite' (update to ruckus.tools name)"
+    )
+    # DPSK Mode options - single shared pool for entire venue
+    dpsk_mode: bool = Field(
+        default=False,
+        description="Enable DPSK mode - creates one shared Identity Group and DPSK Pool for all unit SSIDs"
+    )
+    identity_group_name: str = Field(
+        default="",
+        description="Name for the shared identity group (DPSK mode). Required if dpsk_mode=True."
+    )
+    dpsk_pool_name: str = Field(
+        default="",
+        description="Name for the shared DPSK pool (DPSK mode). Required if dpsk_mode=True."
+    )
+    dpsk_pool_settings: DpskPoolSettings = Field(
+        default_factory=DpskPoolSettings,
+        description="DPSK pool settings (DPSK mode only)"
     )
     # Phase 5: LAN port configuration for APs with configurable ports
     configure_lan_ports: bool = Field(default=False, description="Configure LAN port VLANs on APs with configurable LAN ports")
@@ -265,305 +287,8 @@ def validate_controller_access(controller_id: int, user: User, db: Session) -> C
     return controller
 
 
-async def run_workflow_background(
-    job: WorkflowJob,
-    controller_id: int,
-):
-    """Background task to run per-unit-ssid workflow"""
-    from database import SessionLocal
-
-    # Create a fresh database session for this background task
-    db = SessionLocal()
-
-    try:
-        logger.info(f"Starting background workflow for job {job.id}")
-
-        # Create R1 client
-        r1_client = create_r1_client_from_controller(controller_id, db)
-
-        # Create workflow components
-        redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
-        event_publisher = WorkflowEventPublisher(redis_client)
-        task_executor = TaskExecutor(
-            max_retries=3,
-            retry_backoff_base=2,
-            r1_client=r1_client,
-            event_publisher=event_publisher,
-            state_manager=state_manager
-        )
-        workflow_engine = WorkflowEngine(state_manager, task_executor, event_publisher)
-
-        # === SSID Limit Pre-flight Check ===
-        # Check if venue has too many "All AP" SSIDs - new AP Groups would inherit them all
-        tenant_id = job.tenant_id
-        venue_id = job.venue_id
-
-        await event_publisher.message(job.id, "Checking venue SSID configuration...", "info")
-
-        audit_result = await count_all_ap_ssids_for_venue(r1_client, tenant_id, venue_id)
-        all_ap_count = audit_result['all_ap_ssids_count']
-
-        # Check if there are too many "All AP" SSIDs, but be smart about it:
-        # If the "All AP" SSIDs are the SAME ones we're trying to configure (re-run scenario),
-        # Phase 4 can fix them by narrowing to specific AP Groups. Only fail if they're
-        # DIFFERENT SSIDs that would block us.
-        if all_ap_count >= SSID_LIMIT_PER_AP_GROUP:
-            # Get the SSID names we're trying to configure
-            units = job.input_data.get('units', [])
-            our_ssid_names = set(u.get('ssid_name') or u.get('network_name') for u in units)
-            existing_all_ap_names = set(audit_result['all_ap_ssid_names'])
-
-            # How many of the "All AP" SSIDs are ones we're configuring vs unrelated?
-            our_ssids_in_all_ap = our_ssid_names & existing_all_ap_names
-            unrelated_all_ap = existing_all_ap_names - our_ssid_names
-
-            if len(unrelated_all_ap) >= SSID_LIMIT_PER_AP_GROUP:
-                # Too many UNRELATED "All AP" SSIDs - we can't proceed
-                error_msg = (
-                    f"Cannot proceed: venue has {len(unrelated_all_ap)} unrelated SSIDs set to 'All AP Groups'. "
-                    f"New AP Groups would immediately inherit all of them, exceeding the {SSID_LIMIT_PER_AP_GROUP} SSID limit. "
-                    f"Please go to RuckusONE and change these SSIDs to specific AP Groups first: "
-                    f"{', '.join(list(unrelated_all_ap)[:10])}"
-                    f"{'...' if len(unrelated_all_ap) > 10 else ''}"
-                )
-                logger.error(error_msg)
-                await event_publisher.message(job.id, error_msg, "error")
-
-                job.status = JobStatus.FAILED
-                job.errors.append(error_msg)
-                job.completed_at = datetime.utcnow()
-                await state_manager.save_job(job)
-                await event_publisher.job_failed(job)
-                return
-            else:
-                # The "All AP" SSIDs are mostly ours from a previous run - Phase 4 can fix this!
-                await event_publisher.message(
-                    job.id,
-                    f"Found {len(our_ssids_in_all_ap)} of our SSIDs still set to 'All AP Groups' (likely from previous run). "
-                    f"Phase 4 will narrow them to specific AP Groups.",
-                    "warning"
-                )
-        elif all_ap_count > 0:
-            await event_publisher.message(
-                job.id,
-                f"Found {all_ap_count} 'All AP' SSIDs in venue (limit is {SSID_LIMIT_PER_AP_GROUP})",
-                "info"
-            )
-
-        # Phase executor mapping
-        phase_executors = {
-            'create_ssids': create_ssids.execute,
-            'activate_ssids': activate_ssids.execute,
-            'create_ap_groups': create_ap_groups.execute,
-            'process_units': process_units.execute,
-            'configure_lan_ports': configure_lan_ports.execute
-        }
-
-        logger.info(f"Workflow: {job.workflow_name}")
-        logger.info(f"Phase executors mapped: {list(phase_executors.keys())}")
-
-        # Execute workflow
-        final_job = await workflow_engine.execute_workflow(job, phase_executors)
-
-        logger.info(f"Workflow {job.id} completed with status: {final_job.status}")
-
-    except Exception as e:
-        logger.exception(f"Workflow {job.id} failed: {str(e)}")
-
-    finally:
-        # Always close the database session
-        db.close()
-
-
-async def run_parallel_workflow_background(
-    parent_job: WorkflowJob,
-    controller_id: int,
-    units: List[Dict],
-    max_concurrent: int = 10,
-):
-    """
-    Background task to run per-unit-ssid workflow in parallel mode.
-
-    Each unit becomes a child job that runs through all phases independently.
-
-    IMPORTANT: This function audits the venue before starting to count existing
-    "all AP Groups" SSIDs and calculates a safe max_concurrent to avoid hitting
-    the 15 SSID per AP Group limit. The user's requested max_concurrent may be
-    reduced if the venue already has many SSIDs.
-    """
-    from database import SessionLocal
-
-    # Create a fresh database session for this background task
-    db = SessionLocal()
-
-    try:
-        logger.info(f"Starting parallel workflow for parent job {parent_job.id} with {len(units)} units (max_concurrent={max_concurrent})")
-
-        # Create R1 client
-        r1_client = create_r1_client_from_controller(controller_id, db)
-
-        # Create workflow components
-        redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
-        event_publisher = WorkflowEventPublisher(redis_client)
-
-        # === SSID Limit Audit ===
-        # Before starting, audit the venue to count existing "all AP" SSIDs
-        # and calculate a safe max_concurrent to avoid the 15 SSID limit
-        tenant_id = parent_job.tenant_id
-        venue_id = parent_job.venue_id
-
-        await event_publisher.message(
-            parent_job.id,
-            "Auditing venue for SSID limit safety...",
-            "info"
-        )
-
-        audit_result = await count_all_ap_ssids_for_venue(r1_client, tenant_id, venue_id)
-        safe_concurrent = audit_result['safe_concurrent']
-        all_ap_count = audit_result['all_ap_ssids_count']
-
-        # Check if there are too many "All AP" SSIDs, but be smart about it:
-        # If the "All AP" SSIDs are the SAME ones we're trying to configure (re-run scenario),
-        # Phase 4 can fix them by narrowing to specific AP Groups. Only fail if they're
-        # DIFFERENT SSIDs that would block us.
-        if all_ap_count >= SSID_LIMIT_PER_AP_GROUP:
-            # Get the SSID names we're trying to configure
-            our_ssid_names = set(u.get('ssid_name') or u.get('network_name') for u in units)
-            existing_all_ap_names = set(audit_result['all_ap_ssid_names'])
-
-            # How many of the "All AP" SSIDs are ones we're configuring vs unrelated?
-            our_ssids_in_all_ap = our_ssid_names & existing_all_ap_names
-            unrelated_all_ap = existing_all_ap_names - our_ssid_names
-
-            if len(unrelated_all_ap) >= SSID_LIMIT_PER_AP_GROUP:
-                # Too many UNRELATED "All AP" SSIDs - we can't proceed
-                error_msg = (
-                    f"Cannot proceed: venue has {len(unrelated_all_ap)} unrelated SSIDs set to 'All AP Groups'. "
-                    f"New AP Groups would immediately inherit all of them, exceeding the {SSID_LIMIT_PER_AP_GROUP} SSID limit. "
-                    f"Please go to RuckusONE and change these SSIDs to specific AP Groups first: "
-                    f"{', '.join(list(unrelated_all_ap)[:10])}"
-                    f"{'...' if len(unrelated_all_ap) > 10 else ''}"
-                )
-                logger.error(error_msg)
-                await event_publisher.message(parent_job.id, error_msg, "error")
-
-                parent_job.status = JobStatus.FAILED
-                parent_job.errors.append(error_msg)
-                parent_job.completed_at = datetime.utcnow()
-                await state_manager.save_job(parent_job)
-                await event_publisher.job_failed(parent_job)
-                return
-            else:
-                # The "All AP" SSIDs are mostly ours from a previous run - Phase 4 can fix this!
-                await event_publisher.message(
-                    parent_job.id,
-                    f"Found {len(our_ssids_in_all_ap)} of our SSIDs still set to 'All AP Groups' (likely from previous run). "
-                    f"Phase 4 will narrow them to specific AP Groups.",
-                    "warning"
-                )
-                # Reduce concurrency since we have some "All AP" overhead
-                safe_concurrent = max(1, SSID_LIMIT_PER_AP_GROUP - len(unrelated_all_ap) - SSID_SAFETY_BUFFER)
-
-        # Determine effective max_concurrent (minimum of user request and safe limit)
-        effective_max_concurrent = min(max_concurrent, safe_concurrent)
-
-        if effective_max_concurrent < max_concurrent:
-            warning_msg = (
-                f"SSID activation throttle: {effective_max_concurrent} concurrent "
-                f"(venue has {all_ap_count} 'all AP' SSIDs, limit is {SSID_LIMIT_PER_AP_GROUP})"
-            )
-            logger.warning(warning_msg)
-            await event_publisher.message(parent_job.id, warning_msg, "warning")
-        else:
-            await event_publisher.message(
-                parent_job.id,
-                f"SSID audit complete: {all_ap_count} existing 'all AP' SSIDs, activation throttle: {effective_max_concurrent}",
-                "info"
-            )
-
-        # Store audit info in parent job for visibility
-        parent_job.parallel_config['ssid_audit'] = audit_result
-        parent_job.parallel_config['effective_max_concurrent'] = effective_max_concurrent
-        parent_job.parallel_config['requested_max_concurrent'] = max_concurrent
-        await state_manager.save_job(parent_job)
-
-        # Create parallel orchestrator
-        parallel_orchestrator = ParallelJobOrchestrator(state_manager, event_publisher)
-
-        # Create a shared semaphore for Phase 3 (SSID activation) throttling
-        # This is the critical phase that can hit the 15 SSID limit
-        # Other phases (AP Group creation, SSID creation) can run freely in parallel
-        activation_semaphore = asyncio.Semaphore(effective_max_concurrent)
-        logger.info(f"Created activation semaphore with limit {effective_max_concurrent}")
-
-        async def execute_child_job(child_job: WorkflowJob) -> WorkflowJob:
-            """Execute a single child job through all phases"""
-            logger.info(f"Starting child job {child_job.id} for unit {child_job.get_item_identifier()}")
-
-            # Create phases for this child job
-            workflow_def = get_workflow_definition(
-                configure_lan_ports=child_job.options.get('configure_lan_ports', False)
-            )
-            child_job.phases = [
-                Phase(
-                    id=phase_def.id,
-                    name=phase_def.name,
-                    dependencies=phase_def.dependencies,
-                    parallelizable=phase_def.parallelizable,
-                    critical=phase_def.critical,
-                    skip_condition=phase_def.skip_condition
-                )
-                for phase_def in workflow_def.phases
-            ]
-
-            # Save child job with phases
-            await state_manager.save_job(child_job)
-
-            # Create task executor for this child
-            # Pass the shared activation_semaphore for Phase 3 throttling
-            task_executor = TaskExecutor(
-                max_retries=3,
-                retry_backoff_base=2,
-                r1_client=r1_client,
-                event_publisher=event_publisher,
-                state_manager=state_manager,
-                activation_semaphore=activation_semaphore  # Shared across all children
-            )
-            workflow_engine = WorkflowEngine(state_manager, task_executor, event_publisher)
-
-            # Phase executor mapping
-            phase_executors = {
-                'create_ssids': create_ssids.execute,
-                'activate_ssids': activate_ssids.execute,
-                'create_ap_groups': create_ap_groups.execute,
-                'process_units': process_units.execute,
-                'configure_lan_ports': configure_lan_ports.execute
-            }
-
-            # Execute workflow for this child
-            return await workflow_engine.execute_workflow(child_job, phase_executors)
-
-        # Execute parallel workflow with controlled concurrency
-        # Use effective_max_concurrent for both job-level AND phase-level throttling
-        # This prevents overwhelming the frontend with SSE events and controls resource usage
-        final_job = await parallel_orchestrator.execute_parallel_workflow(
-            parent_job=parent_job,
-            items=units,
-            item_key='unit_number',
-            child_workflow_executor=execute_child_job,
-            max_concurrent=effective_max_concurrent  # Respect user's setting (or safe limit)
-        )
-
-        logger.info(f"Parallel workflow {parent_job.id} completed with status: {final_job.status}")
-
-    except Exception as e:
-        logger.exception(f"Parallel workflow {parent_job.id} failed: {str(e)}")
-
-    finally:
-        # Always close the database session
-        db.close()
+# V1 workflow background tasks have been removed
+# Use V2 endpoints: /per-unit-ssid/v2/plan and /per-unit-ssid/v2/{id}/confirm
 
 
 # Redis keys for audit jobs
@@ -698,165 +423,27 @@ async def configure_per_unit_ssids(
     db: Session = Depends(get_db),
 ):
     """
-    Configure per-unit SSIDs in RuckusONE
+    DEPRECATED: Use V2 endpoints instead.
 
-    This endpoint automates the SmartZone -> RuckusONE migration pattern for per-unit SSIDs:
-    - In SmartZone: Used WLAN Groups to assign different SSIDs to different APs
-    - In RuckusONE: Uses AP Groups + SSID assignments to achieve the same result
+    V1 workflow engine has been removed. Use the V2 workflow endpoints:
+    - POST /per-unit-ssid/v2/plan - Create job and run validation
+    - POST /per-unit-ssid/v2/{id}/confirm - Confirm and start execution
 
-    Process (runs as background workflow):
-    1. Create SSID for each unit (if it doesn't exist)
-    2. Activate SSID on venue (required before AP Group activation)
-    3. Create AP Group for each unit (if it doesn't exist)
-    4. Find and assign APs to their unit's AP Group, then activate SSID on the group
-
-    Returns immediately with job_id for status polling via /jobs/{job_id}/status
+    V2 provides:
+    - Per-unit parallel execution (faster)
+    - Dry-run validation before execution
+    - Better progress tracking
+    - Workflow graph visualization
     """
-    logger.info(f"Per-unit SSID configuration request - controller: {request.controller_id}, venue: {request.venue_id}, units: {len(request.units)}")
-
-    # Validate controller access
-    controller = validate_controller_access(request.controller_id, current_user, db)
-
-    if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
-
-    # Determine tenant_id
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
-
-    logger.info(f"Controller validated - type: {controller.controller_type}, tenant: {tenant_id}")
-
-    # Create workflow job
-    job_id = str(uuid.uuid4())
-    logger.info(f"Generated job ID: {job_id}")
-
-    workflow_def = get_workflow_definition(configure_lan_ports=request.configure_lan_ports)
-    logger.info(f"Workflow definition loaded: {workflow_def.name} ({len(workflow_def.phases)} phases)")
-
-    # Create phases from definition
-    phases = [
-        Phase(
-            id=phase_def.id,
-            name=phase_def.name,
-            dependencies=phase_def.dependencies,
-            parallelizable=phase_def.parallelizable,
-            critical=phase_def.critical,
-            skip_condition=phase_def.skip_condition
-        )
-        for phase_def in workflow_def.phases
-    ]
-    logger.info(f"Created {len(phases)} phases")
-
-    # Convert units to dict format for workflow
-    units_data = [unit.model_dump() for unit in request.units]
-
-    # Convert model port configs to dict format for workflow
-    model_port_configs_data = request.model_port_configs.model_dump()
-
-    # Build job options
-    job_options = {
-        'ap_group_prefix': request.ap_group_prefix,
-        'ap_group_postfix': request.ap_group_postfix,
-        'name_conflict_resolution': request.name_conflict_resolution,
-        'configure_lan_ports': request.configure_lan_ports,
-        'model_port_configs': model_port_configs_data,
-        'debug_delay': request.debug_delay
-    }
-
-    # Build input data
-    job_input_data = {
-        'units': units_data,
-        'ap_group_prefix': request.ap_group_prefix,
-        'ap_group_postfix': request.ap_group_postfix,
-        'name_conflict_resolution': request.name_conflict_resolution,
-        'configure_lan_ports': request.configure_lan_ports,
-        'model_port_configs': model_port_configs_data
-    }
-
-    # Save initial job state
-    logger.info("Connecting to Redis...")
-    redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
-
-    if request.parallel_execution and len(units_data) > 1:
-        # Parallel execution mode: parent job spawns child jobs for each unit
-        logger.info(f"Using PARALLEL execution mode (max_concurrent={request.max_concurrent})")
-
-        # Create parent job (phases will be empty - children have the phases)
-        job = WorkflowJob(
-            id=job_id,
-            workflow_name=workflow_def.name,
-            user_id=current_user.id,
-            controller_id=request.controller_id,
-            venue_id=request.venue_id,
-            tenant_id=tenant_id,
-            options=job_options,
-            input_data=job_input_data,
-            phases=[],  # Parent has no phases - children do
-            parallel_config={
-                'max_concurrent': request.max_concurrent,
-                'item_key': 'unit_number',
-                'total_items': len(units_data)
-            }
-        )
-        logger.info("Created parent WorkflowJob object (parallel mode)")
-
-        logger.info("Saving parent job to Redis...")
-        await state_manager.save_job(job)
-        logger.info("Parent job saved to Redis")
-
-        # Start parallel workflow in background
-        logger.info(f"Starting parallel background workflow task with {len(units_data)} units...")
-        background_tasks.add_task(
-            run_parallel_workflow_background,
-            job,
-            request.controller_id,
-            units_data,
-            request.max_concurrent
-        )
-
-        message = f"Per-unit SSID configuration started for {len(request.units)} units (parallel mode, max {request.max_concurrent} concurrent). Poll /jobs/{job_id}/status for progress."
-    else:
-        # Sequential execution mode: single job processes all units
-        logger.info("Using SEQUENTIAL execution mode")
-
-        job = WorkflowJob(
-            id=job_id,
-            workflow_name=workflow_def.name,
-            user_id=current_user.id,
-            controller_id=request.controller_id,
-            venue_id=request.venue_id,
-            tenant_id=tenant_id,
-            options=job_options,
-            input_data=job_input_data,
-            phases=phases
-        )
-        logger.info("Created WorkflowJob object (sequential mode)")
-
-        logger.info("Saving job to Redis...")
-        await state_manager.save_job(job)
-        logger.info("Job saved to Redis")
-
-        # Start workflow in background (creates its own db session)
-        logger.info("Starting background workflow task...")
-        background_tasks.add_task(run_workflow_background, job, request.controller_id)
-
-        message = f"Per-unit SSID configuration started for {len(request.units)} units. Poll /jobs/{job_id}/status for progress."
-
-    logger.info(f"Workflow job {job_id} created and queued")
-
-    return ConfigureResponse(
-        job_id=job_id,
-        status=JobStatus.RUNNING,
-        message=message
+    raise HTTPException(
+        status_code=410,  # Gone
+        detail={
+            "error": "V1 workflow engine has been removed",
+            "message": "Please use V2 endpoints for per-unit SSID configuration",
+            "v2_plan_endpoint": "POST /per-unit-ssid/v2/plan",
+            "v2_confirm_endpoint": "POST /per-unit-ssid/v2/{job_id}/confirm",
+            "docs": "V2 provides dry-run validation, per-unit parallelism, and workflow visualization"
+        }
     )
 
 
@@ -1093,7 +680,7 @@ async def get_port_config_metadata(
     This endpoint is the single source of truth for port configuration,
     used by the frontend to render the port configuration UI correctly.
     """
-    from routers.per_unit_ssid.phases.configure_lan_ports import (
+    from r1api.models import (
         MODEL_UPLINK_PORTS,
         MODEL_PORT_COUNTS,
     )

@@ -22,6 +22,16 @@ interface Phase {
   result?: Record<string, any>;
 }
 
+interface PhaseStat {
+  name: string;
+  completed?: number;
+  failed?: number;
+  running?: number;
+  pending?: number;
+  total?: number;
+  status?: string;  // For global phases
+}
+
 interface Progress {
   total_tasks: number;
   completed: number;
@@ -36,7 +46,13 @@ interface Progress {
   phase_percent?: number;
   // Parallel job progress (items instead of tasks)
   total_items?: number;
+  total_work?: number;
+  completed_work?: number;
+  units_completed?: number;
+  units_failed?: number;
   running?: number;
+  // Per-phase stats (V2 workflows)
+  phase_stats?: Record<string, PhaseStat>;
 }
 
 interface ChildJob {
@@ -196,6 +212,13 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       refreshJobStatus();
     });
 
+    eventSource.addEventListener('validation_failed', (e) => {
+      const data = JSON.parse(e.data);
+      console.log('Validation failed:', data);
+      addLiveEvent(`❌ Validation failed: ${data.error || 'Unknown error'}`);
+      refreshJobStatus();
+    });
+
     eventSource.addEventListener('task_started', (e) => {
       const data = JSON.parse(e.data);
       console.log('Task started:', data);
@@ -210,23 +233,34 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       refreshJobStatus();
     });
 
-    eventSource.addEventListener('progress', (e) => {
+    // Handler for progress events (used by both V1 'progress' and V2 'progress_update')
+    const handleProgress = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
-      console.log('Progress:', data);
+      // V2 wraps progress in a 'progress' field
+      const progress = data.progress || data;
+      console.log('Progress:', progress);
+
       // Show appropriate progress based on job type
-      if (data.total_items !== undefined) {
+      if (progress.total_work !== undefined) {
+        // V2 workflow - show work progress
+        const failed = progress.units_failed ? ` (${progress.units_failed} failed)` : '';
+        addLiveEvent(`📈 Progress: ${progress.completed_work}/${progress.total_work} units${failed}`);
+      } else if (progress.total_items !== undefined) {
         // Parallel job - show items progress
-        const running = data.running ? ` (${data.running} running)` : '';
-        addLiveEvent(`📈 Progress: ${data.completed}/${data.total_items} items complete${running}`);
-      } else if (data.total_phases) {
+        const running = progress.running ? ` (${progress.running} running)` : '';
+        addLiveEvent(`📈 Progress: ${progress.completed}/${progress.total_items} items complete${running}`);
+      } else if (progress.total_phases) {
         // Sequential job - show phase progress
-        addLiveEvent(`📈 Progress: ${data.completed_phases}/${data.total_phases} phases complete`);
+        addLiveEvent(`📈 Progress: ${progress.completed_phases}/${progress.total_phases} phases complete`);
       } else {
         // Fallback
-        addLiveEvent(`📈 Progress: ${data.percent}% (${data.completed}/${data.total_tasks || data.total || '?'})`);
+        addLiveEvent(`📈 Progress: ${progress.percent}% (${progress.completed}/${progress.total_tasks || progress.total || '?'})`);
       }
       refreshJobStatus();
-    });
+    };
+
+    eventSource.addEventListener('progress', handleProgress);
+    eventSource.addEventListener('progress_update', handleProgress);
 
     eventSource.addEventListener('message', (e) => {
       const data = JSON.parse(e.data);
@@ -417,6 +451,10 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       case 'RUNNING':
       case 'IN_PROGRESS':
         return 'text-blue-600 bg-blue-50 border-blue-200';
+      case 'VALIDATING':
+        return 'text-cyan-600 bg-cyan-50 border-cyan-200';
+      case 'AWAITING_CONFIRMATION':
+        return 'text-purple-600 bg-purple-50 border-purple-200';
       case 'FAILED':
         return 'text-red-600 bg-red-50 border-red-200';
       case 'CANCELLED':
@@ -579,6 +617,59 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
             />
           </div>
         </div>
+
+        {/* Phase Progress Stats (V2 workflows) */}
+        {jobStatus.progress?.phase_stats && Object.keys(jobStatus.progress.phase_stats).length > 0 && (
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            {Object.entries(jobStatus.progress.phase_stats).map(([phaseId, stat]) => {
+              const isPerUnit = stat.total !== undefined;
+              const isRunning = isPerUnit ? (stat.running ?? 0) > 0 : stat.status === 'RUNNING';
+              const isComplete = isPerUnit ? stat.completed === stat.total : stat.status === 'COMPLETED';
+              const hasFailed = isPerUnit && (stat.failed ?? 0) > 0;
+
+              return (
+                <div
+                  key={phaseId}
+                  className={`p-2 rounded border text-xs ${
+                    isComplete
+                      ? 'bg-green-50 border-green-200'
+                      : isRunning
+                      ? 'bg-blue-50 border-blue-200'
+                      : hasFailed
+                      ? 'bg-red-50 border-red-200'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  <div className="font-medium text-gray-700 truncate" title={stat.name}>
+                    {stat.name}
+                  </div>
+                  {isPerUnit ? (
+                    <div className="mt-1 flex items-center gap-1 text-gray-600">
+                      <span className={isComplete ? 'text-green-600 font-semibold' : ''}>
+                        {stat.completed ?? 0}/{stat.total}
+                      </span>
+                      {isRunning && (
+                        <span className="text-blue-600">({stat.running} running)</span>
+                      )}
+                      {hasFailed && (
+                        <span className="text-red-600">({stat.failed} failed)</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className={`mt-1 ${
+                      stat.status === 'COMPLETED' ? 'text-green-600' :
+                      stat.status === 'RUNNING' ? 'text-blue-600' :
+                      stat.status === 'FAILED' ? 'text-red-600' :
+                      'text-gray-500'
+                    }`}>
+                      {stat.status || 'PENDING'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Parallel Job Quick Summary - counts only, details in phase */}
         {jobStatus.is_parallel && jobStatus.child_jobs && jobStatus.status === 'RUNNING' && (

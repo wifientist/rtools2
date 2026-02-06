@@ -1,11 +1,13 @@
 """
-Workflow Engine Data Models
+Workflow Engine Data Models (Legacy V1)
 
-Pydantic models for workflow orchestration:
-- WorkflowJob: Main job container
-- Phase: Execution phase with dependencies
-- Task: Individual unit of work
-- Status enums for tracking state
+NOTE: This module is being deprecated in favor of workflow.v2.models.
+New code should import from workflow.v2.models directly.
+
+This file is kept for backward compatibility with cloudpath_router.py
+which has not yet been fully migrated to V2.
+
+TODO: Migrate cloudpath_router.py to use WorkflowJobV2 and remove this file.
 """
 
 from pydantic import BaseModel, Field
@@ -13,91 +15,52 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from enum import Enum
 
-
-class JobStatus(str, Enum):
-    """Status of a workflow job"""
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    PARTIAL = "PARTIAL"  # Some tasks succeeded, some failed
-    CANCELLED = "CANCELLED"  # User requested cancellation
+# Re-export shared types from V2
+from workflow.v2.models import (
+    JobStatus,
+    PhaseStatus,
+    TaskStatus,
+    Task,
+    WorkflowDefinition,
+    PhaseDefinition,
+)
 
 
 class FlowStatus(str, Enum):
-    """Status of an individual flow (per-item workflow)"""
+    """Status of an individual flow (per-item workflow) - V1 only"""
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
-
-
-class PhaseStatus(str, Enum):
-    """Status of a workflow phase"""
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    SKIPPED = "SKIPPED"
-
-
-class TaskStatus(str, Enum):
-    """Status of an individual task"""
-    PENDING = "PENDING"
-    IN_PROGRESS = "IN_PROGRESS"
-    POLLING = "POLLING"  # Waiting for async task
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-
-
-class Task(BaseModel):
-    """Individual unit of work within a phase"""
-    id: str = Field(..., description="Unique task ID (UUID)")
-    name: str = Field(..., description="Human-readable task name")
-    status: TaskStatus = Field(default=TaskStatus.PENDING, description="Current task status")
-
-    # R1 async tracking
-    request_id: Optional[str] = Field(None, description="R1 async task ID (for 202 responses)")
-    poll_count: int = Field(default=0, description="Number of times polled")
-    max_polls: int = Field(default=60, description="Maximum poll attempts")
-
-    # Data
-    input_data: Dict[str, Any] = Field(default_factory=dict, description="Input data for task")
-    output_data: Dict[str, Any] = Field(default_factory=dict, description="Result data from task")
-
-    # Error handling
-    error_message: Optional[str] = Field(None, description="Error message if failed")
-    retry_count: int = Field(default=0, description="Number of retries attempted")
-    max_retries: int = Field(default=3, description="Maximum retry attempts")
-
-    # Timing
-    started_at: Optional[datetime] = Field(None, description="When task started")
-    completed_at: Optional[datetime] = Field(None, description="When task completed")
-
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
 
 
 class Phase(BaseModel):
-    """Execution phase containing multiple tasks"""
+    """
+    Workflow phase - V1 model
+    NOTE: V2 uses global_phase_status dict instead of Phase objects
+    """
     id: str = Field(..., description="Unique phase ID")
     name: str = Field(..., description="Human-readable phase name")
     status: PhaseStatus = Field(default=PhaseStatus.PENDING, description="Current phase status")
-    started_at: Optional[datetime] = Field(None, description="When phase started")
-    completed_at: Optional[datetime] = Field(None, description="When phase completed")
 
-    # Dependencies & execution
+    # Dependencies
     dependencies: List[str] = Field(default_factory=list, description="Phase IDs that must complete first")
+
+    # Execution settings
     parallelizable: bool = Field(default=True, description="Can tasks run in parallel?")
     critical: bool = Field(default=False, description="Stop entire job if this fails?")
     skip_condition: Optional[str] = Field(None, description="Python expression to evaluate for skipping")
 
-    # Tasks and results
+    # Tasks
     tasks: List[Task] = Field(default_factory=list, description="Tasks in this phase")
-    result: Dict[str, Any] = Field(default_factory=dict, description="Output data for dependent phases")
-    errors: List[str] = Field(default_factory=list, description="Error messages from failed tasks")
+
+    # Timing
+    started_at: Optional[datetime] = Field(None, description="When phase started")
+    completed_at: Optional[datetime] = Field(None, description="When phase completed")
+
+    # Result data
+    result: Optional[Dict[str, Any]] = Field(None, description="Phase result data")
+    errors: List[str] = Field(default_factory=list, description="Errors during execution")
 
     class Config:
         json_encoders = {
@@ -106,43 +69,50 @@ class Phase(BaseModel):
 
 
 class WorkflowJob(BaseModel):
-    """Main workflow job container"""
+    """
+    Main workflow job container - V1 model
+
+    NOTE: V2 uses WorkflowJobV2 which has per-unit tracking instead of phases.
+    This model is kept for cloudpath_router.py backward compatibility.
+
+    TODO: Migrate cloudpath_router.py to WorkflowJobV2 and remove this class.
+    """
     id: str = Field(..., description="Unique job ID (UUID)")
-    workflow_name: str = Field(..., description="Name of workflow (e.g., 'cloudpath_dpsk_migration')")
+    workflow_name: str = Field(..., description="Name of the workflow type")
+    user_id: int = Field(default=0, description="User who created this job")
     status: JobStatus = Field(default=JobStatus.PENDING, description="Current job status")
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="When job was created")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update time")
-    completed_at: Optional[datetime] = Field(None, description="When job completed")
 
-    # Configuration
-    user_id: int = Field(..., description="User ID who created this job")
-    controller_id: int = Field(..., description="Controller ID")
-    venue_id: str = Field(default="", description="Venue ID (Cloudpath/R1 workflows)")
-    tenant_id: str = Field(default="", description="Tenant/EC ID (Cloudpath/R1 workflows)")
-    options: Dict[str, Any] = Field(default_factory=dict, description="Workflow-specific options")
+    # Controller/Venue context
+    controller_id: int = Field(default=0, description="Controller ID")
+    venue_id: str = Field(default="", description="Venue ID")
+    tenant_id: str = Field(default="", description="Tenant ID")
 
-    # Parent/Child job hierarchy (for parallel per-item execution)
-    parent_job_id: Optional[str] = Field(None, description="Parent job ID if this is a child job")
-    child_job_ids: List[str] = Field(default_factory=list, description="Child job IDs if this is a parent job")
-    parallel_config: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Parallel execution config: {max_concurrent: int, item_key: str}"
-    )
-
-    # Input data
-    input_data: Dict[str, Any] = Field(default_factory=dict, description="Original request payload")
-
-    # Execution tracking
+    # Phases
+    phases: List[Phase] = Field(default_factory=list, description="Phases in execution order")
     current_phase_id: Optional[str] = Field(None, description="Currently executing phase ID")
-    phases: List[Phase] = Field(default_factory=list, description="All phases in workflow")
 
-    # Results
-    created_resources: Dict[str, List[Dict]] = Field(
+    # Parallel execution (parent-child hierarchy) - V1 only
+    parent_job_id: Optional[str] = Field(None, description="Parent job ID (if this is a child job)")
+    child_job_ids: List[str] = Field(default_factory=list, description="Child job IDs (if this is a parent job)")
+
+    # Input/Output
+    input_data: Dict[str, Any] = Field(default_factory=dict, description="Job input configuration")
+    options: Dict[str, Any] = Field(default_factory=dict, description="Execution options")
+    summary: Dict[str, Any] = Field(default_factory=dict, description="Result summary")
+
+    # Resource tracking
+    created_resources: Dict[str, List[Dict[str, Any]]] = Field(
         default_factory=dict,
-        description="Created resources by type (e.g., {'identity_groups': [...]})"
+        description="Resources created during workflow (for cleanup)"
     )
-    summary: Dict[str, Any] = Field(default_factory=dict, description="Final summary statistics")
-    errors: List[str] = Field(default_factory=list, description="Job-level error messages")
+
+    # Error handling
+    errors: List[str] = Field(default_factory=list, description="Errors during execution")
+
+    # Timing
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Job creation timestamp")
+    started_at: Optional[datetime] = Field(None, description="When job started")
+    completed_at: Optional[datetime] = Field(None, description="When job completed")
 
     class Config:
         json_encoders = {
@@ -156,51 +126,6 @@ class WorkflowJob(BaseModel):
                 return phase
         return None
 
-    def get_progress_stats(self) -> Dict[str, Any]:
-        """Calculate progress statistics including phase-level progress"""
-        total_tasks = sum(len(phase.tasks) for phase in self.phases)
-        completed_tasks = sum(
-            1 for phase in self.phases
-            for task in phase.tasks
-            if task.status == TaskStatus.COMPLETED
-        )
-        failed_tasks = sum(
-            1 for phase in self.phases
-            for task in phase.tasks
-            if task.status == TaskStatus.FAILED
-        )
-
-        # Phase-level progress (more useful for multi-phase workflows)
-        total_phases = len(self.phases)
-        completed_phases = len([
-            p for p in self.phases
-            if p.status in (PhaseStatus.COMPLETED, PhaseStatus.SKIPPED)
-        ])
-        failed_phases = len([p for p in self.phases if p.status == PhaseStatus.FAILED])
-        running_phases = len([p for p in self.phases if p.status == PhaseStatus.RUNNING])
-
-        # Progress = (completed + failed) / total
-        # This represents how much of the work has been attempted (successfully or not)
-        finished_tasks = completed_tasks + failed_tasks
-        task_percent = (finished_tasks / total_tasks * 100) if total_tasks > 0 else 0
-
-        # Phase-based percent (more stable for UI display)
-        phase_percent = (completed_phases / total_phases * 100) if total_phases > 0 else 0
-
-        return {
-            "total_tasks": total_tasks,
-            "completed": completed_tasks,
-            "failed": failed_tasks,
-            "pending": total_tasks - completed_tasks - failed_tasks,
-            "percent": round(task_percent, 2),
-            # Phase-level progress
-            "total_phases": total_phases,
-            "completed_phases": completed_phases,
-            "failed_phases": failed_phases,
-            "running_phases": running_phases,
-            "phase_percent": round(phase_percent, 2)
-        }
-
     def get_current_phase(self) -> Optional[Phase]:
         """Get the currently executing phase"""
         if self.current_phase_id:
@@ -208,35 +133,54 @@ class WorkflowJob(BaseModel):
         return None
 
     def is_parent_job(self) -> bool:
-        """Check if this is a parent job with child jobs"""
+        """Check if this is a parallel parent job"""
         return len(self.child_job_ids) > 0
 
     def is_child_job(self) -> bool:
-        """Check if this is a child job of a parent"""
+        """Check if this is a parallel child job"""
         return self.parent_job_id is not None
 
-    def get_item_identifier(self) -> Optional[str]:
-        """Get the item identifier for child jobs (e.g., unit_number)"""
-        if not self.is_child_job():
-            return None
-        item_key = self.parallel_config.get('item_key', 'item')
-        item_data = self.input_data.get('item', {})
-        return item_data.get(item_key) or item_data.get('id') or self.id[:8]
+    def get_progress_stats(self) -> Dict[str, Any]:
+        """Calculate job progress statistics"""
+        total_tasks = 0
+        completed = 0
+        failed = 0
+        pending = 0
+
+        for phase in self.phases:
+            total_tasks += len(phase.tasks)
+            for task in phase.tasks:
+                if task.status == TaskStatus.COMPLETED:
+                    completed += 1
+                elif task.status == TaskStatus.FAILED:
+                    failed += 1
+                else:
+                    pending += 1
+
+        percent = round((completed / total_tasks) * 100, 2) if total_tasks > 0 else 0
+
+        return {
+            'total_tasks': total_tasks,
+            'completed': completed,
+            'failed': failed,
+            'pending': pending,
+            'percent': percent
+        }
+
+    def get_item_identifier(self) -> str:
+        """Get the identifier for this job's item (for parallel child jobs)"""
+        return self.input_data.get('item', {}).get('id', self.id)
 
 
-class PhaseDefinition(BaseModel):
-    """Definition for a workflow phase (used when creating workflows)"""
-    id: str = Field(..., description="Unique phase ID")
-    name: str = Field(..., description="Human-readable phase name")
-    dependencies: List[str] = Field(default_factory=list, description="Phase IDs that must complete first")
-    parallelizable: bool = Field(default=True, description="Can tasks run in parallel?")
-    critical: bool = Field(default=False, description="Stop entire job if this fails?")
-    skip_condition: Optional[str] = Field(None, description="Python expression to evaluate for skipping")
-    executor: str = Field(..., description="Fully qualified path to executor function")
-
-
-class WorkflowDefinition(BaseModel):
-    """Complete workflow definition"""
-    name: str = Field(..., description="Workflow name")
-    description: str = Field(..., description="Workflow description")
-    phases: List[PhaseDefinition] = Field(..., description="Phase definitions in execution order")
+# Export all for backward compatibility
+__all__ = [
+    'JobStatus',
+    'FlowStatus',
+    'PhaseStatus',
+    'TaskStatus',
+    'Task',
+    'Phase',
+    'WorkflowJob',
+    'WorkflowDefinition',
+    'PhaseDefinition',
+]

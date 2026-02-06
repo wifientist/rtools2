@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Dict, Any, List
 
-from workflow.models import Task, TaskStatus
+from workflow.v2.models import Task, TaskStatus
 from schemas.sz_audit import (
     SZAuditResult,
     ZoneAudit,

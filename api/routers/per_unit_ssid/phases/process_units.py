@@ -10,7 +10,7 @@ Final phase that:
 import asyncio
 import logging
 from typing import Dict, Any, List
-from workflow.models import Task, TaskStatus
+from workflow.v2.models import Task, TaskStatus
 
 logger = logging.getLogger(__name__)
 

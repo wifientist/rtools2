@@ -124,6 +124,7 @@ class IdentityService:
         tenant_id: str,
         name: str,
         description: str = None,
+        wait_for_completion: bool = True,
         **kwargs
     ):
         """
@@ -133,6 +134,7 @@ class IdentityService:
             tenant_id: Tenant/EC ID
             name: Identity group name
             description: Optional description
+            wait_for_completion: Wait for async task to complete (default: True)
             **kwargs: Additional identity group fields
 
         Returns:
@@ -145,16 +147,36 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP":
-            return self.client.post(
+            response = self.client.post(
                 "/identityGroups",
                 override_tenant_id=tenant_id,
                 payload=body
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/identityGroups",
                 payload=body
-            ).json()
+            )
+
+        result = response.json()
+
+        # Handle async pattern (202 Accepted with requestId)
+        if response.status_code == 202 and wait_for_completion:
+            request_id = result.get('requestId')
+            if request_id:
+                logger.info(f"Identity group creation is async (requestId: {request_id}), waiting...")
+                await self.client.await_task_completion(
+                    request_id=request_id,
+                    override_tenant_id=tenant_id
+                )
+                logger.info(f"Identity group '{name}' creation completed")
+
+                # Fetch the created identity group to get full details
+                group_id = result.get('id')
+                if group_id:
+                    return await self.get_identity_group(group_id, tenant_id)
+
+        return result
 
     async def delete_identity_group(
         self,
@@ -533,7 +555,8 @@ class IdentityService:
         self,
         group_id: str,
         identity_ids: list,
-        tenant_id: str = None
+        tenant_id: str = None,
+        wait_for_completion: bool = True
     ):
         """
         Delete multiple identities from an identity group in a single API call
@@ -542,9 +565,11 @@ class IdentityService:
             group_id: Identity group ID
             identity_ids: List of identity IDs to delete
             tenant_id: Tenant/EC ID (required for MSP)
+            wait_for_completion: If True, wait for async task (default True).
+                                 If False, returns requestId for bulk tracking.
 
         Returns:
-            Deletion response
+            Deletion response (includes requestId if wait_for_completion=False)
 
         Note:
             This operation returns 202 Accepted and must be polled for completion
@@ -566,7 +591,7 @@ class IdentityService:
             response_data = response.json()
             request_id = response_data.get('requestId')
 
-            if request_id:
+            if request_id and wait_for_completion:
                 # Wait for async operation to complete
                 result = await self.client.await_task_completion(
                     request_id=request_id,
@@ -574,7 +599,7 @@ class IdentityService:
                 )
                 return result
             else:
-                # No requestId, just return the 202 response
+                # Return requestId for bulk tracking or no requestId
                 return response_data
 
         # Handle other responses (200, 204, etc.)

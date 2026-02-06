@@ -1,24 +1,21 @@
 """
-Cloudpath DPSK Migration FastAPI Router
+Cloudpath Import FastAPI Router
 
-Workflow-specific endpoints for Cloudpath DPSK migration.
+Workflow-specific endpoints for Cloudpath DPSK import.
 For generic job management, see /jobs router.
 
 Endpoints:
 - POST /audit - Audit existing DPSK configuration at a venue
-- POST /import - Start migration workflow
+- POST /import - Start import workflow (redirects to V2)
+- POST /cleanup - Start cleanup workflow (uses V2)
 """
 
 import logging
-import uuid
-import asyncio
-import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
-from datetime import datetime
 
 from dependencies import get_db, get_current_user
 from models.user import User, RoleEnum
@@ -26,40 +23,19 @@ from models.controller import Controller
 from clients.r1_client import create_r1_client_from_controller
 from redis_client import get_redis_client
 
-from workflow.models import WorkflowJob, Phase, PhaseStatus, JobStatus, TaskStatus, WorkflowDefinition, PhaseDefinition
-from models.orchestrator import DPSKOrchestrator
-from routers.orchestrator.webhook_router import pause_webhooks_for_orchestrator, resume_webhooks_for_orchestrator
-from workflow.state_manager import RedisStateManager
-from workflow.executor import TaskExecutor
-from workflow.engine import WorkflowEngine
+from workflow.v2.models import JobStatus
+from workflow.v2.state_manager import RedisStateManagerV2
+from workflow.v2.activity_tracker import ActivityTracker
+from workflow.v2.brain import WorkflowBrain
 from workflow.events import WorkflowEventPublisher
-from routers.cloudpath.workflow_definition import get_workflow_definition
-from routers.cloudpath.cleanup_workflow_definition import get_cleanup_workflow_definition
-from routers.cloudpath.utils.cleanup import cleanup_job_resources
-
-# Import phase executors - Import workflow
-from routers.cloudpath.phases import parse
-from routers.cloudpath.phases import identity_groups
-from routers.cloudpath.phases import dpsk_pools
-from routers.cloudpath.phases import policy_sets
-from routers.cloudpath.phases import attach_policies
-from routers.cloudpath.phases import passphrases
-from routers.cloudpath.phases import activate
-from routers.cloudpath.phases import audit
-
-# Import phase executors - Cleanup workflow
-from routers.cloudpath.cleanup_phases import inventory
-from routers.cloudpath.cleanup_phases import delete_passphrases
-from routers.cloudpath.cleanup_phases import delete_dpsk_pools
-from routers.cloudpath.cleanup_phases import delete_identities
-from routers.cloudpath.cleanup_phases import delete_identity_groups
-from routers.cloudpath.cleanup_phases import verify
+from workflow.workflows.cleanup import VenueCleanupWorkflow
+from workflow.workflows.cloudpath_import import CloudpathImportWorkflow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/cloudpath-dpsk",
-    tags=["Cloudpath DPSK Migration"]
+    prefix="/cloudpath-import",
+    tags=["Cloudpath Import"]
 )
 
 
@@ -70,32 +46,23 @@ class ImportRequest(BaseModel):
     controller_id: int = Field(..., description="RuckusONE controller ID")
     venue_id: str = Field(..., description="Venue ID")
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (for MSP)")
-    dpsk_data: Any = Field(..., description="Cloudpath JSON export data (array of DPSK objects or nested format with pool/dpsks)")
+    dpsk_data: Any = Field(..., description="Cloudpath JSON export data (with pool/dpsks keys)")
     options: Dict[str, Any] = Field(
         default_factory=lambda: {
-            "just_copy_dpsks": True,
-            "include_adaptive_policy_sets": False,
-            "group_by_vlan": False,
+            "max_concurrent_passphrases": 10,
             "skip_expired_dpsks": False,
-            "renew_expired_dpsks": True,
-            "simulate_delay": False,
-            "identity_group_name": None,  # Custom name for identity group (optional)
-            "dpsk_service_name": None,  # Custom name for DPSK service/pool (optional)
-            "ssid_mode": "none",  # "none", "create_new", or "link_existing"
-            "link_to_ssid_id": None  # SSID ID to link to when ssid_mode="link_existing"
+            "renew_expired_dpsks": False,
+            "renewal_days": 365,
         },
         description="Migration options"
     )
-    # Parallel execution options
-    parallel_execution: bool = Field(default=True, description="Enable parallel execution for faster processing")
-    max_concurrent: int = Field(default=10, ge=1, le=30, description="Maximum concurrent passphrase batches when parallel_execution is enabled")
 
 
 class ImportResponse(BaseModel):
     """Response from import endpoint"""
     job_id: str
     status: str
-    estimated_duration_seconds: int = 300
+    message: str = ""
 
 
 class DPSKAuditRequest(BaseModel):
@@ -120,11 +87,11 @@ class DPSKAuditResponse(BaseModel):
 
 class CleanupRequest(BaseModel):
     """Request to start cleanup workflow"""
-    job_id: Optional[str] = Field(None, description="Original migration job ID to clean up (optional - if not provided, will cleanup ALL DPSK resources in venue)")
+    job_id: Optional[str] = Field(None, description="Original migration job ID to clean up")
     controller_id: int = Field(..., description="RuckusONE controller ID")
     venue_id: str = Field(..., description="Venue ID")
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (for MSP)")
-    nuclear: bool = Field(False, description="Nuclear mode - delete ALL DPSK resources in venue regardless of job")
+    nuclear: bool = Field(False, description="Nuclear mode - delete ALL DPSK resources")
 
 
 class CleanupResponse(BaseModel):
@@ -217,505 +184,96 @@ def validate_controller_access(controller_id: int, user: User, db: Session) -> C
     return controller
 
 
-async def run_workflow_background(
-    job: WorkflowJob,
-    controller_id: int,
-    db: Session
-):
-    """Background task to run workflow"""
-    try:
-        logger.info(f"🚀 Starting background workflow for job {job.id}")
+# ==================== V2 Background Tasks ====================
 
-        # Create R1 client
-        r1_client = create_r1_client_from_controller(controller_id, db)
-
-        # Create workflow components
-        redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
-        event_publisher = WorkflowEventPublisher(redis_client)
-        task_executor = TaskExecutor(
-            max_retries=3,
-            retry_backoff_base=2,
-            r1_client=r1_client,
-            event_publisher=event_publisher,
-            state_manager=state_manager
-        )
-        workflow_engine = WorkflowEngine(state_manager, task_executor, event_publisher)
-
-        # Phase executor mapping - map phase IDs to executor functions based on workflow type
-        if job.workflow_name == "cloudpath_dpsk_cleanup":
-            # Cleanup workflow phase executors
-            phase_executors = {
-                'inventory_resources': inventory.execute,
-                'delete_passphrases': delete_passphrases.execute,
-                'delete_dpsk_pools': delete_dpsk_pools.execute,
-                'delete_identities': delete_identities.execute,
-                'delete_identity_groups': delete_identity_groups.execute,
-                'verify_cleanup': verify.execute
-            }
-        else:
-            # Import workflow phase executors (default)
-            phase_executors = {
-                'parse_validate': parse.execute,
-                'create_identity_groups': identity_groups.execute,
-                'create_dpsk_pools': dpsk_pools.execute,
-                'create_policy_sets': policy_sets.execute,
-                'attach_policies': attach_policies.execute,
-                'create_passphrases': passphrases.execute,
-                'activate_networks': activate.execute,
-                'audit_results': audit.execute
-            }
-
-        logger.info(f"📋 Workflow: {job.workflow_name}")
-        logger.info(f"📋 Phase executors mapped: {list(phase_executors.keys())}")
-
-        # Execute workflow
-        final_job = await workflow_engine.execute_workflow(job, phase_executors)
-
-        logger.info(f"✅ Workflow {job.id} completed with status: {final_job.status}")
-
-    except Exception as e:
-        logger.exception(f"Workflow {job.id} failed: {str(e)}")
-
-
-def _batch_passphrases(passphrases: List[Dict[str, Any]], batch_size: int = 10) -> List[Dict[str, Any]]:
-    """
-    Split passphrases into batches for parallel processing.
-
-    Each batch becomes a child job that creates a subset of passphrases.
-
-    Args:
-        passphrases: List of passphrase dicts (already have dpsk_pool_id mapped)
-        batch_size: Number of passphrases per batch
-
-    Returns:
-        List of batch work units
-    """
-    batches = []
-    for i in range(0, len(passphrases), batch_size):
-        batch = passphrases[i:i + batch_size]
-        batches.append({
-            'batch_number': len(batches) + 1,
-            'passphrases': batch,
-            'passphrase_count': len(batch),
-            'start_index': i,
-            'end_index': min(i + batch_size, len(passphrases))
-        })
-
-    logger.info(f"Split {len(passphrases)} passphrases into {len(batches)} batches of ~{batch_size}")
-    return batches
-
-
-def get_parallel_parent_workflow_definition() -> WorkflowDefinition:
-    """
-    Get workflow definition for parallel parent job.
-
-    Parent job runs setup phases sequentially (parse, identity groups, pools),
-    then spawns child jobs for passphrase creation.
-
-    This gives accurate phase tracking in the UI instead of showing
-    8 sequential phases that never execute.
-
-    Note: executor fields are placeholders - these phases run inline in
-    run_parallel_cloudpath_workflow(), not via the workflow engine.
-    """
-    return WorkflowDefinition(
-        name="cloudpath_dpsk_migration_parallel",
-        description="Cloudpath DPSK migration with parallel passphrase creation",
-        phases=[
-            PhaseDefinition(
-                id="parse_validate",
-                name="Parse and Validate Data",
-                dependencies=[],
-                parallelizable=False,
-                critical=True,
-                executor="inline:run_parallel_cloudpath_workflow"
-            ),
-            PhaseDefinition(
-                id="create_identity_groups",
-                name="Create Identity Groups",
-                dependencies=["parse_validate"],
-                parallelizable=False,
-                critical=True,
-                executor="inline:run_parallel_cloudpath_workflow"
-            ),
-            PhaseDefinition(
-                id="create_dpsk_pools",
-                name="Create DPSK Pools",
-                dependencies=["create_identity_groups"],
-                parallelizable=False,
-                critical=True,
-                executor="inline:run_parallel_cloudpath_workflow"
-            ),
-            PhaseDefinition(
-                id="create_passphrases_parallel",
-                name="Create Passphrases (Parallel)",
-                dependencies=["create_dpsk_pools"],
-                parallelizable=True,  # Indicates this phase uses child jobs
-                critical=True,
-                executor="inline:parallel_orchestrator"
-            ),
-        ]
-    )
-
-
-def get_parallel_child_workflow_definition() -> WorkflowDefinition:
-    """
-    Get workflow definition for parallel child jobs.
-
-    Child jobs only handle passphrase creation - identity groups and DPSK pools
-    are created at the parent level first.
-    """
-    return WorkflowDefinition(
-        name="cloudpath_dpsk_passphrase_batch",
-        description="Child job for creating a batch of passphrases",
-        phases=[
-            PhaseDefinition(
-                id="create_passphrases",
-                name="Create Passphrases",
-                dependencies=[],
-                parallelizable=False,
-                critical=True,
-                executor="routers.cloudpath.phases.passphrases_batch.execute"
-            ),
-        ]
-    )
-
-
-async def _update_phase_status(
-    job: WorkflowJob,
-    phase_id: str,
-    status: PhaseStatus,
-    state_manager: RedisStateManager,
-    event_publisher: WorkflowEventPublisher
-):
-    """Helper to update phase status and emit events."""
-    from datetime import datetime
-
-    for phase in job.phases:
-        if phase.id == phase_id:
-            phase.status = status
-            if status == PhaseStatus.RUNNING:
-                phase.started_at = datetime.utcnow()
-                job.current_phase_id = phase_id
-                await event_publisher.phase_started(job.id, phase)
-            elif status == PhaseStatus.COMPLETED:
-                phase.completed_at = datetime.utcnow()
-                await event_publisher.phase_completed(job.id, phase)
-            elif status == PhaseStatus.FAILED:
-                phase.completed_at = datetime.utcnow()
-            break
-
-    await state_manager.save_job(job)
-
-
-async def run_parallel_cloudpath_workflow(
-    parent_job: WorkflowJob,
-    controller_id: int,
-    db: Session,
-    max_concurrent: int = 5
-):
-    """
-    Background task to run Cloudpath DPSK workflow in parallel mode.
-
-    Strategy:
-    1. Parse data at parent level
-    2. Create identity groups at parent level
-    3. Create DPSK pools at parent level
-    4. Split passphrases into batches
-    5. Run child jobs in parallel, each creating a batch of passphrases
-    """
-    from workflow.parallel_orchestrator import ParallelJobOrchestrator
-    from workflow.idempotent import IdempotentHelper
+async def run_v2_import_background(job_id: str, controller_id: int):
+    """Background task to run V2 cloudpath import workflow."""
     from database import SessionLocal
-
-    # Use a fresh session for background task
     db = SessionLocal()
-    paused_orchestrator_ids: List[int] = []  # Track which orchestrators we paused
 
     try:
-        logger.info(f"🚀 Starting PARALLEL Cloudpath workflow for job {parent_job.id}")
+        logger.info(f"[Cloudpath V2] Starting import for job {job_id}")
 
-        # Create R1 client
-        r1_client = create_r1_client_from_controller(controller_id, db)
-
-        # Create workflow components
         redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
-        event_publisher = WorkflowEventPublisher(redis_client)
+        state_manager = RedisStateManagerV2(redis_client)
+        job = await state_manager.get_job(job_id)
 
-        # Update parent job status
-        parent_job.status = JobStatus.RUNNING
-        await state_manager.save_job(parent_job)
-        await event_publisher.job_started(parent_job)
-
-        tenant_id = parent_job.tenant_id
-        venue_id = parent_job.venue_id
-
-        # ============ PHASE 1: Parse data ============
-        await _update_phase_status(parent_job, "parse_validate", PhaseStatus.RUNNING, state_manager, event_publisher)
-
-        dpsk_data = parent_job.input_data.get('dpsk_data', [])
-        options = parent_job.options
-
-        from routers.cloudpath.phases.parse import _parse_cloudpath_dpsks
-        parsed_data = _parse_cloudpath_dpsks(dpsk_data, options)
-
-        identity_groups_data = parsed_data.get('identity_groups', [])
-        dpsk_pools_data = parsed_data.get('dpsk_pools', [])
-        passphrases_data = parsed_data.get('passphrases', [])
-
-        total_passphrases = len(passphrases_data)
-        total_pools = len(dpsk_pools_data)
-
-        await event_publisher.message(
-            parent_job.id,
-            f"Parsed {total_passphrases} passphrases across {total_pools} pools",
-            "success"
-        )
-        await _update_phase_status(parent_job, "parse_validate", PhaseStatus.COMPLETED, state_manager, event_publisher)
-
-        if total_passphrases == 0:
-            await event_publisher.message(parent_job.id, "No passphrases to import", "warning")
-            parent_job.status = JobStatus.COMPLETED
-            parent_job.summary = {'message': 'No passphrases to import'}
-            await state_manager.save_job(parent_job)
-            await event_publisher.job_completed(parent_job)
+        if not job:
+            logger.error(f"[Cloudpath V2] Job {job_id} not found")
             return
 
-        # ============ PHASE 2: Create Identity Groups ============
-        await _update_phase_status(parent_job, "create_identity_groups", PhaseStatus.RUNNING, state_manager, event_publisher)
+        r1_client = create_r1_client_from_controller(controller_id, db)
+        event_publisher = WorkflowEventPublisher(redis_client)
+        activity_tracker = ActivityTracker(r1_client, state_manager, tenant_id=job.tenant_id)
 
-        helper = IdempotentHelper(r1_client)
-        created_identity_groups = []
+        await activity_tracker.start()
 
-        for ig_data in identity_groups_data:
-            name = ig_data.get('name')
-            description = ig_data.get('description', 'Migrated from Cloudpath')
-
-            create_kwargs = {}
-            if venue_id:
-                create_kwargs['venueId'] = venue_id
-
-            result = await helper.find_or_create_identity_group(
-                tenant_id=tenant_id,
-                name=name,
-                description=description,
-                **create_kwargs
-            )
-
-            created_identity_groups.append({
-                'identity_group_id': result.get('id'),
-                'name': name,
-                'existed': result.get('existed', False)
-            })
-
-            await event_publisher.message(
-                parent_job.id,
-                f"{'Found existing' if result.get('existed') else 'Created'} identity group: {name}",
-                "success"
-            )
-
-        # Map identity group names to IDs
-        ig_name_to_id = {g['name']: g['identity_group_id'] for g in created_identity_groups}
-        await _update_phase_status(parent_job, "create_identity_groups", PhaseStatus.COMPLETED, state_manager, event_publisher)
-
-        # ============ PHASE 3: Create DPSK Pools ============
-        await _update_phase_status(parent_job, "create_dpsk_pools", PhaseStatus.RUNNING, state_manager, event_publisher)
-
-        created_dpsk_pools = []
-
-        for pool_data in dpsk_pools_data:
-            name = pool_data.get('name')
-            ig_name = pool_data.get('identity_group_name')
-            identity_group_id = ig_name_to_id.get(ig_name)
-
-            if not identity_group_id:
-                await event_publisher.message(
-                    parent_job.id,
-                    f"Skipping pool {name} - no identity group found",
-                    "warning"
-                )
-                continue
-
-            description = pool_data.get('description', 'Migrated from Cloudpath')
-            passphrase_length = pool_data.get('passphrase_length', 18)
-            passphrase_format = pool_data.get('passphrase_format', 'KEYBOARD_FRIENDLY')
-            max_devices = pool_data.get('max_devices', 1)
-            expiration_days = pool_data.get('expiration_days')
-
-            result = await helper.find_or_create_dpsk_pool(
-                tenant_id=tenant_id,
-                name=name,
-                identity_group_id=identity_group_id,
-                description=description,
-                passphrase_length=passphrase_length,
-                passphrase_format=passphrase_format,
-                max_devices_per_passphrase=max_devices,
-                expiration_days=expiration_days
-            )
-
-            created_dpsk_pools.append({
-                'dpsk_pool_id': result.get('id'),
-                'name': name,
-                'identity_group_id': identity_group_id,
-                'existed': result.get('existed', False)
-            })
-
-            await event_publisher.message(
-                parent_job.id,
-                f"{'Found existing' if result.get('existed') else 'Created'} DPSK pool: {name}",
-                "success"
-            )
-
-        # Map pool names to IDs
-        pool_name_to_id = {p['name']: p['dpsk_pool_id'] for p in created_dpsk_pools}
-        pool_name_to_ig_id = {p['name']: p['identity_group_id'] for p in created_dpsk_pools}
-
-        # Update passphrases with pool and identity group IDs
-        for pp in passphrases_data:
-            pool_name = pp.get('dpsk_pool_name')
-            if pool_name in pool_name_to_id:
-                pp['dpsk_pool_id'] = pool_name_to_id[pool_name]
-                pp['identity_group_id'] = pool_name_to_ig_id[pool_name]
-
-        await _update_phase_status(parent_job, "create_dpsk_pools", PhaseStatus.COMPLETED, state_manager, event_publisher)
-
-        # ============ PHASE 4: Create Passphrases in Parallel ============
-        await _update_phase_status(parent_job, "create_passphrases_parallel", PhaseStatus.RUNNING, state_manager, event_publisher)
-
-        # Pause webhooks for orchestrators that might be watching these pools
-        # This prevents webhook floods from triggering sync operations during bulk import
-        created_pool_ids = [p['dpsk_pool_id'] for p in created_dpsk_pools if p.get('dpsk_pool_id')]
-        orchestrators = db.query(DPSKOrchestrator).filter(
-            DPSKOrchestrator.controller_id == controller_id,
-            DPSKOrchestrator.enabled == True
-        ).all()
-
-        for orch in orchestrators:
-            # Check if this orchestrator watches any of the pools we're importing to
-            watching_our_pools = any(
-                sp.pool_id in created_pool_ids
-                for sp in orch.source_pools
-            )
-            if watching_our_pools or orch.tenant_id == tenant_id:
-                # Pause webhooks with 1-hour TTL (safety fallback)
-                if pause_webhooks_for_orchestrator(orch.id, f"cloudpath_import:{parent_job.id}", ttl_seconds=3600):
-                    paused_orchestrator_ids.append(orch.id)
-                    logger.info(f"Paused webhooks for orchestrator {orch.name} during import")
-
-        if paused_orchestrator_ids:
-            await event_publisher.message(
-                parent_job.id,
-                f"Paused webhook processing for {len(paused_orchestrator_ids)} orchestrator(s)",
-                "info"
-            )
-
-        await event_publisher.message(
-            parent_job.id,
-            f"Phase 4/4: Creating {total_passphrases} passphrases in parallel...",
-            "info"
+        brain = WorkflowBrain(
+            state_manager=state_manager,
+            activity_tracker=activity_tracker,
+            event_publisher=event_publisher,
+            r1_client=r1_client,
         )
 
-        # Calculate batch size - aim for ~10 passphrases per batch
-        batch_size = 10
-        batches = _batch_passphrases(passphrases_data, batch_size)
+        # Run validation first
+        await brain.run_validation(job)
 
-        await event_publisher.message(
-            parent_job.id,
-            f"Split into {len(batches)} batches (max {max_concurrent} concurrent)",
-            "info"
-        )
+        # If validation passed, auto-confirm and execute
+        if job.status == JobStatus.AWAITING_CONFIRMATION:
+            if job.validation_result and job.validation_result.valid:
+                await brain.execute_workflow(job)
 
-        # Create parallel orchestrator
-        parallel_orchestrator = ParallelJobOrchestrator(state_manager, event_publisher)
-
-        async def execute_batch_job(child_job: WorkflowJob) -> WorkflowJob:
-            """Execute a single child job for a batch of passphrases"""
-            item_data = child_job.input_data.get('item', {})
-            batch_num = item_data.get('batch_number', 0)
-            batch_passphrases = item_data.get('passphrases', [])
-            logger.info(f"Starting batch {batch_num} with {len(batch_passphrases)} passphrases")
-
-            # Create single phase for this child job
-            workflow_def = get_parallel_child_workflow_definition()
-            child_job.phases = [
-                Phase(
-                    id=phase_def.id,
-                    name=phase_def.name,
-                    dependencies=phase_def.dependencies,
-                    parallelizable=phase_def.parallelizable,
-                    critical=phase_def.critical,
-                    skip_condition=phase_def.skip_condition
-                )
-                for phase_def in workflow_def.phases
-            ]
-
-            await state_manager.save_job(child_job)
-
-            # Create task executor
-            task_executor = TaskExecutor(
-                max_retries=3,
-                retry_backoff_base=2,
-                r1_client=r1_client,
-                event_publisher=event_publisher,
-                state_manager=state_manager
-            )
-            workflow_engine = WorkflowEngine(state_manager, task_executor, event_publisher)
-
-            # Import the batch phase executor
-            from routers.cloudpath.phases import passphrases_batch
-
-            phase_executors = {
-                'create_passphrases': passphrases_batch.execute,
-            }
-
-            return await workflow_engine.execute_workflow(child_job, phase_executors)
-
-        # Prepare batch items
-        items = []
-        for batch in batches:
-            items.append({
-                'batch_number': batch['batch_number'],
-                'passphrases': batch['passphrases'],
-                'passphrase_count': batch['passphrase_count'],
-                'start_index': batch['start_index'],
-                'end_index': batch['end_index']
-            })
-
-        # Execute parallel workflow
-        final_job = await parallel_orchestrator.execute_parallel_workflow(
-            parent_job=parent_job,
-            items=items,
-            item_key='batch_number',
-            child_workflow_executor=execute_batch_job,
-            max_concurrent=max_concurrent
-        )
-
-        # Mark final phase as completed/failed based on job status
-        final_phase_status = PhaseStatus.COMPLETED if final_job.status == JobStatus.COMPLETED else PhaseStatus.FAILED
-        await _update_phase_status(final_job, "create_passphrases_parallel", final_phase_status, state_manager, event_publisher)
-
-        logger.info(f"✅ Parallel Cloudpath workflow {parent_job.id} completed with status: {final_job.status}")
+        await activity_tracker.stop()
+        logger.info(f"[Cloudpath V2] Import complete for job {job_id} (status={job.status.value})")
 
     except Exception as e:
-        logger.exception(f"Parallel Cloudpath workflow {parent_job.id} failed: {str(e)}")
-        try:
-            # Mark current phase as failed
-            await _update_phase_status(parent_job, parent_job.current_phase_id or "create_passphrases_parallel", PhaseStatus.FAILED, state_manager, event_publisher)
-            parent_job.status = JobStatus.FAILED
-            parent_job.errors.append(str(e))
-            await state_manager.save_job(parent_job)
-            await event_publisher.job_failed(parent_job)
-        except:
-            pass
-
+        logger.exception(f"[Cloudpath V2] Import failed for job {job_id}: {e}")
     finally:
-        # Resume webhooks for any orchestrators we paused
-        for orch_id in paused_orchestrator_ids:
-            resume_webhooks_for_orchestrator(orch_id)
-            logger.info(f"Resumed webhooks for orchestrator {orch_id} after import")
+        db.close()
 
+
+async def run_v2_cleanup_background(job_id: str, controller_id: int):
+    """Background task to run V2 cleanup workflow."""
+    from database import SessionLocal
+    db = SessionLocal()
+
+    try:
+        logger.info(f"[Cleanup V2] Starting cleanup for job {job_id}")
+
+        redis_client = await get_redis_client()
+        state_manager = RedisStateManagerV2(redis_client)
+        job = await state_manager.get_job(job_id)
+
+        if not job:
+            logger.error(f"[Cleanup V2] Job {job_id} not found")
+            return
+
+        r1_client = create_r1_client_from_controller(controller_id, db)
+        event_publisher = WorkflowEventPublisher(redis_client)
+        activity_tracker = ActivityTracker(r1_client, state_manager, tenant_id=job.tenant_id)
+
+        await activity_tracker.start()
+
+        brain = WorkflowBrain(
+            state_manager=state_manager,
+            activity_tracker=activity_tracker,
+            event_publisher=event_publisher,
+            r1_client=r1_client,
+        )
+
+        # Run validation (inventory phase)
+        await brain.run_validation(job)
+
+        # Auto-confirm and execute cleanup
+        if job.status == JobStatus.AWAITING_CONFIRMATION:
+            await brain.execute_workflow(job)
+
+        await activity_tracker.stop()
+        logger.info(f"[Cleanup V2] Cleanup complete for job {job_id} (status={job.status.value})")
+
+    except Exception as e:
+        logger.exception(f"[Cleanup V2] Cleanup failed for job {job_id}: {e}")
+    finally:
         db.close()
 
 
@@ -735,234 +293,87 @@ async def audit_venue_dpsk(
     - Which SSIDs have DPSK enabled
     - DPSK pools and their associations
     - Identity groups
-    - Policy sets (if attached)
-
-    This helps understand the current state before importing from Cloudpath.
     """
-    logger.info(f"🔍 DPSK audit request - controller: {request.controller_id}, venue: {request.venue_id}")
+    logger.info(f"DPSK audit request - controller: {request.controller_id}, venue: {request.venue_id}")
 
-    # Validate controller access
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail=f"Controller must be RuckusONE")
 
-    # Create R1 client
     r1_client = create_r1_client_from_controller(controller.id, db)
-
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
 
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
-
-    logger.info(f"✅ Controller validated - type: {controller.controller_type}, tenant: {tenant_id}")
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
-        logger.info(f"DPSK AUDIT - Starting for venue {request.venue_id}")
-
-        # STEP 1: Get venue details
-        logger.debug(f"STEP 1: Fetching venue details...")
+        # Get venue details
         venue = await r1_client.venues.get_venue(tenant_id, request.venue_id)
         venue_name = venue.get('name', 'Unknown')
-        logger.debug(f"Venue: {venue_name} (ID: {request.venue_id})")
 
-        # STEP 2: Get SSIDs activated at this venue
-        logger.debug(f"STEP 2: Fetching SSIDs activated at venue...")
-        try:
-            # Get all WiFi networks for the tenant
-            wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
-            all_networks = wifi_networks_response.get('data', [])
-            logger.debug(f"Found {len(all_networks)} total WiFi networks across tenant")
+        # Get SSIDs at venue
+        wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+        all_networks = wifi_networks_response.get('data', [])
 
-            # Filter networks that are activated at this venue
-            # Each network has a venueApGroups array showing which venues it's on
-            venue_ssids = []
-            for network in all_networks:
-                network_name = network.get('name', 'Unknown')
-                network_id = network.get('id')
-                venue_ap_groups = network.get('venueApGroups', [])
+        venue_ssids = []
+        for network in all_networks:
+            venue_ap_groups = network.get('venueApGroups', [])
+            for vag in venue_ap_groups:
+                if vag.get('venueId') == request.venue_id:
+                    venue_ssids.append({'name': network.get('name'), 'id': network.get('id')})
+                    break
 
-                # Check if this network is activated at our target venue
-                for vag in venue_ap_groups:
-                    if vag.get('venueId') == request.venue_id:
-                        venue_ssids.append({
-                            'name': network_name,
-                            'id': network_id
-                        })
-                        logger.debug(f"Found SSID: {network_name} (ID: {network_id})")
-                        break
+        # Get DPSK pools
+        dpsk_pools_response = await r1_client.dpsk.query_dpsk_pools(
+            tenant_id=tenant_id, search_string="", page=0, limit=1000
+        )
+        all_dpsk_pools = dpsk_pools_response.get('data', [])
 
-            logger.debug(f"Found {len(venue_ssids)} SSIDs activated at this venue")
-            all_ssids = venue_ssids
+        # Get identity groups
+        ig_response = await r1_client.identity.query_identity_groups(
+            tenant_id=tenant_id, search_string="", page=0, size=1000
+        )
+        all_identity_groups = ig_response.get('content', ig_response.get('data', []))
 
-        except Exception as e:
-            logger.exception(f"Error fetching SSIDs: {str(e)}")
-            raise
-
-        # STEP 3: Get all DPSK pools (query by tenant)
-        logger.debug(f"STEP 3: Fetching all DPSK pools...")
-        try:
-            dpsk_pools_response = await r1_client.dpsk.query_dpsk_pools(
-                tenant_id=tenant_id,
-                search_string="",
-                page=0,
-                limit=1000  # Get all pools
-            )
-            all_dpsk_pools = dpsk_pools_response.get('data', [])
-            logger.debug(f"Found {len(all_dpsk_pools)} DPSK pools")
-
-            # Log pool details for debugging
-            for pool in all_dpsk_pools:
-                pool_name = pool.get('name', 'Unknown')
-                pool_id = pool.get('id', 'Unknown')
-                identity_group_id = pool.get('identityGroupId', 'N/A')
-                logger.debug(f"Pool: {pool_name} (ID: {pool_id}, Identity Group: {identity_group_id})")
-        except Exception as e:
-            logger.warning(f"Error fetching DPSK pools: {str(e)} - DPSK feature may not be enabled")
-            all_dpsk_pools = []
-            logger.debug("DPSK pools exception details", exc_info=True)
-
-        # STEP 4: Get all Identity Groups
-        logger.debug(f"STEP 4: Fetching all Identity Groups...")
-        try:
-            identity_groups_response = await r1_client.identity.query_identity_groups(
-                tenant_id=tenant_id,
-                search_string="",
-                page=0,
-                size=1000
-            )
-            logger.debug(f"Identity groups response keys: {identity_groups_response.keys()}")
-            # Identity Groups uses Spring Data pagination format (content, not data)
-            all_identity_groups = identity_groups_response.get('content', identity_groups_response.get('data', []))
-            total_count = identity_groups_response.get('totalElements', identity_groups_response.get('totalCount', 'N/A'))
-            logger.debug(f"Found {len(all_identity_groups)} Identity Groups (total from API: {total_count})")
-
-            # Log identity group details and collect pool IDs
-            dpsk_pool_ids = []
-            for group in all_identity_groups:
-                group_name = group.get('name', 'Unknown')
-                group_id = group.get('id', 'Unknown')
-                dpsk_pool_id = group.get('dpskPoolId')
-                if dpsk_pool_id:
-                    dpsk_pool_ids.append(dpsk_pool_id)
-                logger.debug(f"Group: {group_name} (ID: {group_id}, DPSK Pool: {dpsk_pool_id or 'N/A'})")
-        except Exception as e:
-            logger.warning(f"Error fetching Identity Groups: {str(e)} - feature may not be enabled")
-            all_identity_groups = []
-            dpsk_pool_ids = []
-            logger.debug("Identity Groups exception details", exc_info=True)
-
-        # STEP 4.5: Fetch DPSK pool details individually (workaround for broken query endpoint)
-        logger.debug(f"STEP 4.5: Fetching DPSK pool details from Identity Groups...")
-        all_dpsk_pools_from_groups = []
-        for pool_id in dpsk_pool_ids:
-            try:
-                logger.debug(f"Fetching DPSK pool: {pool_id}")
-                pool = await r1_client.dpsk.get_dpsk_pool(pool_id, tenant_id)
-                all_dpsk_pools_from_groups.append(pool)
-                pool_name = pool.get('name', 'Unknown')
-                logger.debug(f"Pool: {pool_name} (ID: {pool_id})")
-            except Exception as e:
-                logger.warning(f"Error fetching pool {pool_id}: {str(e)}")
-
-        # Use pools from individual fetches if query failed
-        if not all_dpsk_pools and all_dpsk_pools_from_groups:
-            all_dpsk_pools = all_dpsk_pools_from_groups
-            logger.debug(f"Using {len(all_dpsk_pools)} pools from individual fetches")
-
-        # STEP 5: Get detailed SSID information to identify DPSK networks
-        logger.debug(f"STEP 5: Fetching detailed SSID information...")
+        # Get detailed SSID info to identify DPSK networks
         dpsk_ssids = []
         all_ssids_detailed = []
 
-        for ssid in all_ssids:
-            ssid_name = ssid.get('name', 'Unknown')
-            ssid_id = ssid.get('id', 'Unknown')
-
+        for ssid in venue_ssids:
             try:
-                # Get full WiFi network details
-                logger.debug(f"Fetching details for: {ssid_name}")
-                ssid_details = await r1_client.networks.get_wifi_network_by_id(ssid_id, tenant_id)
+                ssid_details = await r1_client.networks.get_wifi_network_by_id(ssid['id'], tenant_id)
                 all_ssids_detailed.append(ssid_details)
 
-                # Check if this SSID has DPSK enabled
-                # Look for DPSK fields in the detailed response
-                has_dpsk = False
-                dpsk_pool_ids = []
-
-                # Primary DPSK detection fields
-                if ssid_details.get('type') == 'dpsk':
-                    has_dpsk = True
-                    logger.debug(f"  {ssid_name}: Detected via type='dpsk'")
-
-                if ssid_details.get('useDpskService') == True:
-                    has_dpsk = True
-                    logger.debug(f"  {ssid_name}: Detected via useDpskService=true")
-
-                if ssid_details.get('nwSubType') == 'DPSK':
-                    has_dpsk = True
-                    logger.debug(f"  {ssid_name}: Detected via nwSubType='DPSK'")
-
-                # Check for DPSK pool/service references
-                if 'dpskPool' in ssid_details:
-                    has_dpsk = True
-                    dpsk_pool_ids.append(ssid_details['dpskPool'])
-                    logger.debug(f"  {ssid_name}: Found dpskPool: {ssid_details['dpskPool']}")
-
-                if 'dpskService' in ssid_details:
-                    has_dpsk = True
-                    if isinstance(ssid_details['dpskService'], list):
-                        dpsk_pool_ids.extend(ssid_details['dpskService'])
-                    else:
-                        dpsk_pool_ids.append(ssid_details['dpskService'])
-                    logger.debug(f"  {ssid_name}: Found dpskService: {ssid_details['dpskService']}")
-
-                if 'dpsk' in ssid_details:
-                    has_dpsk = True
-                    logger.debug(f"  {ssid_name}: Found 'dpsk' field")
+                has_dpsk = (
+                    ssid_details.get('type') == 'dpsk' or
+                    ssid_details.get('useDpskService') == True or
+                    ssid_details.get('nwSubType') == 'DPSK' or
+                    'dpskPool' in ssid_details or
+                    'dpskService' in ssid_details
+                )
 
                 if has_dpsk:
-                    logger.debug(f"DPSK SSID: {ssid_name} (ID: {ssid_id})")
                     dpsk_ssids.append(ssid_details)
-                else:
-                    logger.debug(f"Regular SSID: {ssid_name} (ID: {ssid_id})")
-
             except Exception as e:
-                logger.warning(f"Error fetching details for {ssid_name}: {str(e)}")
-                # Keep the basic info if detail fetch fails
+                logger.warning(f"Error fetching details for {ssid['name']}: {e}")
                 all_ssids_detailed.append(ssid)
 
-        logger.info(f"DPSK Audit Summary: SSIDs={len(all_ssids)}, DPSK SSIDs={len(dpsk_ssids)}, "
-                    f"DPSK Pools={len(all_dpsk_pools)}, Identity Groups={len(all_identity_groups)}")
-
-        # Build response
-        response = DPSKAuditResponse(
+        return DPSKAuditResponse(
             venue_id=request.venue_id,
             venue_name=venue_name,
             total_ssids=len(all_ssids_detailed),
             total_dpsk_ssids=len(dpsk_ssids),
             total_dpsk_pools=len(all_dpsk_pools),
             total_identity_groups=len(all_identity_groups),
-            ssids=all_ssids_detailed,  # Use detailed SSID info
+            ssids=all_ssids_detailed,
             identity_groups=all_identity_groups,
             dpsk_pools=all_dpsk_pools
         )
 
-        return response
-
     except Exception as e:
-        logger.exception(f"DPSK audit failed: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to audit DPSK configuration: {str(e)}"
-        )
+        logger.exception(f"DPSK audit failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to audit DPSK configuration: {e}")
 
 
 async def _fetch_identity_passphrase_data(
@@ -971,184 +382,80 @@ async def _fetch_identity_passphrase_data(
     tenant_id: str = None,
     dpsk_pool_id: str = None
 ) -> List[Dict[str, Any]]:
-    """
-    Helper function to fetch and join identity/passphrase data
-
-    Args:
-        r1_client: RuckusONE API client
-        venue_id: Optional Venue ID to filter by (if None, fetches all)
-        tenant_id: Tenant ID
-        dpsk_pool_id: Optional DPSK pool ID to filter to a specific pool
-
-    Returns list of dicts with: cloudpath_guid, identity_id, passphrase_id, username,
-    passphrase, identity_group_name, dpsk_pool_name
-    """
-    # 1. Get identity groups (optionally filtered by venue)
+    """Fetch and join identity/passphrase data."""
+    # Get identity groups
     if venue_id:
-        logger.info(f"Fetching identity groups for venue {venue_id}...")
         ig_response = await r1_client.identity.query_identity_groups(
-            tenant_id=tenant_id,
-            filters={"venueId": [venue_id]},
-            page=1,
-            size=1000
+            tenant_id=tenant_id, filters={"venueId": [venue_id]}, page=1, size=1000
         )
     else:
-        logger.info("Fetching all identity groups (no venue filter)...")
         ig_response = await r1_client.identity.query_identity_groups(
-            tenant_id=tenant_id,
-            page=1,
-            size=1000
+            tenant_id=tenant_id, page=1, size=1000
         )
     identity_groups = ig_response.get('content', []) if isinstance(ig_response, dict) else ig_response
-    logger.info(f"  Found {len(identity_groups)} identity groups")
 
-    # 1.5. If filtering by specific pool, only keep identity groups linked to that pool
     if dpsk_pool_id:
         identity_groups = [ig for ig in identity_groups if ig.get('dpskPoolId') == dpsk_pool_id]
-        logger.info(f"  Filtered to {len(identity_groups)} groups linked to pool {dpsk_pool_id}")
 
-    # 2. Get DPSK pools linked to these identity groups
-    # Strategy: Query pools both from identity groups AND directly
-    # because identity group's dpskPoolId may not always be set
+    # Get DPSK pools
     dpsk_pool_ids = set()
-    ig_to_pool_id = {}  # identity_group_id -> dpsk_pool_id
+    ig_to_pool_id = {}
     ig_id_to_name = {ig.get('id'): ig.get('name') for ig in identity_groups}
-    ig_id_set = set(ig_id_to_name.keys())
 
-    # 2a. Get pool IDs from identity groups that have dpskPoolId set
     for ig in identity_groups:
         pool_id = ig.get('dpskPoolId')
         if pool_id:
             dpsk_pool_ids.add(pool_id)
             ig_to_pool_id[ig.get('id')] = pool_id
-    logger.info(f"  Found {len(dpsk_pool_ids)} pools from identity groups' dpskPoolId")
 
-    # 2b. Also query DPSK pools directly and find linked identity groups
-    # This catches pools where identity group doesn't have dpskPoolId set
-    all_pools_from_query = []
-    try:
-        logger.info("  Querying DPSK pools directly...")
-        pools_response = await r1_client.dpsk.query_dpsk_pools(
-            tenant_id=tenant_id,
-            page=1,
-            limit=1000
-        )
-        all_pools_from_query = pools_response.get('data', []) if isinstance(pools_response, dict) else []
-        logger.info(f"  Found {len(all_pools_from_query)} total DPSK pools in tenant")
-
-        for pool in all_pools_from_query:
-            pool_id = pool.get('id')
-            pool_ig_id = pool.get('identityGroupId')
-            if pool_id and pool_ig_id:
-                # Only include if we have the identity group
-                if pool_ig_id in ig_id_set:
-                    if pool_id not in dpsk_pool_ids:
-                        logger.info(f"    Adding pool {pool.get('name')} (found via pool's identityGroupId)")
-                    dpsk_pool_ids.add(pool_id)
-                    ig_to_pool_id[pool_ig_id] = pool_id
-    except Exception as pool_query_error:
-        logger.warning(f"  ⚠️  Direct pool query failed: {str(pool_query_error)}")
-        # Continue with pools found from identity groups
-
-    logger.info(f"  Total DPSK pools to process: {len(dpsk_pool_ids)}")
-
-    # 3. Fetch details of each DPSK pool
-    # Use pools from query if available (already have details), otherwise fetch individually
+    # Fetch pool details
     dpsk_pools = []
-    pool_id_to_name = {}  # pool_id -> pool_name
-    pools_from_query_by_id = {p.get('id'): p for p in all_pools_from_query}
+    pool_id_to_name = {}
 
     for pool_id in dpsk_pool_ids:
         try:
-            # Use cached pool from query if available
-            if pool_id in pools_from_query_by_id:
-                pool = pools_from_query_by_id[pool_id]
-            else:
-                pool = await r1_client.dpsk.get_dpsk_pool(pool_id, tenant_id)
+            pool = await r1_client.dpsk.get_dpsk_pool(pool_id, tenant_id)
             dpsk_pools.append(pool)
             pool_id_to_name[pool_id] = pool.get('name', 'Unknown')
-            logger.info(f"  Fetched pool: {pool.get('name')} ({pool_id})")
-        except Exception as e:
-            logger.warning(f"  Failed to fetch pool {pool_id}: {str(e)}")
+        except Exception:
+            pass
 
-    # 4. Build identity map: (username, pool_id) -> identity data
-    # We use composite key to handle same username across different pools
-    identity_map = {}  # (username, pool_id) -> {identity_id, cloudpath_guid, identity_group_name, dpsk_pool_id}
+    # Build identity map
+    identity_map = {}
     for ig in identity_groups:
         ig_id = ig.get('id')
         ig_name = ig.get('name', 'Unknown')
-        # Get pool_id from ig_to_pool_id mapping (more reliable than ig.dpskPoolId)
         pool_id = ig_to_pool_id.get(ig_id) or ig.get('dpskPoolId')
 
-        logger.info(f"  Fetching identities from group: {ig_name} ({ig_id}), pool={pool_id}...")
         identities_response = await r1_client.identity.get_identities_in_group(
-            group_id=ig_id,
-            tenant_id=tenant_id,
-            page=0,
-            size=10000  # Get all identities
+            group_id=ig_id, tenant_id=tenant_id, page=0, size=10000
         )
         identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
-        logger.info(f"    Found {len(identities)} identities")
 
         for identity in identities:
             username = identity.get('name')
             if username and pool_id:
-                # Use composite key (username, pool_id) to handle duplicates across pools
                 identity_map[(username, pool_id)] = {
                     'identity_id': identity.get('id') or '',
-                    'cloudpath_guid': identity.get('description') or '',  # GUID stored in description
+                    'cloudpath_guid': identity.get('description') or '',
                     'identity_group_name': ig_name,
                     'dpsk_pool_id': pool_id
                 }
 
-    # 5. Build passphrase map: (username, pool_id) -> passphrase data
-    passphrase_map = {}  # (username, pool_id) -> {passphrase_id, passphrase, dpsk_pool_id, dpsk_pool_name}
+    # Build passphrase map
+    passphrase_map = {}
     for pool in dpsk_pools:
         pool_id = pool.get('id')
         pool_name = pool.get('name', 'Unknown')
 
-        logger.info(f"  Fetching passphrases from pool: {pool_name} ({pool_id})...")
-
-        # Try GET endpoint first
         passphrases_response = await r1_client.dpsk.get_passphrases(
-            pool_id=pool_id,
-            tenant_id=tenant_id,
-            page=1,
-            size=10000  # Get all passphrases
+            pool_id=pool_id, tenant_id=tenant_id, page=0, size=10000
         )
-
-        # Response may have 'content' or 'data' key depending on API version
-        if isinstance(passphrases_response, dict):
-            passphrases = passphrases_response.get('content', passphrases_response.get('data', []))
-            total_elements = passphrases_response.get('totalElements', len(passphrases))
-        else:
-            passphrases = passphrases_response
-            total_elements = len(passphrases)
-
-        logger.info(f"    GET found {len(passphrases)} passphrases (totalElements: {total_elements})")
-
-        # If GET returned empty, try POST query endpoint as fallback
-        if not passphrases:
-            try:
-                logger.info(f"    Trying POST query endpoint as fallback...")
-                query_response = await r1_client.dpsk.query_passphrases(
-                    pool_id=pool_id,
-                    tenant_id=tenant_id,
-                    page=1,
-                    limit=10000
-                )
-                if isinstance(query_response, dict):
-                    passphrases = query_response.get('content', query_response.get('data', []))
-                else:
-                    passphrases = query_response
-                logger.info(f"    POST query found {len(passphrases)} passphrases")
-            except Exception as query_error:
-                logger.warning(f"    POST query failed: {str(query_error)}")
+        passphrases = passphrases_response.get('content', passphrases_response.get('data', []))
 
         for pp in passphrases:
             username = pp.get('username') or pp.get('userName')
             if username:
-                # Use composite key (username, pool_id) to handle duplicates across pools
                 passphrase_map[(username, pool_id)] = {
                     'passphrase_id': pp.get('id') or '',
                     'passphrase': pp.get('passphrase') or '',
@@ -1156,22 +463,15 @@ async def _fetch_identity_passphrase_data(
                     'dpsk_pool_name': pool_name
                 }
 
-    # 6. Join identities and passphrases by (username, pool_id)
-    # Keys are tuples of (username, pool_id)
+    # Join data
     all_keys = set(identity_map.keys()) | set(passphrase_map.keys())
-    logger.info(f"  Total unique (username, pool_id) combinations: {len(all_keys)}")
-
-    # 7. Build result list - ensure all values are strings (not None)
     result = []
+
     for key in sorted(all_keys, key=lambda x: (x[0], x[1] or '')):
         username, pool_id = key
         identity_data = identity_map.get(key, {})
         passphrase_data = passphrase_map.get(key, {})
-
-        # Get pool ID from key or data
         final_pool_id = pool_id or passphrase_data.get('dpsk_pool_id') or identity_data.get('dpsk_pool_id') or ''
-
-        # Get pool name from passphrase data, or look it up from the pool_id_to_name map
         pool_name = passphrase_data.get('dpsk_pool_name') or pool_id_to_name.get(final_pool_id, '') or ''
 
         result.append({
@@ -1194,62 +494,26 @@ async def export_identities(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Export identities and passphrases as JSON (for modal preview)
-
-    Returns JSON with columns:
-    - cloudpath_guid: From identity description field (set during migration)
-    - identity_id: RuckusONE identity ID
-    - passphrase_id: RuckusONE passphrase ID
-    - username: Identity/passphrase username
-    - passphrase: The actual passphrase value
-    - identity_group_name: Name of the identity group
-    - dpsk_pool_name: Name of the DPSK pool
-    """
-    logger.info(f"📥 Export identities request - controller: {request.controller_id}, venue: {request.venue_id}, pool: {request.dpsk_pool_id or 'all'}")
-
-    # Validate controller access
+    """Export identities and passphrases as JSON"""
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    # Create R1 client
     r1_client = create_r1_client_from_controller(controller.id, db)
-
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
 
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
         data = await _fetch_identity_passphrase_data(
-            r1_client,
-            request.venue_id,
-            tenant_id,
-            dpsk_pool_id=request.dpsk_pool_id
+            r1_client, request.venue_id, tenant_id, dpsk_pool_id=request.dpsk_pool_id
         )
-        logger.info(f"✅ Fetched {len(data)} identities/passphrases")
-
-        return ExportIdentitiesResponse(
-            venue_id=request.venue_id,
-            total_count=len(data),
-            data=data
-        )
-
+        return ExportIdentitiesResponse(venue_id=request.venue_id, total_count=len(data), data=data)
     except Exception as e:
-        logger.exception(f"Export identities failed: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to export identities: {str(e)}"
-        )
+        logger.exception(f"Export identities failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to export identities: {e}")
 
 
 @router.post("/export-identities-csv")
@@ -1258,92 +522,52 @@ async def export_identities_csv(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Export identities and passphrases as CSV file download
-    """
+    """Export identities and passphrases as CSV file download"""
     import csv
     import io
 
-    logger.info(f"📥 Export identities CSV request - controller: {request.controller_id}, venue: {request.venue_id}")
-
-    # Validate controller access
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    # Create R1 client
     r1_client = create_r1_client_from_controller(controller.id, db)
-
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
 
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
         data = await _fetch_identity_passphrase_data(
-            r1_client,
-            request.venue_id,
-            tenant_id,
-            dpsk_pool_id=request.dpsk_pool_id
+            r1_client, request.venue_id, tenant_id, dpsk_pool_id=request.dpsk_pool_id
         )
 
-        # Build CSV
         output = io.StringIO()
         writer = csv.writer(output)
-
-        # Header row
         writer.writerow([
-            'cloudpath_guid',
-            'identity_id',
-            'passphrase_id',
-            'username',
-            'passphrase',
-            'identity_group_name',
-            'dpsk_pool_id',
-            'dpsk_pool_name'
+            'cloudpath_guid', 'identity_id', 'passphrase_id', 'username',
+            'passphrase', 'identity_group_name', 'dpsk_pool_id', 'dpsk_pool_name'
         ])
 
-        # Data rows
         for row in data:
             writer.writerow([
-                row['cloudpath_guid'],
-                row['identity_id'],
-                row['passphrase_id'],
-                row['username'],
-                row['passphrase'],
-                row['identity_group_name'],
-                row['dpsk_pool_id'],
-                row['dpsk_pool_name']
+                row['cloudpath_guid'], row['identity_id'], row['passphrase_id'],
+                row['username'], row['passphrase'], row['identity_group_name'],
+                row['dpsk_pool_id'], row['dpsk_pool_name']
             ])
 
         csv_content = output.getvalue()
         output.close()
 
-        logger.info(f"✅ Exported {len(data)} identities/passphrases to CSV")
-
-        # Return as CSV file download
         return StreamingResponse(
             iter([csv_content]),
             media_type="text/csv",
-            headers={
-                "Content-Disposition": f"attachment; filename=identities_export_{request.venue_id}.csv"
-            }
+            headers={"Content-Disposition": f"attachment; filename=identities_export_{request.venue_id}.csv"}
         )
 
     except Exception as e:
-        logger.exception(f"Export identities CSV failed: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to export identities: {str(e)}"
-        )
+        logger.exception(f"Export identities CSV failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to export identities: {e}")
 
 
 @router.post("/dpsk-ssids", response_model=DPSKSsidsResponse)
@@ -1352,41 +576,22 @@ async def get_dpsk_ssids(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Get DPSK-enabled SSIDs at a venue
-
-    Returns list of WiFi networks that have DPSK enabled,
-    which can be used to link imported DPSKs to existing networks.
-    """
-    logger.info(f"🔍 DPSK SSIDs request - controller: {request.controller_id}, venue: {request.venue_id}")
-
-    # Validate controller access
+    """Get DPSK-enabled SSIDs at a venue"""
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    # Create R1 client
     r1_client = create_r1_client_from_controller(controller.id, db)
-
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
 
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
-        # Get all WiFi networks for the tenant
         wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
         all_networks = wifi_networks_response.get('data', [])
 
-        # Filter networks that are activated at this venue and have DPSK enabled
         dpsk_ssids = []
         for network in all_networks:
             network_name = network.get('name', 'Unknown')
@@ -1394,68 +599,43 @@ async def get_dpsk_ssids(
             ssid = network.get('ssid', network_name)
             venue_ap_groups = network.get('venueApGroups', [])
 
-            # Check if this network is activated at our target venue
-            is_at_venue = any(
-                vag.get('venueId') == request.venue_id
-                for vag in venue_ap_groups
-            )
-
+            is_at_venue = any(vag.get('venueId') == request.venue_id for vag in venue_ap_groups)
             if not is_at_venue:
                 continue
 
-            # Get full network details to check for DPSK
             try:
                 network_details = await r1_client.networks.get_wifi_network_by_id(network_id, tenant_id)
 
-                # Check if this SSID has DPSK enabled
-                has_dpsk = False
+                has_dpsk = (
+                    network_details.get('type') == 'dpsk' or
+                    network_details.get('useDpskService') == True or
+                    network_details.get('nwSubType') == 'DPSK'
+                )
+
                 dpsk_pool_ids = []
-
-                if network_details.get('type') == 'dpsk':
-                    has_dpsk = True
-                if network_details.get('useDpskService') == True:
-                    has_dpsk = True
-                if network_details.get('nwSubType') == 'DPSK':
-                    has_dpsk = True
-
-                # Check for DPSK pool/service references
                 if 'dpskPool' in network_details:
                     has_dpsk = True
                     dpsk_pool_ids.append(network_details['dpskPool'])
                 if 'dpskService' in network_details:
                     has_dpsk = True
-                    if isinstance(network_details['dpskService'], list):
-                        dpsk_pool_ids.extend(network_details['dpskService'])
-                    else:
-                        dpsk_pool_ids.append(network_details['dpskService'])
-                if 'dpsk' in network_details:
-                    has_dpsk = True
+                    svc = network_details['dpskService']
+                    dpsk_pool_ids.extend(svc if isinstance(svc, list) else [svc])
 
                 if has_dpsk:
                     dpsk_ssids.append(DPSKSsidInfo(
-                        id=network_id,
-                        name=network_name,
-                        ssid=ssid,
-                        dpsk_pool_ids=dpsk_pool_ids
+                        id=network_id, name=network_name, ssid=ssid, dpsk_pool_ids=dpsk_pool_ids
                     ))
 
             except Exception as e:
-                logger.warning(f"Error fetching details for {network_name}: {str(e)}")
-
-        logger.info(f"Found {len(dpsk_ssids)} DPSK SSIDs at venue {request.venue_id}")
+                logger.warning(f"Error fetching details for {network_name}: {e}")
 
         return DPSKSsidsResponse(
-            venue_id=request.venue_id,
-            dpsk_ssids=dpsk_ssids,
-            total_count=len(dpsk_ssids)
+            venue_id=request.venue_id, dpsk_ssids=dpsk_ssids, total_count=len(dpsk_ssids)
         )
 
     except Exception as e:
-        logger.exception(f"DPSK SSIDs fetch failed: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch DPSK SSIDs: {str(e)}"
-        )
+        logger.exception(f"DPSK SSIDs fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch DPSK SSIDs: {e}")
 
 
 @router.post("/import", response_model=ImportResponse)
@@ -1466,113 +646,62 @@ async def start_migration(
     db: Session = Depends(get_db)
 ):
     """
-    Start Cloudpath DPSK migration workflow
+    Start Cloudpath DPSK migration workflow (V2)
 
-    Creates a workflow job and starts background execution.
-    Returns immediately with job_id for status polling.
-
-    Supports two execution modes:
-    - Sequential (default): All phases run in series
-    - Parallel: Data is split by DPSK pool, each pool processed concurrently
+    Uses the V2 workflow engine with:
+    - Auto-detection of property-wide vs per-unit mode
+    - Intra-phase parallelism for bulk passphrase creation
+    - Plan/confirm flow (auto-confirmed for this endpoint)
     """
-    logger.info(f"📥 Import request from user {current_user.id}")
-    logger.info(f"   Controller ID: {request.controller_id}")
-    logger.info(f"   Venue ID: {request.venue_id}")
-    logger.info(f"   Tenant ID: {request.tenant_id}")
-    logger.info(f"   DPSK count: {len(request.dpsk_data) if isinstance(request.dpsk_data, list) else 'N/A'}")
-    logger.info(f"   Options: {request.options}")
-    logger.info(f"   Parallel execution: {request.parallel_execution} (max_concurrent: {request.max_concurrent})")
+    logger.info(f"Import request - controller: {request.controller_id}, venue: {request.venue_id}")
 
-    # Validate controller access
     controller = validate_controller_access(request.controller_id, current_user, db)
-    logger.info(f"✅ Controller validated: {controller.name} (type={controller.controller_type}, subtype={controller.controller_subtype})")
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
-
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
-    # Create workflow job
-    job_id = str(uuid.uuid4())
-    logger.info(f"🆔 Generated job ID: {job_id}")
+    # Validate cloudpath data
+    if not isinstance(request.dpsk_data, dict):
+        raise HTTPException(status_code=400, detail="dpsk_data must be a Cloudpath JSON export object")
+    if 'pool' not in request.dpsk_data or 'dpsks' not in request.dpsk_data:
+        raise HTTPException(status_code=400, detail="dpsk_data must contain 'pool' and 'dpsks' keys")
 
-    # Choose workflow based on execution mode
-    if request.parallel_execution:
-        # Parallel mode: parent job with 4 phases (setup + parallel passphrases)
-        workflow_def = get_parallel_parent_workflow_definition()
-        workflow_name = workflow_def.name
-        logger.info(f"📋 PARALLEL MODE - {len(workflow_def.phases)} phases, max_concurrent: {request.max_concurrent}")
-    else:
-        # Sequential mode: single job runs all 8 phases
-        workflow_def = get_workflow_definition()
-        workflow_name = workflow_def.name
-        logger.info(f"📋 SEQUENTIAL MODE - Workflow: {workflow_def.name} ({len(workflow_def.phases)} phases)")
+    dpsk_count = len(request.dpsk_data.get('dpsks', []))
+    logger.info(f"Cloudpath export has {dpsk_count} DPSKs")
 
-    # Create phases from definition
-    phases = [
-        Phase(
-            id=phase_def.id,
-            name=phase_def.name,
-            dependencies=phase_def.dependencies,
-            parallelizable=phase_def.parallelizable,
-            critical=phase_def.critical,
-            skip_condition=phase_def.skip_condition
-        )
-        for phase_def in workflow_def.phases
-    ]
-    logger.info(f"✅ Created {len(phases)} phases")
+    # Build options and input data
+    options = {**CloudpathImportWorkflow.default_options, **request.options}
+    input_data = {'cloudpath_data': request.dpsk_data, 'options': options}
 
-    job = WorkflowJob(
-        id=job_id,
-        workflow_name=workflow_name,
-        user_id=current_user.id,
-        controller_id=request.controller_id,
+    # Create V2 job
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+    activity_tracker = ActivityTracker(None, state_manager, tenant_id=tenant_id)
+
+    brain = WorkflowBrain(state_manager=state_manager, activity_tracker=activity_tracker)
+
+    job = await brain.create_job(
+        workflow=CloudpathImportWorkflow,
         venue_id=request.venue_id,
         tenant_id=tenant_id,
-        options=request.options,
-        input_data={'dpsk_data': request.dpsk_data},
-        phases=phases
+        controller_id=request.controller_id,
+        user_id=current_user.id,
+        options=options,
+        input_data=input_data,
     )
-    logger.info(f"✅ Created WorkflowJob object")
 
-    # Save initial job state
-    logger.info(f"💾 Connecting to Redis...")
-    redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
-    logger.info(f"💾 Saving job to Redis...")
-    await state_manager.save_job(job)
-    logger.info(f"✅ Job saved to Redis")
-
-    # Start workflow in background (choose based on execution mode)
-    if request.parallel_execution:
-        logger.info(f"🚀 Starting PARALLEL background workflow task...")
-        background_tasks.add_task(
-            run_parallel_cloudpath_workflow,
-            job,
-            request.controller_id,
-            db,
-            request.max_concurrent
-        )
-    else:
-        logger.info(f"🚀 Starting SEQUENTIAL background workflow task...")
-        background_tasks.add_task(run_workflow_background, job, request.controller_id, db)
-
-    logger.info(f"✅ Workflow job {job_id} created and queued")
+    # Start import in background (auto-confirms after validation)
+    # NOTE: For the V2 plan/confirm flow, use /cloudpath-dpsk/v2/plan instead
+    background_tasks.add_task(run_v2_import_background, job.id, request.controller_id)
 
     return ImportResponse(
-        job_id=job_id,
-        status=JobStatus.RUNNING,
-        estimated_duration_seconds=300 if not request.parallel_execution else 60
+        job_id=job.id,
+        status="RUNNING",
+        message=f"Importing {dpsk_count} DPSKs. Poll /jobs/{job.id}/status for progress."
     )
 
 
@@ -1582,69 +711,31 @@ async def preview_cleanup(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Preview what would be deleted in a nuclear cleanup
-
-    Runs an inventory audit of the venue to show all DPSK resources
-    without actually deleting anything. Returns categorized list of resources.
-    """
-    logger.info(f"🔍 Preview cleanup request from user {current_user.id}")
-    logger.info(f"   Venue ID: {request.venue_id}")
-
-    # Validate controller access
+    """Preview what would be deleted in a nuclear cleanup"""
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
-
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
-        # Create R1 client
-        logger.info(f"Creating R1 client for controller {request.controller_id}...")
         r1_client = create_r1_client_from_controller(request.controller_id, db)
-        logger.info(f"✅ R1 client created successfully")
 
-        # Use the inventory phase to audit the venue
-        logger.info(f"Starting venue resource audit...")
-        from routers.cloudpath.cleanup_phases.inventory import _audit_venue_resources
-
-        inventory = await _audit_venue_resources(
-            r1_client=r1_client,
-            venue_id=request.venue_id,
-            tenant_id=tenant_id
-        )
+        from workflow.phases.cleanup.inventory import _audit_venue_for_cloudpath
+        inventory = await _audit_venue_for_cloudpath(r1_client=r1_client, tenant_id=tenant_id)
 
         total_resources = sum(len(items) for items in inventory.values())
 
-        logger.info(f"✅ Preview complete: {total_resources} total resources found")
-        logger.info(f"   - Passphrases: {len(inventory.get('passphrases', []))}")
-        logger.info(f"   - DPSK Pools: {len(inventory.get('dpsk_pools', []))}")
-        logger.info(f"   - Identity Groups: {len(inventory.get('identity_groups', []))}")
-        logger.info(f"   - Identities: {len(inventory.get('identities', []))}")
-
         return PreviewCleanupResponse(
-            venue_id=request.venue_id,
-            inventory=inventory,
-            total_resources=total_resources
+            venue_id=request.venue_id, inventory=inventory, total_resources=total_resources
         )
 
     except Exception as e:
-        logger.exception(f"Preview cleanup failed: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to preview cleanup: {str(e)}"
-        )
+        logger.exception(f"Preview cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to preview cleanup: {e}")
 
 
 @router.post("/cleanup", response_model=CleanupResponse)
@@ -1655,144 +746,64 @@ async def start_cleanup(
     db: Session = Depends(get_db)
 ):
     """
-    Start cleanup workflow to delete DPSK resources
+    Start cleanup workflow (V2)
 
     Two modes:
     1. Job cleanup: Provide job_id to cleanup resources from specific migration
-    2. Nuclear cleanup: Set nuclear=true to delete ALL DPSK resources in venue
-
-    Creates a cleanup workflow job that will:
-    1. Inventory resources (from job OR from venue audit)
-    2. Delete DPSK passphrases
-    3. Delete DPSK pools
-    4. Delete identities (placeholder - requires manual deletion)
-    5. Delete identity groups (placeholder - requires manual deletion)
-    6. Verify cleanup completion
-
-    Returns immediately with cleanup_job_id for status polling.
+    2. Nuclear cleanup: Set nuclear=true to delete ALL DPSK resources
     """
-    logger.info(f"🧹 Cleanup request from user {current_user.id}")
-    logger.info(f"   Mode: {'☢️  NUCLEAR' if request.nuclear else 'Job-specific'}")
-    logger.info(f"   Original Job ID: {request.job_id or 'N/A'}")
-    logger.info(f"   Controller ID: {request.controller_id}")
-    logger.info(f"   Venue ID: {request.venue_id}")
+    logger.info(f"Cleanup request - mode: {'NUCLEAR' if request.nuclear else 'Job-specific'}, venue: {request.venue_id}")
 
-    # Validate controller access
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
-        )
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    # Get the original job to extract created_resources (if job_id provided)
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
 
     created_resources = {}
-    original_job = None
 
     if request.job_id and not request.nuclear:
-        # Job-specific cleanup mode
-        try:
-            original_job = await state_manager.get_job(request.job_id)
-            if not original_job:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Original job {request.job_id} not found"
-                )
+        original_job = await state_manager.get_job(request.job_id)
+        if not original_job:
+            raise HTTPException(status_code=404, detail=f"Original job {request.job_id} not found")
 
-            # Verify user owns the job or is admin
-            if original_job.user_id != current_user.id and current_user.role not in [RoleEnum.ADMIN, RoleEnum.SUPER]:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You don't have permission to cleanup this job"
-                )
+        if original_job.user_id != current_user.id and current_user.role not in [RoleEnum.ADMIN, RoleEnum.SUPER]:
+            raise HTTPException(status_code=403, detail="Permission denied")
 
-            created_resources = original_job.created_resources
-            logger.info(f"📦 Using resources from job {request.job_id}")
+        created_resources = getattr(original_job, 'created_resources', {}) or {}
 
-        except Exception as e:
-            logger.error(f"Failed to retrieve original job: {str(e)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to retrieve original job: {str(e)}"
-            )
-    elif request.nuclear:
-        # Nuclear mode - will audit venue in inventory phase
-        logger.warning(f"☢️  NUCLEAR MODE - Will delete ALL DPSK resources in venue {request.venue_id}")
-        created_resources = {}  # Will be populated by inventory phase via audit
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Must provide either job_id or set nuclear=true"
-        )
+    elif not request.nuclear:
+        raise HTTPException(status_code=400, detail="Must provide either job_id or set nuclear=true")
 
-    # Determine tenant_id
     tenant_id = request.tenant_id or controller.r1_tenant_id
-
     if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
-    # Create cleanup workflow job
-    cleanup_job_id = str(uuid.uuid4())
-    logger.info(f"🆔 Generated cleanup job ID: {cleanup_job_id}")
+    # Create V2 cleanup job
+    activity_tracker = ActivityTracker(None, state_manager, tenant_id=tenant_id)
+    brain = WorkflowBrain(state_manager=state_manager, activity_tracker=activity_tracker)
 
-    workflow_def = get_cleanup_workflow_definition()
-    logger.info(f"📋 Cleanup workflow definition loaded: {workflow_def.name} ({len(workflow_def.phases)} phases)")
-
-    # Create phases from definition
-    phases = [
-        Phase(
-            id=phase_def.id,
-            name=phase_def.name,
-            status=TaskStatus.PENDING,
-            dependencies=phase_def.dependencies,
-            parallelizable=phase_def.parallelizable,
-            critical=phase_def.critical,
-            executor=phase_def.executor,
-            skip_condition=phase_def.skip_condition
-        )
-        for phase_def in workflow_def.phases
-    ]
-
-    # Create job with created_resources (from job or empty for nuclear mode)
-    job = WorkflowJob(
-        id=cleanup_job_id,
-        workflow_name=workflow_def.name,
-        status=JobStatus.RUNNING,
-        user_id=current_user.id,
-        controller_id=request.controller_id,
+    job = await brain.create_job(
+        workflow=VenueCleanupWorkflow,
         venue_id=request.venue_id,
         tenant_id=tenant_id,
-        phases=phases,
-        created_resources=created_resources,  # Pass resources to cleanup (empty if nuclear)
+        controller_id=request.controller_id,
+        user_id=current_user.id,
+        options={'nuclear_mode': request.nuclear},
         input_data={
-            "nuclear_mode": request.nuclear  # Pass nuclear_mode to phase context
+            'nuclear_mode': request.nuclear,
+            'created_resources': created_resources,
         },
-        metadata={
-            "original_job_id": request.job_id,
-            "cleanup_started_by": current_user.email,
-            "nuclear_mode": request.nuclear
-        }
     )
 
-    # Save job
-    await state_manager.save_job(job)
-    logger.info(f"💾 Cleanup job {cleanup_job_id} saved to Redis")
-
-    # Start workflow in background (using same pattern as import endpoint)
-    background_tasks.add_task(run_workflow_background, job, request.controller_id, db)
-
-    logger.info(f"✅ Cleanup workflow job {cleanup_job_id} created and queued")
+    # Start cleanup in background
+    background_tasks.add_task(run_v2_cleanup_background, job.id, request.controller_id)
 
     return CleanupResponse(
-        cleanup_job_id=cleanup_job_id,
+        cleanup_job_id=job.id,
         original_job_id=request.job_id,
-        status=JobStatus.RUNNING,
+        status="RUNNING",
         nuclear_mode=request.nuclear
     )

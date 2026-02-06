@@ -17,7 +17,7 @@ For each unit:
 
 import logging
 from typing import Dict, Any, List
-from workflow.models import Task, TaskStatus
+from workflow.v2.models import Task, TaskStatus
 
 # Import shared service
 from services.ap_port_config import (

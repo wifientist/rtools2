@@ -3,8 +3,24 @@ import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
+import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+// DPSK Pool settings interface
+interface DpskPoolSettings {
+  passphrase_length: number;
+  passphrase_format: 'NUMBERS_ONLY' | 'KEYBOARD_FRIENDLY' | 'MOST_SECURED';
+  max_devices_per_passphrase: number;
+  expiration_days: number | null;
+}
+
+const DEFAULT_DPSK_POOL_SETTINGS: DpskPoolSettings = {
+  passphrase_length: 12,
+  passphrase_format: 'KEYBOARD_FRIENDLY',
+  max_devices_per_passphrase: 0,  // 0 = unlimited
+  expiration_days: null,  // null = no expiration
+};
 
 // LAN Port configuration types
 type PortMode = 'ignore' | 'match' | 'specific' | 'disable' | 'uplink';  // 'uplink' means port is protected
@@ -210,7 +226,6 @@ function PerUnitSSID() {
 
   // Configuration options
   const [venueId, setVenueId] = useState<string | null>(null);
-  const [venueName, setVenueName] = useState<string | null>(null);
   const [apGroupPrefix, setApGroupPrefix] = useState("");
   const [apGroupPostfix, setApGroupPostfix] = useState("");
   const [nameConflictResolution, setNameConflictResolution] = useState<'keep' | 'overwrite'>('overwrite');
@@ -219,9 +234,21 @@ function PerUnitSSID() {
   const [configureLanPorts, setConfigureLanPorts] = useState(false);
   const [modelPortConfigs, setModelPortConfigs] = useState<ModelPortConfigs>(DEFAULT_MODEL_PORT_CONFIGS);
 
-  // Parallel execution options
-  const [parallelExecution, setParallelExecution] = useState(false);
-  const [maxConcurrent, setMaxConcurrent] = useState(10);
+  // DPSK Mode options
+  const [dpskMode, setDpskMode] = useState(false);
+  // DPSK Mode - single shared pool for entire venue
+  const [identityGroupName, setIdentityGroupName] = useState("");
+  const [dpskPoolName, setDpskPoolName] = useState("");
+  const [dpskPoolSettings, setDpskPoolSettings] = useState<DpskPoolSettings>(DEFAULT_DPSK_POOL_SETTINGS);
+
+  // Parallel execution options (V2 always uses parallel pipelines)
+  const [parallelExecution] = useState(true);
+  const [maxConcurrent] = useState(10);
+
+  // V2 Workflow Engine (always enabled)
+  const [useV2Engine] = useState(true);
+  const [v2JobId, setV2JobId] = useState<string | null>(null);
+  const [showV2PlanModal, setShowV2PlanModal] = useState(false);
 
   // Audit modal state
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -396,7 +423,7 @@ function PerUnitSSID() {
       // Parse header
       const headers = lines[0].split(',').map(h => h.trim());
       const requiredHeaders = ['unit_number', 'ssid_name', 'ssid_password', 'security_type', 'default_vlan'];
-      const optionalHeaders = ['ap_serial_or_name', 'network_name'];
+      const optionalHeaders = ['ap_serial_or_name', 'network_name', 'username', 'email', 'description'];
 
       // Validate required headers
       const hasAllRequired = requiredHeaders.every(h => headers.includes(h));
@@ -406,8 +433,10 @@ function PerUnitSSID() {
         return;
       }
 
-      // Parse rows and group by unit
+      // Parse rows - detect DPSK mode and aggregate passphrases per unit
       const unitMap = new Map<string, any>();
+      const allPassphrases = new Set<string>();  // For duplicate detection
+      let hasDpskUnits = false;
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -420,22 +449,68 @@ function PerUnitSSID() {
         });
 
         const unitNumber = row.unit_number;
-        if (!unitMap.has(unitNumber)) {
-          unitMap.set(unitNumber, {
-            unit_number: unitNumber,
-            ap_identifiers: [],
-            ssid_name: row.ssid_name,
-            network_name: row.network_name || null,  // Optional: internal R1 name (defaults to ssid_name)
-            ssid_password: row.ssid_password,
-            security_type: row.security_type || 'WPA3',
-            default_vlan: row.default_vlan || '1'
-          });
-        }
+        const securityType = (row.security_type || 'WPA3').toUpperCase();
+        const isDpsk = securityType === 'DPSK';
 
-        // Add AP to this unit
-        if (row.ap_serial_or_name) {
-          unitMap.get(unitNumber).ap_identifiers.push(row.ap_serial_or_name);
+        if (isDpsk) {
+          hasDpskUnits = true;
+
+          // DPSK: Check for duplicate passphrases (they must be unique)
+          // Skip check for empty passphrases - user may import actual passwords later
+          const passphrase = row.ssid_password;
+          if (passphrase && allPassphrases.has(passphrase)) {
+            setError(`Duplicate passphrase found on row ${i + 1}. DPSK passphrases must be unique across all units.`);
+            setProcessing(false);
+            return;
+          }
+          if (passphrase) {
+            allPassphrases.add(passphrase);
+          }
+
+          // DPSK mode: Each row is a separate passphrase entry
+          // Multiple rows with same unit_number share Identity Group & DPSK Pool
+          // but each row creates a unique passphrase in the pool
+          const dpskKey = `${unitNumber}::${passphrase}`;  // Unique key per passphrase
+          unitMap.set(dpskKey, {
+            unit_number: unitNumber,
+            ap_identifiers: row.ap_serial_or_name ? [row.ap_serial_or_name] : [],
+            ssid_name: row.ssid_name,
+            network_name: row.network_name || null,
+            ssid_password: passphrase,  // Passphrase for DPSK pool
+            security_type: securityType,
+            default_vlan: row.default_vlan || '1',
+            // DPSK-specific fields
+            username: row.username || null,
+            email: row.email || null,
+            description: row.description || null,
+          });
+        } else {
+          // PSK mode: Merge rows by unit_number (multiple APs share one SSID password)
+          if (!unitMap.has(unitNumber)) {
+            unitMap.set(unitNumber, {
+              unit_number: unitNumber,
+              ap_identifiers: [],
+              ssid_name: row.ssid_name,
+              network_name: row.network_name || null,
+              ssid_password: row.ssid_password,
+              security_type: securityType,
+              default_vlan: row.default_vlan || '1',
+              username: null,
+              email: null,
+              description: null,
+            });
+          }
+
+          // Add AP to this unit (if provided)
+          if (row.ap_serial_or_name) {
+            unitMap.get(unitNumber).ap_identifiers.push(row.ap_serial_or_name);
+          }
         }
+      }
+
+      // Auto-enable DPSK mode if any units have security_type = DPSK
+      if (hasDpskUnits && !dpskMode) {
+        setDpskMode(true);
       }
 
       const units = Array.from(unitMap.values());
@@ -446,35 +521,42 @@ function PerUnitSSID() {
         return;
       }
 
-      // Call backend API - now returns job_id for async processing
-      const response = await fetch(`${API_BASE_URL}/per-unit-ssid/configure`, {
+      const requestBody = {
+        controller_id: activeControllerId,
+        venue_id: venueId,
+        units: units,
+        ap_group_prefix: apGroupPrefix,
+        ap_group_postfix: apGroupPostfix,
+        name_conflict_resolution: nameConflictResolution,
+        configure_lan_ports: configureLanPorts,
+        model_port_configs: modelPortConfigs,
+        parallel_execution: parallelExecution,
+        max_concurrent: maxConcurrent,
+        // DPSK mode options
+        dpsk_mode: dpskMode || hasDpskUnits,
+        identity_group_name: identityGroupName,
+        dpsk_pool_name: dpskPoolName,
+        dpsk_pool_settings: dpskPoolSettings,
+      };
+
+      // V2 Flow: plan → confirm → execute
+      const response = await fetch(`${API_BASE_URL}/per-unit-ssid/v2/plan`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          controller_id: activeControllerId,
-          venue_id: venueId,
-          units: units,
-          ap_group_prefix: apGroupPrefix,
-          ap_group_postfix: apGroupPostfix,
-          name_conflict_resolution: nameConflictResolution,
-          configure_lan_ports: configureLanPorts,
-          model_port_configs: modelPortConfigs,
-          parallel_execution: parallelExecution,
-          max_concurrent: maxConcurrent
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Configuration failed");
+        const error = await response.json().catch(() => ({}));
+        const errorMsg = error.error || error.detail ||
+          (error.details ? `Validation error: ${JSON.stringify(error.details)}` : "Plan creation failed");
+        throw new Error(errorMsg);
       }
 
       const result = await response.json();
-
-      // Show job monitor modal
-      setCurrentJobId(result.job_id);
-      setShowJobModal(true);
+      setV2JobId(result.job_id);
+      setShowV2PlanModal(true);
 
     } catch (err: any) {
       console.error("Processing error:", err);
@@ -493,6 +575,12 @@ function PerUnitSSID() {
     setLastJobResult(result);
   };
 
+  const handleV2Confirm = (confirmedJobId: string) => {
+    setShowV2PlanModal(false);
+    setCurrentJobId(confirmedJobId);
+    setShowJobModal(true);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -505,9 +593,8 @@ function PerUnitSSID() {
     reader.readAsText(file);
   };
 
-  const handleVenueSelect = (selectedVenueId: string | null, venue: any) => {
+  const handleVenueSelect = (selectedVenueId: string | null, _venue: any) => {
     setVenueId(selectedVenueId);
-    setVenueName(venue?.name || null);
   };
 
   // Audit progress message for UI feedback during polling
@@ -544,7 +631,7 @@ function PerUnitSSID() {
 
       if (!startResponse.ok) {
         const error = await startResponse.json().catch(() => ({}));
-        throw new Error(error.detail || `Failed to start audit: ${startResponse.status}`);
+        throw new Error(error.error || error.detail || `Failed to start audit: ${startResponse.status}`);
       }
 
       const startResult = await startResponse.json();
@@ -593,7 +680,7 @@ function PerUnitSSID() {
 
           if (!resultResponse.ok) {
             const error = await resultResponse.json().catch(() => ({}));
-            throw new Error(error.detail || `Failed to fetch audit results: ${resultResponse.status}`);
+            throw new Error(error.error || error.detail || `Failed to fetch audit results: ${resultResponse.status}`);
           }
 
           const data = await resultResponse.json();
@@ -624,47 +711,6 @@ function PerUnitSSID() {
         Configure unique SSIDs for individual apartment units or rooms in RuckusONE
       </p>
 
-      {/* Educational Section - How It Works */}
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-6 mb-6">
-        <h3 className="text-xl font-bold mb-3 flex items-center gap-2">
-          <span className="text-2xl">💡</span>
-          How Per-Unit SSIDs Work in RuckusONE
-        </h3>
-
-        <div className="space-y-3 text-sm text-gray-700">
-          <div className="bg-white bg-opacity-60 rounded p-3">
-            <p className="font-semibold text-purple-900 mb-2">🔄 SmartZone → RuckusONE Migration</p>
-            <p>
-              In <strong>SmartZone</strong>, you used <strong>WLAN Groups</strong> to assign different SSIDs to different APs.
-              <br/>
-              In <strong>RuckusONE</strong>, WLAN Groups don't exist. Instead, you use <strong>AP Groups</strong> + <strong>SSID assignments</strong>.
-            </p>
-          </div>
-
-          <div className="bg-white bg-opacity-60 rounded p-3">
-            <p className="font-semibold text-blue-900 mb-2">⚙️ Configuration Flow</p>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
-              <li><strong>Create SSIDs</strong> for each unit in your venue (e.g., "Unit-101", "Unit-102")</li>
-              <li><strong>Create AP Groups</strong> for each unit (e.g., "APGroup-101", "APGroup-102")</li>
-              <li><strong>Assign APs</strong> in each physical unit to their corresponding AP Group</li>
-              <li><strong>Assign SSIDs</strong> to their corresponding AP Groups (Unit-101 SSID → APGroup-101)</li>
-            </ol>
-            <p className="mt-2 text-xs italic text-gray-600">
-              This tool automates steps 1-4 for you based on your unit list!
-            </p>
-          </div>
-
-          <div className="bg-white bg-opacity-60 rounded p-3">
-            <p className="font-semibold text-green-900 mb-2">🎯 Advanced: Neighboring AP Broadcast <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded ml-2">Coming Soon</span></p>
-            <p>
-              <strong>Future Feature:</strong> Configure neighboring APs to also broadcast a unit's SSID for better coverage and seamless roaming.
-              <br/>
-              <span className="text-amber-700 font-medium">⚠️ Trade-off:</span> Better resiliency vs. increased interference and airtime overhead.
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* CSV Template Download */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
         <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
@@ -676,9 +722,11 @@ function PerUnitSSID() {
         <div className="text-xs space-y-1 mb-3">
           <div><strong>Required:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">unit_number, ssid_name, ssid_password, security_type, default_vlan</code></div>
           <div><strong>Optional:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">ap_serial_or_name, network_name</code></div>
+          <div><strong>DPSK Only:</strong> <code className="bg-orange-100 px-1 py-0.5 rounded text-xs">username, email, description</code></div>
         </div>
         <p className="text-xs text-gray-600 mb-3 italic">
-          💡 <strong>Tip:</strong> Multiple rows with the same <code className="bg-gray-100 px-1 rounded">unit_number</code> will be grouped into the same AP Group. <code className="bg-gray-100 px-1 rounded">network_name</code> sets the internal R1 name (defaults to <code className="bg-gray-100 px-1 rounded">ssid_name</code> if omitted).
+          💡 <strong>Tip:</strong> Multiple rows with the same <code className="bg-gray-100 px-1 rounded">unit_number</code> will be grouped into the same AP Group.
+          For DPSK mode, each row becomes a unique passphrase. Use <code className="bg-orange-100 px-1 rounded">security_type=DPSK</code> to enable.
         </p>
         <div className="flex gap-3">
           <button
@@ -723,6 +771,27 @@ function PerUnitSSID() {
           >
             📝 Template without APs
           </button>
+
+          <button
+            onClick={() => {
+              const template = `unit_number,ap_serial_or_name,ssid_name,ssid_password,security_type,default_vlan,username,email,description
+101,AP-101-Living,Unit-101-WiFi,SecurePass101!,DPSK,10,john.doe,john@example.com,Primary resident
+101,,Unit-101-WiFi,GuestPass101!,DPSK,99,guest-101,,Guest access (isolated VLAN)
+102,AP-102-Living,Unit-102-WiFi,SecurePass102!,DPSK,20,jane.smith,jane@example.com,Primary resident
+102,,Unit-102-WiFi,Family102Pass!,DPSK,20,family-102,,Family member (same VLAN)
+102,,Unit-102-WiFi,GuestPass102!,DPSK,99,guest-102,,Guest access (isolated VLAN)`;
+              const blob = new Blob([template], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'per-unit-dpsk-template.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 text-sm font-medium"
+          >
+            🔐 DPSK Template
+          </button>
         </div>
       </div>
 
@@ -750,14 +819,195 @@ function PerUnitSSID() {
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h3 className="text-xl font-semibold mb-4">Step 2: Configuration Input</h3>
 
-        {/* Selected Venue Display */}
-        {venueId && venueName && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-sm text-green-800">
-              <strong>Selected Venue:</strong> {venueName} ({venueId})
-            </p>
+        {/* CSV Text Input */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Paste CSV content directly:
+          </label>
+          <textarea
+            value={csvInput}
+            onChange={handleCsvInputChange}
+            placeholder="unit_number,ap_serial_or_name,ssid_name,network_name,ssid_password,security_type,default_vlan&#10;101,AP-101-Living,MyWiFi,Unit-101-Network,SecurePass101!,WPA3,10"
+            className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+          />
+        </div>
+
+        {/* File Upload */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Or upload a CSV file:
+          </label>
+          <input
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileUpload}
+            className="block w-full text-sm text-gray-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-md file:border-0
+              file:text-sm file:font-semibold
+              file:bg-blue-50 file:text-blue-700
+              hover:file:bg-blue-100"
+          />
+        </div>
+
+        {/* Network Name Conflict Resolution */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Network Name Conflict
+          </label>
+          <select
+            value={nameConflictResolution}
+            onChange={(e) => setNameConflictResolution(e.target.value as 'keep' | 'overwrite')}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="keep">Keep existing R1 name</option>
+            <option value="overwrite">Overwrite with ruckus.tools name</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            When SSID exists but internal network name differs: keep R1's name or update to match rtools CSV
+          </p>
+        </div>
+
+        {/* DPSK Mode Configuration */}
+        <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="dpskMode"
+              checked={dpskMode}
+              onChange={(e) => setDpskMode(e.target.checked)}
+              className="mt-1 h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+            />
+            <div className="flex-1">
+              <label htmlFor="dpskMode" className="block text-sm font-medium text-gray-700 cursor-pointer">
+                Enable DPSK Mode
+                <span className="ml-2 text-xs font-normal text-orange-600 bg-orange-100 px-2 py-0.5 rounded">
+                  Dynamic Pre-Shared Key
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1">
+                Creates one shared Identity Group and DPSK Pool for all units. Each unit's SSID links to the same pool.
+                Auto-enabled when <code className="bg-gray-200 px-1 rounded">security_type=DPSK</code> in CSV.
+              </p>
+
+              {dpskMode && (
+                <div className="mt-4 space-y-4">
+                  {/* Shared Resource Naming */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Identity Group Name
+                      </label>
+                      <input
+                        type="text"
+                        value={identityGroupName}
+                        onChange={(e) => setIdentityGroupName(e.target.value)}
+                        placeholder="e.g., Property Name IDG"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-0.5">Shared across all units</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        DPSK Pool Name
+                      </label>
+                      <input
+                        type="text"
+                        value={dpskPoolName}
+                        onChange={(e) => setDpskPoolName(e.target.value)}
+                        placeholder="e.g., Property Name DPSK"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                      <p className="text-xs text-gray-400 mt-0.5">Shared across all units</p>
+                    </div>
+                  </div>
+
+                  {/* DPSK Pool Settings */}
+                  <div className="bg-white rounded border border-orange-100 p-3">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3">DPSK Pool Settings</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Passphrase Format
+                        </label>
+                        <select
+                          value={dpskPoolSettings.passphrase_format}
+                          onChange={(e) => setDpskPoolSettings({
+                            ...dpskPoolSettings,
+                            passphrase_format: e.target.value as DpskPoolSettings['passphrase_format']
+                          })}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        >
+                          <option value="KEYBOARD_FRIENDLY">Keyboard Friendly</option>
+                          <option value="NUMBERS_ONLY">Numbers Only</option>
+                          <option value="MOST_SECURED">Most Secured</option>
+                        </select>
+                        <p className="text-xs text-gray-400 mt-0.5">For auto-gen only</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Passphrase Length
+                        </label>
+                        <input
+                          type="number"
+                          min="8"
+                          max="63"
+                          value={dpskPoolSettings.passphrase_length}
+                          onChange={(e) => setDpskPoolSettings({
+                            ...dpskPoolSettings,
+                            passphrase_length: parseInt(e.target.value) || 12
+                          })}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                        <p className="text-xs text-gray-400 mt-0.5">For auto-gen only</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Max Devices
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="999"
+                          value={dpskPoolSettings.max_devices_per_passphrase}
+                          onChange={(e) => setDpskPoolSettings({
+                            ...dpskPoolSettings,
+                            max_devices_per_passphrase: parseInt(e.target.value) || 0
+                          })}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                        <p className="text-xs text-gray-400 mt-0.5">0 = unlimited</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Expiration (days)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="3650"
+                          value={dpskPoolSettings.expiration_days || ''}
+                          onChange={(e) => setDpskPoolSettings({
+                            ...dpskPoolSettings,
+                            expiration_days: e.target.value ? parseInt(e.target.value) : null
+                          })}
+                          placeholder="No expiry"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                        <p className="text-xs text-gray-400 mt-0.5">Empty = none</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-orange-700 bg-orange-100 p-2 rounded">
+                    <strong>Note:</strong> One DPSK pool serves all per-unit SSIDs. Passphrases from the <code className="bg-orange-200 px-1 rounded">ssid_password</code> column
+                    are added to this shared pool. Leave password empty to auto-generate.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
 
         {/* AP Group Naming (Prefix + Postfix) */}
         <div className="mb-4">
@@ -789,24 +1039,6 @@ function PerUnitSSID() {
           </div>
           <p className="text-xs text-gray-500 mt-1">
             Optional prefix and/or postfix for AP Group names. Leave blank to use just the unit number.
-          </p>
-        </div>
-
-        {/* Network Name Conflict Resolution */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Network Name Conflict
-          </label>
-          <select
-            value={nameConflictResolution}
-            onChange={(e) => setNameConflictResolution(e.target.value as 'keep' | 'overwrite')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="keep">Keep existing R1 name</option>
-            <option value="overwrite">Overwrite with ruckus.tools name</option>
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            When SSID exists but internal network name differs: keep R1's name or update to match rtools CSV
           </p>
         </div>
 
@@ -993,82 +1225,6 @@ function PerUnitSSID() {
           </div>
         </div>
 
-        {/* Parallel Execution Options */}
-        <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-          <div className="flex items-start gap-3">
-            <input
-              type="checkbox"
-              id="parallelExecution"
-              checked={parallelExecution}
-              onChange={(e) => setParallelExecution(e.target.checked)}
-              className="mt-1 h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-            />
-            <div className="flex-1">
-              <label htmlFor="parallelExecution" className="block text-sm font-medium text-gray-700 cursor-pointer">
-                Enable Parallel Execution
-                <span className="ml-2 text-xs font-normal text-purple-600 bg-purple-100 px-2 py-0.5 rounded">
-                  Recommended for 5+ units
-                </span>
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Process each unit independently in parallel. Each unit runs through all phases before moving to the next.
-                Without this, all units complete Phase 1 before any start Phase 2, etc.
-              </p>
-
-              {parallelExecution && (
-                <div className="mt-3 flex items-center gap-3">
-                  <label htmlFor="maxConcurrent" className="text-sm text-gray-600">
-                    Max concurrent units:
-                  </label>
-                  <input
-                    type="number"
-                    id="maxConcurrent"
-                    min="1"
-                    max="50"
-                    value={maxConcurrent}
-                    onChange={(e) => setMaxConcurrent(Math.max(1, Math.min(50, parseInt(e.target.value) || 10)))}
-                    className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                  <span className="text-xs text-gray-400">
-                    (1-50, default 10)
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* CSV Text Input */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Or paste CSV content directly:
-          </label>
-          <textarea
-            value={csvInput}
-            onChange={handleCsvInputChange}
-            placeholder="unit_number,ap_serial_or_name,ssid_name,network_name,ssid_password,security_type,default_vlan&#10;101,AP-101-Living,MyWiFi,Unit-101-Network,SecurePass101!,WPA3,10"
-            className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-          />
-        </div>
-
-        {/* File Upload */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Or upload a CSV file:
-          </label>
-          <input
-            type="file"
-            accept=".csv,.txt"
-            onChange={handleFileUpload}
-            className="block w-full text-sm text-gray-500
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-md file:border-0
-              file:text-sm file:font-semibold
-              file:bg-blue-50 file:text-blue-700
-              hover:file:bg-blue-100"
-          />
-        </div>
-
         {/* Error Message */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
@@ -1086,7 +1242,7 @@ function PerUnitSSID() {
               : "bg-blue-600 hover:bg-blue-700 text-white"
           }`}
         >
-          {processing ? "Processing..." : "Process Units"}
+          {processing ? "Processing..." : "Validate & Plan"}
         </button>
 
         {/* Last Job Result */}
@@ -1198,6 +1354,17 @@ function PerUnitSSID() {
           isOpen={showJobModal}
           onClose={handleCloseJobModal}
           onJobComplete={handleJobComplete}
+        />
+      )}
+
+      {/* V2 Plan Confirmation Modal */}
+      {v2JobId && (
+        <V2PlanConfirmModal
+          jobId={v2JobId}
+          isOpen={showV2PlanModal}
+          workflowName={dpskMode ? 'per_unit_dpsk' : 'per_unit_psk'}
+          onClose={() => setShowV2PlanModal(false)}
+          onConfirm={handleV2Confirm}
         />
       )}
 
@@ -1406,11 +1573,11 @@ function PerUnitSSID() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-4 mt-3">
-                        {/* APs Column */}
+                      <div className="grid grid-cols-2 gap-4 mt-3">
+                        {/* APs + Wired Ports Column (Combined) */}
                         <div>
                           <h6 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
-                            📡 Access Points
+                            📡 Access Points & 🔌 Wired Ports
                           </h6>
                           {group.total_aps === 0 ? (
                             <p className="text-xs text-gray-500 italic">
@@ -1420,43 +1587,6 @@ function PerUnitSSID() {
                             <ul className="space-y-1">
                               {(group.aps || []).map((ap, idx) => {
                                 const showSerial = ap.serial && ap.serial !== ap.name;
-                                return (
-                                  <li
-                                    key={idx}
-                                    className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded flex items-center justify-between"
-                                  >
-                                    <span>
-                                      {ap.name}
-                                      {showSerial && (
-                                        <span className="text-gray-400 ml-1">
-                                          ({ap.serial})
-                                        </span>
-                                      )}
-                                    </span>
-                                    {ap.model && (
-                                      <span className="text-gray-400 text-[10px] ml-1">
-                                        {ap.model}
-                                      </span>
-                                    )}
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </div>
-
-                        {/* Wired Ports Column */}
-                        <div>
-                          <h6 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
-                            🔌 Wired Ports
-                          </h6>
-                          {group.total_aps === 0 ? (
-                            <p className="text-xs text-gray-500 italic">
-                              No APs
-                            </p>
-                          ) : (
-                            <ul className="space-y-1">
-                              {(group.aps || []).map((ap, idx) => {
                                 const portSettings = ap.lan_port_settings;
                                 const portStatuses = ap.lan_port_statuses || [];
                                 const ports = portSettings?.ports || [];
@@ -1470,50 +1600,62 @@ function PerUnitSSID() {
                                   return status?.phyLink || status?.physicalLink || null;
                                 };
 
-                                if (ports.length === 0) {
-                                  return (
-                                    <li
-                                      key={idx}
-                                      className="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded italic"
-                                    >
-                                      No LAN ports
-                                    </li>
-                                  );
-                                }
                                 return (
                                   <li
                                     key={idx}
-                                    className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded flex items-center gap-1 flex-wrap"
+                                    className="text-xs text-gray-600 bg-gray-50 px-2 py-1.5 rounded flex items-center justify-between gap-2"
                                   >
-                                    {ports.map((port: LanPortConfig, pIdx: number) => {
-                                      const phyLink = getPhyLink(port.portId);
-                                      const isUp = phyLink?.toLowerCase() === 'up';
-                                      return (
-                                        <span
-                                          key={pIdx}
-                                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                            !port.enabled
-                                              ? 'bg-red-100 text-red-800'
-                                              : isUp
-                                                ? 'bg-green-100 text-green-800 ring-1 ring-green-400'
-                                                : 'bg-gray-100 text-gray-700'
-                                          }`}
-                                          title={`${port.portId}: ${!port.enabled ? 'Disabled' : `VLAN ${port.untagId || 'default'}${port.vlanMembers ? ` (tagged: ${port.vlanMembers})` : ''}`}${phyLink ? ` | Link: ${phyLink}` : ''}`}
-                                        >
-                                          {/* Physical link indicator */}
-                                          {phyLink && (
-                                            <span className={`w-1.5 h-1.5 rounded-full mr-1 ${isUp ? 'bg-green-500' : 'bg-gray-400'}`} />
-                                          )}
-                                          {port.portId.replace('LAN', 'P')}
-                                          {port.enabled && port.untagId && (
-                                            <span className="ml-0.5">:{port.untagId}</span>
-                                          )}
-                                          {!port.enabled && (
-                                            <span className="ml-0.5">x</span>
-                                          )}
+                                    {/* AP Name + Serial + Model */}
+                                    <div className="flex items-center gap-1 min-w-0 flex-shrink">
+                                      <span className="truncate">
+                                        {ap.name}
+                                        {showSerial && (
+                                          <span className="text-gray-400 ml-1">
+                                            ({ap.serial})
+                                          </span>
+                                        )}
+                                      </span>
+                                      {ap.model && (
+                                        <span className="text-gray-400 text-[10px] flex-shrink-0">
+                                          {ap.model}
                                         </span>
-                                      );
-                                    })}
+                                      )}
+                                    </div>
+                                    {/* Port Icons */}
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                      {ports.length === 0 ? (
+                                        <span className="text-gray-400 text-[10px] italic">No ports</span>
+                                      ) : (
+                                        ports.map((port: LanPortConfig, pIdx: number) => {
+                                          const phyLink = getPhyLink(port.portId);
+                                          const isUp = phyLink?.toLowerCase() === 'up';
+                                          return (
+                                            <span
+                                              key={pIdx}
+                                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                                !port.enabled
+                                                  ? 'bg-red-100 text-red-800'
+                                                  : isUp
+                                                    ? 'bg-green-100 text-green-800 ring-1 ring-green-400'
+                                                    : 'bg-gray-100 text-gray-700'
+                                              }`}
+                                              title={`${port.portId}: ${!port.enabled ? 'Disabled' : `VLAN ${port.untagId || 'default'}${port.vlanMembers ? ` (tagged: ${port.vlanMembers})` : ''}`}${phyLink ? ` | Link: ${phyLink}` : ''}`}
+                                            >
+                                              {phyLink && (
+                                                <span className={`w-1.5 h-1.5 rounded-full mr-1 ${isUp ? 'bg-green-500' : 'bg-gray-400'}`} />
+                                              )}
+                                              {port.portId.replace('LAN', 'P')}
+                                              {port.enabled && port.untagId && (
+                                                <span className="ml-0.5">:{port.untagId}</span>
+                                              )}
+                                              {!port.enabled && (
+                                                <span className="ml-0.5">x</span>
+                                              )}
+                                            </span>
+                                          );
+                                        })
+                                      )}
+                                    </div>
                                   </li>
                                 );
                               })}

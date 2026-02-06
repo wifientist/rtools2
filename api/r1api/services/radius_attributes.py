@@ -74,7 +74,7 @@ class RadiusAttributeService:
         """
         body = {
             "page": page,
-            "limit": limit
+            "pageSize": limit  # API uses pageSize, not limit
         }
 
         if filters:
@@ -186,7 +186,7 @@ class RadiusAttributeService:
         """
         body = {
             "page": page,
-            "limit": limit
+            "pageSize": limit  # API uses pageSize, not limit
         }
 
         if filters:
@@ -243,10 +243,15 @@ class RadiusAttributeService:
 
         Args:
             name: Group name
-            attributes: List of attribute configurations, e.g.:
+            attributes: List of attribute assignments, e.g.:
                 [
-                    {"attributeId": "...", "value": "100"},  # VLAN
-                    {"attributeId": "...", "value": "10"}    # Bandwidth
+                    {
+                        "vendorName": "WISPr",
+                        "attributeName": "WISPr-Bandwidth-Max-Down",
+                        "operator": "ADD",
+                        "attributeValue": "1000000000",
+                        "dataType": "INTEGER"
+                    }
                 ]
             tenant_id: Tenant/EC ID (required for MSP)
             description: Optional description
@@ -256,7 +261,7 @@ class RadiusAttributeService:
         """
         payload = {
             "name": name,
-            "attributes": attributes
+            "attributeAssignments": attributes  # API uses attributeAssignments, not attributes
         }
 
         if description:
@@ -274,7 +279,57 @@ class RadiusAttributeService:
                 payload=payload
             )
 
+        # Raise exception on HTTP errors so callers can handle failures properly
+        if not response.ok:
+            error_data = response.json()
+            error_msg = error_data.get('message', error_data.get('error', response.text[:200]))
+            status = error_data.get('status', response.status_code)
+            raise Exception(f"Failed to create RADIUS group ({status}): {error_msg}")
+
         return response.json()
+
+    async def create_bandwidth_group(
+        self,
+        name: str,
+        down_bps: int = 10_000_000_000,
+        up_bps: int = 10_000_000_000,
+        tenant_id: str = None
+    ):
+        """
+        Create a WISPr bandwidth limit RADIUS attribute group.
+
+        Convenience method for creating bandwidth rate-limit groups.
+
+        Args:
+            name: Group name (e.g., "fast", "gigabit")
+            down_bps: Download bandwidth in bits per second (default 10Gbps)
+            up_bps: Upload bandwidth in bits per second (default 10Gbps)
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            Created RADIUS attribute group
+        """
+        return await self.create_radius_attribute_group(
+            name=name,
+            attributes=[
+                {
+                    "vendorName": "WISPr",
+                    "attributeName": "WISPr-Bandwidth-Max-Down",
+                    "operator": "ADD",
+                    "attributeValue": str(down_bps),
+                    "dataType": "INTEGER"
+                },
+                {
+                    "vendorName": "WISPr",
+                    "attributeName": "WISPr-Bandwidth-Max-Up",
+                    "operator": "ADD",
+                    "attributeValue": str(up_bps),
+                    "dataType": "INTEGER"
+                }
+            ],
+            description=name,
+            tenant_id=tenant_id
+        )
 
     async def update_radius_attribute_group(
         self,

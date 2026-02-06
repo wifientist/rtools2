@@ -107,6 +107,71 @@ class VenueService:
         else:
             return self.client.post(f"/venues/{venue_id}/aps/{serial_number}").json()
 
+    async def update_ap(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        serial_number: str,
+        name: str = None,
+        description: str = None,
+        ap_group_id: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Update an AP's properties (name, description, AP group).
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID where AP is located
+            serial_number: AP serial number
+            name: New AP name (optional)
+            description: New AP description (optional)
+            ap_group_id: New AP Group ID to assign (optional)
+            wait_for_completion: If True, wait for async task to complete (default: True)
+
+        Returns:
+            Response from API (includes requestId if async)
+        """
+        # Build payload with only provided fields
+        payload = {
+            "serialNumber": serial_number
+        }
+
+        if name is not None:
+            payload["name"] = name
+        if description is not None:
+            payload["description"] = description
+        if ap_group_id is not None:
+            payload["apGroupId"] = ap_group_id
+
+        logger.info(f"Updating AP {serial_number}: {payload}")
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/aps/{serial_number}",
+                payload=payload
+            )
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            logger.error(f"Failed to update AP: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
     async def get_ap_groups(self, tenant_id: str = None):
         """
         Get all AP groups for a tenant (simple GET without filtering)
@@ -186,7 +251,7 @@ class VenueService:
         if page is not None:
             body['page'] = page
         if limit is not None:
-            body['limit'] = limit
+            body['pageSize'] = limit
 
         # Add filters if provided
         if filters:
@@ -199,6 +264,45 @@ class VenueService:
             return self.client.post("/venues/apGroups/query", payload=body, override_tenant_id=tenant_id).json()
         else:
             return self.client.post("/venues/apGroups/query", payload=body).json()
+
+    async def delete_ap_group(
+        self,
+        venue_id: str,
+        ap_group_id: str,
+        tenant_id: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Delete an AP group from a venue.
+
+        Args:
+            venue_id: Venue ID
+            ap_group_id: AP Group ID to delete
+            tenant_id: Tenant/EC ID (required for MSP)
+            wait_for_completion: If True, wait for async task (default True).
+                                 If False, returns requestId for bulk tracking.
+
+        Returns:
+            Deletion response (includes requestId if wait_for_completion=False)
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.delete(
+                f"/venues/{venue_id}/apGroups/{ap_group_id}",
+                override_tenant_id=tenant_id,
+            )
+        else:
+            response = self.client.delete(
+                f"/venues/{venue_id}/apGroups/{ap_group_id}"
+            )
+
+        if response.status_code == 202:
+            result = response.json() if response.content else {"status": "accepted"}
+            request_id = result.get('requestId')
+            if request_id and wait_for_completion:
+                await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+            return result
+
+        return response.json() if response.content else {"status": "deleted"}
 
     # ========== Venue WiFi Settings Methods ==========
 
@@ -687,6 +791,7 @@ class VenueService:
         tenant_id: str,
         venue_id: str,
         wifi_network_id: str,
+        dpsk_service_id: str = None,
         wait_for_completion: bool = True
     ):
         """
@@ -699,6 +804,7 @@ class VenueService:
             tenant_id: Tenant/EC ID
             venue_id: Venue ID
             wifi_network_id: WiFi Network (SSID) ID to activate
+            dpsk_service_id: For DPSK networks, the DPSK pool/service ID (required for DPSK activation)
             wait_for_completion: If True, wait for async task to complete (default: True)
 
         Returns:
@@ -706,8 +812,11 @@ class VenueService:
         """
         logger.info(f"[activate_ssid_on_venue] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}")
 
-        # Make API call - PUT with empty body
+        # Build payload - empty for PSK, include dpskServiceProfileId for DPSK
         payload = {}
+        if dpsk_service_id:
+            payload["dpskServiceProfileId"] = dpsk_service_id
+            logger.info(f"[activate_ssid_on_venue] DPSK mode - including dpskServiceProfileId: {dpsk_service_id}")
 
         if self.client.ec_type == "MSP":
             response = self.client.put(
@@ -739,6 +848,72 @@ class VenueService:
             return result
         else:
             logger.error(f"[activate_ssid_on_venue] FAILED: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def deactivate_ssid_from_venue(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        wifi_network_id: str,
+        wait_for_completion: bool = True
+    ):
+        """
+        Deactivate an SSID (WiFi Network) from a venue.
+
+        This removes the SSID from the venue. The network still exists
+        but is no longer active on this venue's APs.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            wifi_network_id: WiFi Network (SSID) ID to deactivate
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response from API
+        """
+        logger.info(
+            f"[deactivate_ssid_from_venue] DELETE "
+            f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}"
+        )
+
+        if self.client.ec_type == "MSP":
+            response = self.client.delete(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.delete(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}"
+            )
+
+        logger.info(f"[deactivate_ssid_from_venue] Response: {response.status_code}")
+
+        if response.status_code in [200, 202, 204]:
+            result = response.json() if response.content else {"status": "accepted"}
+            request_id = result.get('requestId') if response.status_code == 202 else None
+
+            if response.status_code == 202 and wait_for_completion and request_id:
+                logger.info(f"[deactivate_ssid_from_venue] Waiting for task {request_id}...")
+                await self.client.await_task_completion(
+                    request_id, override_tenant_id=tenant_id
+                )
+                logger.info(f"[deactivate_ssid_from_venue] Task complete")
+
+            return result
+        elif response.status_code == 404:
+            # Already deactivated or doesn't exist
+            logger.info(
+                f"[deactivate_ssid_from_venue] Network not found on venue "
+                f"(already deactivated?)"
+            )
+            return {"status": "not_found"}
+        else:
+            logger.error(
+                f"[deactivate_ssid_from_venue] FAILED: "
+                f"{response.status_code} - {response.text}"
+            )
             response.raise_for_status()
             return None
 

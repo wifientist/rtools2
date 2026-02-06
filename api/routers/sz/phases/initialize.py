@@ -9,7 +9,7 @@ In cached_only mode, skips API calls and uses cached metadata.
 
 import logging
 from typing import Dict, Any, List
-from workflow.models import Task, TaskStatus
+from workflow.v2.models import Task, TaskStatus
 from routers.sz.zone_cache import RefreshMode
 
 logger = logging.getLogger(__name__)

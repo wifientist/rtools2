@@ -45,9 +45,9 @@ from services.ap_port_config_batch import (
 )
 from redis_client import get_redis_client
 
-# Workflow job framework imports
-from workflow.models import WorkflowJob, Phase, Task, JobStatus, TaskStatus, PhaseStatus
-from workflow.state_manager import RedisStateManager
+# Workflow job framework imports (V2)
+from workflow.v2.models import WorkflowJobV2, JobStatus, PhaseStatus, PhaseDefinitionV2
+from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.events import WorkflowEventPublisher
 
 logger = logging.getLogger(__name__)
@@ -575,8 +575,8 @@ async def configure_ports_batch(
     # Generate job ID
     job_id = str(uuid.uuid4())
 
-    # Create workflow job with single phase
-    job = WorkflowJob(
+    # Create V2 workflow job
+    job = WorkflowJobV2(
         id=job_id,
         workflow_name=WORKFLOW_NAME,
         user_id=current_user.id,
@@ -601,24 +601,21 @@ async def configure_ports_batch(
             ],
             'total_aps': len(ap_requests),
         },
-        phases=[
-            Phase(
+        phase_definitions=[
+            PhaseDefinitionV2(
                 id='configure_ports',
                 name='Configure AP Ports',
-                dependencies=[],
-                parallelizable=True,
+                executor='services.ap_port_config_batch.configure_ap_ports_batch',
                 critical=True,
-                tasks=[
-                    Task(id=f'ap_{i}', name=f'Configure {ap.ap_identifier}')
-                    for i, ap in enumerate(ap_requests)
-                ]
+                per_unit=False,
             )
-        ]
+        ],
+        global_phase_status={'configure_ports': PhaseStatus.PENDING},
     )
 
     # Save to Redis
     redis_client = await get_redis_client()
-    state_manager = RedisStateManager(redis_client)
+    state_manager = RedisStateManagerV2(redis_client)
     await state_manager.save_job(job)
 
     logger.info(f"Created batch job {job_id} for {len(ap_requests)} APs (dry_run={request.dry_run})")
@@ -645,7 +642,7 @@ async def configure_ports_batch(
 # ============================================================================
 
 async def run_batch_workflow_background(
-    job: WorkflowJob,
+    job: WorkflowJobV2,
     controller_id: int,
     ap_requests: List[APPortRequest],
     batch_config: BatchConfig,
@@ -666,16 +663,13 @@ async def run_batch_workflow_background(
 
         # Create workflow components
         redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
+        state_manager = RedisStateManagerV2(redis_client)
         event_publisher = WorkflowEventPublisher(redis_client)
 
         # Update job status to running
         job.status = JobStatus.RUNNING
-        job.current_phase_id = 'configure_ports'
-        phase = job.get_phase_by_id('configure_ports')
-        if phase:
-            phase.status = PhaseStatus.RUNNING
-            phase.started_at = datetime.utcnow()
+        job.started_at = datetime.utcnow()
+        job.global_phase_status['configure_ports'] = PhaseStatus.RUNNING
         await state_manager.save_job(job)
 
         # Publish start event
@@ -686,25 +680,17 @@ async def run_batch_workflow_background(
 
         # Progress callback that updates workflow job
         async def progress_callback(progress: BatchProgress):
-            # Update phase tasks based on progress
-            if phase:
-                completed_count = len(progress.aps_configured) + len(progress.aps_already_correct) + len(progress.aps_failed) + len(progress.aps_skipped)
-                for i, task in enumerate(phase.tasks):
-                    if i < completed_count:
-                        task.status = TaskStatus.COMPLETED
-                        task.completed_at = datetime.utcnow()
-
-                # Store progress in phase result
-                phase.result = {
-                    'current_phase': progress.current_phase,
-                    'processed_aps': progress.processed_aps,
-                    'total_aps': progress.total_aps,
-                    'configured': len(progress.aps_configured),
-                    'already_correct': len(progress.aps_already_correct),
-                    'failed': len(progress.aps_failed),
-                    'skipped': len(progress.aps_skipped),
-                    'pending_requests': progress.pending_requests,
-                }
+            # Store progress in global_phase_results
+            job.global_phase_results['configure_ports'] = {
+                'current_phase': progress.current_phase,
+                'processed_aps': progress.processed_aps,
+                'total_aps': progress.total_aps,
+                'configured': len(progress.aps_configured),
+                'already_correct': len(progress.aps_already_correct),
+                'failed': len(progress.aps_failed),
+                'skipped': len(progress.aps_skipped),
+                'pending_requests': progress.pending_requests,
+            }
 
             await state_manager.save_job(job)
 
@@ -747,14 +733,10 @@ async def run_batch_workflow_background(
         )
 
         # Update job with results
-        if phase:
-            phase.status = PhaseStatus.COMPLETED
-            phase.completed_at = datetime.utcnow()
-            phase.result = result
-
+        job.global_phase_status['configure_ports'] = PhaseStatus.COMPLETED
+        job.global_phase_results['configure_ports'] = result
         job.status = JobStatus.COMPLETED
         job.completed_at = datetime.utcnow()
-        job.summary = result.get('summary', {})
 
         await state_manager.save_job(job)
 
@@ -770,12 +752,10 @@ async def run_batch_workflow_background(
         job.status = JobStatus.FAILED
         job.completed_at = datetime.utcnow()
         job.errors.append(str(e))
-
-        if job.phases and len(job.phases) > 0:
-            job.phases[0].status = PhaseStatus.FAILED
+        job.global_phase_status['configure_ports'] = PhaseStatus.FAILED
 
         redis_client = await get_redis_client()
-        state_manager = RedisStateManager(redis_client)
+        state_manager = RedisStateManagerV2(redis_client)
         event_publisher = WorkflowEventPublisher(redis_client)
 
         await state_manager.save_job(job)

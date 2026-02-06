@@ -46,7 +46,7 @@ class NetworksService:
             'fields': fields,
             'sortField': 'name',
             'sortOrder': 'ASC',
-            'page': 0,
+            'page': 1,
             'pageSize': 100
         }
 
@@ -68,7 +68,7 @@ class NetworksService:
 
             logger.debug(f"WiFi Networks pagination: page_size={page_size}, pages_needed={pages_needed}")
 
-            for page_num in range(1, pages_needed):
+            for page_num in range(2, pages_needed + 1):
                 body['page'] = page_num
                 if self.client.ec_type == "MSP" and tenant_id:
                     page_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
@@ -76,7 +76,7 @@ class NetworksService:
                     page_response = self.client.post("/wifiNetworks/query", payload=body).json()
                 page_data = page_response.get('data', [])
 
-                logger.debug(f"WiFi Networks page {page_num + 1} returned: {len(page_data)} networks")
+                logger.debug(f"WiFi Networks page {page_num} returned: {len(page_data)} networks")
 
                 all_networks.extend(page_data)
 
@@ -99,6 +99,126 @@ class NetworksService:
             return self.client.get(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id).json()
         else:
             return self.client.get(f"/wifiNetworks/{network_id}").json()
+
+    async def deactivate_from_all_venues(
+        self, network_id: str, tenant_id: str = None
+    ):
+        """
+        Deactivate a WiFi network from all venues.
+
+        R1 requires networks to be deactivated from all venues before
+        they can be deleted. This fetches the network to get its venue
+        list, then DELETEs from each venue individually.
+
+        Args:
+            network_id: WiFi network ID
+            tenant_id: Tenant/EC ID (required for MSP)
+
+        Returns:
+            True if deactivated (or already inactive), False on error
+        """
+        current_network = await self.get_wifi_network_by_id(
+            network_id, tenant_id
+        )
+        if not current_network:
+            logger.warning(
+                f"Cannot deactivate network {network_id}: not found"
+            )
+            return False
+
+        venues = current_network.get('venues') or []
+        if not venues:
+            return True  # Already deactivated
+
+        nw_name = current_network.get('name', network_id)
+        logger.info(
+            f"Deactivating network '{nw_name}' from "
+            f"{len(venues)} venue(s)"
+        )
+
+        # Deactivate from each venue using DELETE endpoint
+        for venue in venues:
+            venue_id = venue.get('id') if isinstance(venue, dict) else venue
+            if not venue_id:
+                continue
+
+            logger.debug(
+                f"Deactivating network '{nw_name}' from venue {venue_id}"
+            )
+
+            if self.client.ec_type == "MSP" and tenant_id:
+                response = self.client.delete(
+                    f"/venues/{venue_id}/wifiNetworks/{network_id}",
+                    override_tenant_id=tenant_id,
+                )
+            else:
+                response = self.client.delete(
+                    f"/venues/{venue_id}/wifiNetworks/{network_id}",
+                )
+
+            if response.status_code in [200, 202, 204]:
+                # If async (202), wait for completion
+                if response.status_code == 202:
+                    result = (
+                        response.json() if response.content
+                        else {}
+                    )
+                    request_id = result.get('requestId')
+                    if request_id:
+                        await self.client.await_task_completion(
+                            request_id, override_tenant_id=tenant_id
+                        )
+                logger.debug(
+                    f"Deactivated network '{nw_name}' from venue {venue_id}"
+                )
+            elif response.status_code == 404:
+                # Already deactivated from this venue
+                logger.debug(
+                    f"Network '{nw_name}' already deactivated "
+                    f"from venue {venue_id}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to deactivate network '{nw_name}' "
+                    f"from venue {venue_id}: "
+                    f"{response.status_code} - {response.text}"
+                )
+                # Continue with other venues even if one fails
+
+        logger.info(f"Deactivated network '{nw_name}' from all venues")
+        return True
+
+    async def delete_wifi_network(
+        self,
+        network_id: str,
+        tenant_id: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Delete a WiFi network.
+
+        Args:
+            network_id: WiFi network ID
+            tenant_id: Tenant/EC ID (required for MSP)
+            wait_for_completion: If True, wait for async task (default True).
+                                 If False, returns requestId for bulk tracking.
+
+        Returns:
+            Deletion response (includes requestId if wait_for_completion=False)
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.delete(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id)
+        else:
+            response = self.client.delete(f"/wifiNetworks/{network_id}")
+
+        if response.status_code == R1StatusCode.ACCEPTED:
+            result = response.json() if response.content else {"status": "accepted"}
+            request_id = result.get('requestId')
+            if request_id and wait_for_completion:
+                await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+            return result
+
+        return response.json() if response.content else {"status": "deleted"}
 
     async def find_wifi_network_by_name(self, tenant_id: str, venue_id: str, network_name: str):
         """
@@ -452,3 +572,154 @@ class NetworksService:
             logger.error(f"Failed to update network venue config: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
+
+    async def create_dpsk_wifi_network(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        name: str,
+        ssid: str,
+        dpsk_service_id: str,
+        vlan_id: int = 1,
+        description: str = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Create a DPSK WiFi network tied to a DPSK service (pool).
+
+        The network is created as type 'dpsk' and the DPSK service handles authentication.
+        Each passphrase in the DPSK pool can optionally have its own VLAN override.
+
+        NOTE: R1 requires a separate PUT call to actually link the DPSK service
+        to the network after creation. The caller must call
+        activate_dpsk_service_on_network() after this method.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID where network will be created
+            name: Internal network name
+            ssid: Broadcast SSID (what clients see)
+            dpsk_service_id: DPSK pool/service ID (for logging only - link via PUT)
+            vlan_id: Default VLAN (fallback when passphrase has no VLAN)
+            description: Optional description
+            wait_for_completion: Wait for async task to complete
+
+        Returns:
+            Created network data with 'id' field
+        """
+        # Build WLAN settings for DPSK network
+        # Per OpenAPI schema: ssid (required), vlanId, enabled, wlanSecurity
+        wlan_settings = {
+            "ssid": ssid,
+            "vlanId": int(vlan_id),
+            "enabled": True,
+        }
+
+        # Build payload for DPSK network
+        # useDpskService MUST be true to enable DPSK service linking
+        # The actual service link is established via PUT /wifiNetworks/{id}/dpskServices/{serviceId}
+        payload = {
+            "type": WifiNetworkType.DPSK,  # DPSK type discriminator
+            "name": name,
+            "wlan": wlan_settings,
+            "useDpskService": True,  # Required: enables DPSK service on this network
+        }
+
+        if description:
+            payload["description"] = description
+
+        logger.info(f"Creating DPSK network '{name}' with SSID '{ssid}' (will link to pool {dpsk_service_id} after creation)")
+
+        # Make API call
+        if self.client.ec_type == "MSP":
+            response = self.client.post(
+                "/wifiNetworks",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.post(
+                "/wifiNetworks",
+                payload=payload
+            )
+
+        # Handle response
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            # If 202 Accepted and wait_for_completion=True, poll for task completion
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+                    # After async task completes, fetch the created resource to get its ID
+                    created_network = await self.find_wifi_network_by_name(tenant_id, venue_id, name)
+                    if created_network:
+                        return created_network
+                    else:
+                        logger.warning(f"Task completed but could not find created DPSK network '{name}'")
+                        return result
+
+            return result
+        else:
+            error_data = response.json() if response.content else {}
+            logger.error(f"Failed to create DPSK network: {response.status_code} - {error_data}")
+            raise Exception(f"Failed to create DPSK network: {response.status_code} - {error_data.get('message', response.text)}")
+
+    async def activate_dpsk_service_on_network(
+        self,
+        tenant_id: str,
+        network_id: str,
+        dpsk_service_id: str,
+        wait_for_completion: bool = True
+    ):
+        """
+        Activate/link a DPSK service to a WiFi network.
+
+        This API builds the relationship between DPSK service and WiFi network.
+        It must be called AFTER creating the DPSK network and BEFORE activating
+        the network on a venue.
+
+        API: PUT /wifiNetworks/{wifiNetworkId}/dpskServices/{dpskServiceId}
+
+        Args:
+            tenant_id: Tenant/EC ID
+            network_id: WiFi Network ID
+            dpsk_service_id: DPSK Pool/Service ID to link
+            wait_for_completion: Wait for async task to complete
+
+        Returns:
+            API response
+        """
+        logger.info(f"Activating DPSK service {dpsk_service_id} on network {network_id}")
+
+        # Make API call - PUT with empty body to link the service
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}/dpskServices/{dpsk_service_id}",
+                payload={},
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}/dpskServices/{dpsk_service_id}",
+                payload={}
+            )
+
+        # Handle response
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            # If 202 Accepted and wait_for_completion=True, poll for task completion
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            logger.info(f"DPSK service {dpsk_service_id} linked to network {network_id}")
+            return result
+        else:
+            error_data = response.json() if response.content else {}
+            logger.error(f"Failed to activate DPSK service on network: {response.status_code} - {error_data}")
+            raise Exception(f"Failed to activate DPSK service on network: {response.status_code} - {error_data.get('message', response.text)}")

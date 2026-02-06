@@ -8,7 +8,7 @@ Defines the phased workflow for auditing SmartZone controllers:
 4. Finalize - Aggregate stats, match switch groups, store results
 """
 
-from workflow.models import WorkflowDefinition, PhaseDefinition
+from workflow.v2.models import WorkflowDefinition, PhaseDefinition
 
 
 SZ_AUDIT_WORKFLOW = WorkflowDefinition(

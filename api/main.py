@@ -19,11 +19,14 @@ logger = logging.getLogger(__name__)
 from database import engine, SessionLocal
 import models
 from scheduler.service import init_scheduler
-from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid, ap_port_config
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid, ap_port_config, ap_rename
 from routers.sz.sz_router import router as sz_router
 from routers.sz.audit_router import router as sz_audit_router
 from routers.cloudpath.cloudpath_router import router as cloudpath_router
+from routers.cloudpath.v2_endpoints import router as cloudpath_v2_router
 from routers.workflows_router import router as workflows_router
+from routers.workflows_v2_router import router as workflows_v2_router
+from routers.cleanup_v2_router import router as cleanup_v2_router
 from routers.orchestrator import orchestrator_router, webhook_router
 from routers.scheduler_router import router as scheduler_router
 from middleware.rate_limiter import RateLimitMiddleware
@@ -131,17 +134,35 @@ app.include_router(diagrams.router, tags=["Diagrams"])
 # Per-Unit SSID Router - for automating per-unit SSID configuration
 app.include_router(per_unit_ssid.router, tags=["Per-Unit SSID"])
 
+# Per-Unit SSID V2 Router - V2 workflow engine with plan/confirm flow
+app.include_router(per_unit_ssid.router_v2, tags=["Per-Unit SSID V2"])
+
 # AP Port Config Router - standalone AP LAN port configuration
 app.include_router(ap_port_config.router, tags=["AP Port Config"])
+
+# AP Port Config V2 Router - V2 workflow engine with plan/confirm flow
+app.include_router(ap_port_config.router_v2, tags=["AP Port Config V2"])
+
+# AP Rename Router - bulk AP name editing
+app.include_router(ap_rename.router, tags=["AP Rename"])
 
 # Workflow Job Management Router - generic job management for all workflows
 app.include_router(workflows_router)
 
+# V2 Workflow Discovery & Graph Router
+app.include_router(workflows_v2_router)
+
+# V2 Cleanup Router - venue resource cleanup with plan/confirm flow
+app.include_router(cleanup_v2_router)
+
 # Cloudpath DPSK Router - workflow-specific operations (audit, import)
-app.include_router(cloudpath_router, tags=["Cloudpath DPSK"])
+app.include_router(cloudpath_router, tags=["Cloudpath Import"])
+
+# Cloudpath DPSK V2 Router - V2 workflow engine with plan/confirm flow
+app.include_router(cloudpath_v2_router, tags=["Cloudpath Import V2"])
 
 # DPSK Orchestrator Routers - sync per-unit pools to site-wide pool
-app.include_router(orchestrator_router, tags=["DPSK Orchestrator"])
+app.include_router(orchestrator_router, tags=["DPSK Orchestrators"])
 app.include_router(webhook_router, tags=["Orchestrator Webhooks"])
 
 # Scheduler Admin Router - super admin only
