@@ -413,6 +413,9 @@ class WorkflowJobV2(BaseModel):
     # Errors
     errors: List[str] = Field(default_factory=list)
 
+    # Summary data (for progress tracking, stats, etc.)
+    summary: Dict[str, Any] = Field(default_factory=dict)
+
     class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None

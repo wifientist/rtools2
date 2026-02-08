@@ -18,6 +18,16 @@ from models.orchestrator import (
     PassphraseMapping
 )
 
+# Fileshare models
+from models.fileshare import (
+    FileFolder,
+    FileSubfolder,
+    FolderPermission,
+    SharedFile,
+    FileshareAuditLog,
+    PermissionType
+)
+
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
     'PendingSignupOtp', 'RevokedToken', 'AuditLog',
@@ -25,5 +35,8 @@ __all__ = [
     'ScheduledJob', 'ScheduledJobRun',
     # Orchestrator
     'DPSKOrchestrator', 'OrchestratorSourcePool',
-    'OrchestratorSyncEvent', 'PassphraseMapping'
+    'OrchestratorSyncEvent', 'PassphraseMapping',
+    # Fileshare
+    'FileFolder', 'FileSubfolder', 'FolderPermission',
+    'SharedFile', 'FileshareAuditLog', 'PermissionType'
 ]

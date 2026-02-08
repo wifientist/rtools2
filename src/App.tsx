@@ -30,6 +30,7 @@ import PerUnitSSID from "@/pages/PerUnitSSID";
 import APPortConfig from "@/pages/APPortConfig";
 import APRename from "@/pages/APRename";
 import SpeedExplainer from "@/pages/SpeedExplainer";
+import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathImport from "@/pages/CloudpathImport";
 import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
@@ -37,6 +38,9 @@ import JobMonitor from "@/pages/JobMonitor";
 import JobList from "@/pages/JobList";
 import SZAudit from "@/pages/SZAudit";
 import DangerZone from "@/pages/DangerZone";
+import FilesharePage from "@/pages/Fileshare/FilesharePage";
+import FolderView from "@/pages/Fileshare/FolderView";
+import FileshareAdmin from "@/pages/Fileshare/FileshareAdmin";
 
 const App = () => {
   
@@ -59,6 +63,7 @@ const App = () => {
           <Route path="/diff" element={<ProtectedRoute element={<DiffTenant />} />} />
           <Route path="/diff-venue" element={<ProtectedRoute element={<DiffVenue />} />} />
           <Route path="/speed-explainer" element={<SpeedExplainer />} />
+          <Route path="/roaming-explainer" element={<RoamingExplainer />} />
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/ap-port-config" element={<BetaRoute element={<APPortConfig />} />} />
@@ -67,6 +72,10 @@ const App = () => {
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/danger-zone" element={<BetaRoute element={<DangerZone />} />} />
+          <Route path="/fileshare" element={<ProtectedRoute element={<FilesharePage />} />} />
+          <Route path="/fileshare/admin" element={<AdminRoute element={<FileshareAdmin />} />} />
+          <Route path="/fileshare/:folderSlug" element={<ProtectedRoute element={<FolderView />} />} />
+          <Route path="/fileshare/:folderSlug/:subfolderSlug" element={<ProtectedRoute element={<FolderView />} />} />
           <Route path="/jobs" element={<ProtectedRoute element={<JobList />} />} />
           <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />

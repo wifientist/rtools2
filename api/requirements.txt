@@ -4,6 +4,7 @@ APScheduler==3.10.4
 annotated-types==0.7.0
 anyio==4.8.0
 bcrypt==4.3.0
+boto3==1.35.0
 certifi==2025.4.26
 cffi==1.17.1
 charset-normalizer==3.4.1

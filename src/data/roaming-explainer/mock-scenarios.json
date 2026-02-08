@@ -1,0 +1,740 @@
+{
+  "scenarios": [
+    {
+      "id": "mdu-hallway-hugger",
+      "name": "MDU: Hallway Hugger Problem",
+      "description": "Clients stick to hallway APs even when inside units with dedicated in-unit APs",
+      "category": "mdu",
+      "data": {
+        "summary": {
+          "health": "poor",
+          "score": 42,
+          "headline": "Clients are sticking to hallway APs",
+          "subheadline": "23 devices connected to hallway APs from inside units, causing poor performance"
+        },
+        "whatIsRoaming": {
+          "totalRoamEvents24h": 847,
+          "successfulRoams": 612,
+          "failedRoams": 235,
+          "avgRoamTimeMs": 340,
+          "fastRoamPercent": 28,
+          "recentEvents": [
+            {
+              "timestamp": "2024-01-15T14:32:15Z",
+              "clientMac": "AA:BB:CC:11:22:33",
+              "clientName": "John's iPhone",
+              "fromApMac": "00:11:22:33:44:01",
+              "fromApName": "Hallway-1F-East",
+              "toApMac": "00:11:22:33:44:10",
+              "toApName": "Unit-101-AP",
+              "roamType": "full",
+              "roamTimeMs": 450,
+              "rssiAtRoam": -78,
+              "reason": "signal_quality"
+            },
+            {
+              "timestamp": "2024-01-15T14:28:42Z",
+              "clientMac": "DD:EE:FF:44:55:66",
+              "clientName": "Ring Doorbell",
+              "fromApMac": "00:11:22:33:44:01",
+              "fromApName": "Hallway-1F-East",
+              "toApMac": "00:11:22:33:44:01",
+              "toApName": "Hallway-1F-East",
+              "roamType": "failed",
+              "roamTimeMs": 0,
+              "rssiAtRoam": -82,
+              "reason": "client_initiated"
+            }
+          ]
+        },
+        "stickyClients": {
+          "totalStickyClients": 23,
+          "stickyClients": [],
+          "worstOffenders": [
+            {
+              "clientMac": "DD:EE:FF:44:55:66",
+              "clientName": "Ring Doorbell",
+              "clientType": "Ring Video Doorbell Pro",
+              "connectedApMac": "00:11:22:33:44:01",
+              "connectedApName": "Hallway-1F-East",
+              "connectedApLocation": "1st Floor Hallway",
+              "currentRssi": -76,
+              "betterApMac": "00:11:22:33:44:10",
+              "betterApName": "Unit-101-AP",
+              "betterApRssi": -45,
+              "stuckDurationMinutes": 4320,
+              "lastRoamAttempt": "2024-01-12T08:00:00Z"
+            },
+            {
+              "clientMac": "11:22:33:AA:BB:CC",
+              "clientName": "Samsung TV",
+              "clientType": "Samsung Smart TV (2022)",
+              "connectedApMac": "00:11:22:33:44:02",
+              "connectedApName": "Hallway-2F-West",
+              "connectedApLocation": "2nd Floor Hallway",
+              "currentRssi": -71,
+              "betterApMac": "00:11:22:33:44:20",
+              "betterApName": "Unit-205-AP",
+              "betterApRssi": -38,
+              "stuckDurationMinutes": 2880,
+              "lastRoamAttempt": "2024-01-13T12:00:00Z"
+            },
+            {
+              "clientMac": "77:88:99:DD:EE:FF",
+              "clientName": "Nest Thermostat",
+              "clientType": "Nest Learning Thermostat",
+              "connectedApMac": "00:11:22:33:44:01",
+              "connectedApName": "Hallway-1F-East",
+              "connectedApLocation": "1st Floor Hallway",
+              "currentRssi": -74,
+              "betterApMac": "00:11:22:33:44:11",
+              "betterApName": "Unit-102-AP",
+              "betterApRssi": -42,
+              "stuckDurationMinutes": 10080,
+              "lastRoamAttempt": null
+            }
+          ],
+          "commonDeviceTypes": [
+            { "type": "IoT Devices", "count": 12 },
+            { "type": "Smart TVs", "count": 5 },
+            { "type": "Older Smartphones", "count": 4 },
+            { "type": "Laptops", "count": 2 }
+          ],
+          "recommendations": [
+            "Enable 802.11v BSS Transition Management to suggest better APs",
+            "Configure minimum RSSI threshold (-75 dBm) to force disconnection",
+            "Reduce hallway AP transmit power to limit coverage bleed into units",
+            "Consider separate SSIDs for hallway vs in-unit APs for IoT devices"
+          ]
+        },
+        "mduProblems": {
+          "metrics": {
+            "totalUnits": 48,
+            "totalAps": 56,
+            "hallwayAps": 8,
+            "inUnitAps": 48,
+            "avgApsPerFloor": 14,
+            "avgOverlapPercent": 35,
+            "floorBleedIssues": 6,
+            "hallwayHuggerClients": 23
+          },
+          "hallwayHuggers": [],
+          "floorBleeders": [],
+          "coverageMap": [
+            {
+              "apMac": "00:11:22:33:44:01",
+              "apName": "Hallway-1F-East",
+              "location": "1st Floor East Hallway",
+              "channel": 36,
+              "band": "5GHz",
+              "clientCount": 18,
+              "avgRssi": -68,
+              "coverageRadiusMeters": 25,
+              "isOverlapping": true,
+              "overlappingAps": ["Unit-101-AP", "Unit-102-AP", "Unit-103-AP", "Unit-104-AP"]
+            },
+            {
+              "apMac": "00:11:22:33:44:10",
+              "apName": "Unit-101-AP",
+              "location": "Unit 101 Living Room",
+              "channel": 149,
+              "band": "5GHz",
+              "clientCount": 4,
+              "avgRssi": -42,
+              "coverageRadiusMeters": 15,
+              "isOverlapping": true,
+              "overlappingAps": ["Hallway-1F-East"]
+            }
+          ],
+          "problemAreas": [
+            {
+              "location": "1st Floor East Wing",
+              "issue": "overlap",
+              "severity": "high",
+              "description": "Hallway AP signal penetrates into 4 adjacent units at -65 to -75 dBm"
+            },
+            {
+              "location": "Units 101-104",
+              "issue": "floor_bleed",
+              "severity": "medium",
+              "description": "2nd floor hallway AP visible in 1st floor units at -72 dBm"
+            }
+          ]
+        },
+        "troubleshooting": {
+          "config": {
+            "minRssiThreshold": null,
+            "bssMinRate": null,
+            "bandSteeringEnabled": true,
+            "loadBalancingEnabled": false,
+            "roamingStandards": {
+              "dot11k": true,
+              "dot11v": false,
+              "dot11r": true,
+              "okcEnabled": true,
+              "preauthEnabled": false
+            }
+          },
+          "issues": [
+            {
+              "category": "config",
+              "issue": "802.11v (BSS Transition) is disabled",
+              "severity": "critical",
+              "recommendation": "Enable 802.11v to allow APs to suggest better connection targets to clients"
+            },
+            {
+              "category": "config",
+              "issue": "No minimum RSSI threshold configured",
+              "severity": "warning",
+              "recommendation": "Set minimum RSSI to -75 dBm to force-disconnect weak clients"
+            },
+            {
+              "category": "design",
+              "issue": "Hallway AP transmit power too high",
+              "severity": "critical",
+              "recommendation": "Reduce hallway AP power from 'Auto' to fixed 12-14 dBm to limit bleed into units"
+            },
+            {
+              "category": "client",
+              "issue": "IoT devices have poor roaming behavior",
+              "severity": "info",
+              "recommendation": "IoT devices rarely roam on their own - consider dedicated SSID with strategic AP placement"
+            }
+          ],
+          "score": 42,
+          "scoreBreakdown": [
+            { "category": "Roaming Standards", "score": 15, "maxScore": 25, "notes": "802.11v disabled" },
+            { "category": "RSSI Management", "score": 5, "maxScore": 25, "notes": "No thresholds configured" },
+            { "category": "RF Design", "score": 12, "maxScore": 25, "notes": "Excessive overlap from hallway APs" },
+            { "category": "Client Compatibility", "score": 10, "maxScore": 25, "notes": "Many IoT devices with poor roaming" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mdu-floor-bleeder",
+      "name": "MDU: Floor Bleed Issue",
+      "description": "Clients connect to APs on adjacent floors through thin construction",
+      "category": "mdu",
+      "data": {
+        "summary": {
+          "health": "fair",
+          "score": 58,
+          "headline": "Significant floor-to-floor signal bleed",
+          "subheadline": "Clients on 2nd floor connecting to 1st and 3rd floor APs"
+        },
+        "whatIsRoaming": {
+          "totalRoamEvents24h": 1247,
+          "successfulRoams": 1089,
+          "failedRoams": 158,
+          "avgRoamTimeMs": 280,
+          "fastRoamPercent": 45,
+          "recentEvents": [
+            {
+              "timestamp": "2024-01-15T15:12:33Z",
+              "clientMac": "CC:DD:EE:11:22:33",
+              "clientName": "MacBook Pro",
+              "fromApMac": "00:11:22:33:44:30",
+              "fromApName": "Unit-301-AP",
+              "toApMac": "00:11:22:33:44:20",
+              "toApName": "Unit-201-AP",
+              "roamType": "fast",
+              "roamTimeMs": 85,
+              "rssiAtRoam": -68,
+              "reason": "signal_quality"
+            }
+          ]
+        },
+        "stickyClients": {
+          "totalStickyClients": 14,
+          "stickyClients": [],
+          "worstOffenders": [
+            {
+              "clientMac": "AA:11:22:33:44:55",
+              "clientName": "Work Laptop",
+              "clientType": "Dell Latitude 5520",
+              "connectedApMac": "00:11:22:33:44:30",
+              "connectedApName": "Unit-301-AP",
+              "connectedApLocation": "3rd Floor Unit 301",
+              "currentRssi": -72,
+              "betterApMac": "00:11:22:33:44:20",
+              "betterApName": "Unit-201-AP",
+              "betterApRssi": -48,
+              "stuckDurationMinutes": 180,
+              "lastRoamAttempt": "2024-01-15T12:00:00Z"
+            }
+          ],
+          "commonDeviceTypes": [
+            { "type": "Laptops", "count": 8 },
+            { "type": "Smartphones", "count": 4 },
+            { "type": "Tablets", "count": 2 }
+          ],
+          "recommendations": [
+            "Use different channels for vertically-adjacent APs",
+            "Enable 802.11v for proactive roaming suggestions",
+            "Consider construction-aware RF planning"
+          ]
+        },
+        "mduProblems": {
+          "metrics": {
+            "totalUnits": 36,
+            "totalAps": 40,
+            "hallwayAps": 4,
+            "inUnitAps": 36,
+            "avgApsPerFloor": 13,
+            "avgOverlapPercent": 28,
+            "floorBleedIssues": 18,
+            "hallwayHuggerClients": 8
+          },
+          "hallwayHuggers": [],
+          "floorBleeders": [],
+          "coverageMap": [],
+          "problemAreas": [
+            {
+              "location": "Floor 2 (all units)",
+              "issue": "floor_bleed",
+              "severity": "high",
+              "description": "Wood-frame construction allows strong signal from floors above and below"
+            },
+            {
+              "location": "Stacked units (x01 column)",
+              "issue": "interference",
+              "severity": "medium",
+              "description": "Units 101, 201, 301 APs on same channel causing co-channel interference"
+            }
+          ]
+        },
+        "troubleshooting": {
+          "config": {
+            "minRssiThreshold": -78,
+            "bssMinRate": 12,
+            "bandSteeringEnabled": true,
+            "loadBalancingEnabled": true,
+            "roamingStandards": {
+              "dot11k": true,
+              "dot11v": true,
+              "dot11r": true,
+              "okcEnabled": true,
+              "preauthEnabled": false
+            }
+          },
+          "issues": [
+            {
+              "category": "design",
+              "issue": "Vertically-stacked APs on same channel",
+              "severity": "critical",
+              "recommendation": "Implement 3D channel planning - offset channels for vertically-adjacent units"
+            },
+            {
+              "category": "config",
+              "issue": "Min RSSI threshold may be too permissive",
+              "severity": "warning",
+              "recommendation": "Consider tightening to -72 dBm given strong floor bleed signals"
+            },
+            {
+              "category": "infrastructure",
+              "issue": "Wood-frame construction with minimal RF attenuation",
+              "severity": "info",
+              "recommendation": "Reduce AP power levels to 10-12 dBm to limit vertical propagation"
+            }
+          ],
+          "score": 58,
+          "scoreBreakdown": [
+            { "category": "Roaming Standards", "score": 25, "maxScore": 25, "notes": "All standards enabled" },
+            { "category": "RSSI Management", "score": 18, "maxScore": 25, "notes": "Threshold set but may need tuning" },
+            { "category": "RF Design", "score": 8, "maxScore": 25, "notes": "Poor vertical channel separation" },
+            { "category": "Client Compatibility", "score": 7, "maxScore": 25, "notes": "Some sticky laptops" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mdu-well-configured",
+      "name": "MDU: Well-Configured Example",
+      "description": "Properly tuned MDU deployment with minimal roaming issues",
+      "category": "mdu",
+      "data": {
+        "summary": {
+          "health": "excellent",
+          "score": 91,
+          "headline": "Roaming is working well",
+          "subheadline": "Fast roaming enabled, minimal sticky clients, good RF design"
+        },
+        "whatIsRoaming": {
+          "totalRoamEvents24h": 523,
+          "successfulRoams": 518,
+          "failedRoams": 5,
+          "avgRoamTimeMs": 45,
+          "fastRoamPercent": 94,
+          "recentEvents": [
+            {
+              "timestamp": "2024-01-15T14:55:00Z",
+              "clientMac": "FF:EE:DD:CC:BB:AA",
+              "clientName": "iPhone 15 Pro",
+              "fromApMac": "00:11:22:33:44:10",
+              "fromApName": "Unit-101-AP",
+              "toApMac": "00:11:22:33:44:01",
+              "toApName": "Hallway-1F",
+              "roamType": "fast",
+              "roamTimeMs": 28,
+              "rssiAtRoam": -70,
+              "reason": "client_initiated"
+            }
+          ]
+        },
+        "stickyClients": {
+          "totalStickyClients": 3,
+          "stickyClients": [],
+          "worstOffenders": [
+            {
+              "clientMac": "12:34:56:78:9A:BC",
+              "clientName": "Old Kindle",
+              "clientType": "Amazon Kindle (2018)",
+              "connectedApMac": "00:11:22:33:44:10",
+              "connectedApName": "Unit-101-AP",
+              "connectedApLocation": "Unit 101",
+              "currentRssi": -68,
+              "betterApMac": null,
+              "betterApName": null,
+              "betterApRssi": null,
+              "stuckDurationMinutes": 60,
+              "lastRoamAttempt": null
+            }
+          ],
+          "commonDeviceTypes": [
+            { "type": "Legacy IoT", "count": 3 }
+          ],
+          "recommendations": [
+            "Legacy devices are expected to have poor roaming - acceptable given low count"
+          ]
+        },
+        "mduProblems": {
+          "metrics": {
+            "totalUnits": 48,
+            "totalAps": 52,
+            "hallwayAps": 4,
+            "inUnitAps": 48,
+            "avgApsPerFloor": 13,
+            "avgOverlapPercent": 18,
+            "floorBleedIssues": 2,
+            "hallwayHuggerClients": 1
+          },
+          "hallwayHuggers": [],
+          "floorBleeders": [],
+          "coverageMap": [],
+          "problemAreas": []
+        },
+        "troubleshooting": {
+          "config": {
+            "minRssiThreshold": -72,
+            "bssMinRate": 12,
+            "bandSteeringEnabled": true,
+            "loadBalancingEnabled": true,
+            "roamingStandards": {
+              "dot11k": true,
+              "dot11v": true,
+              "dot11r": true,
+              "okcEnabled": true,
+              "preauthEnabled": true
+            }
+          },
+          "issues": [
+            {
+              "category": "info",
+              "issue": "3 legacy IoT devices with poor roaming support",
+              "severity": "info",
+              "recommendation": "Monitor but no action needed - devices are stationary"
+            }
+          ],
+          "score": 91,
+          "scoreBreakdown": [
+            { "category": "Roaming Standards", "score": 25, "maxScore": 25, "notes": "All standards enabled" },
+            { "category": "RSSI Management", "score": 23, "maxScore": 25, "notes": "Well-tuned thresholds" },
+            { "category": "RF Design", "score": 22, "maxScore": 25, "notes": "Good channel separation, controlled power" },
+            { "category": "Client Compatibility", "score": 21, "maxScore": 25, "notes": "Minimal problematic devices" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mdu-no-fast-roaming",
+      "name": "MDU: No Fast Roaming Configured",
+      "description": "Basic deployment without 802.11r/k/v causing slow, disruptive roams",
+      "category": "mdu",
+      "data": {
+        "summary": {
+          "health": "critical",
+          "score": 28,
+          "headline": "Fast roaming is not enabled",
+          "subheadline": "Every roam requires full re-authentication, causing 300-500ms disruptions"
+        },
+        "whatIsRoaming": {
+          "totalRoamEvents24h": 1892,
+          "successfulRoams": 1654,
+          "failedRoams": 238,
+          "avgRoamTimeMs": 420,
+          "fastRoamPercent": 0,
+          "recentEvents": [
+            {
+              "timestamp": "2024-01-15T15:30:00Z",
+              "clientMac": "AB:CD:EF:12:34:56",
+              "clientName": "Teams Call User",
+              "fromApMac": "00:11:22:33:44:10",
+              "fromApName": "Unit-101-AP",
+              "toApMac": "00:11:22:33:44:11",
+              "toApName": "Unit-102-AP",
+              "roamType": "full",
+              "roamTimeMs": 485,
+              "rssiAtRoam": -72,
+              "reason": "client_initiated"
+            }
+          ]
+        },
+        "stickyClients": {
+          "totalStickyClients": 45,
+          "stickyClients": [],
+          "worstOffenders": [],
+          "commonDeviceTypes": [
+            { "type": "All device types", "count": 45 }
+          ],
+          "recommendations": [
+            "Enable 802.11r (Fast BSS Transition) immediately",
+            "Enable 802.11k (Neighbor Reports) to help clients discover APs",
+            "Enable 802.11v (BSS Transition Management) for proactive steering"
+          ]
+        },
+        "mduProblems": {
+          "metrics": {
+            "totalUnits": 60,
+            "totalAps": 65,
+            "hallwayAps": 5,
+            "inUnitAps": 60,
+            "avgApsPerFloor": 13,
+            "avgOverlapPercent": 25,
+            "floorBleedIssues": 8,
+            "hallwayHuggerClients": 45
+          },
+          "hallwayHuggers": [],
+          "floorBleeders": [],
+          "coverageMap": [],
+          "problemAreas": [
+            {
+              "location": "Entire building",
+              "issue": "interference",
+              "severity": "high",
+              "description": "Clients avoiding roaming due to slow roam times, staying on distant APs"
+            }
+          ]
+        },
+        "troubleshooting": {
+          "config": {
+            "minRssiThreshold": null,
+            "bssMinRate": null,
+            "bandSteeringEnabled": false,
+            "loadBalancingEnabled": false,
+            "roamingStandards": {
+              "dot11k": false,
+              "dot11v": false,
+              "dot11r": false,
+              "okcEnabled": false,
+              "preauthEnabled": false
+            }
+          },
+          "issues": [
+            {
+              "category": "config",
+              "issue": "802.11r (Fast BSS Transition) is disabled",
+              "severity": "critical",
+              "recommendation": "Enable 802.11r to reduce roam time from ~400ms to <50ms"
+            },
+            {
+              "category": "config",
+              "issue": "802.11k (Neighbor Reports) is disabled",
+              "severity": "critical",
+              "recommendation": "Enable 802.11k so clients know which APs are nearby"
+            },
+            {
+              "category": "config",
+              "issue": "802.11v (BSS Transition) is disabled",
+              "severity": "critical",
+              "recommendation": "Enable 802.11v to allow APs to guide clients to better APs"
+            },
+            {
+              "category": "config",
+              "issue": "No RSSI thresholds configured",
+              "severity": "warning",
+              "recommendation": "Configure min RSSI after enabling fast roaming standards"
+            }
+          ],
+          "score": 28,
+          "scoreBreakdown": [
+            { "category": "Roaming Standards", "score": 0, "maxScore": 25, "notes": "No roaming standards enabled" },
+            { "category": "RSSI Management", "score": 5, "maxScore": 25, "notes": "No thresholds" },
+            { "category": "RF Design", "score": 15, "maxScore": 25, "notes": "Adequate coverage but clients won't roam" },
+            { "category": "Client Compatibility", "score": 8, "maxScore": 25, "notes": "All clients affected by missing 802.11r" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mdu-iot-nightmare",
+      "name": "MDU: IoT Device Nightmare",
+      "description": "Building with many IoT devices that refuse to roam properly",
+      "category": "mdu",
+      "data": {
+        "summary": {
+          "health": "poor",
+          "score": 38,
+          "headline": "IoT devices causing roaming chaos",
+          "subheadline": "Smart home devices connected to wrong APs, many support calls"
+        },
+        "whatIsRoaming": {
+          "totalRoamEvents24h": 234,
+          "successfulRoams": 198,
+          "failedRoams": 36,
+          "avgRoamTimeMs": 380,
+          "fastRoamPercent": 12,
+          "recentEvents": []
+        },
+        "stickyClients": {
+          "totalStickyClients": 67,
+          "stickyClients": [],
+          "worstOffenders": [
+            {
+              "clientMac": "AA:BB:CC:DD:EE:01",
+              "clientName": "Ring Doorbell",
+              "clientType": "Ring Video Doorbell 3",
+              "connectedApMac": "00:11:22:33:44:02",
+              "connectedApName": "Hallway-2F",
+              "connectedApLocation": "2nd Floor Hallway",
+              "currentRssi": -79,
+              "betterApMac": "00:11:22:33:44:21",
+              "betterApName": "Unit-201-AP",
+              "betterApRssi": -52,
+              "stuckDurationMinutes": 43200,
+              "lastRoamAttempt": null
+            },
+            {
+              "clientMac": "AA:BB:CC:DD:EE:02",
+              "clientName": "Ecobee Thermostat",
+              "clientType": "Ecobee SmartThermostat",
+              "connectedApMac": "00:11:22:33:44:01",
+              "connectedApName": "Hallway-1F",
+              "connectedApLocation": "1st Floor Hallway",
+              "currentRssi": -81,
+              "betterApMac": "00:11:22:33:44:15",
+              "betterApName": "Unit-105-AP",
+              "betterApRssi": -44,
+              "stuckDurationMinutes": 86400,
+              "lastRoamAttempt": null
+            },
+            {
+              "clientMac": "AA:BB:CC:DD:EE:03",
+              "clientName": "Wyze Camera",
+              "clientType": "Wyze Cam v3",
+              "connectedApMac": "00:11:22:33:44:30",
+              "connectedApName": "Unit-301-AP",
+              "connectedApLocation": "Unit 301 (wrong unit!)",
+              "currentRssi": -77,
+              "betterApMac": "00:11:22:33:44:20",
+              "betterApName": "Unit-201-AP",
+              "betterApRssi": -41,
+              "stuckDurationMinutes": 129600,
+              "lastRoamAttempt": null
+            }
+          ],
+          "commonDeviceTypes": [
+            { "type": "Video Doorbells", "count": 24 },
+            { "type": "Smart Thermostats", "count": 18 },
+            { "type": "Security Cameras", "count": 15 },
+            { "type": "Smart Locks", "count": 8 },
+            { "type": "Voice Assistants", "count": 2 }
+          ],
+          "recommendations": [
+            "Create dedicated IoT SSID with strategic AP assignment",
+            "Use MAC-based AP steering for known IoT devices",
+            "Consider DPSK per-device to control which AP IoT connects to",
+            "Set aggressive min RSSI (-70 dBm) to force disconnection from weak APs"
+          ]
+        },
+        "mduProblems": {
+          "metrics": {
+            "totalUnits": 72,
+            "totalAps": 80,
+            "hallwayAps": 8,
+            "inUnitAps": 72,
+            "avgApsPerFloor": 20,
+            "avgOverlapPercent": 42,
+            "floorBleedIssues": 15,
+            "hallwayHuggerClients": 67
+          },
+          "hallwayHuggers": [],
+          "floorBleeders": [],
+          "coverageMap": [],
+          "problemAreas": [
+            {
+              "location": "Building-wide",
+              "issue": "overlap",
+              "severity": "high",
+              "description": "IoT devices latching to first-seen AP during setup and never roaming"
+            },
+            {
+              "location": "Hallway APs",
+              "issue": "interference",
+              "severity": "high",
+              "description": "42 IoT devices on hallway APs causing congestion"
+            }
+          ]
+        },
+        "troubleshooting": {
+          "config": {
+            "minRssiThreshold": -80,
+            "bssMinRate": 6,
+            "bandSteeringEnabled": true,
+            "loadBalancingEnabled": false,
+            "roamingStandards": {
+              "dot11k": true,
+              "dot11v": true,
+              "dot11r": false,
+              "okcEnabled": false,
+              "preauthEnabled": false
+            }
+          },
+          "issues": [
+            {
+              "category": "client",
+              "issue": "IoT devices don't support 802.11r/k/v",
+              "severity": "critical",
+              "recommendation": "IoT devices ignore roaming hints - use infrastructure controls instead"
+            },
+            {
+              "category": "config",
+              "issue": "Min RSSI too permissive at -80 dBm",
+              "severity": "warning",
+              "recommendation": "Tighten to -70 dBm to force IoT off distant APs"
+            },
+            {
+              "category": "design",
+              "issue": "IoT devices onboarded near hallway APs",
+              "severity": "critical",
+              "recommendation": "Instruct residents to set up IoT devices inside their units, not at front door"
+            },
+            {
+              "category": "config",
+              "issue": "Consider per-device DPSK with AP steering",
+              "severity": "info",
+              "recommendation": "DPSK can lock specific IoT MACs to specific APs"
+            }
+          ],
+          "score": 38,
+          "scoreBreakdown": [
+            { "category": "Roaming Standards", "score": 12, "maxScore": 25, "notes": "Standards enabled but IoT ignores them" },
+            { "category": "RSSI Management", "score": 8, "maxScore": 25, "notes": "Threshold too permissive" },
+            { "category": "RF Design", "score": 10, "maxScore": 25, "notes": "High overlap, IoT on wrong APs" },
+            { "category": "Client Compatibility", "score": 8, "maxScore": 25, "notes": "67 problem IoT devices" }
+          ]
+        }
+      }
+    }
+  ]
+}

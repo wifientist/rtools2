@@ -84,7 +84,7 @@ def can_access_orchestrator(db: Session, current_user: User, orchestrator: DPSKO
     # Regular user can only access their own
     return controller.user_id == current_user.id
 
-router = APIRouter(prefix="/api/orchestrators", tags=["DPSK Orchestrators"])
+router = APIRouter(prefix="/orchestrators", tags=["DPSK Orchestrators"])
 
 
 # ========== Pydantic Models ==========

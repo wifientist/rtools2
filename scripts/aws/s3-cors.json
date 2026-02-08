@@ -1,0 +1,14 @@
+{
+    "CORSRules": [
+        {
+            "ID": "AllowRtoolsUploads",
+            "AllowedOrigins": [
+                "https://ruckus.tools"
+            ],
+            "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
+            "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+            "MaxAgeSeconds": 3600
+        }
+    ]
+}

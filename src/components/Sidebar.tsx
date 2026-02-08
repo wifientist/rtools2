@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen } from "lucide-react";
 import { useState } from "react";
 
 interface NavItem {
@@ -63,12 +63,14 @@ const Sidebar = () => {
       icon: <Lightbulb size={18} />,
       items: [
         { to: "/speed-explainer", icon: <Activity size={20} />, label: "Speed Explainer", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/roaming-explainer", icon: <Wifi size={20} />, label: "Roaming Explainer", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
       ],
     },
     {
       label: "Helpers",
       icon: <Wrench size={18} />,
       items: [
+        { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
@@ -87,6 +89,7 @@ const Sidebar = () => {
         { to: "/admin", icon: <Settings size={20} />, label: "Admin", requiresAuth: true, rolesAllowed: ["admin","super"] },
         { to: "/jobs", icon: <ListTodo size={20} />, label: "Jobs", requiresAuth: true, rolesAllowed: ["admin","super"] },
         { to: "/status", icon: <CloudCog size={20} />, label: "API Status", requiresAuth: true, rolesAllowed: ["admin","super"] },
+        { to: "/fileshare/admin", icon: <FolderOpen size={20} />, label: "Fileshare Admin", requiresAuth: true, rolesAllowed: ["super"] },
         { to: "/super", icon: <Settings size={20} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
         { to: "/testcalls", icon: <BookCheck size={20} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["admin","super"] },
       ],
