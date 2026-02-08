@@ -28,80 +28,9 @@ from models.fileshare import (
 from dependencies import get_db, get_current_user
 from decorators import require_role
 from services.s3_service import get_s3_service, S3Service
-from utils.email import MAILGUN_API_KEY, MAILGUN_DOMAIN, FROM_EMAIL
-import requests as http_requests
+from utils.email import send_report_notification
 
 logger = logging.getLogger(__name__)
-
-
-def send_report_notification(
-    to_emails: list[str],
-    reporter_email: str,
-    filename: str,
-    folder_name: str,
-    reason: str,
-    file_id: int
-):
-    """Send email notification about a reported file."""
-    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
-        logger.warning("Mailgun not configured, skipping report notification")
-        return
-
-    url = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
-
-    subject = f"[FILESHARE REPORT] File reported: {filename}"
-    text_body = f"""A file has been reported on RUCKUS.Tools Fileshare.
-
-Reporter: {reporter_email}
-File: {filename}
-Folder: {folder_name}
-File ID: {file_id}
-
-Reason for report:
-{reason}
-
-Please review this file and take appropriate action.
-
----
-RUCKUS.Tools Fileshare
-"""
-
-    html_body = f"""
-<h2>File Report Notification</h2>
-<p>A file has been reported on RUCKUS.Tools Fileshare.</p>
-
-<table style="border-collapse: collapse; margin: 20px 0;">
-    <tr><td style="padding: 8px; font-weight: bold;">Reporter:</td><td style="padding: 8px;">{reporter_email}</td></tr>
-    <tr><td style="padding: 8px; font-weight: bold;">File:</td><td style="padding: 8px;">{filename}</td></tr>
-    <tr><td style="padding: 8px; font-weight: bold;">Folder:</td><td style="padding: 8px;">{folder_name}</td></tr>
-    <tr><td style="padding: 8px; font-weight: bold;">File ID:</td><td style="padding: 8px;">{file_id}</td></tr>
-</table>
-
-<h3>Reason for Report</h3>
-<p style="background: #f5f5f5; padding: 15px; border-radius: 5px;">{reason}</p>
-
-<p>Please review this file and take appropriate action.</p>
-
-<hr>
-<p style="color: #666; font-size: 12px;">RUCKUS.Tools Fileshare</p>
-"""
-
-    try:
-        for email in to_emails:
-            http_requests.post(
-                url,
-                auth=("api", MAILGUN_API_KEY),
-                data={
-                    "from": FROM_EMAIL,
-                    "to": email,
-                    "subject": subject,
-                    "text": text_body,
-                    "html": html_body,
-                }
-            )
-        logger.info(f"Report notification sent to {len(to_emails)} recipients")
-    except Exception as e:
-        logger.error(f"Failed to send report notification: {e}")
 
 router = APIRouter(prefix="/fileshare", tags=["Fileshare"])
 
