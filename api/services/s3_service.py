@@ -322,6 +322,47 @@ class S3Service:
         response = self._client.get_object(Bucket=self.bucket, Key=key)
         return response['Body']
 
+    def list_all_objects(self, prefix: str = "files/") -> list[dict]:
+        """
+        List all objects in the bucket under a prefix.
+
+        Args:
+            prefix: S3 key prefix (default "files/")
+
+        Returns:
+            List of dicts with key, size, and last_modified
+        """
+        self._ensure_configured()
+
+        objects = []
+        paginator = self._client.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for obj in page.get('Contents', []):
+                objects.append({
+                    'key': obj['Key'],
+                    'size': obj['Size'],
+                    'last_modified': obj['LastModified']
+                })
+        return objects
+
+    def object_exists(self, key: str) -> bool:
+        """
+        Check if an object exists in S3.
+
+        Args:
+            key: S3 object key
+
+        Returns:
+            True if object exists
+        """
+        self._ensure_configured()
+
+        try:
+            self._client.head_object(Bucket=self.bucket, Key=key)
+            return True
+        except ClientError:
+            return False
+
     def calculate_parts(self, file_size: int) -> int:
         """
         Calculate number of parts needed for multipart upload.

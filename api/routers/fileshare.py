@@ -1104,6 +1104,135 @@ def get_audit_logs(
 
 
 # =============================================================================
+# Storage Audit (Super Only)
+# =============================================================================
+
+class StorageAuditResponse(BaseModel):
+    """Response model for storage audit."""
+    total_s3_objects: int
+    total_s3_bytes: int
+    total_db_records: int
+    orphaned_s3_files: list[dict]  # In S3 but not in DB
+    missing_s3_files: list[dict]   # In DB but not in S3
+    synced_count: int              # Files in both
+
+
+@router.get("/admin/storage-audit", response_model=StorageAuditResponse)
+@require_role(RoleEnum.super)
+def audit_storage(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Audit S3 storage vs database records (super only).
+
+    Returns lists of:
+    - Orphaned S3 files: exist in S3 but have no DB record
+    - Missing S3 files: have DB record but file missing from S3
+    """
+    s3 = get_s3_service()
+    if not s3.is_configured:
+        raise HTTPException(status_code=503, detail="S3 not configured")
+
+    # Get all S3 objects
+    s3_objects = s3.list_all_objects(prefix="files/")
+    s3_keys = {obj['key']: obj for obj in s3_objects}
+
+    # Get all DB records
+    db_files = db.query(SharedFile).all()
+    db_keys = {f.s3_key: f for f in db_files}
+
+    # Find orphaned S3 files (in S3, not in DB)
+    orphaned_s3 = []
+    for key, obj in s3_keys.items():
+        if key not in db_keys:
+            orphaned_s3.append({
+                "s3_key": key,
+                "size_bytes": obj['size'],
+                "last_modified": obj['last_modified'].isoformat()
+            })
+
+    # Find missing S3 files (in DB, not in S3)
+    missing_s3 = []
+    for key, file_record in db_keys.items():
+        if key not in s3_keys:
+            missing_s3.append({
+                "s3_key": key,
+                "db_id": file_record.id,
+                "filename": file_record.filename,
+                "uploaded_by": file_record.uploaded_by.email if file_record.uploaded_by else "unknown"
+            })
+
+    synced_count = len(set(s3_keys.keys()) & set(db_keys.keys()))
+    total_s3_bytes = sum(obj['size'] for obj in s3_objects)
+
+    logger.info(f"Storage audit by {current_user.email}: {len(orphaned_s3)} orphaned, {len(missing_s3)} missing")
+
+    return StorageAuditResponse(
+        total_s3_objects=len(s3_objects),
+        total_s3_bytes=total_s3_bytes,
+        total_db_records=len(db_files),
+        orphaned_s3_files=orphaned_s3,
+        missing_s3_files=missing_s3,
+        synced_count=synced_count
+    )
+
+
+@router.delete("/admin/storage-audit/orphaned/{s3_key:path}", status_code=status.HTTP_204_NO_CONTENT)
+@require_role(RoleEnum.super)
+def delete_orphaned_s3_file(
+    s3_key: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete an orphaned file from S3 (exists in S3 but not in DB)."""
+    s3 = get_s3_service()
+
+    # Verify it's actually orphaned (not in DB)
+    existing = db.query(SharedFile).filter(SharedFile.s3_key == s3_key).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="File exists in database - not orphaned")
+
+    # Verify it exists in S3
+    if not s3.object_exists(s3_key):
+        raise HTTPException(status_code=404, detail="File not found in S3")
+
+    s3.delete_object(s3_key)
+    logger.warning(f"Orphaned S3 file deleted by {current_user.email}: {s3_key}")
+    return None
+
+
+@router.delete("/admin/storage-audit/missing/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+@require_role(RoleEnum.super)
+def delete_missing_db_record(
+    file_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a DB record for a file that no longer exists in S3."""
+    s3 = get_s3_service()
+
+    file_record = db.query(SharedFile).filter(SharedFile.id == file_id).first()
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File record not found")
+
+    # Verify it's actually missing from S3
+    if s3.object_exists(file_record.s3_key):
+        raise HTTPException(status_code=400, detail="File exists in S3 - not a broken record")
+
+    # Update folder used_bytes
+    folder = file_record.folder
+    if file_record.upload_status == 'completed':
+        folder.used_bytes = max(0, folder.used_bytes - file_record.size_bytes)
+
+    db.delete(file_record)
+    db.commit()
+
+    logger.warning(f"Missing file DB record deleted by {current_user.email}: {file_record.filename} (id={file_id})")
+    return None
+
+
+# =============================================================================
 # Terms of Service Acceptance
 # =============================================================================
 

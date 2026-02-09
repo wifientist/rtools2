@@ -19,7 +19,10 @@ import {
   Upload,
   Download,
   X,
-  Edit2
+  Edit2,
+  HardDrive,
+  AlertTriangle,
+  CheckCircle
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -34,9 +37,18 @@ interface User {
   email: string;
 }
 
+interface StorageAudit {
+  total_s3_objects: number;
+  total_s3_bytes: number;
+  total_db_records: number;
+  orphaned_s3_files: Array<{ s3_key: string; size_bytes: number; last_modified: string }>;
+  missing_s3_files: Array<{ s3_key: string; db_id: number; filename: string; uploaded_by: string }>;
+  synced_count: number;
+}
+
 const FileshareAdmin = () => {
   // Tab state
-  const [activeTab, setActiveTab] = useState<'folders' | 'audit'>('folders');
+  const [activeTab, setActiveTab] = useState<'folders' | 'audit' | 'storage'>('folders');
 
   // Folders state
   const [folders, setFolders] = useState<FileFolder[]>([]);
@@ -44,6 +56,10 @@ const FileshareAdmin = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Storage audit state
+  const [storageAudit, setStorageAudit] = useState<StorageAudit | null>(null);
+  const [storageLoading, setStorageLoading] = useState(false);
 
   // Create folder modal
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -100,6 +116,38 @@ const FileshareAdmin = () => {
     }
   };
 
+  const fetchStorageAudit = async () => {
+    setStorageLoading(true);
+    try {
+      const audit = await apiGet<StorageAudit>(`${API_BASE_URL}/fileshare/admin/storage-audit`);
+      setStorageAudit(audit);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load storage audit');
+    } finally {
+      setStorageLoading(false);
+    }
+  };
+
+  const deleteOrphanedFile = async (s3Key: string) => {
+    if (!confirm(`Delete orphaned file from S3?\n\n${s3Key}\n\nThis cannot be undone.`)) return;
+    try {
+      await apiDelete(`${API_BASE_URL}/fileshare/admin/storage-audit/orphaned/${encodeURIComponent(s3Key)}`);
+      await fetchStorageAudit();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete orphaned file');
+    }
+  };
+
+  const deleteMissingRecord = async (fileId: number, filename: string) => {
+    if (!confirm(`Delete broken DB record for "${filename}"?\n\nThis cannot be undone.`)) return;
+    try {
+      await apiDelete(`${API_BASE_URL}/fileshare/admin/storage-audit/missing/${fileId}`);
+      await fetchStorageAudit();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete broken record');
+    }
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -107,6 +155,8 @@ const FileshareAdmin = () => {
   useEffect(() => {
     if (activeTab === 'audit') {
       fetchAuditLogs();
+    } else if (activeTab === 'storage') {
+      fetchStorageAudit();
     }
   }, [activeTab]);
 
@@ -281,6 +331,17 @@ const FileshareAdmin = () => {
           <FileText className="w-4 h-4 inline mr-2" />
           Audit Logs
         </button>
+        <button
+          onClick={() => setActiveTab('storage')}
+          className={`px-4 py-2 -mb-px border-b-2 transition-colors ${
+            activeTab === 'storage'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          <HardDrive className="w-4 h-4 inline mr-2" />
+          Storage Audit
+        </button>
       </div>
 
       {/* Folders Tab */}
@@ -438,6 +499,141 @@ const FileshareAdmin = () => {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Storage Audit Tab */}
+      {activeTab === 'storage' && (
+        <div>
+          <div className="flex justify-end mb-4">
+            <button
+              onClick={fetchStorageAudit}
+              disabled={storageLoading}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${storageLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+
+          {storageLoading && !storageAudit && (
+            <div className="text-center py-12 text-gray-500">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+              Scanning S3 bucket...
+            </div>
+          )}
+
+          {storageAudit && (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-white rounded-lg shadow p-4">
+                  <div className="text-sm text-gray-500 mb-1">S3 Objects</div>
+                  <div className="text-2xl font-bold">{storageAudit.total_s3_objects}</div>
+                  <div className="text-sm text-gray-500">{formatBytes(storageAudit.total_s3_bytes)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow p-4">
+                  <div className="text-sm text-gray-500 mb-1">DB Records</div>
+                  <div className="text-2xl font-bold">{storageAudit.total_db_records}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow p-4">
+                  <div className="text-sm text-gray-500 mb-1">Synced</div>
+                  <div className="text-2xl font-bold text-green-600 flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    {storageAudit.synced_count}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow p-4">
+                  <div className="text-sm text-gray-500 mb-1">Issues</div>
+                  <div className={`text-2xl font-bold flex items-center gap-2 ${
+                    storageAudit.orphaned_s3_files.length + storageAudit.missing_s3_files.length > 0
+                      ? 'text-yellow-600'
+                      : 'text-green-600'
+                  }`}>
+                    {storageAudit.orphaned_s3_files.length + storageAudit.missing_s3_files.length > 0 ? (
+                      <><AlertTriangle className="w-5 h-5" />{storageAudit.orphaned_s3_files.length + storageAudit.missing_s3_files.length}</>
+                    ) : (
+                      <><CheckCircle className="w-5 h-5" />0</>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Orphaned S3 Files */}
+              {storageAudit.orphaned_s3_files.length > 0 && (
+                <div className="bg-white rounded-lg shadow">
+                  <div className="px-4 py-3 border-b bg-yellow-50">
+                    <h3 className="font-medium text-yellow-800 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Orphaned S3 Files ({storageAudit.orphaned_s3_files.length})
+                    </h3>
+                    <p className="text-sm text-yellow-700">Files in S3 with no database record. Safe to delete.</p>
+                  </div>
+                  <div className="divide-y max-h-64 overflow-y-auto">
+                    {storageAudit.orphaned_s3_files.map((file) => (
+                      <div key={file.s3_key} className="px-4 py-3 flex justify-between items-center hover:bg-gray-50">
+                        <div>
+                          <div className="font-mono text-sm text-gray-700">{file.s3_key}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatBytes(file.size_bytes)} &bull; {new Date(file.last_modified).toLocaleString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => deleteOrphanedFile(file.s3_key)}
+                          className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete from S3
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Missing S3 Files */}
+              {storageAudit.missing_s3_files.length > 0 && (
+                <div className="bg-white rounded-lg shadow">
+                  <div className="px-4 py-3 border-b bg-red-50">
+                    <h3 className="font-medium text-red-800 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Missing S3 Files ({storageAudit.missing_s3_files.length})
+                    </h3>
+                    <p className="text-sm text-red-700">Database records pointing to files that no longer exist in S3.</p>
+                  </div>
+                  <div className="divide-y max-h-64 overflow-y-auto">
+                    {storageAudit.missing_s3_files.map((file) => (
+                      <div key={file.db_id} className="px-4 py-3 flex justify-between items-center hover:bg-gray-50">
+                        <div>
+                          <div className="font-medium text-gray-900">{file.filename}</div>
+                          <div className="text-xs text-gray-500">
+                            ID: {file.db_id} &bull; Uploaded by: {file.uploaded_by}
+                          </div>
+                          <div className="font-mono text-xs text-gray-400">{file.s3_key}</div>
+                        </div>
+                        <button
+                          onClick={() => deleteMissingRecord(file.db_id, file.filename)}
+                          className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete record
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* All Good Message */}
+              {storageAudit.orphaned_s3_files.length === 0 && storageAudit.missing_s3_files.length === 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
+                  <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-3" />
+                  <h3 className="text-lg font-medium text-green-800">Storage is in sync</h3>
+                  <p className="text-green-700">All S3 files have matching database records.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -32,6 +32,15 @@
                 "s3:ListMultipartUploadParts"
             ],
             "Resource": "arn:aws:s3:::BUCKET_NAME_HERE/*"
+        },
+        {
+            "Sid": "AllowSESEmail",
+            "Effect": "Allow",
+            "Action": [
+                "ses:SendEmail",
+                "ses:SendRawEmail"
+            ],
+            "Resource": "*"
         }
     ]
 }
