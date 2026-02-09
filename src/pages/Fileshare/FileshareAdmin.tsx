@@ -22,7 +22,8 @@ import {
   Edit2,
   HardDrive,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  FolderPlus
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -145,6 +146,16 @@ const FileshareAdmin = () => {
       await fetchStorageAudit();
     } catch (err: any) {
       setError(err.message || 'Failed to delete broken record');
+    }
+  };
+
+  const adoptOrphanedFile = async (s3Key: string) => {
+    if (!confirm(`Adopt orphaned file?\n\n${s3Key}\n\nThis will create a database record so the file becomes accessible.`)) return;
+    try {
+      await apiPost(`${API_BASE_URL}/fileshare/admin/storage-audit/adopt/${encodeURIComponent(s3Key)}`, {});
+      await fetchStorageAudit();
+    } catch (err: any) {
+      setError(err.message || 'Failed to adopt file');
     }
   };
 
@@ -567,7 +578,7 @@ const FileshareAdmin = () => {
                       <AlertTriangle className="w-4 h-4" />
                       Orphaned S3 Files ({storageAudit.orphaned_s3_files.length})
                     </h3>
-                    <p className="text-sm text-yellow-700">Files in S3 with no database record. Safe to delete.</p>
+                    <p className="text-sm text-yellow-700">Files in S3 with no database record. Adopt to make accessible, or delete.</p>
                   </div>
                   <div className="divide-y max-h-64 overflow-y-auto">
                     {storageAudit.orphaned_s3_files.map((file) => (
@@ -578,13 +589,22 @@ const FileshareAdmin = () => {
                             {formatBytes(file.size_bytes)} &bull; {new Date(file.last_modified).toLocaleString()}
                           </div>
                         </div>
-                        <button
-                          onClick={() => deleteOrphanedFile(file.s3_key)}
-                          className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete from S3
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => adoptOrphanedFile(file.s3_key)}
+                            className="px-3 py-1.5 text-sm text-green-600 hover:bg-green-50 rounded flex items-center gap-1"
+                          >
+                            <FolderPlus className="w-4 h-4" />
+                            Adopt
+                          </button>
+                          <button
+                            onClick={() => deleteOrphanedFile(file.s3_key)}
+                            className="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded flex items-center gap-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

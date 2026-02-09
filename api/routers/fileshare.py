@@ -1232,6 +1232,118 @@ def delete_missing_db_record(
     return None
 
 
+class AdoptedFileResponse(BaseModel):
+    """Response model for adopted file."""
+    id: int
+    filename: str
+    folder_slug: str
+    subfolder_slug: Optional[str]
+    size_bytes: int
+
+
+@router.post("/admin/storage-audit/adopt/{s3_key:path}", response_model=AdoptedFileResponse)
+@require_role(RoleEnum.super)
+def adopt_orphaned_file(
+    s3_key: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Adopt an orphaned S3 file by creating a database record for it.
+
+    Parses the S3 key to extract folder/subfolder info and creates
+    the necessary DB record to make the file accessible.
+    """
+    import mimetypes
+
+    s3 = get_s3_service()
+    if not s3.is_configured:
+        raise HTTPException(status_code=503, detail="S3 not configured")
+
+    # Verify file is actually orphaned (not in DB)
+    existing = db.query(SharedFile).filter(SharedFile.s3_key == s3_key).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="File already exists in database")
+
+    # Verify it exists in S3
+    file_size = s3.get_object_size(s3_key)
+    if file_size is None:
+        raise HTTPException(status_code=404, detail="File not found in S3")
+
+    # Parse S3 key: files/{folder_slug}/{subfolder_slug?}/{file_uuid}/{filename}
+    # or: files/{folder_slug}/{file_uuid}/{filename}
+    parts = s3_key.split('/')
+    if len(parts) < 4 or parts[0] != 'files':
+        raise HTTPException(status_code=400, detail=f"Invalid S3 key format: {s3_key}")
+
+    folder_slug = parts[1]
+    filename = parts[-1]
+
+    # Determine if there's a subfolder (5 parts = with subfolder, 4 parts = without)
+    subfolder_slug = None
+    if len(parts) == 5:
+        subfolder_slug = parts[2]
+    elif len(parts) != 4:
+        raise HTTPException(status_code=400, detail=f"Invalid S3 key format: {s3_key}")
+
+    # Look up folder
+    folder = db.query(FileFolder).filter(FileFolder.slug == folder_slug).first()
+    if not folder:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Folder '{folder_slug}' not found. Create the folder first."
+        )
+
+    # Look up subfolder if specified
+    subfolder = None
+    if subfolder_slug:
+        subfolder = db.query(FileSubfolder).filter(
+            FileSubfolder.folder_id == folder.id,
+            FileSubfolder.slug == subfolder_slug
+        ).first()
+        if not subfolder:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Subfolder '{subfolder_slug}' not found in folder '{folder_slug}'. Create the subfolder first."
+            )
+
+    # Guess content type from filename
+    content_type, _ = mimetypes.guess_type(filename)
+    if not content_type:
+        content_type = 'application/octet-stream'
+
+    # Create the file record
+    new_file = SharedFile(
+        folder_id=folder.id,
+        subfolder_id=subfolder.id if subfolder else None,
+        filename=filename,
+        s3_key=s3_key,
+        size_bytes=file_size,
+        content_type=content_type,
+        upload_status='completed',
+        uploaded_by_id=current_user.id,
+        uploaded_at=datetime.utcnow(),
+        expires_at=datetime.utcnow() + timedelta(days=30)
+    )
+    db.add(new_file)
+
+    # Update folder used bytes
+    folder.used_bytes += file_size
+
+    db.commit()
+    db.refresh(new_file)
+
+    logger.info(f"Orphaned file adopted by {current_user.email}: {s3_key} -> file_id={new_file.id}")
+
+    return AdoptedFileResponse(
+        id=new_file.id,
+        filename=filename,
+        folder_slug=folder_slug,
+        subfolder_slug=subfolder_slug,
+        size_bytes=file_size
+    )
+
+
 # =============================================================================
 # Terms of Service Acceptance
 # =============================================================================
