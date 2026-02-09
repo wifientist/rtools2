@@ -40,16 +40,17 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 "/identityGroups",
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 "/identityGroups",
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def query_identity_groups(
         self,
@@ -83,16 +84,17 @@ class IdentityService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 "/identityGroups/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/identityGroups/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_identity_group(
         self,
@@ -110,14 +112,15 @@ class IdentityService:
             Identity group details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/identityGroups/{group_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/identityGroups/{group_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def create_identity_group(
         self,
@@ -158,7 +161,8 @@ class IdentityService:
                 payload=body
             )
 
-        result = response.json()
+        # Check for errors before parsing (handles 403, 401, etc.)
+        result = self.client.safe_json(response)
 
         # Handle async pattern (202 Accepted with requestId)
         if response.status_code == 202 and wait_for_completion:
@@ -203,7 +207,9 @@ class IdentityService:
                 f"/identityGroups/{group_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     async def export_identity_groups_to_csv(
         self,
@@ -265,16 +271,17 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 "/identities",
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 "/identities",
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def query_identities(
         self,
@@ -310,18 +317,19 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 "/identities/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/identities/query",
                 payload=body,
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_identities_in_group(
         self,
@@ -348,16 +356,17 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/identityGroups/{group_id}/identities",
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/identityGroups/{group_id}/identities",
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_identity(
         self,
@@ -377,14 +386,15 @@ class IdentityService:
             Identity details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/identityGroups/{group_id}/identities/{identity_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/identityGroups/{group_id}/identities/{identity_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def create_identity(
         self,
@@ -439,7 +449,7 @@ class IdentityService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def update_identity(
         self,
@@ -495,7 +505,7 @@ class IdentityService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_identity(
         self,
@@ -532,24 +542,25 @@ class IdentityService:
                 payload=payload
             )
 
+        # Check for errors first
+        result = self.client.safe_json(response)
+
         # Handle 202 Accepted (async operation)
         if response.status_code == 202:
-            response_data = response.json()
-            request_id = response_data.get('requestId')
+            request_id = result.get('requestId')
 
             if request_id:
                 # Wait for async operation to complete
-                result = await self.client.await_task_completion(
+                return await self.client.await_task_completion(
                     request_id=request_id,
                     override_tenant_id=tenant_id
                 )
-                return result
             else:
                 # No requestId, just return the 202 response
-                return response_data
+                return result
 
         # Handle other responses (200, 204, etc.)
-        return response.json() if response.content else {"status": "deleted"}
+        return result
 
     async def delete_identities_bulk(
         self,
@@ -586,24 +597,25 @@ class IdentityService:
                 payload=identity_ids
             )
 
+        # Check for errors first
+        result = self.client.safe_json(response)
+
         # Handle 202 Accepted (async operation)
         if response.status_code == 202:
-            response_data = response.json()
-            request_id = response_data.get('requestId')
+            request_id = result.get('requestId')
 
             if request_id and wait_for_completion:
                 # Wait for async operation to complete
-                result = await self.client.await_task_completion(
+                return await self.client.await_task_completion(
                     request_id=request_id,
                     override_tenant_id=tenant_id
                 )
-                return result
             else:
                 # Return requestId for bulk tracking or no requestId
-                return response_data
+                return result
 
         # Handle other responses (200, 204, etc.)
-        return response.json() if response.content else {"status": "deleted"}
+        return result
 
     # ========== Identity Group Associations ==========
 
@@ -634,7 +646,9 @@ class IdentityService:
                 f"/identityGroups/{group_id}/policySets/{policy_set_id}"
             )
 
-        return response.json() if response.content else {"status": "attached"}
+        if not response.content:
+            return {"status": "attached"}
+        return self.client.safe_json(response)
 
     async def remove_policy_set_from_identity_group(
         self,
@@ -663,7 +677,9 @@ class IdentityService:
                 f"/identityGroups/{group_id}/policySets/{policy_set_id}"
             )
 
-        return response.json() if response.content else {"status": "removed"}
+        if not response.content:
+            return {"status": "removed"}
+        return self.client.safe_json(response)
 
     async def attach_dpsk_pool_to_identity_group(
         self,
@@ -692,7 +708,9 @@ class IdentityService:
                 f"/identityGroups/{group_id}/dpskPools/{dpsk_pool_id}"
             )
 
-        return response.json() if response.content else {"status": "attached"}
+        if not response.content:
+            return {"status": "attached"}
+        return self.client.safe_json(response)
 
     async def attach_mac_registration_pool_to_identity_group(
         self,
@@ -721,7 +739,9 @@ class IdentityService:
                 f"/identityGroups/{group_id}/macRegistrationPools/{pool_id}"
             )
 
-        return response.json() if response.content else {"status": "attached"}
+        if not response.content:
+            return {"status": "attached"}
+        return self.client.safe_json(response)
 
     # ========== Unit Identity Associations (MDU) ==========
 
@@ -757,18 +777,19 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 f"/venues/{venue_id}/units/identities/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 f"/venues/{venue_id}/units/identities/query",
                 payload=body,
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def associate_identity_to_unit(
         self,
@@ -799,7 +820,9 @@ class IdentityService:
                 f"/venues/{venue_id}/units/{unit_id}/identities/{identity_id}"
             )
 
-        return response.json() if response.content else {"status": "associated"}
+        if not response.content:
+            return {"status": "associated"}
+        return self.client.safe_json(response)
 
     async def remove_identity_from_unit(
         self,
@@ -830,7 +853,9 @@ class IdentityService:
                 f"/venues/{venue_id}/units/{unit_id}/identities/{identity_id}"
             )
 
-        return response.json() if response.content else {"status": "removed"}
+        if not response.content:
+            return {"status": "removed"}
+        return self.client.safe_json(response)
 
     async def update_identity_ethernet_ports(
         self,
@@ -869,7 +894,7 @@ class IdentityService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def retry_vni_allocation_for_identity(
         self,
@@ -898,7 +923,9 @@ class IdentityService:
                 f"/identityGroups/{group_id}/identities/{identity_id}/vnis"
             )
 
-        return response.json() if response.content else {"status": "retried"}
+        if not response.content:
+            return {"status": "retried"}
+        return self.client.safe_json(response)
 
     # ========== External Identities ==========
 
@@ -932,15 +959,16 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 "/externalIdentities/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/externalIdentities/query",
                 payload=body,
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)

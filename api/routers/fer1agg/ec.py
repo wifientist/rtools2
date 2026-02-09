@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from models.user import User
@@ -82,12 +82,19 @@ async def get_secondary_ec(
 async def get_active_and_secondary_ecs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-): 
+):
     async def build_ec_response(controller_id: int) -> dict:
         if not controller_id:
             return None
 
-        client = create_r1_client_from_controller(controller_id, db)
+        try:
+            client = create_r1_client_from_controller(controller_id, db)
+        except HTTPException as e:
+            logger.warning(f"Failed to create R1Client for controller {controller_id}: {e.detail}")
+            return {"error": e.detail, "controller_id": controller_id}
+        except Exception as e:
+            logger.error(f"Unexpected error creating R1Client for controller {controller_id}: {str(e)}")
+            return {"error": f"Failed to connect: {str(e)}", "controller_id": controller_id}
 
         result = {
             "ecs": None,
@@ -95,14 +102,18 @@ async def get_active_and_secondary_ecs(
             "userProfiles": None,
         }
 
-        msp_ecs = await client.msp.get_msp_ecs()
-        logger.debug(f"MSP ECS Response: {msp_ecs}")
-        if msp_ecs:
-            if msp_ecs.get("data"):
-                result["ecs"] = extract_ec_list(msp_ecs)
+        try:
+            msp_ecs = await client.msp.get_msp_ecs()
+            logger.debug(f"MSP ECS Response: {msp_ecs}")
+            if msp_ecs:
+                if msp_ecs.get("data"):
+                    result["ecs"] = extract_ec_list(msp_ecs)
 
-        result["self"] = await client.tenant.get_tenant_self()
-        result["userProfiles"] = await client.tenant.get_tenant_user_profiles()
+            result["self"] = await client.tenant.get_tenant_self()
+            result["userProfiles"] = await client.tenant.get_tenant_user_profiles()
+        except Exception as e:
+            logger.error(f"Error fetching data from R1 API for controller {controller_id}: {str(e)}")
+            result["error"] = str(e)
 
         return result
 

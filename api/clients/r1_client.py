@@ -52,13 +52,24 @@ def create_r1_client_from_controller(controller_id: int, db: Session) -> R1Clien
 
     # R1Client still uses "tenant_id" because that's R1's API terminology
     # We're passing R1's tenant identifier, not our controller ID
-    return R1Client(
+    client = R1Client(
         tenant_id=controller.r1_tenant_id,  # R1's tenant identifier
         client_id=decrypted_client_id,
         shared_secret=decrypted_shared_secret,
         region=region,
         ec_type=controller.controller_subtype,  # "MSP" or "EC"
     )
+
+    # Check if authentication failed during client creation
+    if getattr(client, "auth_failed", False):
+        error_info = getattr(client, "auth_error", {})
+        logger.error(f"R1Client auth failed for controller {controller_id}: {error_info}")
+        raise HTTPException(
+            status_code=401,
+            detail=f"R1 authentication failed for controller '{controller.name}'. The API credentials may be invalid or expired."
+        )
+
+    return client
 
 def get_r1_active_client(
     current_user: User = Depends(get_current_user),

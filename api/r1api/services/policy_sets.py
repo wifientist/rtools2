@@ -53,16 +53,17 @@ class PolicySetService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 "/policySets/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/policySets/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_policy_set(
         self,
@@ -80,14 +81,15 @@ class PolicySetService:
             Policy set details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def create_policy_set(
         self,
@@ -125,7 +127,7 @@ class PolicySetService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def update_policy_set(
         self,
@@ -165,7 +167,7 @@ class PolicySetService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_policy_set(
         self,
@@ -192,7 +194,9 @@ class PolicySetService:
                 f"/policySets/{policy_set_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== Policy Set Assignments ==========
 
@@ -212,14 +216,15 @@ class PolicySetService:
             List of assignments
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/assignments",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/assignments"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def query_policy_set_assignments(
         self,
@@ -251,16 +256,17 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 f"/policySets/{policy_set_id}/assignments/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 f"/policySets/{policy_set_id}/assignments/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_policy_set_assignment(
         self,
@@ -280,14 +286,15 @@ class PolicySetService:
             Assignment details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/assignments/{assignment_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/assignments/{assignment_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     # ========== Prioritized Policies ==========
 
@@ -307,14 +314,15 @@ class PolicySetService:
             List of prioritized policies
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/prioritizedPolicies",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/prioritizedPolicies"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_prioritized_policy(
         self,
@@ -334,14 +342,15 @@ class PolicySetService:
             Policy details with priority
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def assign_policy_to_policy_set(
         self,
@@ -379,7 +388,9 @@ class PolicySetService:
                 payload=payload
             )
 
-        return response.json() if response.content else {"status": "assigned"}
+        if not response.content:
+            return {"status": "assigned"}
+        return self.client.safe_json(response)
 
     async def remove_policy_from_policy_set(
         self,
@@ -408,7 +419,9 @@ class PolicySetService:
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}"
             )
 
-        return response.json() if response.content else {"status": "removed"}
+        if not response.content:
+            return {"status": "removed"}
+        return self.client.safe_json(response)
 
     # ========== Policy Evaluation ==========
 
@@ -443,7 +456,7 @@ class PolicySetService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     # ========== Policy Templates ==========
 
@@ -475,16 +488,17 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 "/policyTemplates/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/policyTemplates/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_policy_template(
         self,
@@ -502,14 +516,15 @@ class PolicySetService:
             Policy template details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_template_attributes(
         self,
@@ -527,14 +542,15 @@ class PolicySetService:
             List of template attributes
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/attributes",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/attributes"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def query_template_attributes(
         self,
@@ -566,16 +582,17 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 f"/policyTemplates/{template_id}/attributes/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 f"/policyTemplates/{template_id}/attributes/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_template_attribute(
         self,
@@ -595,14 +612,15 @@ class PolicySetService:
             Attribute details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/attributes/{attribute_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/attributes/{attribute_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     # ========== Template Policies ==========
 
@@ -622,14 +640,15 @@ class PolicySetService:
             List of policies
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def query_template_policies(
         self,
@@ -661,16 +680,17 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 f"/policyTemplates/{template_id}/policies/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 f"/policyTemplates/{template_id}/policies/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def create_template_policy(
         self,
@@ -701,7 +721,7 @@ class PolicySetService:
                 payload=policy_data
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def await_policy_creation(
         self,
@@ -755,7 +775,7 @@ class PolicySetService:
                 )
 
             if response.ok:
-                data = response.json()
+                data = self.client.safe_json(response)
                 # Check if onMatchResponse is populated (radius attr group associated)
                 if data.get("onMatchResponse"):
                     logger.debug(f"Policy {policy_id} creation completed after {elapsed:.1f}s")
@@ -786,14 +806,15 @@ class PolicySetService:
             Policy details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def update_template_policy(
         self,
@@ -826,7 +847,7 @@ class PolicySetService:
                 payload=policy_data
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_template_policy(
         self,
@@ -855,7 +876,9 @@ class PolicySetService:
                 f"/policyTemplates/{template_id}/policies/{policy_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== Policy Conditions ==========
 
@@ -877,15 +900,15 @@ class PolicySetService:
             List of policy conditions
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            result = self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            result = self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions"
-            ).json()
-
+            )
+        result = self.client.safe_json(response)
         logger.debug(f"get_policy_conditions response type={type(result)}, value={result}")
         return result
 
@@ -909,14 +932,15 @@ class PolicySetService:
             Condition details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def create_policy_condition(
         self,
@@ -966,7 +990,7 @@ class PolicySetService:
                 f"payload={condition_data}, response={response.text}"
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def create_string_condition(
         self,
@@ -1051,7 +1075,7 @@ class PolicySetService:
                 payload=condition_data
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_policy_condition(
         self,
@@ -1082,7 +1106,9 @@ class PolicySetService:
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== Cross-Template Policy Query ==========
 
@@ -1120,13 +1146,14 @@ class PolicySetService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 "/policyTemplates/policies/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 "/policyTemplates/policies/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)

@@ -53,9 +53,10 @@ class DpskService:
         logger.debug(f"query_dpsk_pools request body: {body}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post("/dpskServices/query", payload=body, override_tenant_id=tenant_id).json()
+            response = self.client.post("/dpskServices/query", payload=body, override_tenant_id=tenant_id)
         else:
-            return self.client.post("/dpskServices/query", payload=body).json()
+            response = self.client.post("/dpskServices/query", payload=body)
+        return self.client.safe_json(response)
 
     async def get_dpsk_pool(self, pool_id: str, tenant_id: str = None):
         """
@@ -69,9 +70,10 @@ class DpskService:
             DPSK pool details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(f"/dpskServices/{pool_id}", override_tenant_id=tenant_id).json()
+            response = self.client.get(f"/dpskServices/{pool_id}", override_tenant_id=tenant_id)
         else:
-            return self.client.get(f"/dpskServices/{pool_id}").json()
+            response = self.client.get(f"/dpskServices/{pool_id}")
+        return self.client.safe_json(response)
 
     async def create_dpsk_pool(
         self,
@@ -138,7 +140,7 @@ class DpskService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def update_dpsk_pool(
         self,
@@ -192,7 +194,7 @@ class DpskService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_dpsk_pool(self, pool_id: str, tenant_id: str = None):
         """
@@ -210,7 +212,9 @@ class DpskService:
         else:
             response = self.client.delete(f"/dpskServices/{pool_id}")
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== DPSK Passphrase Management ==========
 
@@ -244,16 +248,17 @@ class DpskService:
             params["sort"] = sort
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/dpskServices/{pool_id}/passphrases",
                 params=params,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/dpskServices/{pool_id}/passphrases",
                 params=params
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def query_passphrases(
         self,
@@ -303,16 +308,17 @@ class DpskService:
         logger.debug(f"query_passphrases request body: {body}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            response = self.client.post(
                 f"/dpskServices/{pool_id}/passphrases/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.post(
+            response = self.client.post(
                 f"/dpskServices/{pool_id}/passphrases/query",
                 payload=body
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def get_passphrase(
         self,
@@ -332,14 +338,15 @@ class DpskService:
             Passphrase details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def create_passphrase(
         self,
@@ -415,12 +422,7 @@ class DpskService:
             )
 
         # Raise exception on HTTP errors so callers can handle failures properly
-        if not response.ok:
-            error_data = response.json()
-            error_msg = error_data.get('error', {}).get('message', response.text[:200])
-            raise Exception(f"Failed to create passphrase: {error_msg}")
-
-        result = response.json()
+        result = self.client.safe_json(response)
 
         # Handle 202 Accepted - async operation that returns requestId
         # We need to poll /activities/{requestId} until completion
@@ -557,7 +559,7 @@ class DpskService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_passphrase(
         self,
@@ -586,7 +588,9 @@ class DpskService:
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     async def delete_passphrases(
         self,
@@ -617,7 +621,9 @@ class DpskService:
                 f"/dpskServices/{pool_id}/passphrases"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== CSV Import/Export ==========
 
@@ -658,7 +664,7 @@ class DpskService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def export_passphrases_to_csv(
         self,
@@ -717,14 +723,15 @@ class DpskService:
             List of devices using this passphrase
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            response = self.client.get(
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices",
                 override_tenant_id=tenant_id
-            ).json()
+            )
         else:
-            return self.client.get(
+            response = self.client.get(
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices"
-            ).json()
+            )
+        return self.client.safe_json(response)
 
     async def add_passphrase_device(
         self,
@@ -766,7 +773,7 @@ class DpskService:
                 payload=payload
             )
 
-        return response.json()
+        return self.client.safe_json(response)
 
     async def delete_passphrase_devices(
         self,
@@ -800,7 +807,9 @@ class DpskService:
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== Policy Set Management ==========
 
@@ -831,7 +840,9 @@ class DpskService:
                 f"/dpskServices/{pool_id}/policySets/{policy_set_id}"
             )
 
-        return response.json() if response.content else {"status": "attached"}
+        if not response.content:
+            return {"status": "attached"}
+        return self.client.safe_json(response)
 
     async def remove_policy_set_from_pool(
         self,
@@ -860,7 +871,9 @@ class DpskService:
                 f"/dpskServices/{pool_id}/policySets/{policy_set_id}"
             )
 
-        return response.json() if response.content else {"status": "removed"}
+        if not response.content:
+            return {"status": "removed"}
+        return self.client.safe_json(response)
 
     # ========== WiFi Network Integration ==========
 
@@ -891,4 +904,6 @@ class DpskService:
                 f"/wifiNetworks/{wifi_network_id}/dpskServices/{dpsk_service_id}"
             )
 
-        return response.json() if response.content else {"status": "activated"}
+        if not response.content:
+            return {"status": "activated"}
+        return self.client.safe_json(response)

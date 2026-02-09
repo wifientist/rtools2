@@ -165,6 +165,33 @@ class R1Client:
     def patch(self, path, payload=None, override_tenant_id=None):
         return self._request("patch", path, payload=payload, override_tenant_id=override_tenant_id)
 
+    def safe_json(self, response):
+        """
+        Safely extract JSON from a response, with proper error handling.
+
+        Args:
+            response: requests.Response object
+
+        Returns:
+            Parsed JSON data
+
+        Raises:
+            Exception with descriptive error message if response is not valid JSON
+        """
+        if not response.ok:
+            try:
+                error_data = response.json()
+                error_msg = error_data.get('message', error_data.get('error', response.text[:200]))
+            except ValueError:
+                error_msg = response.text[:200] if response.text else f"HTTP {response.status_code}"
+            raise Exception(f"R1 API error ({response.status_code}): {error_msg}")
+
+        try:
+            return response.json()
+        except ValueError:
+            logger.error(f"Failed to parse JSON response: {response.text[:200]}")
+            raise Exception(f"Invalid JSON response from R1 API: {response.text[:100]}")
+
     def post_multipart(self, path, files, override_tenant_id=None):
         """
         POST request with multipart/form-data (for file uploads like CSV import).
