@@ -71,6 +71,7 @@ class ParsedPassphrase(BaseModel):
     device_count: int = 0
     expiration: Optional[str] = None
     vlan_id: Optional[int] = None  # Per-identity VLAN from Cloudpath
+    ap_identifier: Optional[str] = None  # AP name/serial for unit assignment
 
 
 class ScenarioDetection(BaseModel):
@@ -202,6 +203,20 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     pass
             logger.debug(f"DPSK {dpsk.get('name')}: raw_vlan={raw_vlan}, parsed_vlan={vlan_id}")
 
+            # Extract AP identifier (can be ap_identifier, apname, ap, ap_serial, etc.)
+            ap_identifier = (
+                dpsk.get('ap_identifier') or
+                dpsk.get('apidentifier') or
+                dpsk.get('ap_name') or
+                dpsk.get('apname') or
+                dpsk.get('ap_serial') or
+                dpsk.get('apserial') or
+                dpsk.get('ap') or
+                None
+            )
+            if ap_identifier:
+                ap_identifier = str(ap_identifier).strip()
+
             passphrases.append(ParsedPassphrase(
                 guid=dpsk.get('guid', ''),
                 name=dpsk.get('name', ''),
@@ -211,6 +226,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 unit_number=unit_number,
                 device_count=dpsk.get('deviceCount', 0),
                 vlan_id=vlan_id,
+                ap_identifier=ap_identifier,
             ))
 
         # Adjust pool_config.phrase_length to accommodate shortest passphrase
@@ -259,6 +275,17 @@ class ValidateCloudpathPhase(PhaseExecutor):
             await self.emit(
                 f"Per-identity VLANs detected: {len(vlans_detected)} passphrases with "
                 f"{len(unique_vlans)} unique VLANs ({min(unique_vlans)}-{max(unique_vlans)})"
+            )
+
+        # Report AP identifier detection
+        aps_detected = [pp for pp in passphrases if pp.ap_identifier]
+        if aps_detected:
+            unique_aps = sorted(set(pp.ap_identifier for pp in aps_detected))
+            sample_aps = unique_aps[:5]
+            await self.emit(
+                f"AP identifiers detected: {len(aps_detected)} passphrases with "
+                f"{len(unique_aps)} unique APs (sample: {', '.join(sample_aps)}"
+                f"{'...' if len(unique_aps) > 5 else ''})"
             )
 
         await self.emit(f"Parsed {len(passphrases)} passphrases")
@@ -553,9 +580,15 @@ class ValidateCloudpathPhase(PhaseExecutor):
 
         # =====================================================================
         # Fetch Venue APs (needed for per_unit SSID mode with AP assignment)
+        # Fetch if: CSV assignments provided OR any DPSKs have ap_identifier
         # =====================================================================
         all_venue_aps: List[Dict[str, Any]] = []
-        if per_unit_ssid and ap_assignment_mode != 'skip':
+        has_dpsk_ap_assignments = any(pp.ap_identifier for pp in passphrases)
+        should_fetch_aps = per_unit_ssid and (
+            ap_assignment_mode != 'skip' or has_dpsk_ap_assignments
+        )
+
+        if should_fetch_aps:
             await self.emit("Fetching venue APs for assignment...")
             try:
                 aps_response = await self.r1_client.venues.get_aps_by_tenant_venue(
@@ -877,6 +910,30 @@ class ValidateCloudpathPhase(PhaseExecutor):
                         f"Warning: {len(unmatched)} AP assignments not matched: "
                         f"{', '.join(unmatched[:5])}{'...' if len(unmatched) > 5 else ''}",
                         "warning"
+                    )
+
+            # Also extract AP assignments from DPSK records that have ap_identifier
+            # This allows embedding AP info directly in the Cloudpath export JSON
+            if all_venue_aps:
+                serial_to_ap = {ap.get('serial', ''): ap for ap in all_venue_aps}
+                name_to_ap = {ap.get('name', ''): ap for ap in all_venue_aps}
+
+                dpsk_ap_count = 0
+                for pp in passphrases:
+                    if pp.ap_identifier and pp.unit_number:
+                        ap_id = pp.ap_identifier
+                        # Try to match by serial first, then by name
+                        matched_ap = serial_to_ap.get(ap_id) or name_to_ap.get(ap_id)
+                        if matched_ap:
+                            serial = matched_ap.get('serial', '')
+                            if serial and serial not in unit_to_aps[pp.unit_number]:
+                                unit_to_aps[pp.unit_number].append(serial)
+                                dpsk_ap_count += 1
+
+                if dpsk_ap_count > 0:
+                    await self.emit(
+                        f"AP assignments from DPSK records: {dpsk_ap_count} APs matched to "
+                        f"{len(unit_to_aps)} units"
                     )
 
             if create_networks:
