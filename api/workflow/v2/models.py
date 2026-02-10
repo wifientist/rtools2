@@ -272,6 +272,12 @@ class PhaseDefinitionV2(BaseModel):
     # API call estimate (for dry-run display)
     api_calls_per_unit: Union[int, str] = 1  # int or "dynamic"
 
+    # Activation slot control - for R1's 15-SSID-per-AP-Group limit
+    # "acquire" = acquire a slot before this phase starts
+    # "release" = release the slot after this phase completes
+    # Used to couple activate_network → assign_aps so only N SSIDs are "in-flight"
+    activation_slot: Optional[str] = None  # "acquire" | "release" | None
+
 
 # =============================================================================
 # Activity Tracking

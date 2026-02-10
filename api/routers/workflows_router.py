@@ -287,6 +287,83 @@ async def get_job_status(
     )
 
 
+@router.get("/{job_id}/failures")
+async def get_job_failures(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get detailed failure information for a job
+
+    Returns:
+    - List of failed units with their error messages
+    - Failures grouped by phase
+    - Sample error messages for each phase
+    """
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+
+    job = await state_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Verify user owns this job
+    if job.user_id != current_user.id and job.user_id != 0:
+        raise HTTPException(status_code=403, detail=f"Access denied to job {job_id}")
+
+    total_units = len(job.units)
+    failed_units = []
+    failures_by_phase: Dict[str, List[Dict[str, Any]]] = {}
+
+    for unit in job.units.values():
+        if unit.status.value == "failed":
+            unit_failures = {
+                "unit_id": unit.unit_id,
+                "unit_number": unit.unit_number,
+                "failed_phases": list(unit.failed_phases),
+                "completed_phases": list(unit.completed_phases),
+            }
+
+            # Get error from phase results if available
+            if hasattr(unit, 'phase_results') and unit.phase_results:
+                for phase_id, result in unit.phase_results.items():
+                    if hasattr(result, 'error') and result.error:
+                        unit_failures["error"] = result.error
+                        break
+
+            failed_units.append(unit_failures)
+
+            # Group by phase
+            for phase_id in unit.failed_phases:
+                if phase_id not in failures_by_phase:
+                    failures_by_phase[phase_id] = []
+                failures_by_phase[phase_id].append({
+                    "unit_id": unit.unit_id,
+                    "unit_number": unit.unit_number,
+                })
+
+    # Get phase names
+    phase_names = {p.id: p.name for p in job.phase_definitions}
+
+    return {
+        "job_id": job_id,
+        "status": job.status.value,
+        "total_units": total_units,
+        "failed_count": len(failed_units),
+        "completed_count": sum(1 for u in job.units.values() if u.status.value == "completed"),
+        "failures_by_phase": {
+            phase_id: {
+                "phase_name": phase_names.get(phase_id, phase_id),
+                "count": len(units),
+                "units": units[:10],  # Limit to first 10
+            }
+            for phase_id, units in failures_by_phase.items()
+        },
+        "failed_units": failed_units[:50],  # Limit to first 50
+        "global_errors": job.errors,
+    }
+
+
 @router.post("/{job_id}/cleanup", response_model=CleanupResponse)
 async def cleanup_job(
     job_id: str,

@@ -60,6 +60,12 @@ class Phase(BaseModel):
     # API call estimate for dry-run display
     api_calls_per_unit: Union[int, str] = 1  # int or "dynamic"
 
+    # Activation slot group - for R1's 15-SSID-per-AP-Group limit
+    # Phases with activation_slot="acquire" get a slot before starting
+    # Phases with activation_slot="release" release the slot after completing
+    # This ensures the activate→assign cycle completes before too many SSIDs are in-flight
+    activation_slot: Optional[str] = None  # "acquire" | "release" | None
+
     def to_definition(self) -> PhaseDefinitionV2:
         """Convert to V2 phase definition model."""
         contract = PhaseContract(
@@ -78,6 +84,7 @@ class Phase(BaseModel):
             per_unit=self.per_unit,
             skip_if=self.skip_if,
             api_calls_per_unit=self.api_calls_per_unit,
+            activation_slot=self.activation_slot,
         )
 
 
@@ -94,6 +101,12 @@ class Workflow(BaseModel):
     # Workflow-level settings
     requires_confirmation: bool = True   # Pause after validation for user confirmation?
     default_options: Dict[str, Any] = Field(default_factory=dict)
+
+    # Activation slot limit - for R1's 15-SSID-per-AP-Group limit
+    # Controls how many units can have an "in-flight" SSID activation
+    # (activated on venue but not yet assigned to specific AP Group)
+    # Default 12 leaves buffer for existing venue-wide SSIDs
+    max_activation_slots: int = 12
 
     def get_phase(self, phase_id: str) -> Optional[Phase]:
         """Get a phase by ID."""

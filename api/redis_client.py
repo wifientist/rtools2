@@ -25,8 +25,12 @@ class RedisClient:
             password = os.getenv("REDIS_PASSWORD", None)
 
             # Connection pool settings for parallel workloads
-            # Default max_connections=10 is too small for 30+ parallel batches
-            # Each batch does frequent Redis ops + SSE streams + progress tracking
+            # Default max_connections=10 is too small for parallel workflows
+            # With concurrency limits in Brain (20) and ActivityTracker (25),
+            # 200 connections provides sufficient headroom for:
+            # - 20 concurrent phase tasks × ~5 Redis ops each
+            # - 25 concurrent activity polls
+            # - SSE streams + progress tracking + pub/sub
             pool_kwargs = {
                 "host": host,
                 "port": port,
@@ -34,7 +38,7 @@ class RedisClient:
                 "decode_responses": True,
                 "socket_connect_timeout": 10,
                 "socket_timeout": 10,
-                "max_connections": 100,  # Support 30+ parallel batches + SSE + progress
+                "max_connections": 200,  # Sized for bounded concurrency + headroom
             }
 
             if password:
@@ -46,7 +50,7 @@ class RedisClient:
             # Test connection
             try:
                 await cls._instance.ping()
-                logger.info(f"Redis connected: {host}:{port} (DB {db}, max_connections=100)")
+                logger.info(f"Redis connected: {host}:{port} (DB {db}, max_connections=200)")
             except redis.ConnectionError as e:
                 logger.error(f"Redis connection failed: {e}")
                 cls._instance = None

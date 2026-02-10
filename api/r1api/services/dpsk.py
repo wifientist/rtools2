@@ -578,19 +578,12 @@ class DpskService:
         Returns:
             Deletion response
         """
-        if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
-                f"/dpskServices/{pool_id}/passphrases/{passphrase_id}",
-                override_tenant_id=tenant_id
-            )
-        else:
-            response = self.client.delete(
-                f"/dpskServices/{pool_id}/passphrases/{passphrase_id}"
-            )
-
-        if not response.content:
-            return {"status": "deleted"}
-        return self.client.safe_json(response)
+        # R1 API uses bulk delete endpoint - single delete is just a one-item array
+        return await self.delete_passphrases(
+            pool_id=pool_id,
+            passphrase_ids=[passphrase_id],
+            tenant_id=tenant_id
+        )
 
     async def delete_passphrases(
         self,
@@ -609,16 +602,19 @@ class DpskService:
         Returns:
             Deletion response
         """
-        payload = passphrase_ids  # Body is just an array of IDs
+        # R1 API expects array of passphrase IDs in request body
+        payload = passphrase_ids
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.delete(
                 f"/dpskServices/{pool_id}/passphrases",
+                payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
             response = self.client.delete(
-                f"/dpskServices/{pool_id}/passphrases"
+                f"/dpskServices/{pool_id}/passphrases",
+                payload=payload
             )
 
         if not response.content:

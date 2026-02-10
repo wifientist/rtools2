@@ -143,6 +143,74 @@ class WorkflowEventPublisher:
             "duration_ms": duration_ms,
         })
 
+    async def phase_progress(
+        self,
+        job_id: str,
+        phase_id: str,
+        unit_id: str = None,
+        current: int = 0,
+        total: int = 0,
+        failed: int = 0,
+        item_name: str = "item",
+        **kwargs
+    ):
+        """
+        Publish intra-phase progress for long-running phases.
+
+        This provides structured progress data (not just text messages)
+        for phases that process many items (e.g., creating 500 passphrases).
+
+        Args:
+            job_id: Job ID
+            phase_id: Phase ID
+            unit_id: Unit ID (for per-unit phases)
+            current: Items completed so far
+            total: Total items to process
+            failed: Items that failed
+            item_name: What we're processing (e.g., "passphrase", "identity")
+        """
+        await self._publish_event(job_id, "phase_progress", {
+            "phase_id": phase_id,
+            "unit_id": unit_id,
+            "current": current,
+            "total": total,
+            "failed": failed,
+            "item_name": item_name,
+            "percent": round((current / total * 100), 1) if total > 0 else 0,
+        })
+
+    async def unit_started(
+        self,
+        job_id: str,
+        unit_id: str,
+        unit_number: str = None,
+        total_phases: int = 0,
+    ):
+        """Publish unit started event - when a unit begins processing."""
+        await self._publish_event(job_id, "unit_started", {
+            "unit_id": unit_id,
+            "unit_number": unit_number,
+            "total_phases": total_phases,
+        })
+
+    async def unit_completed(
+        self,
+        job_id: str,
+        unit_id: str,
+        unit_number: str = None,
+        phases_completed: int = 0,
+        phases_failed: int = 0,
+        success: bool = True,
+    ):
+        """Publish unit completed event - when a unit finishes all phases."""
+        await self._publish_event(job_id, "unit_completed", {
+            "unit_id": unit_id,
+            "unit_number": unit_number,
+            "phases_completed": phases_completed,
+            "phases_failed": phases_failed,
+            "success": success,
+        })
+
     async def task_started(
         self,
         job_id: str,

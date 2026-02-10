@@ -9,17 +9,7 @@ Features:
 - Redis-backed for multi-worker visibility
 - asyncio.Event-based notifications for phase executors waiting on results
 - Circuit breaker: stops polling after 10 consecutive failures
-
-R1 API Limitation:
-    The R1 API does NOT support bulk activity queries. The POST /activities/query
-    endpoint returns 500 "bad SQL grammar" when using the 'id.in' filter.
-
-    WORKAROUND: Instead of bulk POST, we use concurrent individual GET calls
-    via asyncio.gather(). Each activity is fetched individually with
-    GET /activities/{id}. This is still efficient due to parallelism.
-
-    Future: If R1 adds bulk query support, set BULK_QUERY_ENABLED = True
-    and implement _poll_activities_bulk().
+- Bulk polling via POST /activities/query (with automatic fallback to individual GETs)
 
 Usage:
     tracker = ActivityTracker(r1_client, state_manager)
@@ -60,7 +50,18 @@ ACTIVITY_TIMEOUT_SECONDS = 300  # 5 minutes
 
 # Error handling
 MAX_CONSECUTIVE_ERRORS = 10    # Stop polling after this many consecutive failures
-BULK_QUERY_ENABLED = False     # POST /activities/query not supported by R1 (returns 500)
+
+# Bulk query: POST /activities/query is BROKEN in R1
+# The endpoint returns 500 "bad SQL grammar" because R1's activity table
+# doesn't support filtering by ID. Neither {"id": {"in": [...]}} nor {"id": [...]}
+# formats work. R1 would need to fix their backend to support this.
+# We keep the code path for if/when they fix it, but disable by default.
+BULK_QUERY_ENABLED = False
+
+# Concurrency control: limit parallel activity fetches to prevent connection exhaustion
+# Each activity poll is a separate HTTP request; with 50+ activities, unbounded
+# parallelism can overwhelm connection pools
+MAX_CONCURRENT_ACTIVITY_POLLS = 25
 
 
 class ActivityTracker:
@@ -353,52 +354,69 @@ class ActivityTracker:
 
     async def _poll_activities(self, activity_ids: list[str], cycle_id: int = 0) -> None:
         """
-        Poll all pending activities using concurrent individual GET requests.
+        Poll all pending activities.
 
-        Note: POST /activities/query bulk endpoint is not supported by R1 API
-        (returns 500 "bad SQL grammar" for id.in filter). Instead, we use
-        concurrent individual GET /activities/{id} calls via thread pool.
-
-        This is still efficient due to concurrency - all requests go out in parallel.
+        Strategy:
+        1. Try bulk query via POST /activities/query (single request for all)
+        2. Fall back to concurrent individual GETs if bulk fails
         """
         if not activity_ids:
             return
 
-        logger.debug(
-            f"[{_ts()}] Cycle #{cycle_id}: Polling {len(activity_ids)} activities "
-            f"(concurrent GET calls)"
-        )
-
-        # Use concurrent individual GET calls (bulk POST not supported by R1)
-        loop = asyncio.get_event_loop()
         results = {}
         errors = 0
+        used_bulk = False
 
-        # Fetch all activities concurrently using thread pool
-        async def fetch_one(activity_id: str):
+        # Try bulk query first (single request for all activities)
+        if BULK_QUERY_ENABLED:
             try:
-                return activity_id, await loop.run_in_executor(
-                    None,
-                    self._fetch_activity_sync,
-                    activity_id
+                results = await self._poll_activities_bulk(activity_ids, cycle_id)
+                used_bulk = True
+                logger.debug(
+                    f"[{_ts()}] Cycle #{cycle_id}: Bulk query returned "
+                    f"{len(results)}/{len(activity_ids)} activities"
                 )
             except Exception as e:
-                logger.debug(f"[{_ts()}] Failed to fetch {activity_id[:8]}: {e}")
-                return activity_id, None
+                logger.debug(
+                    f"[{_ts()}] Cycle #{cycle_id}: Bulk query failed ({e}), "
+                    f"falling back to individual GETs"
+                )
+                results = {}
 
-        # Run all fetches concurrently
-        tasks = [fetch_one(aid) for aid in activity_ids]
-        fetch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Fall back to individual GETs if bulk didn't work
+        if not used_bulk or not results:
+            logger.debug(
+                f"[{_ts()}] Cycle #{cycle_id}: Polling {len(activity_ids)} activities "
+                f"(concurrent GET calls)"
+            )
 
-        for item in fetch_results:
-            if isinstance(item, Exception):
-                errors += 1
-                continue
-            activity_id, data = item
-            if data:
-                results[activity_id] = data
-            else:
-                errors += 1
+            loop = asyncio.get_event_loop()
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_ACTIVITY_POLLS)
+
+            async def fetch_one(activity_id: str):
+                async with semaphore:
+                    try:
+                        return activity_id, await loop.run_in_executor(
+                            None,
+                            self._fetch_activity_sync,
+                            activity_id
+                        )
+                    except Exception as e:
+                        logger.debug(f"[{_ts()}] Failed to fetch {activity_id[:8]}: {e}")
+                        return activity_id, None
+
+            tasks = [fetch_one(aid) for aid in activity_ids]
+            fetch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for item in fetch_results:
+                if isinstance(item, Exception):
+                    errors += 1
+                    continue
+                activity_id, data = item
+                if data:
+                    results[activity_id] = data
+                else:
+                    errors += 1
 
         # Track consecutive errors for circuit breaker
         if errors == len(activity_ids) and len(activity_ids) > 0:
@@ -453,6 +471,33 @@ class ActivityTracker:
         except Exception as e:
             logger.debug(f"Activity {activity_id[:8]} fetch error: {e}")
             return None
+
+    async def _poll_activities_bulk(
+        self,
+        activity_ids: list[str],
+        cycle_id: int = 0
+    ) -> dict[str, dict]:
+        """
+        Poll activities using bulk query endpoint POST /activities/query.
+
+        Returns dict mapping activity_id -> activity data.
+        Raises exception on failure (caller should fall back to individual GETs).
+        """
+        loop = asyncio.get_event_loop()
+
+        # Run sync bulk query in executor
+        results = await loop.run_in_executor(
+            None,
+            lambda: self.r1_client.query_activities_bulk(
+                activity_ids=activity_ids,
+                override_tenant_id=self.tenant_id
+            )
+        )
+
+        if not results:
+            raise RuntimeError("Bulk query returned empty results")
+
+        return results
 
     async def _process_activity_result(
         self,

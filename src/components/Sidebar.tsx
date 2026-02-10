@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface NavItem {
   to: string;
@@ -50,6 +51,7 @@ const Sidebar = () => {
       label: "Informational",
       icon: <Info size={18} />,
       items: [
+        { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/snapshot", icon: <Camera size={20} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/diff", icon: <GitCompareArrows size={20} />, label: "Diff Tenant", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/diff-venue", icon: <GitCompareArrows size={20} />, label: "Diff Venue", requiresAuth: true, rolesAllowed: ["user","admin"] },
@@ -70,7 +72,6 @@ const Sidebar = () => {
       label: "Helpers",
       icon: <Wrench size={18} />,
       items: [
-        { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
@@ -173,40 +174,66 @@ const Sidebar = () => {
     );
   };
 
-  // Render collapsed category with hover submenu
-  const renderCollapsedCategory = (category: NavCategory) => {
-    const categoryKey = category.label.toLowerCase();
+  // Collapsed category component with portal-based flyout
+  const CollapsedCategory = ({ category }: { category: NavCategory }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0 });
+    const iconRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (isHovered && iconRef.current) {
+        const rect = iconRef.current.getBoundingClientRect();
+        setPosition({
+          top: rect.top,
+          left: rect.right - 4, // Overlap slightly to prevent gap
+        });
+      }
+    }, [isHovered]);
 
     return (
-      <div key={categoryKey} className="group relative">
+      <div
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
         {/* Category Icon */}
-        <div className="flex items-center justify-center p-2 rounded hover:bg-gray-800 transition cursor-pointer">
+        <div
+          ref={iconRef}
+          className="flex items-center justify-center p-2 rounded hover:bg-gray-800 transition cursor-pointer"
+        >
           {category.icon}
         </div>
 
-        {/* Floating submenu on hover - positioned to overlap slightly with icon to prevent gap */}
-        <div className="absolute left-full top-0 ml-[-4px] bg-gray-700 text-gray-100 rounded shadow-lg border border-gray-600 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 pointer-events-none group-hover:pointer-events-auto z-50 min-w-[180px]">
-          {/* Category header in submenu */}
-          <div className="px-3 py-2 border-b border-gray-600 font-semibold text-xs uppercase text-gray-400">
-            {category.label}
-          </div>
-          {/* Category items */}
-          <div className="py-1">
-            {category.items.map(item => renderNavItem(item, false, true))}
-          </div>
-        </div>
+        {/* Floating submenu rendered via portal */}
+        {isHovered && createPortal(
+          <div
+            style={{ top: position.top, left: position.left }}
+            className="fixed bg-gray-700 text-gray-100 rounded shadow-lg border border-gray-600 z-[9999] min-w-[180px]"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
+            {/* Category header in submenu */}
+            <div className="px-3 py-2 border-b border-gray-600 font-semibold text-xs uppercase text-gray-400">
+              {category.label}
+            </div>
+            {/* Category items */}
+            <div className="py-1">
+              {category.items.map(item => renderNavItem(item, false, true))}
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     );
   };
 
   return (
     <aside
-      className={`relative flex flex-col bg-gray-700 shadow-lg transition-all duration-300
-        ${collapsed ? "w-16" : "w-48"}
+      className={`relative z-40 flex flex-col bg-gray-700 shadow-lg transition-all duration-300
+        ${collapsed ? "w-16" : "w-52"}
         h-full bg-gray-700 text-gray-100`}
     >
       {/* Navigation - scrollable area */}
-      <nav className="flex-1 flex flex-col p-2 space-y-1 text-gray-200 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+      <nav className="flex-1 flex flex-col p-2 space-y-1 text-gray-200 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
         {/* Standalone items */}
         {visibleStandaloneItems.map(item => renderNavItem(item))}
 
@@ -220,9 +247,9 @@ const Sidebar = () => {
           const categoryKey = category.label.toLowerCase();
           const isOpen = openCategories[categoryKey];
 
-          // If collapsed, render with hover submenu
+          // If collapsed, render with hover submenu via portal
           if (collapsed) {
-            return renderCollapsedCategory(category);
+            return <CollapsedCategory key={categoryKey} category={category} />;
           }
 
           // If expanded, render normal accordion

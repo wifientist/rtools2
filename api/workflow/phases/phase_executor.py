@@ -213,6 +213,42 @@ class PhaseExecutor(ABC):
         log_method = getattr(logger, level if level in ('info', 'warning', 'error') else 'info')
         log_method(f"  [{self.phase_id}] {message}")
 
+    async def emit_progress(
+        self,
+        current: int,
+        total: int,
+        failed: int = 0,
+        item_name: str = "item"
+    ) -> None:
+        """
+        Emit structured intra-phase progress for long-running operations.
+
+        Unlike emit() which sends text messages, this sends structured data
+        that clients can use for progress bars and accurate tracking.
+
+        Args:
+            current: Items completed so far
+            total: Total items to process
+            failed: Items that failed
+            item_name: What we're processing (e.g., "passphrase", "identity")
+        """
+        if self.context.event_publisher:
+            await self.context.event_publisher.phase_progress(
+                job_id=self.job_id,
+                phase_id=self.phase_id,
+                unit_id=self.context.unit_id,
+                current=current,
+                total=total,
+                failed=failed,
+                item_name=item_name,
+            )
+        # Also log for debugging (less verbose than emit)
+        if current == total or current % 50 == 0:
+            logger.debug(
+                f"  [{self.phase_id}] Progress: {current}/{total} {item_name}s "
+                f"({failed} failed)"
+            )
+
     @classmethod
     def get_contract(cls) -> PhaseContract:
         """
@@ -303,9 +339,12 @@ class PhaseExecutor(ABC):
                         succeeded.append(result)
                         completed += 1
                         if emit_progress and completed % progress_interval == 0:
-                            await self.emit(
-                                f"Progress: {completed}/{total} {item_name}s "
-                                f"({len(failed)} failed)"
+                            # Use structured progress instead of text message
+                            await self.emit_progress(
+                                current=completed,
+                                total=total,
+                                failed=len(failed),
+                                item_name=item_name,
                             )
                 except Exception as e:
                     error_msg = str(e)

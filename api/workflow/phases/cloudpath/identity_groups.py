@@ -43,47 +43,52 @@ class CreateIdentityGroupsPhase(PhaseExecutor):
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Create identity group(s)."""
+        import asyncio
+
         # Check if this unit should create the group (B1 scenario: only first unit creates)
         if not inputs.will_create_identity_group and inputs.identity_group_name:
             # This unit uses a shared group created by another unit
-            # Look up the existing group by name
+            # Look up the existing group by name with exponential backoff
+            # Total wait: 2+4+8+16+30+30 = 90 seconds max
+            backoff_delays = [2, 4, 8, 16, 30, 30]
+
             await self.emit(
                 f"Looking up shared identity group: {inputs.identity_group_name}"
             )
-            existing = await self._find_existing_group(inputs.identity_group_name)
-            if existing:
-                group_id = existing.get('id')
-                await self.emit(
-                    f"Using shared identity group: {inputs.identity_group_name}",
-                    "success"
-                )
-                return self.Outputs(
-                    identity_group_id=group_id,
-                    identity_group_ids={inputs.identity_group_name: group_id},
-                    reused=True,
-                )
-            else:
-                # Group not found - might not be created yet (race condition)
-                # Wait and retry a few times
-                import asyncio
-                for attempt in range(5):
-                    await asyncio.sleep(1)
-                    existing = await self._find_existing_group(inputs.identity_group_name)
-                    if existing:
-                        group_id = existing.get('id')
+
+            for attempt, delay in enumerate(backoff_delays):
+                existing = await self._find_existing_group(inputs.identity_group_name)
+                if existing:
+                    group_id = existing.get('id')
+                    if attempt > 0:
                         await self.emit(
-                            f"Found shared identity group: {inputs.identity_group_name}",
+                            f"Found shared identity group after {attempt + 1} attempts",
                             "success"
                         )
-                        return self.Outputs(
-                            identity_group_id=group_id,
-                            identity_group_ids={inputs.identity_group_name: group_id},
-                            reused=True,
+                    else:
+                        await self.emit(
+                            f"Using shared identity group: {inputs.identity_group_name}",
+                            "success"
                         )
-                raise RuntimeError(
-                    f"Shared identity group '{inputs.identity_group_name}' not found. "
-                    f"The creating unit may have failed."
-                )
+                    return self.Outputs(
+                        identity_group_id=group_id,
+                        identity_group_ids={inputs.identity_group_name: group_id},
+                        reused=True,
+                    )
+
+                # Not found yet - wait and retry
+                if attempt < len(backoff_delays) - 1:
+                    logger.debug(
+                        f"Identity group '{inputs.identity_group_name}' not found, "
+                        f"retry {attempt + 1}/{len(backoff_delays)} in {delay}s"
+                    )
+                    await asyncio.sleep(delay)
+
+            # Final attempt failed
+            raise RuntimeError(
+                f"Shared identity group '{inputs.identity_group_name}' not found after "
+                f"{len(backoff_delays)} attempts (~90s). The creating unit may have failed."
+            )
 
         # Determine what to create
         if inputs.identity_group_name:

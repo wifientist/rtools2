@@ -469,13 +469,13 @@ class R1Client:
             return {}
 
         # POST /activities/query with filter on activity IDs
+        # NOTE: R1 uses direct array format for filters, not {"in": [...]} syntax
+        # The {"in": [...]} format causes "bad SQL grammar" 500 errors
         payload = {
             "filters": {
-                "id": {
-                    "in": activity_ids
-                }
+                "id": activity_ids  # Direct array, not {"in": [...]}
             },
-            "pageSize": len(activity_ids),  # Get all in one page
+            "pageSize": min(len(activity_ids), 500),  # R1 max page size
             "page": 1,
             "sortField": "createdAt",
             "sortOrder": "DESC",

@@ -50,49 +50,54 @@ class CreateDPSKPoolsPhase(PhaseExecutor):
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Create DPSK pool(s)."""
+        import asyncio
+
         pool_config = inputs.pool_config or CloudpathPoolConfig(name="Cloudpath Import")
 
         # Check if this unit should create the pool (B1 scenario: only first unit creates)
         if not inputs.will_create_dpsk_pool and inputs.dpsk_pool_name:
             # This unit uses a shared pool created by another unit
-            # Look up the existing pool by name
+            # Look up the existing pool by name with exponential backoff
+            # Total wait: 2+4+8+16+30+30 = 90 seconds max
+            backoff_delays = [2, 4, 8, 16, 30, 30]
+
             await self.emit(
                 f"Looking up shared DPSK pool: {inputs.dpsk_pool_name}"
             )
-            existing = await self._find_existing_pool(inputs.dpsk_pool_name)
-            if existing:
-                pool_id = existing.get('id')
-                await self.emit(
-                    f"Using shared DPSK pool: {inputs.dpsk_pool_name}",
-                    "success"
-                )
-                return self.Outputs(
-                    dpsk_pool_id=pool_id,
-                    dpsk_pool_ids={inputs.dpsk_pool_name: pool_id},
-                    reused=True,
-                )
-            else:
-                # Pool not found - might not be created yet (race condition)
-                # Wait and retry a few times
-                import asyncio
-                for attempt in range(5):
-                    await asyncio.sleep(1)
-                    existing = await self._find_existing_pool(inputs.dpsk_pool_name)
-                    if existing:
-                        pool_id = existing.get('id')
+
+            for attempt, delay in enumerate(backoff_delays):
+                existing = await self._find_existing_pool(inputs.dpsk_pool_name)
+                if existing:
+                    pool_id = existing.get('id')
+                    if attempt > 0:
                         await self.emit(
-                            f"Found shared DPSK pool: {inputs.dpsk_pool_name}",
+                            f"Found shared DPSK pool after {attempt + 1} attempts",
                             "success"
                         )
-                        return self.Outputs(
-                            dpsk_pool_id=pool_id,
-                            dpsk_pool_ids={inputs.dpsk_pool_name: pool_id},
-                            reused=True,
+                    else:
+                        await self.emit(
+                            f"Using shared DPSK pool: {inputs.dpsk_pool_name}",
+                            "success"
                         )
-                raise RuntimeError(
-                    f"Shared DPSK pool '{inputs.dpsk_pool_name}' not found. "
-                    f"The creating unit may have failed."
-                )
+                    return self.Outputs(
+                        dpsk_pool_id=pool_id,
+                        dpsk_pool_ids={inputs.dpsk_pool_name: pool_id},
+                        reused=True,
+                    )
+
+                # Not found yet - wait and retry
+                if attempt < len(backoff_delays) - 1:
+                    logger.debug(
+                        f"DPSK pool '{inputs.dpsk_pool_name}' not found, "
+                        f"retry {attempt + 1}/{len(backoff_delays)} in {delay}s"
+                    )
+                    await asyncio.sleep(delay)
+
+            # Final attempt failed
+            raise RuntimeError(
+                f"Shared DPSK pool '{inputs.dpsk_pool_name}' not found after "
+                f"{len(backoff_delays)} attempts (~90s). The creating unit may have failed."
+            )
 
         # Determine what to create
         if inputs.dpsk_pool_name and inputs.identity_group_id:

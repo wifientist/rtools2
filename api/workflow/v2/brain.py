@@ -49,6 +49,21 @@ logger = logging.getLogger(__name__)
 # How long to wait between checking for ready work
 SCHEDULE_INTERVAL = 0.25  # seconds
 
+# Concurrency control: limit parallel phase executions to prevent Redis connection exhaustion
+# With 50 units, unbounded parallelism can spawn 50+ concurrent tasks, each doing 3-5 Redis ops
+# This semaphore ensures we don't exceed Redis connection pool capacity
+MAX_CONCURRENT_PHASE_TASKS = 20
+
+# Default activation slots for R1's 15-SSID-per-AP-Group limit
+# Controls how many SSIDs can be "in-flight" (activated but not yet assigned to specific AP Group)
+# Default 12 leaves buffer for existing venue-wide SSIDs
+DEFAULT_MAX_ACTIVATION_SLOTS = 12
+
+# Phase execution timeout (seconds) - prevents indefinite hangs on stuck API calls
+# Most phases complete in <30s, but some (like passphrase creation) may take longer
+# Set high enough to allow legitimate slow operations but catch real hangs
+PHASE_EXECUTION_TIMEOUT = 300  # 5 minutes
+
 
 class WorkflowBrain:
     """
@@ -72,6 +87,12 @@ class WorkflowBrain:
         self.events = event_publisher
         self.r1_client = r1_client
         self._last_progress_time: float = 0
+        self._phase_semaphore: Optional[asyncio.Semaphore] = None
+
+        # Activation slot management for R1's 15-SSID-per-AP-Group limit
+        # Limits how many SSIDs can be "in-flight" (activated but not assigned to AP Group)
+        self._activation_semaphore: Optional[asyncio.Semaphore] = None
+        self._activation_slots: Set[str] = set()  # unit_ids holding activation slots
 
     # =========================================================================
     # Job Creation
@@ -107,6 +128,15 @@ class WorkflowBrain:
         if errors:
             raise ValueError(f"Invalid workflow definition: {errors}")
 
+        # Merge options: workflow defaults < user options
+        merged_options = {**(workflow.default_options or {}), **(options or {})}
+
+        # Ensure max_activation_slots is set from workflow if not overridden
+        if 'max_activation_slots' not in merged_options:
+            merged_options['max_activation_slots'] = getattr(
+                workflow, 'max_activation_slots', DEFAULT_MAX_ACTIVATION_SLOTS
+            )
+
         job = WorkflowJobV2(
             id=str(uuid.uuid4()),
             workflow_name=workflow.name,
@@ -115,7 +145,7 @@ class WorkflowBrain:
             tenant_id=tenant_id,
             controller_id=controller_id,
             user_id=user_id,
-            options=options or {},
+            options=merged_options,
             input_data=input_data or {},
             phase_definitions=workflow.get_phase_definitions(),
             created_at=datetime.utcnow(),
@@ -292,6 +322,29 @@ class WorkflowBrain:
         # (Phase 0 is already in global_phase_status, so it won't re-run)
         graph = DependencyGraph(job.phase_definitions)
 
+        # Initialize concurrency control semaphore
+        # This prevents Redis connection pool exhaustion with large unit counts
+        self._phase_semaphore = asyncio.Semaphore(MAX_CONCURRENT_PHASE_TASKS)
+
+        # Initialize activation slot semaphore for R1's 15-SSID limit
+        # Check if validation phase calculated a dynamic limit based on existing venue SSIDs
+        max_slots = job.options.get('max_activation_slots', DEFAULT_MAX_ACTIVATION_SLOTS)
+
+        # Override with validation result if available (more accurate, based on venue state)
+        validate_results = job.global_phase_results.get('validate_and_plan', {})
+        if 'max_activation_slots' in validate_results:
+            max_slots = validate_results['max_activation_slots']
+            venue_ssids = validate_results.get('venue_wide_ssid_count', 0)
+            logger.info(
+                f"Job {job.id}: Using calculated activation slot limit = {max_slots} "
+                f"(venue has {venue_ssids} existing venue-wide SSIDs)"
+            )
+        else:
+            logger.info(f"Job {job.id}: Using default activation slot limit = {max_slots}")
+
+        self._activation_semaphore = asyncio.Semaphore(max_slots)
+        self._activation_slots = set()
+
         # Track in-flight work
         in_flight: Dict[str, asyncio.Task] = {}  # "unit:phase" → task
 
@@ -308,11 +361,12 @@ class WorkflowBrain:
                 ready_work = self._find_ready_work(job, graph)
 
                 # Launch ready work that isn't already in flight
+                # Use semaphore to limit concurrent phase executions
                 for unit_id, phase_id in ready_work:
                     key = f"{unit_id}:{phase_id}"
                     if key not in in_flight:
                         task = asyncio.create_task(
-                            self._execute_phase_for_unit(job, unit_id, phase_id)
+                            self._execute_phase_with_limit(job, unit_id, phase_id)
                         )
                         in_flight[key] = task
 
@@ -322,7 +376,7 @@ class WorkflowBrain:
                     key = f"global:{phase_id}"
                     if key not in in_flight:
                         task = asyncio.create_task(
-                            self._execute_global_phase(job, phase_id)
+                            self._execute_global_phase_with_limit(job, phase_id)
                         )
                         in_flight[key] = task
 
@@ -361,6 +415,10 @@ class WorkflowBrain:
                     job.created_resources = refreshed.created_resources
                     job.errors = refreshed.errors
 
+                # Periodic diagnostic summary (every 30 seconds)
+                if int(time.time()) % 30 == 0 and in_flight:
+                    await self._log_diagnostic_summary(job, in_flight)
+
                 # Refresh unit states
                 for unit_id in job.units:
                     refreshed_unit = await self.state.get_unit(job.id, unit_id)
@@ -383,6 +441,18 @@ class WorkflowBrain:
         job.completed_at = datetime.utcnow()
         await self.state.save_job(job)
 
+        # Emit unit_completed for successful units
+        # (Failed units already had unit_completed emitted when they failed)
+        for unit in job.units.values():
+            if unit.status == UnitStatus.COMPLETED:
+                await self._publish_event(job.id, "unit_completed", {
+                    "unit_id": unit.unit_id,
+                    "unit_number": unit.unit_number,
+                    "phases_completed": len(unit.completed_phases),
+                    "phases_failed": 0,
+                    "success": True,
+                })
+
         await self._publish_event(job.id, "workflow_completed", {
             "status": job.status.value,
             "progress": job.get_progress(),
@@ -393,7 +463,49 @@ class WorkflowBrain:
             f"(job={job.id})"
         )
 
+        # Log failure summary for debugging
+        if job.status in (JobStatus.PARTIAL, JobStatus.FAILED):
+            await self._log_failure_summary(job)
+
         return job
+
+    async def _log_failure_summary(self, job: WorkflowJobV2) -> None:
+        """Log a summary of failures to help debug issues."""
+        total_units = len(job.units)
+        failed_units = [u for u in job.units.values() if u.status == UnitStatus.FAILED]
+
+        logger.warning(
+            f"Job {job.id} FAILURE SUMMARY: {len(failed_units)}/{total_units} units failed"
+        )
+
+        # Group failures by phase
+        failures_by_phase: Dict[str, List[str]] = {}
+        for unit in failed_units:
+            for phase_id in unit.failed_phases:
+                if phase_id not in failures_by_phase:
+                    failures_by_phase[phase_id] = []
+                failures_by_phase[phase_id].append(unit.unit_id)
+
+        for phase_id, unit_ids in sorted(failures_by_phase.items()):
+            logger.warning(
+                f"Job {job.id} FAILURE SUMMARY: Phase '{phase_id}' failed for "
+                f"{len(unit_ids)} units: {unit_ids[:5]}{'...' if len(unit_ids) > 5 else ''}"
+            )
+
+        # Log first few error messages
+        error_samples: Dict[str, str] = {}
+        for unit in failed_units[:5]:
+            if hasattr(unit, 'phase_results'):
+                for phase_id, result in unit.phase_results.items():
+                    if hasattr(result, 'error') and result.error:
+                        if phase_id not in error_samples:
+                            error_samples[phase_id] = result.error
+                            break
+
+        for phase_id, error in error_samples.items():
+            logger.warning(
+                f"Job {job.id} FAILURE SAMPLE: Phase '{phase_id}' error: {error[:200]}"
+            )
 
     # =========================================================================
     # Work Scheduling
@@ -494,6 +606,91 @@ class WorkflowBrain:
     # Phase Execution
     # =========================================================================
 
+    async def _execute_phase_with_limit(
+        self,
+        job: WorkflowJobV2,
+        unit_id: str,
+        phase_id: str
+    ) -> PhaseResult:
+        """
+        Execute a phase for a unit with concurrency limiting.
+
+        Wraps _execute_phase_for_unit with semaphore to prevent
+        Redis connection pool exhaustion.
+
+        Also handles activation slot management for R1's 15-SSID limit:
+        - Phases with activation_slot="acquire" get a slot before starting
+        - Phases with activation_slot="release" release the slot after completing
+        """
+        phase_def = job.get_phase_definition(phase_id)
+        activation_slot = getattr(phase_def, 'activation_slot', None) if phase_def else None
+
+        # Acquire activation slot if this phase requires it
+        if activation_slot == "acquire" and unit_id not in self._activation_slots:
+            logger.debug(f"Job {job.id}: Unit {unit_id} acquiring activation slot for {phase_id}")
+            await self._activation_semaphore.acquire()
+            self._activation_slots.add(unit_id)
+            logger.debug(f"Job {job.id}: Unit {unit_id} acquired activation slot ({len(self._activation_slots)} held)")
+
+        try:
+            async with self._phase_semaphore:
+                # Wrap execution in timeout to prevent indefinite hangs
+                try:
+                    result = await asyncio.wait_for(
+                        self._execute_phase_for_unit(job, unit_id, phase_id),
+                        timeout=PHASE_EXECUTION_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Job {job.id}: Phase {phase_id} timed out for unit {unit_id} "
+                        f"after {PHASE_EXECUTION_TIMEOUT}s"
+                    )
+                    raise RuntimeError(
+                        f"Phase execution timed out after {PHASE_EXECUTION_TIMEOUT}s"
+                    )
+
+            # Release activation slot if this phase completes the cycle
+            if activation_slot == "release" and unit_id in self._activation_slots:
+                self._activation_slots.discard(unit_id)
+                self._activation_semaphore.release()
+                logger.debug(f"Job {job.id}: Unit {unit_id} released activation slot ({len(self._activation_slots)} held)")
+
+            return result
+
+        except Exception as e:
+            # On failure, release the slot to prevent deadlock
+            if unit_id in self._activation_slots:
+                self._activation_slots.discard(unit_id)
+                self._activation_semaphore.release()
+                logger.debug(f"Job {job.id}: Unit {unit_id} released activation slot on error")
+            raise
+
+    async def _execute_global_phase_with_limit(
+        self,
+        job: WorkflowJobV2,
+        phase_id: str
+    ) -> PhaseResult:
+        """
+        Execute a global phase with concurrency limiting.
+
+        Wraps _execute_global_phase with semaphore to prevent
+        Redis connection pool exhaustion.
+        """
+        async with self._phase_semaphore:
+            try:
+                return await asyncio.wait_for(
+                    self._execute_global_phase(job, phase_id),
+                    timeout=PHASE_EXECUTION_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Job {job.id}: Global phase {phase_id} timed out "
+                    f"after {PHASE_EXECUTION_TIMEOUT}s"
+                )
+                raise RuntimeError(
+                    f"Phase execution timed out after {PHASE_EXECUTION_TIMEOUT}s"
+                )
+
     async def _execute_phase_for_unit(
         self,
         job: WorkflowJobV2,
@@ -534,6 +731,15 @@ class WorkflowBrain:
                     )
             except Exception as e:
                 logger.warning(f"Skip condition error for {phase_id}: {e}")
+
+        # Emit unit_started if this is the first phase for this unit
+        if not unit.completed_phases and not unit.failed_phases:
+            per_unit_phases = [p for p in job.phase_definitions if p.per_unit]
+            await self._publish_event(job.id, "unit_started", {
+                "unit_id": unit_id,
+                "unit_number": unit.unit_number,
+                "total_phases": len(per_unit_phases),
+            })
 
         # Update unit status
         await self.state.update_unit_phase_status(job.id, unit_id, phase_id)
@@ -877,6 +1083,14 @@ class WorkflowBrain:
                 if unit:
                     unit.status = UnitStatus.FAILED
                     await self.state.save_unit(job.id, unit)
+                    # Emit unit_completed (failed)
+                    await self._publish_event(job.id, "unit_completed", {
+                        "unit_id": unit.unit_id,
+                        "unit_number": unit.unit_number,
+                        "phases_completed": len(unit.completed_phases),
+                        "phases_failed": len(unit.failed_phases),
+                        "success": False,
+                    })
 
         # Debounce progress updates to avoid flooding
         now = time.time()
@@ -929,11 +1143,14 @@ class WorkflowBrain:
             if u.status == UnitStatus.COMPLETED
         )
 
-        # Update unit statuses
+        # Update unit statuses and emit unit_completed for remaining units
         for unit in job.units.values():
             if unit.status == UnitStatus.RUNNING:
                 # Shouldn't happen but handle gracefully
                 unit.status = UnitStatus.COMPLETED
+            # Note: unit_completed for FAILED units is already emitted in _handle_phase_result
+            # Here we only need to mark successful units that completed all phases
+            # (event emission happens async so we don't await here in sync method)
 
         if failed_units == 0:
             job.status = JobStatus.COMPLETED
@@ -943,6 +1160,76 @@ class WorkflowBrain:
             job.status = JobStatus.PARTIAL
 
         return job
+
+    async def _log_diagnostic_summary(
+        self,
+        job: WorkflowJobV2,
+        in_flight: Dict[str, asyncio.Task]
+    ) -> None:
+        """
+        Log a diagnostic summary of workflow progress.
+
+        Helps identify where units are stuck or failing.
+        """
+        total_units = len(job.units)
+
+        # Count unit statuses
+        status_counts = {}
+        for unit in job.units.values():
+            status = unit.status.value if hasattr(unit.status, 'value') else str(unit.status)
+            status_counts[status] = status_counts.get(status, 0) + 1
+
+        # Count phase completions across units
+        phase_counts = {}
+        for phase_def in job.phase_definitions:
+            if not phase_def.per_unit:
+                continue
+            completed = sum(
+                1 for u in job.units.values()
+                if phase_def.id in u.completed_phases
+            )
+            failed = sum(
+                1 for u in job.units.values()
+                if phase_def.id in u.failed_phases
+            )
+            if completed > 0 or failed > 0:
+                phase_counts[phase_def.id] = {'completed': completed, 'failed': failed}
+
+        # Log summary
+        logger.info(
+            f"Job {job.id} DIAGNOSTIC: "
+            f"Units: {status_counts} | "
+            f"In-flight: {len(in_flight)} | "
+            f"Activation slots: {len(self._activation_slots)}/{self._activation_semaphore._value if self._activation_semaphore else 'N/A'}"
+        )
+
+        # Log phase breakdown for phases with failures
+        for phase_id, counts in phase_counts.items():
+            if counts['failed'] > 0:
+                logger.warning(
+                    f"Job {job.id} DIAGNOSTIC: Phase '{phase_id}': "
+                    f"{counts['completed']}/{total_units} completed, "
+                    f"{counts['failed']} failed"
+                )
+
+        # Log what's currently in-flight
+        if in_flight:
+            in_flight_summary = {}
+            for key in in_flight:
+                parts = key.split(':')
+                if len(parts) == 2:
+                    phase = parts[1]
+                    in_flight_summary[phase] = in_flight_summary.get(phase, 0) + 1
+            logger.info(
+                f"Job {job.id} DIAGNOSTIC: In-flight by phase: {in_flight_summary}"
+            )
+
+        # Force a progress update (heartbeat) even if phases haven't completed
+        # This ensures clients see progress during long-running operations
+        await self._publish_event(job.id, "progress_update", {
+            "progress": job.get_progress(),
+            "heartbeat": True,  # Flag to indicate this is a periodic heartbeat
+        })
 
     # =========================================================================
     # Helpers

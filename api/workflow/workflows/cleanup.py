@@ -6,19 +6,18 @@ Operates in reverse dependency order to avoid constraint violations.
 
 Flow:
 1. inventory (global) → Scan venue for resources to delete
-2. delete_passphrases (global) → Remove DPSK passphrases
-3. delete_dpsk_pools (global) → Remove DPSK pools/services
-4. delete_identities (global) → Remove identities from identity groups
-5. delete_identity_groups (global) → Remove identity groups (must be empty)
-6. delete_networks (global) → Remove WiFi networks (deactivated first)
-7. delete_ap_groups (global) → Remove AP groups
+2. delete_passphrases (global) → Remove DPSK passphrases (must empty pool first)
+3. delete_networks (global) → Deactivate/delete WiFi networks (removes DPSK service link)
+4. delete_dpsk_pools (global) → Remove DPSK pools (now safe - no networks reference them)
+5. delete_identities (global) → Remove identities from identity groups
+6. delete_identity_groups (global) → Remove identity groups (must be empty)
+7. delete_ap_groups (global) → Remove AP groups (after networks are gone)
 8. verify_cleanup (global) → Summarize results
 
-Dependency chain (strict sequential - reverse creation order):
-    inventory → delete_passphrases → delete_dpsk_pools
+Dependency chain (strict sequential - networks must be deleted before DPSK pools):
+    inventory → delete_passphrases → delete_networks → delete_dpsk_pools
               → delete_identities → delete_identity_groups
-              → delete_networks → delete_ap_groups
-              → verify_cleanup
+              → delete_ap_groups → verify_cleanup
 
 All delete phases are non-critical: the workflow reports partial
 success rather than failing entirely if some deletions fail.
@@ -82,17 +81,19 @@ VenueCleanupWorkflow = Workflow(
             api_calls_per_unit="dynamic",
         ),
 
-        # Phase 2: Delete DPSK Pools
+        # Phase 2: Delete WiFi Networks (BEFORE DPSK pools!)
+        # Networks reference DPSK pools via the DPSK service link.
+        # Must deactivate/delete networks before deleting the pools.
         Phase(
-            id="delete_dpsk_pools",
-            name="Delete DPSK Pools",
+            id="delete_networks",
+            name="Delete WiFi Networks",
             description=(
-                "Delete DPSK pools/services. "
-                "Must happen after passphrases are deleted."
+                "Deactivate and delete WiFi networks. "
+                "Must happen BEFORE deleting DPSK pools (networks reference them)."
             ),
             executor=(
-                "workflow.phases.cleanup.delete_dpsk_pools"
-                ".DeleteDPSKPoolsPhase"
+                "workflow.phases.cleanup.delete_networks"
+                ".DeleteNetworksPhase"
             ),
             depends_on=["delete_passphrases"],
             per_unit=False,
@@ -104,7 +105,30 @@ VenueCleanupWorkflow = Workflow(
             api_calls_per_unit="dynamic",
         ),
 
-        # Phase 3: Delete Identities
+        # Phase 3: Delete DPSK Pools
+        # Now safe since networks have been deleted and no longer reference the pools
+        Phase(
+            id="delete_dpsk_pools",
+            name="Delete DPSK Pools",
+            description=(
+                "Delete DPSK pools/services. "
+                "Must happen after networks are deleted (they reference pools)."
+            ),
+            executor=(
+                "workflow.phases.cleanup.delete_dpsk_pools"
+                ".DeleteDPSKPoolsPhase"
+            ),
+            depends_on=["delete_networks"],
+            per_unit=False,
+            critical=False,
+            inputs=["inventory"],
+            outputs=[
+                "deleted_count", "failed_count", "errors",
+            ],
+            api_calls_per_unit="dynamic",
+        ),
+
+        # Phase 4: Delete Identities
         Phase(
             id="delete_identities",
             name="Delete Identities",
@@ -126,7 +150,7 @@ VenueCleanupWorkflow = Workflow(
             api_calls_per_unit="dynamic",
         ),
 
-        # Phase 4: Delete Identity Groups
+        # Phase 5: Delete Identity Groups
         Phase(
             id="delete_identity_groups",
             name="Delete Identity Groups",
@@ -148,41 +172,19 @@ VenueCleanupWorkflow = Workflow(
             api_calls_per_unit="dynamic",
         ),
 
-        # Phase 5: Delete WiFi Networks
-        Phase(
-            id="delete_networks",
-            name="Delete WiFi Networks",
-            description=(
-                "Delete WiFi networks activated on this venue. "
-                "Must happen after identity groups are deleted."
-            ),
-            executor=(
-                "workflow.phases.cleanup.delete_networks"
-                ".DeleteNetworksPhase"
-            ),
-            depends_on=["delete_identity_groups"],
-            per_unit=False,
-            critical=False,
-            inputs=["inventory"],
-            outputs=[
-                "deleted_count", "failed_count", "errors",
-            ],
-            api_calls_per_unit="dynamic",
-        ),
-
         # Phase 6: Delete AP Groups
         Phase(
             id="delete_ap_groups",
             name="Delete AP Groups",
             description=(
                 "Delete non-default AP groups in this venue. "
-                "Must happen after networks are deleted."
+                "Must happen after networks and identity groups are deleted."
             ),
             executor=(
                 "workflow.phases.cleanup.delete_ap_groups"
                 ".DeleteAPGroupsPhase"
             ),
-            depends_on=["delete_networks"],
+            depends_on=["delete_identity_groups"],
             per_unit=False,
             critical=False,
             inputs=["inventory"],

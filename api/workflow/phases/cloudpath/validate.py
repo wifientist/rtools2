@@ -110,6 +110,9 @@ class ValidateCloudpathPhase(PhaseExecutor):
         unit_mappings: Dict[str, UnitMapping] = Field(default_factory=dict)
         validation_result: ValidationResult
         all_venue_aps: List[Dict[str, Any]] = Field(default_factory=list)  # For assign_aps phase
+        # Calculated activation slot limit based on existing venue-wide SSIDs
+        max_activation_slots: int = 12
+        venue_wide_ssid_count: int = 0
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Parse and validate Cloudpath export data."""
@@ -132,11 +135,40 @@ class ValidateCloudpathPhase(PhaseExecutor):
             device_limit=pool_data.get('deviceCountLimit', 20),
         )
 
+        # =====================================================================
+        # Extract SSIDs from pool-level ssidList (master list)
+        # This is the authoritative list - use these for creating networks/AP Groups
+        # We'll also merge in any additional SSIDs from individual DPSK entries
+        # =====================================================================
+        pool_ssid_list: List[str] = pool_data.get('ssidList', [])
+        master_unit_ssids: Dict[str, str] = {}  # unit_number -> ssid_name
+        master_site_wide_ssid: Optional[str] = None
+
+        for ssid in pool_ssid_list:
+            match = UNIT_SSID_PATTERN.match(ssid)
+            if match:
+                unit_num = match.group(1)
+                master_unit_ssids[unit_num] = ssid
+            else:
+                # Non-unit SSID is the site-wide one
+                if not master_site_wide_ssid:
+                    master_site_wide_ssid = ssid
+
+        if pool_ssid_list:
+            await self.emit(
+                f"Pool master SSIDs: {len(pool_ssid_list)} total, "
+                f"{len(master_unit_ssids)} unit-specific"
+                f"{f', site-wide: {master_site_wide_ssid}' if master_site_wide_ssid else ''}"
+            )
+
         # Parse passphrases (DPSKs)
         raw_dpsks = data.get('dpsks', [])
         passphrases: List[ParsedPassphrase] = []
         unit_ssid_counts: Dict[str, int] = defaultdict(int)
         min_passphrase_len = 999  # Track minimum passphrase length
+
+        # Track all unique SSIDs seen in individual DPSKs (to merge with master list)
+        dpsk_unit_ssids: Dict[str, str] = {}  # unit_number -> ssid_name (from DPSK entries)
 
         for dpsk in raw_dpsks:
             ssid_list = dpsk.get('ssidList', [])
@@ -147,13 +179,18 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 min_passphrase_len = min(min_passphrase_len, len(passphrase_str))
 
             # Try to extract unit number from SSID pattern
+            # Also add any new unit SSIDs to dpsk_unit_ssids for merging
             unit_number = None
             for ssid in ssid_list:
                 match = UNIT_SSID_PATTERN.match(ssid)
                 if match:
-                    unit_number = match.group(1)
-                    unit_ssid_counts[unit_number] += 1
-                    break
+                    unit_num = match.group(1)
+                    if not unit_number:
+                        unit_number = unit_num
+                    unit_ssid_counts[unit_num] += 1
+                    # Add to DPSK-level unit SSIDs if not already in master
+                    if unit_num not in master_unit_ssids and unit_num not in dpsk_unit_ssids:
+                        dpsk_unit_ssids[unit_num] = ssid
 
             # Extract VLAN ID (can be int or string in Cloudpath export)
             raw_vlan = dpsk.get('vlanid')
@@ -226,28 +263,52 @@ class ValidateCloudpathPhase(PhaseExecutor):
 
         await self.emit(f"Parsed {len(passphrases)} passphrases")
 
-        # Analyze ssidList patterns for scenario detection
-        unique_units: Set[str] = set(
-            p.unit_number for p in passphrases if p.unit_number
+        # =====================================================================
+        # Merge unit SSIDs from pool master list + individual DPSKs
+        # The master list is authoritative, DPSK entries add any extras
+        # =====================================================================
+        all_unit_ssids: Dict[str, str] = {**master_unit_ssids}  # Start with master
+        for unit_num, ssid in dpsk_unit_ssids.items():
+            if unit_num not in all_unit_ssids:
+                all_unit_ssids[unit_num] = ssid
+
+        if dpsk_unit_ssids:
+            new_from_dpsks = set(dpsk_unit_ssids.keys()) - set(master_unit_ssids.keys())
+            if new_from_dpsks:
+                await self.emit(
+                    f"Additional units from DPSK entries: {sorted(new_from_dpsks)}"
+                )
+
+        await self.emit(
+            f"Total unit SSIDs: {len(all_unit_ssids)} "
+            f"(master: {len(master_unit_ssids)}, from DPSKs: {len(dpsk_unit_ssids)})"
         )
+
+        # Analyze ssidList patterns for scenario detection
+        # Include units from both master list AND individual DPSKs
+        unique_units: Set[str] = set(all_unit_ssids.keys())
+        # Also add any units detected from individual DPSK parsing
+        for p in passphrases:
+            if p.unit_number:
+                unique_units.add(p.unit_number)
+
         unit_count = len(unique_units)
         total_passphrases = len(passphrases)
         unit_passphrases = sum(1 for p in passphrases if p.unit_number)
         unit_coverage = unit_passphrases / total_passphrases if total_passphrases > 0 else 0
 
         # Collect unique SSIDs for display (sample up to 10)
-        all_ssids: Set[str] = set()
+        # Include both pool-level and DPSK-level SSIDs
+        all_ssids: Set[str] = set(pool_ssid_list)  # Start with master list
         for p in passphrases:
             all_ssids.update(p.ssid_list)
         unique_ssid_sample = sorted(list(all_ssids))[:10]
 
-        # Detect site-wide SSID - the common one that appears in ALL/MOST passphrases
-        # Each DPSK typically has: [unit_ssid "108@Property", site_wide_ssid "Property WiFi"]
-        # The site-wide SSID is the one that:
-        #   1. Appears in most DPSKs (>=80%)
-        #   2. Does NOT match the unit pattern (digit@name)
-        site_wide_ssid = None
-        if passphrases:
+        # Detect site-wide SSID - prefer master list, then detect from DPSKs
+        # Site-wide SSID is a non-unit pattern SSID (e.g., "Property WiFi")
+        site_wide_ssid = master_site_wide_ssid  # Prefer pool-level if set
+
+        if not site_wide_ssid and passphrases:
             # Count how often each SSID appears across all passphrases
             ssid_counts: Dict[str, int] = defaultdict(int)
             for p in passphrases:
@@ -277,6 +338,8 @@ class ValidateCloudpathPhase(PhaseExecutor):
                             break
                     if site_wide_ssid:
                         break
+        elif site_wide_ssid:
+            await self.emit(f"Using pool-level site-wide SSID: '{site_wide_ssid}'")
 
         # Detect scenario based on unit patterns
         # Scenario A: Property-wide (single SSID)
@@ -519,6 +582,63 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 await self.emit(f"Found {len(existing_ap_groups)} existing AP Groups")
             except Exception as e:
                 logger.warning(f"Error checking AP groups: {e}")
+
+        # =====================================================================
+        # Count venue-wide SSIDs (for activation slot limit calculation)
+        # R1 limits 15 SSIDs per AP Group. When activating SSIDs, they
+        # temporarily broadcast to ALL AP Groups until assigned specifically.
+        # We count existing venue-wide SSIDs to calculate a safe concurrent limit.
+        # =====================================================================
+        SSID_LIMIT_PER_AP_GROUP = 15
+        SSID_SAFETY_BUFFER = 3
+        venue_wide_ssid_count = 0
+        calculated_max_activation_slots = SSID_LIMIT_PER_AP_GROUP - SSID_SAFETY_BUFFER
+
+        if per_unit_ssid:
+            await self.emit("Counting existing venue-wide SSIDs...")
+            try:
+                networks_response = await self.r1_client.networks.get_wifi_networks(
+                    self.tenant_id
+                )
+                all_networks = networks_response.get('data', []) if isinstance(networks_response, dict) else networks_response
+
+                for network in all_networks:
+                    venue_ap_groups = network.get('venueApGroups', [])
+                    for vag in venue_ap_groups:
+                        if vag.get('venueId') != self.venue_id:
+                            continue
+                        # Check if this SSID broadcasts to all AP Groups
+                        if vag.get('isAllApGroups', False):
+                            venue_wide_ssid_count += 1
+                            break  # Only count once per network
+
+                # Calculate safe activation slot limit
+                calculated_max_activation_slots = max(
+                    1,  # Minimum of 1 for sequential processing
+                    SSID_LIMIT_PER_AP_GROUP - venue_wide_ssid_count - SSID_SAFETY_BUFFER
+                )
+
+                if venue_wide_ssid_count > 0:
+                    await self.emit(
+                        f"Found {venue_wide_ssid_count} venue-wide SSIDs, "
+                        f"limiting concurrent activations to {calculated_max_activation_slots}",
+                        "info"
+                    )
+                else:
+                    await self.emit(
+                        f"No venue-wide SSIDs found, using default limit of {calculated_max_activation_slots}"
+                    )
+
+                # Store in options for Brain to use
+                options['max_activation_slots'] = calculated_max_activation_slots
+                options['venue_wide_ssid_count'] = venue_wide_ssid_count
+
+            except Exception as e:
+                logger.warning(f"Error counting venue SSIDs: {e}")
+                await self.emit(
+                    f"Warning: Could not count venue SSIDs, using default limit",
+                    "warning"
+                )
 
         # --- Check access policy resources if enabled ---
         enable_access_policies = options.get('enable_access_policies', False)
@@ -763,23 +883,35 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 # B1 with networks: Create unit mappings for each unit
                 # All units share the same pool, but each gets its own network
                 # First unit creates ALL passphrases (they go to shared pool)
+                #
+                # IMPORTANT: Use all_unit_ssids (merged master + DPSK list) as the
+                # authoritative source of units, not just by_unit (DPSK-based).
+                # This ensures we create networks for SSIDs in the pool master list
+                # even if no individual DPSK has that unit in its ssidList.
                 is_first_unit = True
-                for unit_num, unit_pps in by_unit.items():
-                    unit_id = f"unit_{unit_num}"
 
-                    # Find the unit-specific SSID from the passphrase's ssidList
-                    sample_pp = unit_pps[0] if unit_pps else None
-                    ssid_name = None
-                    if sample_pp and sample_pp.ssid_list:
-                        for ssid in sample_pp.ssid_list:
-                            if UNIT_SSID_PATTERN.match(ssid):
-                                ssid_name = ssid
-                                break
-                        if not ssid_name:
+                # Build the set of all units to process (from master list + DPSK entries)
+                all_units_to_process = set(all_unit_ssids.keys()) | set(by_unit.keys())
+
+                for unit_num in sorted(all_units_to_process):
+                    unit_id = f"unit_{unit_num}"
+                    unit_pps = by_unit.get(unit_num, [])
+
+                    # Get SSID from merged unit list (authoritative), fallback to DPSK or generated
+                    ssid_name = all_unit_ssids.get(unit_num)
+                    if not ssid_name:
+                        # Try to find from passphrase's ssidList
+                        sample_pp = unit_pps[0] if unit_pps else None
+                        if sample_pp and sample_pp.ssid_list:
                             for ssid in sample_pp.ssid_list:
-                                if ssid != site_wide_ssid:
+                                if UNIT_SSID_PATTERN.match(ssid):
                                     ssid_name = ssid
                                     break
+                            if not ssid_name:
+                                for ssid in sample_pp.ssid_list:
+                                    if ssid != site_wide_ssid:
+                                        ssid_name = ssid
+                                        break
                     if not ssid_name:
                         ssid_name = f"{unit_num}@{pool_config.name}"
                     network_name = ssid_name
@@ -851,7 +983,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     )
                     is_first_unit = False
 
-                networks_to_create = len(by_unit)
+                networks_to_create = len(all_units_to_process)
             else:
                 # B1 without networks: Single global unit mapping
                 unit_mappings["global"] = UnitMapping(
@@ -924,7 +1056,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 actions.append(ResourceAction(
                     action="create",
                     resource_type="wifi_networks",
-                    name=f"{len(by_unit)} unit networks",
+                    name=f"{networks_to_create} unit networks",
                     notes=["All linked to single DPSK pool"],
                 ))
 
@@ -945,7 +1077,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     ))
 
             await self.emit(
-                f"Scenario B: 1 shared pool → {len(by_unit)} units, "
+                f"Scenario B: 1 shared pool → {len(unit_mappings)} units, "
                 f"{passphrases_to_create_count} new / {passphrases_existing} existing passphrases"
             )
             if per_unit_ssid:
@@ -1040,6 +1172,8 @@ class ValidateCloudpathPhase(PhaseExecutor):
             unit_mappings=unit_mappings,
             validation_result=validation_result,
             all_venue_aps=all_venue_aps,
+            max_activation_slots=calculated_max_activation_slots,
+            venue_wide_ssid_count=venue_wide_ssid_count,
         )
 
     def _estimate_api_calls(

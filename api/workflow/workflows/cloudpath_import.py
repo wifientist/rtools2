@@ -58,6 +58,10 @@ CloudpathImportWorkflow = Workflow(
         "Supports property-wide or per-unit SSID modes."
     ),
     requires_confirmation=True,
+    # Limit concurrent SSID activations to avoid R1's 15-SSID-per-AP-Group limit
+    # When activating SSIDs, they temporarily broadcast to ALL AP Groups until
+    # assigned to specific groups. This limits how many can be "in-flight".
+    max_activation_slots=12,
     default_options={
         # Passphrase import options
         "max_concurrent_passphrases": 10,
@@ -281,6 +285,9 @@ CloudpathImportWorkflow = Workflow(
 
         # =====================================================================
         # Phase 8: Activate Networks on Venue (Optional)
+        # NOTE: Uses activation_slot="acquire" to limit concurrent activations
+        # due to R1's 15-SSID-per-AP-Group limit. The slot is held until
+        # assign_aps completes to prevent too many SSIDs being "in-flight".
         # =====================================================================
         Phase(
             id="activate_network",
@@ -299,12 +306,15 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["activated", "already_active"],
             api_calls_per_unit=1,
+            activation_slot="acquire",  # Acquire slot - released by assign_aps
         ),
 
         # =====================================================================
         # Phase 9: Assign APs & Configure SSID (per-unit, only when per_unit mode)
         # This is what makes per-unit SSID actually work - configures SSID
         # to broadcast ONLY on the unit's AP Group, not venue-wide.
+        # NOTE: Uses activation_slot="release" to complete the activation cycle
+        # and free up slot for the next unit's SSID activation.
         # =====================================================================
         Phase(
             id="assign_aps",
@@ -327,6 +337,7 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["aps_matched", "aps_assigned", "ssid_configured"],
             api_calls_per_unit="dynamic",
+            activation_slot="release",  # Release slot acquired by activate_network
         ),
 
         # =====================================================================
