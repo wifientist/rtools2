@@ -33,7 +33,6 @@ from workflow.v2.brain import WorkflowBrain
 from workflow.v2.graph import DependencyGraph
 from workflow.workflows import get_workflow
 from workflow.workflows.per_unit_psk import PerUnitPSKWorkflow
-from workflow.workflows.per_unit_dpsk import PerUnitDPSKWorkflow
 from workflow.events import WorkflowEventPublisher
 
 # Reuse existing request model
@@ -237,16 +236,7 @@ async def create_plan(
             detail="tenant_id is required for MSP controllers",
         )
 
-    # Detect DPSK mode
-    dpsk_mode = request.dpsk_mode or any(
-        u.security_type.upper() == "DPSK" for u in request.units
-    )
-    selected_workflow = PerUnitDPSKWorkflow if dpsk_mode else PerUnitPSKWorkflow
-
-    if dpsk_mode:
-        logger.info(
-            "[V2] DPSK mode - using PerUnitDPSKWorkflow"
-        )
+    selected_workflow = PerUnitPSKWorkflow
 
     # Build options and input data
     units_data = [unit.model_dump() for unit in request.units]
@@ -259,14 +249,6 @@ async def create_plan(
         'configure_lan_ports': request.configure_lan_ports,
         'model_port_configs': model_port_configs_data,
         'debug_delay': request.debug_delay,
-        'dpsk_mode': dpsk_mode,
-        # Single shared pool for all units (no more per-unit pools)
-        'identity_group_name': request.identity_group_name,
-        'dpsk_pool_name': request.dpsk_pool_name,
-        'dpsk_pool_settings': (
-            request.dpsk_pool_settings.model_dump()
-            if dpsk_mode else {}
-        ),
     }
 
     input_data = {
@@ -275,13 +257,6 @@ async def create_plan(
         'ap_group_postfix': request.ap_group_postfix,
         'name_conflict_resolution': request.name_conflict_resolution,
         'configure_lan_ports': request.configure_lan_ports,
-        # Single shared pool for all units
-        'identity_group_name': request.identity_group_name,
-        'dpsk_pool_name': request.dpsk_pool_name,
-        'dpsk_pool_settings': (
-            request.dpsk_pool_settings.model_dump()
-            if dpsk_mode else {}
-        ),
     }
 
     # Create V2 job via Brain

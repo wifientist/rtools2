@@ -126,8 +126,19 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
   const [expandedChildJobs, setExpandedChildJobs] = useState<Set<string>>(new Set());
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
   const [cancelling, setCancelling] = useState(false);
+  const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [sseReconnects, setSseReconnects] = useState(0);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const lastRefreshRef = useRef<number>(0);
+  const refreshPendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fallbackPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const jobStatusRef = useRef<JobStatus | null>(null);
+
+  // Keep ref in sync with state so event handlers always see latest
+  useEffect(() => {
+    jobStatusRef.current = jobStatus;
+  }, [jobStatus]);
 
   const toggleChildJob = (jobId: string) => {
     setExpandedChildJobs(prev => {
@@ -187,8 +198,26 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSourceRef.current = eventSource;
 
+    eventSource.onopen = () => {
+      setSseStatus('connected');
+      // Stop fallback polling — SSE is back
+      if (fallbackPollRef.current) {
+        clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
+      setSseReconnects(prev => {
+        if (prev > 0) {
+          addLiveEvent('🔗 Reconnected to live stream');
+          // Refresh full status on reconnect to catch anything we missed
+          doRefresh();
+        }
+        return prev;
+      });
+    };
+
     eventSource.addEventListener('connected', (e) => {
       console.log('SSE connected:', e.data);
+      setSseStatus('connected');
       addLiveEvent('🔗 Connected to live stream');
     });
 
@@ -227,18 +256,20 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.addEventListener('task_completed', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Task completed:', data);
       const status = data.status === 'FAILED' ? '❌' : '✓';
       addLiveEvent(`${status} Completed: ${data.task_name || data.task_id}`);
       refreshJobStatus();
     });
 
     // Handler for progress events (used by both V1 'progress' and V2 'progress_update')
+    // NOTE: Does NOT trigger refreshJobStatus - progress events are high-frequency
+    // and the SSE data already contains the info we need for the live feed.
+    // The throttled refresh from phase_started/phase_completed events keeps the
+    // full job status up to date.
     const handleProgress = (e: MessageEvent) => {
       const data = JSON.parse(e.data);
       // V2 wraps progress in a 'progress' field
       const progress = data.progress || data;
-      console.log('Progress:', progress);
 
       // Show appropriate progress based on job type
       if (progress.total_work !== undefined) {
@@ -256,6 +287,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         // Fallback
         addLiveEvent(`📈 Progress: ${progress.percent}% (${progress.completed}/${progress.total_tasks || progress.total || '?'})`);
       }
+      // Throttled refresh to keep phase stats / progress bar updated
       refreshJobStatus();
     };
 
@@ -292,9 +324,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.addEventListener('job_completed', async (e) => {
       const data = JSON.parse(e.data);
-      console.log('Job completed:', data);
       addLiveEvent(`🎉 Job completed!`);
-      await refreshJobStatus();
+      await doRefresh();  // Immediate final refresh
       // Notify parent of completion
       if (onJobComplete) {
         onJobComplete({
@@ -318,9 +349,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.addEventListener('job_failed', async (e) => {
       const data = JSON.parse(e.data);
-      console.log('Job failed:', data);
       addLiveEvent(`❌ Job failed: ${data.error || 'Unknown error'}`);
-      await refreshJobStatus();
+      await doRefresh();  // Immediate final refresh
       // Notify parent of completion (even for failures)
       if (onJobComplete) {
         onJobComplete({
@@ -343,10 +373,9 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.addEventListener('job_cancelled', async (e) => {
       const data = JSON.parse(e.data);
-      console.log('Job cancelled:', data);
       addLiveEvent(`🛑 Job cancelled by user`);
       setCancelling(false);
-      await refreshJobStatus();
+      await doRefresh();  // Immediate final refresh
       // Notify parent of completion
       if (onJobComplete) {
         onJobComplete({
@@ -369,29 +398,50 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.onerror = (err) => {
       console.error('SSE error:', err);
+      setSseStatus('disconnected');
 
-      if (jobStatus?.status === 'COMPLETED' || jobStatus?.status === 'FAILED' || jobStatus?.status === 'PARTIAL' || jobStatus?.status === 'CANCELLED') {
+      // Use ref to get latest job status (avoids stale closure)
+      const currentStatus = jobStatusRef.current?.status;
+      if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED' || currentStatus === 'PARTIAL' || currentStatus === 'CANCELLED') {
         console.log('Job in terminal state, closing SSE connection');
-        addLiveEvent('✓ Job finished, closing live stream');
+        addLiveEvent('Stream closed (job finished)');
         eventSource.close();
       } else {
-        addLiveEvent('⚠️ Stream connection lost, reconnecting...');
+        setSseReconnects(prev => prev + 1);
+        addLiveEvent('⚠️ Stream disconnected, auto-reconnecting...');
+        // Start fallback polling while SSE is down
+        if (!fallbackPollRef.current) {
+          fallbackPollRef.current = setInterval(() => {
+            doRefresh();
+          }, 10000); // Poll every 10s as fallback
+        }
       }
     };
 
     return () => {
       eventSource.close();
+      if (refreshPendingRef.current) {
+        clearTimeout(refreshPendingRef.current);
+        refreshPendingRef.current = null;
+      }
+      if (fallbackPollRef.current) {
+        clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
     };
   }, [jobId]);
 
-  const refreshJobStatus = async () => {
-    if (!jobId) return;
+  // Throttled refresh: at most once every 2 seconds to prevent request storms
+  // with 300+ parallel units firing events rapidly
+  const REFRESH_THROTTLE_MS = 2000;
 
+  const doRefresh = async () => {
+    if (!jobId) return;
+    lastRefreshRef.current = Date.now();
     try {
       const response = await fetch(`${API_URL}/jobs/${jobId}/status`, {
         credentials: 'include',
       });
-
       if (response.ok) {
         const data = await response.json();
         setJobStatus(data);
@@ -401,9 +451,154 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     }
   };
 
+  const refreshJobStatus = (immediate = false) => {
+    if (immediate) {
+      // Clear any pending throttled refresh
+      if (refreshPendingRef.current) {
+        clearTimeout(refreshPendingRef.current);
+        refreshPendingRef.current = null;
+      }
+      doRefresh();
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastRefreshRef.current;
+
+    if (elapsed >= REFRESH_THROTTLE_MS) {
+      // Enough time has passed, refresh immediately
+      doRefresh();
+    } else if (!refreshPendingRef.current) {
+      // Schedule a refresh for when the throttle window expires
+      const delay = REFRESH_THROTTLE_MS - elapsed;
+      refreshPendingRef.current = setTimeout(() => {
+        refreshPendingRef.current = null;
+        doRefresh();
+      }, delay);
+    }
+    // else: a refresh is already scheduled, skip
+  };
+
   const addLiveEvent = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setLiveEvents(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 50));
+  };
+
+  const reconnectSSE = () => {
+    // Close existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+    // Stop fallback polling
+    if (fallbackPollRef.current) {
+      clearInterval(fallbackPollRef.current);
+      fallbackPollRef.current = null;
+    }
+    // Create new connection
+    setSseStatus('connecting');
+    addLiveEvent('🔄 Manual reconnect...');
+    const newEventSource = new EventSource(
+      `${API_URL}/jobs/${jobId}/stream`,
+      { withCredentials: true }
+    );
+    eventSourceRef.current = newEventSource;
+
+    // Re-attach the same handlers (simplified — key ones)
+    newEventSource.onopen = () => {
+      setSseStatus('connected');
+      if (fallbackPollRef.current) {
+        clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
+      addLiveEvent('🔗 Reconnected to live stream');
+      doRefresh();
+    };
+
+    newEventSource.addEventListener('connected', () => {
+      setSseStatus('connected');
+      addLiveEvent('🔗 Connected to live stream');
+    });
+
+    const handleProgress = (e: MessageEvent) => {
+      const data = JSON.parse(e.data);
+      const progress = data.progress || data;
+      if (progress.total_work !== undefined) {
+        const failed = progress.units_failed ? ` (${progress.units_failed} failed)` : '';
+        addLiveEvent(`📈 Progress: ${progress.completed_work}/${progress.total_work} units${failed}`);
+      } else {
+        addLiveEvent(`📈 Progress: ${progress.percent || 0}%`);
+      }
+      refreshJobStatus();
+    };
+
+    newEventSource.addEventListener('progress', handleProgress);
+    newEventSource.addEventListener('progress_update', handleProgress);
+
+    newEventSource.addEventListener('message', (e) => {
+      const data = JSON.parse(e.data);
+      const icons: Record<string, string> = { info: 'ℹ️', warning: '⚠️', error: '❌', success: '✅' };
+      addLiveEvent(`${icons[data.level] || 'ℹ️'} ${data.message}`);
+    });
+
+    newEventSource.addEventListener('phase_started', (e) => {
+      const data = JSON.parse(e.data);
+      addLiveEvent(`▶️  Phase started: ${data.phase_name}`);
+      refreshJobStatus();
+    });
+
+    newEventSource.addEventListener('phase_completed', (e) => {
+      const data = JSON.parse(e.data);
+      addLiveEvent(`✅ Phase completed: ${data.phase_name}`);
+      refreshJobStatus();
+    });
+
+    newEventSource.addEventListener('task_completed', (e) => {
+      const data = JSON.parse(e.data);
+      const status = data.status === 'FAILED' ? '❌' : '✓';
+      addLiveEvent(`${status} Completed: ${data.task_name || data.task_id}`);
+      refreshJobStatus();
+    });
+
+    newEventSource.addEventListener('job_completed', async (e) => {
+      const data = JSON.parse(e.data);
+      addLiveEvent('🎉 Job completed!');
+      await doRefresh();
+      if (onJobComplete) {
+        onJobComplete({
+          job_id: jobId, status: data.status || 'COMPLETED',
+          progress: data.progress || { total_phases: 0, completed_phases: 0, failed_phases: 0, total_tasks: 0, completed: 0, failed: 0 },
+          summary: data.summary, created_resources: data.created_resources, errors: data.errors,
+        });
+      }
+      newEventSource.close();
+    });
+
+    newEventSource.addEventListener('job_failed', async (e) => {
+      const data = JSON.parse(e.data);
+      addLiveEvent(`❌ Job failed: ${data.error || 'Unknown error'}`);
+      await doRefresh();
+      if (onJobComplete) {
+        onJobComplete({
+          job_id: jobId, status: data.status || 'FAILED',
+          progress: data.progress || { total_phases: 0, completed_phases: 0, failed_phases: 0, total_tasks: 0, completed: 0, failed: 0 },
+          errors: data.errors || [data.error || 'Unknown error'],
+        });
+      }
+      newEventSource.close();
+    });
+
+    newEventSource.onerror = () => {
+      setSseStatus('disconnected');
+      const currentStatus = jobStatusRef.current?.status;
+      if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED' || currentStatus === 'PARTIAL' || currentStatus === 'CANCELLED') {
+        newEventSource.close();
+      } else {
+        addLiveEvent('⚠️ Stream disconnected, auto-reconnecting...');
+        if (!fallbackPollRef.current) {
+          fallbackPollRef.current = setInterval(() => doRefresh(), 10000);
+        }
+      }
+    };
   };
 
   const cancelJob = async () => {
@@ -424,7 +619,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
       const data = await response.json();
       addLiveEvent(`🛑 ${data.message}`);
-      await refreshJobStatus();
+      await doRefresh();
     } catch (err: any) {
       console.error('Error cancelling job:', err);
       addLiveEvent(`❌ Failed to cancel: ${err.message}`);
@@ -621,7 +816,9 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         {/* Phase Progress Stats (V2 workflows) */}
         {jobStatus.progress?.phase_stats && Object.keys(jobStatus.progress.phase_stats).length > 0 && (
           <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {Object.entries(jobStatus.progress.phase_stats).map(([phaseId, stat]) => {
+            {Object.entries(jobStatus.progress.phase_stats)
+              .filter(([, stat]) => stat.status !== 'SKIPPED')
+              .map(([phaseId, stat]) => {
               const isPerUnit = stat.total !== undefined;
               const isRunning = isPerUnit ? (stat.running ?? 0) > 0 : stat.status === 'RUNNING';
               const isComplete = isPerUnit ? stat.completed === stat.total : stat.status === 'COMPLETED';
@@ -837,24 +1034,84 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                 <h2 className="text-xl font-bold text-gray-900">Phases</h2>
               </div>
               <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
-                {jobStatus.phases.map((phase) => (
+                {jobStatus.phases.map((phase) => {
+                  // Get per-unit stats from phase_stats if available
+                  const phaseStat = jobStatus.progress?.phase_stats?.[phase.id] as PhaseStat | undefined;
+                  const isPerUnit = phaseStat && phaseStat.total !== undefined;
+                  const statCompleted = phaseStat?.completed ?? 0;
+                  const statFailed = phaseStat?.failed ?? 0;
+                  const statRunning = phaseStat?.running ?? 0;
+                  const statTotal = phaseStat?.total ?? 0;
+                  const statPercent = statTotal > 0 ? ((statCompleted + statFailed) / statTotal) * 100 : 0;
+
+                  // Use SKIPPED status from backend if phase was skip_if'd
+                  const isSkipped = phase.status === 'SKIPPED' || phaseStat?.status === 'SKIPPED';
+
+                  // Derive a richer status for per-unit phases
+                  const effectiveStatus = isSkipped
+                    ? 'SKIPPED'
+                    : isPerUnit
+                    ? (statCompleted === statTotal && statTotal > 0 ? 'COMPLETED'
+                      : statRunning > 0 ? 'RUNNING'
+                      : statCompleted > 0 || statFailed > 0 ? 'RUNNING'
+                      : phase.status)
+                    : phase.status;
+
+                  return (
                   <div key={phase.id} className="p-4">
                     <div
                       className="flex items-center justify-between cursor-pointer"
                       onClick={() => togglePhase(phase.id)}
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-xl">{getStatusIcon(phase.status)}</span>
+                        <span className="text-xl">{getStatusIcon(effectiveStatus)}</span>
                         <div>
                           <h3 className="font-medium text-gray-900">{phase.name}</h3>
-                          <span className={`inline-block px-2 py-0.5 text-xs rounded ${getStatusColor(phase.status)}`}>
-                            {phase.status}
-                          </span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`inline-block px-2 py-0.5 text-xs rounded ${getStatusColor(effectiveStatus)}`}>
+                              {effectiveStatus}
+                            </span>
+                            {/* Inline per-unit counts next to status badge */}
+                            {isPerUnit && statTotal > 0 && (
+                              <span className="text-xs text-gray-500">
+                                {statCompleted}/{statTotal} units
+                                {statRunning > 0 && (
+                                  <span className="text-blue-600 ml-1">({statRunning} active)</span>
+                                )}
+                                {statFailed > 0 && (
+                                  <span className="text-red-600 ml-1">({statFailed} failed)</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {/* Per-phase progress indicator */}
-                        {phase.tasks && phase.tasks.length > 0 && (
+                        {/* Per-unit progress bar from phase_stats */}
+                        {isPerUnit && statTotal > 0 && (
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-200 rounded-full h-2 overflow-hidden">
+                              {/* Stacked bar: green for completed, red for failed */}
+                              <div className="h-full flex">
+                                <div
+                                  className="h-full bg-green-500 transition-all duration-300"
+                                  style={{ width: `${(statCompleted / statTotal) * 100}%` }}
+                                />
+                                {statFailed > 0 && (
+                                  <div
+                                    className="h-full bg-red-500 transition-all duration-300"
+                                    style={{ width: `${(statFailed / statTotal) * 100}%` }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-xs text-gray-500 whitespace-nowrap font-medium">
+                              {Math.round(statPercent)}%
+                            </span>
+                          </div>
+                        )}
+                        {/* Legacy task-based progress bar */}
+                        {!isPerUnit && phase.tasks && phase.tasks.length > 0 && (
                           <div className="flex items-center gap-2">
                             <div className="w-20 bg-gray-200 rounded-full h-2 overflow-hidden">
                               <div
@@ -888,6 +1145,37 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                     {/* Expanded Phase Details */}
                     {expandedPhases.has(phase.id) && (
                       <div className="mt-3 ml-8 space-y-3">
+                        {/* Per-unit phase breakdown */}
+                        {isPerUnit && statTotal > 0 && (
+                          <div className={`p-3 rounded border ${
+                            statCompleted === statTotal ? 'bg-green-50 border-green-200' :
+                            statFailed > 0 ? 'bg-red-50 border-red-200' :
+                            statRunning > 0 ? 'bg-blue-50 border-blue-200' :
+                            'bg-gray-50 border-gray-200'
+                          }`}>
+                            <div className="grid grid-cols-4 gap-3 text-center">
+                              <div>
+                                <div className="text-lg font-bold text-green-700">{statCompleted}</div>
+                                <div className="text-xs text-gray-500">Completed</div>
+                              </div>
+                              <div>
+                                <div className={`text-lg font-bold ${statRunning > 0 ? 'text-blue-700' : 'text-gray-400'}`}>{statRunning}</div>
+                                <div className="text-xs text-gray-500">Running</div>
+                              </div>
+                              <div>
+                                <div className={`text-lg font-bold ${statFailed > 0 ? 'text-red-700' : 'text-gray-400'}`}>{statFailed}</div>
+                                <div className="text-xs text-gray-500">Failed</div>
+                              </div>
+                              <div>
+                                <div className={`text-lg font-bold ${(statTotal - statCompleted - statFailed - statRunning) > 0 ? 'text-gray-700' : 'text-gray-400'}`}>
+                                  {statTotal - statCompleted - statFailed - statRunning}
+                                </div>
+                                <div className="text-xs text-gray-500">Pending</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Phase Result Summary */}
                         {phase.result && Object.keys(phase.result).length > 0 && (
                           <div className="p-3 bg-blue-50 rounded border border-blue-200">
@@ -999,28 +1287,31 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                           </div>
                         )}
 
-                        {/* No details message - only show for pending/running phases without tasks */}
+                        {/* No details message - only show for pending/running phases without tasks and without per-unit stats */}
                         {(!phase.tasks || phase.tasks.length === 0) &&
                          !phase.result &&
+                         !isPerUnit &&
                          !(jobStatus.is_parallel && phase.id.includes('parallel')) &&
                          phase.status !== 'COMPLETED' && phase.status !== 'SKIPPED' && (
                           <div className="p-3 bg-gray-50 rounded border border-gray-200 text-sm text-gray-500 italic">
                             {phase.status === 'RUNNING' ? 'Processing...' : 'Waiting to start...'}
                           </div>
                         )}
-                        {/* Completed inline phase - show success */}
+                        {/* Completed inline phase - show success (only for phases without per-unit stats) */}
                         {(!phase.tasks || phase.tasks.length === 0) &&
                          !phase.result &&
+                         !isPerUnit &&
                          !(jobStatus.is_parallel && phase.id.includes('parallel')) &&
                          phase.status === 'COMPLETED' && (
                           <div className="p-3 bg-green-50 rounded border border-green-200 text-sm text-green-700">
-                            ✓ Phase completed successfully
+                            Phase completed successfully
                           </div>
                         )}
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1030,7 +1321,37 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow h-fit sticky top-6">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-bold text-gray-900">Live Events</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Live Events</h2>
+                <div className="flex items-center gap-2">
+                  {/* SSE connection indicator */}
+                  <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
+                    sseStatus === 'connected' ? 'bg-green-100 text-green-700' :
+                    sseStatus === 'connecting' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${
+                      sseStatus === 'connected' ? 'bg-green-500' :
+                      sseStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                      'bg-red-500'
+                    }`} />
+                    {sseStatus === 'connected' ? 'Live' :
+                     sseStatus === 'connecting' ? 'Connecting' : 'Disconnected'}
+                  </span>
+                  {/* Manual reconnect button */}
+                  {sseStatus === 'disconnected' && jobStatus?.status !== 'COMPLETED' && jobStatus?.status !== 'FAILED' && jobStatus?.status !== 'CANCELLED' && (
+                    <button
+                      onClick={reconnectSSE}
+                      className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                    >
+                      Reconnect
+                    </button>
+                  )}
+                </div>
+              </div>
+              {sseReconnects > 0 && sseStatus === 'connected' && (
+                <p className="text-xs text-gray-400 mt-1">Reconnected {sseReconnects}x (polling as fallback)</p>
+              )}
             </div>
             <div className="p-4">
               <div className="max-h-[400px] overflow-y-auto space-y-1">

@@ -91,7 +91,18 @@ const JobMonitor = () => {
   const [expandedChildJobs, setExpandedChildJobs] = useState<Set<string>>(new Set());
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
 
+  const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+
   const eventSourceRef = useRef<EventSource | null>(null);
+  const lastRefreshRef = useRef<number>(0);
+  const refreshPendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fallbackPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const jobStatusRef = useRef<JobStatus | null>(null);
+
+  // Keep ref in sync with state so event handlers always see latest
+  useEffect(() => {
+    jobStatusRef.current = jobStatus;
+  }, [jobStatus]);
 
   const toggleChildJob = (jobId: string) => {
     setExpandedChildJobs(prev => {
@@ -151,56 +162,50 @@ const JobMonitor = () => {
 
     eventSourceRef.current = eventSource;
 
-    eventSource.addEventListener('connected', (e) => {
-      console.log('SSE connected:', e.data);
+    eventSource.onopen = () => {
+      setSseStatus('connected');
+      if (fallbackPollRef.current) {
+        clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
+    };
+
+    eventSource.addEventListener('connected', () => {
+      setSseStatus('connected');
       addLiveEvent('🔗 Connected to live stream');
     });
 
     eventSource.addEventListener('status', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Status update:', data);
       addLiveEvent(`📊 Status: ${data.status} (${data.progress?.percent || 0}%)`);
     });
 
     eventSource.addEventListener('phase_started', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Phase started:', data);
       addLiveEvent(`▶️  Phase started: ${data.phase_name}`);
-
-      // Refresh job status
       refreshJobStatus();
     });
 
     eventSource.addEventListener('phase_completed', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Phase completed:', data);
       addLiveEvent(`✅ Phase completed: ${data.phase_name}`);
-
-      // Refresh job status
       refreshJobStatus();
     });
 
     eventSource.addEventListener('task_completed', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Task completed:', data);
       addLiveEvent(`✓ Task: ${data.task_name || data.task_id}`);
-
-      // Refresh job status periodically
       refreshJobStatus();
     });
 
     eventSource.addEventListener('progress', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Progress:', data);
       addLiveEvent(`📈 Progress: ${data.percent}% (${data.completed}/${data.total})`);
-
-      // Refresh job status
       refreshJobStatus();
     });
 
     eventSource.addEventListener('message', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Message:', data);
       const icon = data.level === 'error' ? '❌' :
                    data.level === 'warning' ? '⚠️' :
                    data.level === 'success' ? '✅' : 'ℹ️';
@@ -209,64 +214,98 @@ const JobMonitor = () => {
 
     eventSource.addEventListener('job_started', (e) => {
       const data = JSON.parse(e.data);
-      console.log('Job started:', data);
       addLiveEvent(`🚀 Job started: ${data.workflow_name}`);
       refreshJobStatus();
     });
 
-    eventSource.addEventListener('job_completed', (e) => {
-      const data = JSON.parse(e.data);
-      console.log('Job completed:', data);
+    eventSource.addEventListener('job_completed', async () => {
       addLiveEvent(`🎉 Job completed!`);
-
-      // Final refresh and close connection
-      refreshJobStatus();
+      await doRefresh();  // Immediate final refresh
       eventSource.close();
     });
 
-    eventSource.addEventListener('job_failed', (e) => {
+    eventSource.addEventListener('job_failed', async (e) => {
       const data = JSON.parse(e.data);
-      console.log('Job failed:', data);
       addLiveEvent(`❌ Job failed: ${data.error || 'Unknown error'}`);
-
-      // Final refresh and close connection
-      refreshJobStatus();
+      await doRefresh();  // Immediate final refresh
       eventSource.close();
     });
 
     eventSource.onerror = (err) => {
       console.error('SSE error:', err);
+      setSseStatus('disconnected');
 
-      // Check if job is in terminal state before reconnecting
-      // EventSource automatically reconnects, so close it if job is done
-      if (jobStatus?.status === 'COMPLETED' || jobStatus?.status === 'FAILED' || jobStatus?.status === 'PARTIAL') {
+      // Use ref to get latest job status (avoids stale closure)
+      const currentStatus = jobStatusRef.current?.status;
+      if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED' || currentStatus === 'PARTIAL' || currentStatus === 'CANCELLED') {
         console.log('Job in terminal state, closing SSE connection');
-        addLiveEvent('✓ Job finished, closing live stream');
+        addLiveEvent('Stream closed (job finished)');
         eventSource.close();
       } else {
-        addLiveEvent('⚠️ Stream connection lost, reconnecting...');
+        addLiveEvent('⚠️ Stream disconnected, auto-reconnecting...');
+        // Start fallback polling while SSE is down
+        if (!fallbackPollRef.current) {
+          fallbackPollRef.current = setInterval(() => {
+            doRefresh();
+          }, 10000);
+        }
       }
     };
 
     return () => {
       eventSource.close();
+      if (refreshPendingRef.current) {
+        clearTimeout(refreshPendingRef.current);
+        refreshPendingRef.current = null;
+      }
+      if (fallbackPollRef.current) {
+        clearInterval(fallbackPollRef.current);
+        fallbackPollRef.current = null;
+      }
     };
   }, [jobId]);
 
-  const refreshJobStatus = async () => {
-    if (!jobId) return;
+  // Throttled refresh: at most once every 2 seconds to prevent request storms
+  // with 300+ parallel units firing events rapidly
+  const REFRESH_THROTTLE_MS = 2000;
 
+  const doRefresh = async () => {
+    if (!jobId) return;
+    lastRefreshRef.current = Date.now();
     try {
       const response = await fetch(`${API_URL}/jobs/${jobId}/status`, {
         credentials: 'include',
       });
-
       if (response.ok) {
         const data = await response.json();
         setJobStatus(data);
       }
     } catch (err) {
       console.error('Error refreshing job status:', err);
+    }
+  };
+
+  const refreshJobStatus = (immediate = false) => {
+    if (immediate) {
+      if (refreshPendingRef.current) {
+        clearTimeout(refreshPendingRef.current);
+        refreshPendingRef.current = null;
+      }
+      doRefresh();
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastRefreshRef.current;
+
+    if (elapsed >= REFRESH_THROTTLE_MS) {
+      doRefresh();
+    } else if (!refreshPendingRef.current) {
+      const delay = REFRESH_THROTTLE_MS - elapsed;
+      refreshPendingRef.current = setTimeout(() => {
+        refreshPendingRef.current = null;
+        doRefresh();
+      }, delay);
     }
   };
 
@@ -742,7 +781,22 @@ const JobMonitor = () => {
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow h-fit sticky top-6">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-bold text-gray-900">Live Events</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Live Events</h2>
+                <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
+                  sseStatus === 'connected' ? 'bg-green-100 text-green-700' :
+                  sseStatus === 'connecting' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-red-100 text-red-700'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    sseStatus === 'connected' ? 'bg-green-500' :
+                    sseStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
+                    'bg-red-500'
+                  }`} />
+                  {sseStatus === 'connected' ? 'Live' :
+                   sseStatus === 'connecting' ? 'Connecting' : 'Disconnected'}
+                </span>
+              </div>
             </div>
             <div className="p-4">
               <div className="max-h-[600px] overflow-y-auto space-y-1">

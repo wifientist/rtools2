@@ -162,6 +162,10 @@ class UnitResolved(BaseModel):
     network_id: Optional[str] = None
     passphrase_ids: List[str] = Field(default_factory=list)
 
+    # Activation tracking
+    activated: bool = False
+    already_active: bool = False
+
     # AP assignments
     ap_ids: List[str] = Field(default_factory=list)
 
@@ -435,39 +439,114 @@ class WorkflowJobV2(BaseModel):
         return None
 
     def get_progress(self) -> Dict[str, Any]:
-        """Calculate overall workflow progress."""
+        """Calculate overall workflow progress.
+
+        Optimized to iterate units once (single-pass) instead of
+        once per counter + once per phase, which caused O(units * phases)
+        overhead on large jobs (300+ units).
+        """
         total_units = len(self.units)
         total_phase_defs = len(self.phase_definitions)
 
-        if total_units == 0:
-            return {
-                "percent": 0,
-                "total_units": 0,
-                "total_phases": total_phase_defs,
-                "completed_phases": 0,
-                "failed_phases": 0,
-            }
+        # Pre-classify phases and build lookup sets
+        # Exclude SKIPPED phases from per-unit tracking (they inflate
+        # total_work and show misleading 261/261 "completed" counts)
+        skipped_phase_ids = {
+            pid for pid, status in self.global_phase_status.items()
+            if status == PhaseStatus.SKIPPED
+        }
+        per_unit_phase_ids = set()
+        per_unit_phase_names = {}
+        global_phases = []
+        for p in self.phase_definitions:
+            if p.id in skipped_phase_ids:
+                continue  # Don't count skipped phases in progress
+            if p.per_unit:
+                per_unit_phase_ids.add(p.id)
+                per_unit_phase_names[p.id] = p.name
+            else:
+                global_phases.append(p)
 
-        per_unit_phases = [p for p in self.phase_definitions if p.per_unit]
-        total_phase_count = len(per_unit_phases)
-        if total_phase_count == 0:
+        # Global-only workflows (e.g., venue cleanup) have 0 units.
+        # Progress is based entirely on global phase completion.
+        if total_units == 0 or len(per_unit_phase_ids) == 0:
+            total_global = len(global_phases)
+            completed_global = sum(
+                1 for p in global_phases
+                if self.global_phase_status.get(p.id) == PhaseStatus.COMPLETED
+            )
+            failed_global = sum(
+                1 for p in global_phases
+                if self.global_phase_status.get(p.id) == PhaseStatus.FAILED
+            )
+            running_global = sum(
+                1 for p in global_phases
+                if self.global_phase_status.get(p.id) == PhaseStatus.RUNNING
+            )
+            percent = (completed_global / total_global * 100) if total_global > 0 else 0
+
+            phase_stats = {}
+            for p in self.phase_definitions:
+                if p.id in skipped_phase_ids:
+                    phase_stats[p.id] = {"name": p.name, "status": "SKIPPED"}
+                else:
+                    status = self.global_phase_status.get(p.id, PhaseStatus.PENDING)
+                    phase_stats[p.id] = {
+                        "name": p.name,
+                        "status": status.value if hasattr(status, 'value') else str(status),
+                    }
+
             return {
-                "percent": 0,
+                "percent": round(percent, 1),
                 "total_units": total_units,
+                "units_completed": 0,
+                "units_failed": 0,
+                "units_running": 0,
+                "units_pending": 0,
                 "total_phases": total_phase_defs,
-                "completed_phases": 0,
-                "failed_phases": 0,
+                "completed_phases": completed_global,
+                "failed_phases": failed_global,
+                "completed_work": completed_global,
+                "total_work": total_global,
+                "phase_stats": phase_stats,
             }
 
-        total_work = total_units * total_phase_count
-        completed_work = sum(
-            len([p for p in unit.completed_phases if self._is_per_unit_phase(p)])
-            for unit in self.units.values()
-        )
+        total_phase_count = len(per_unit_phase_ids)
 
-        # Count global phases
-        global_phases = [p for p in self.phase_definitions if not p.per_unit]
-        total_work += len(global_phases)
+        # Single pass through all units to collect all counters
+        units_completed = 0
+        units_failed = 0
+        units_running = 0
+        completed_work = 0
+        # Per-phase counters: {phase_id: [completed, failed, running]}
+        phase_counters = {pid: [0, 0, 0] for pid in per_unit_phase_ids}
+
+        for unit in self.units.values():
+            # Unit status counts
+            if unit.status == UnitStatus.COMPLETED:
+                units_completed += 1
+            elif unit.status == UnitStatus.FAILED:
+                units_failed += 1
+            elif unit.status == UnitStatus.RUNNING:
+                units_running += 1
+
+            # Count completed per-unit phases for this unit
+            for pid in unit.completed_phases:
+                if pid in per_unit_phase_ids:
+                    completed_work += 1
+                    phase_counters[pid][0] += 1
+
+            # Count failed per-unit phases
+            for pid in unit.failed_phases:
+                if pid in phase_counters:
+                    phase_counters[pid][1] += 1
+
+            # Count running phase
+            if unit.current_phase and unit.current_phase in phase_counters:
+                phase_counters[unit.current_phase][2] += 1
+
+        # Global phase work
+        total_work = total_units * total_phase_count + len(global_phases)
         completed_work += sum(
             1 for p in global_phases
             if self.global_phase_status.get(p.id) == PhaseStatus.COMPLETED
@@ -475,18 +554,7 @@ class WorkflowJobV2(BaseModel):
 
         percent = (completed_work / total_work * 100) if total_work > 0 else 0
 
-        # Per-unit breakdown
-        units_completed = sum(
-            1 for u in self.units.values() if u.status == UnitStatus.COMPLETED
-        )
-        units_failed = sum(
-            1 for u in self.units.values() if u.status == UnitStatus.FAILED
-        )
-        units_running = sum(
-            1 for u in self.units.values() if u.status == UnitStatus.RUNNING
-        )
-
-        # Count completed/failed phases (for UI display)
+        # Phase-level aggregate status counts
         completed_phases = sum(
             1 for p in self.phase_definitions
             if self.global_phase_status.get(p.id) == PhaseStatus.COMPLETED
@@ -496,23 +564,26 @@ class WorkflowJobV2(BaseModel):
             if self.global_phase_status.get(p.id) == PhaseStatus.FAILED
         )
 
-        # Per-phase breakdown (for UI display)
+        # Build phase_stats from pre-computed counters
         phase_stats = {}
         for phase_def in self.phase_definitions:
-            if phase_def.per_unit:
-                completed = sum(1 for u in self.units.values() if phase_def.id in u.completed_phases)
-                failed = sum(1 for u in self.units.values() if phase_def.id in u.failed_phases)
-                running = sum(1 for u in self.units.values() if u.current_phase == phase_def.id)
+            if phase_def.id in skipped_phase_ids:
+                # SKIPPED phases: show as global status, no per-unit counts
                 phase_stats[phase_def.id] = {
                     "name": phase_def.name,
-                    "completed": completed,
-                    "failed": failed,
-                    "running": running,
-                    "pending": total_units - completed - failed - running,
+                    "status": "SKIPPED",
+                }
+            elif phase_def.per_unit:
+                c, f, r = phase_counters[phase_def.id]
+                phase_stats[phase_def.id] = {
+                    "name": phase_def.name,
+                    "completed": c,
+                    "failed": f,
+                    "running": r,
+                    "pending": total_units - c - f - r,
                     "total": total_units,
                 }
             else:
-                # Global phase
                 status = self.global_phase_status.get(phase_def.id, PhaseStatus.PENDING)
                 phase_stats[phase_def.id] = {
                     "name": phase_def.name,

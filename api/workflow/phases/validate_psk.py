@@ -53,6 +53,12 @@ class ValidatePSKPhase(PhaseExecutor):
         unit_mappings: Dict[str, UnitMapping] = Field(default_factory=dict)
         validation_result: Optional[ValidationResult] = None
         all_venue_aps: List[Dict[str, Any]] = Field(default_factory=list)
+        venue_wide_ssid_count: int = 0
+        # Managed = venue-wide SSIDs belonging to units in this run
+        managed_venue_wide_count: int = 0
+        # Unmanaged = venue-wide SSIDs NOT in this run (informational)
+        unmanaged_venue_wide_count: int = 0
+        unmanaged_venue_wide_ssids: List[str] = Field(default_factory=list)
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Build unit mappings and validate resources."""
@@ -119,7 +125,7 @@ class ValidatePSKPhase(PhaseExecutor):
             unit_mappings[unit_id] = mapping
 
         # =====================================================================
-        # 2. Check existing resources in R1
+        # 2. Bulk-fetch existing resources from R1 (2 queries total)
         # =====================================================================
         await self.emit("Checking existing resources...")
 
@@ -127,87 +133,100 @@ class ValidatePSKPhase(PhaseExecutor):
         conflicts: List[ConflictDetail] = []
         actions: List[ResourceAction] = []
 
+        # Fetch ALL AP groups for this venue in a single query
+        ap_group_by_name: Dict[str, Dict] = {}
+        try:
+            ap_groups_response = await self.r1_client.venues.query_ap_groups(
+                tenant_id=self.tenant_id,
+                fields=['id', 'name', 'venueId', 'description'],
+                filters={'venueId': [self.venue_id]},
+                limit=500,
+            )
+            for group in ap_groups_response.get('data', []):
+                ap_group_by_name[group.get('name', '')] = group
+        except Exception as e:
+            logger.warning(f"Error fetching AP groups: {e}")
+
+        # Fetch ALL WiFi networks in a single query (reused by step 4 below)
+        all_networks: List[Dict] = []
+        network_by_ssid: Dict[str, Dict] = {}
+        network_by_name: Dict[str, Dict] = {}
+        try:
+            networks_response = await self.r1_client.networks.get_wifi_networks(
+                self.tenant_id
+            )
+            all_networks = networks_response.get('data', []) if isinstance(networks_response, dict) else networks_response
+            for network in all_networks:
+                ssid = network.get('ssid', '')
+                name = network.get('name', '')
+                if ssid:
+                    network_by_ssid[ssid] = network
+                if name:
+                    network_by_name[name] = network
+        except Exception as e:
+            logger.warning(f"Error fetching WiFi networks: {e}")
+
+        # Check each unit against the in-memory lookups (no API calls)
         for unit_id, mapping in unit_mappings.items():
             # Check AP Group
-            try:
-                existing_group = await self.r1_client.venues.find_ap_group_by_name(
-                    self.tenant_id, self.venue_id, mapping.plan.ap_group_name
-                )
-
-                if existing_group and existing_group.get('name') == mapping.plan.ap_group_name:
-                    mapping.plan.ap_group_exists = True
-                    mapping.plan.will_create_ap_group = False
-                    mapping.resolved.ap_group_id = existing_group.get('id')
-                    summary.ap_groups_to_reuse += 1
-                    actions.append(ResourceAction(
-                        resource_type="ap_group",
-                        name=mapping.plan.ap_group_name,
-                        action="reuse",
-                        existing_id=existing_group.get('id'),
-                    ))
-                else:
-                    summary.ap_groups_to_create += 1
-                    actions.append(ResourceAction(
-                        resource_type="ap_group",
-                        name=mapping.plan.ap_group_name,
-                        action="create",
-                    ))
-            except Exception as e:
-                logger.warning(
-                    f"Error checking AP Group for {unit_id}: {e}"
-                )
+            existing_group = ap_group_by_name.get(mapping.plan.ap_group_name)
+            if existing_group:
+                mapping.plan.ap_group_exists = True
+                mapping.plan.will_create_ap_group = False
+                mapping.resolved.ap_group_id = existing_group.get('id')
+                summary.ap_groups_to_reuse += 1
+                actions.append(ResourceAction(
+                    resource_type="ap_group",
+                    name=mapping.plan.ap_group_name,
+                    action="reuse",
+                    existing_id=existing_group.get('id'),
+                ))
+            else:
                 summary.ap_groups_to_create += 1
+                actions.append(ResourceAction(
+                    resource_type="ap_group",
+                    name=mapping.plan.ap_group_name,
+                    action="create",
+                ))
 
             # Check WiFi Network
             ssid_name = mapping.input_config.get('ssid_name')
             network_name = mapping.plan.network_name
 
-            try:
-                existing_by_ssid = await self.r1_client.networks.find_wifi_network_by_ssid(
-                    self.tenant_id, self.venue_id, ssid_name
-                )
-
-                if existing_by_ssid:
-                    mapping.plan.network_exists = True
-                    mapping.plan.will_create_network = False
-                    mapping.resolved.network_id = existing_by_ssid.get('id')
-                    summary.networks_to_reuse += 1
-                    actions.append(ResourceAction(
+            existing_by_ssid = network_by_ssid.get(ssid_name)
+            if existing_by_ssid:
+                mapping.plan.network_exists = True
+                mapping.plan.will_create_network = False
+                mapping.resolved.network_id = existing_by_ssid.get('id')
+                summary.networks_to_reuse += 1
+                actions.append(ResourceAction(
+                    resource_type="wifi_network",
+                    name=ssid_name,
+                    action="reuse",
+                    existing_id=existing_by_ssid.get('id'),
+                ))
+            else:
+                # Check for name conflict
+                existing_by_name = network_by_name.get(network_name)
+                if existing_by_name:
+                    existing_ssid = existing_by_name.get('ssid', 'unknown')
+                    conflicts.append(ConflictDetail(
+                        unit_id=unit_id,
                         resource_type="wifi_network",
-                        name=ssid_name,
-                        action="reuse",
-                        existing_id=existing_by_ssid.get('id'),
+                        resource_name=network_name,
+                        description=(
+                            f"Network name '{network_name}' already in use "
+                            f"by SSID '{existing_ssid}'"
+                        ),
+                        severity="error",
                     ))
                 else:
-                    # Check for name conflict
-                    existing_by_name = await self.r1_client.networks.find_wifi_network_by_name(
-                        self.tenant_id, self.venue_id, network_name
-                    )
-
-                    if existing_by_name:
-                        existing_ssid = existing_by_name.get('ssid', 'unknown')
-                        conflicts.append(ConflictDetail(
-                            unit_id=unit_id,
-                            resource_type="wifi_network",
-                            resource_name=network_name,
-                            description=(
-                                f"Network name '{network_name}' already in use "
-                                f"by SSID '{existing_ssid}'"
-                            ),
-                            severity="error",
-                        ))
-                    else:
-                        summary.networks_to_create += 1
-                        actions.append(ResourceAction(
-                            resource_type="wifi_network",
-                            name=network_name,
-                            action="create",
-                        ))
-            except Exception as e:
-                logger.warning(
-                    f"Error checking network for {unit_id}: {e}"
-                )
-                summary.networks_to_create += 1
+                    summary.networks_to_create += 1
+                    actions.append(ResourceAction(
+                        resource_type="wifi_network",
+                        name=network_name,
+                        action="create",
+                    ))
 
         # =====================================================================
         # 3. Fetch venue APs for downstream assign_aps phase
@@ -227,13 +246,128 @@ class ValidatePSKPhase(PhaseExecutor):
             await self.emit(f"Warning: Could not fetch venue APs: {e}", "warning")
 
         # =====================================================================
-        # 4. Estimate total API calls
+        # 4. Scan venue SSID activation state
+        #
+        # Check which SSIDs are already activated on this venue and how.
+        # This determines whether activate_network can skip for each unit:
+        # - Already on specific AP group → skip (already done)
+        # - On All AP Groups → needs re-configuration to specific group
+        # - Not activated → needs fresh activation
+        #
+        # Note: With direct AP group activation, we never go venue-wide,
+        # so the 15-SSID-per-AP-Group limit is not a concern.
+        # =====================================================================
+        venue_wide_ssid_count = 0
+        managed_venue_wide_count = 0
+        unmanaged_venue_wide_count = 0
+        unmanaged_venue_wide_ssids: List[str] = []
+
+        await self.emit("Scanning venue SSID activation state...")
+        # network_id -> {'activated': bool, 'is_all_ap_groups': bool, 'ssid_name': str}
+        venue_activation_map: Dict[str, Dict[str, Any]] = {}
+        venue_wide_network_ids: List[str] = []
+
+        try:
+            # Reuse the all_networks already fetched in step 2 above
+            for network in all_networks:
+                network_id = network.get('id')
+                ssid_name = network.get('ssid', network.get('name', 'unknown'))
+                venue_ap_groups = network.get('venueApGroups', [])
+                for vag in venue_ap_groups:
+                    if vag.get('venueId') != self.venue_id:
+                        continue
+                    is_all = vag.get('isAllApGroups', False)
+                    venue_activation_map[network_id] = {
+                        'activated': True,
+                        'is_all_ap_groups': is_all,
+                        'ssid_name': ssid_name,
+                    }
+                    if is_all:
+                        venue_wide_ssid_count += 1
+                        venue_wide_network_ids.append(network_id)
+                    break  # One entry per venue per network
+
+            # -----------------------------------------------------------------
+            # Tag each unit mapping with activation status
+            # -----------------------------------------------------------------
+            already_activated_count = 0
+            on_specific_group_count = 0
+            on_all_ap_groups_count = 0
+
+            for unit_id, mapping in unit_mappings.items():
+                nid = mapping.resolved.network_id
+                if nid and nid in venue_activation_map:
+                    mapping.input_config['already_activated'] = True
+                    is_vw = venue_activation_map[nid]['is_all_ap_groups']
+                    mapping.input_config['is_venue_wide'] = is_vw
+                    already_activated_count += 1
+                    if is_vw:
+                        on_all_ap_groups_count += 1
+                    else:
+                        on_specific_group_count += 1
+                else:
+                    mapping.input_config['already_activated'] = False
+                    # New SSIDs need activation (direct to AP group, not venue-wide)
+                    mapping.input_config['is_venue_wide'] = True
+
+            # -----------------------------------------------------------------
+            # Categorize venue-wide SSIDs (informational)
+            # -----------------------------------------------------------------
+            managed_network_ids = {
+                m.resolved.network_id
+                for m in unit_mappings.values()
+                if m.resolved.network_id
+            }
+
+            for nid in venue_wide_network_ids:
+                info = venue_activation_map[nid]
+                if nid in managed_network_ids:
+                    managed_venue_wide_count += 1
+                else:
+                    unmanaged_venue_wide_count += 1
+                    unmanaged_venue_wide_ssids.append(info['ssid_name'])
+
+            # -----------------------------------------------------------------
+            # Emit status
+            # -----------------------------------------------------------------
+            if already_activated_count > 0:
+                parts = []
+                if on_specific_group_count > 0:
+                    parts.append(f"{on_specific_group_count} on specific AP Groups (skip)")
+                if on_all_ap_groups_count > 0:
+                    parts.append(
+                        f"{on_all_ap_groups_count} on All AP Groups (will move to specific)"
+                    )
+                await self.emit(
+                    f"{already_activated_count} SSIDs already activated: "
+                    + ", ".join(parts),
+                    "info"
+                )
+
+            if unmanaged_venue_wide_count > 0:
+                ssid_list = ", ".join(unmanaged_venue_wide_ssids[:10])
+                if len(unmanaged_venue_wide_ssids) > 10:
+                    ssid_list += f" ... and {len(unmanaged_venue_wide_ssids) - 10} more"
+                await self.emit(
+                    f"Note: {unmanaged_venue_wide_count} SSIDs on 'All AP Groups' "
+                    f"are NOT part of this run: [{ssid_list}]",
+                    "info"
+                )
+
+        except Exception as e:
+            logger.warning(f"Error scanning venue SSIDs: {e}")
+            await self.emit(
+                f"Warning: Could not scan venue SSIDs",
+                "warning"
+            )
+
+        # =====================================================================
+        # 5. Estimate total API calls
         # =====================================================================
         estimated_api_calls = (
             summary.ap_groups_to_create  # AP Group creation
             + summary.networks_to_create  # Network creation
-            + len(units)  # SSID activation (1 per unit)
-            + len(units) * 3  # SSID→AP Group config (3 per unit)
+            + len(units) * 4  # Venue activation (1) + AP group config (3) per unit
         )
 
         # AP assignment calls
@@ -245,7 +379,7 @@ class ValidatePSKPhase(PhaseExecutor):
         summary.total_api_calls = estimated_api_calls
 
         # =====================================================================
-        # 5. Build validation result
+        # 6. Build validation result
         # =====================================================================
         has_errors = any(c.severity == "error" for c in conflicts)
 
@@ -288,4 +422,8 @@ class ValidatePSKPhase(PhaseExecutor):
             unit_mappings=unit_mappings,
             validation_result=validation_result,
             all_venue_aps=all_venue_aps,
+            venue_wide_ssid_count=venue_wide_ssid_count,
+            managed_venue_wide_count=managed_venue_wide_count,
+            unmanaged_venue_wide_count=unmanaged_venue_wide_count,
+            unmanaged_venue_wide_ssids=unmanaged_venue_wide_ssids,
         )

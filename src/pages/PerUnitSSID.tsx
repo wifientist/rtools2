@@ -7,21 +7,6 @@ import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-// DPSK Pool settings interface
-interface DpskPoolSettings {
-  passphrase_length: number;
-  passphrase_format: 'NUMBERS_ONLY' | 'KEYBOARD_FRIENDLY' | 'MOST_SECURED';
-  max_devices_per_passphrase: number;
-  expiration_days: number | null;
-}
-
-const DEFAULT_DPSK_POOL_SETTINGS: DpskPoolSettings = {
-  passphrase_length: 12,
-  passphrase_format: 'KEYBOARD_FRIENDLY',
-  max_devices_per_passphrase: 0,  // 0 = unlimited
-  expiration_days: null,  // null = no expiration
-};
-
 // LAN Port configuration types
 type PortMode = 'ignore' | 'match' | 'specific' | 'disable' | 'uplink';  // 'uplink' means port is protected
 
@@ -234,13 +219,6 @@ function PerUnitSSID() {
   const [configureLanPorts, setConfigureLanPorts] = useState(false);
   const [modelPortConfigs, setModelPortConfigs] = useState<ModelPortConfigs>(DEFAULT_MODEL_PORT_CONFIGS);
 
-  // DPSK Mode options
-  const [dpskMode, setDpskMode] = useState(false);
-  // DPSK Mode - single shared pool for entire venue
-  const [identityGroupName, setIdentityGroupName] = useState("");
-  const [dpskPoolName, setDpskPoolName] = useState("");
-  const [dpskPoolSettings, setDpskPoolSettings] = useState<DpskPoolSettings>(DEFAULT_DPSK_POOL_SETTINGS);
-
   // Parallel execution options (V2 always uses parallel pipelines)
   const [parallelExecution] = useState(true);
   const [maxConcurrent] = useState(10);
@@ -265,6 +243,15 @@ function PerUnitSSID() {
   // Confirmation dialog for single-port models
   const [showSinglePortConfirm, setShowSinglePortConfirm] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState(false);
+
+  // Populate from existing SSIDs
+  const [showPopulateModal, setShowPopulateModal] = useState(false);
+  const [populateLoading, setPopulateLoading] = useState(false);
+  const [ssidPattern, setSsidPattern] = useState("*");
+  const [unitRegex, setUnitRegex] = useState("(.+)@");
+  const [matchAgainst, setMatchAgainst] = useState<'ssid_name' | 'ap_group_name'>('ssid_name');
+  const [populateResults, setPopulateResults] = useState<any>(null);
+  const [populateError, setPopulateError] = useState("");
 
   // Port config metadata from backend (single source of truth)
   const [portConfigMetadata, setPortConfigMetadata] = useState<PortConfigMetadata | null>(null);
@@ -422,8 +409,8 @@ function PerUnitSSID() {
 
       // Parse header
       const headers = lines[0].split(',').map(h => h.trim());
-      const requiredHeaders = ['unit_number', 'ssid_name', 'ssid_password', 'security_type', 'default_vlan'];
-      const optionalHeaders = ['ap_serial_or_name', 'network_name', 'username', 'email', 'description'];
+      const requiredHeaders = ['unit_number', 'ssid_name', 'ssid_password', 'default_vlan'];
+      const optionalHeaders = ['ap_serial_or_name', 'network_name', 'security_type'];
 
       // Validate required headers
       const hasAllRequired = requiredHeaders.every(h => headers.includes(h));
@@ -433,10 +420,8 @@ function PerUnitSSID() {
         return;
       }
 
-      // Parse rows - detect DPSK mode and aggregate passphrases per unit
+      // Parse rows - merge by unit_number (multiple APs share one SSID password)
       const unitMap = new Map<string, any>();
-      const allPassphrases = new Set<string>();  // For duplicate detection
-      let hasDpskUnits = false;
 
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -450,67 +435,23 @@ function PerUnitSSID() {
 
         const unitNumber = row.unit_number;
         const securityType = (row.security_type || 'WPA3').toUpperCase();
-        const isDpsk = securityType === 'DPSK';
 
-        if (isDpsk) {
-          hasDpskUnits = true;
-
-          // DPSK: Check for duplicate passphrases (they must be unique)
-          // Skip check for empty passphrases - user may import actual passwords later
-          const passphrase = row.ssid_password;
-          if (passphrase && allPassphrases.has(passphrase)) {
-            setError(`Duplicate passphrase found on row ${i + 1}. DPSK passphrases must be unique across all units.`);
-            setProcessing(false);
-            return;
-          }
-          if (passphrase) {
-            allPassphrases.add(passphrase);
-          }
-
-          // DPSK mode: Each row is a separate passphrase entry
-          // Multiple rows with same unit_number share Identity Group & DPSK Pool
-          // but each row creates a unique passphrase in the pool
-          const dpskKey = `${unitNumber}::${passphrase}`;  // Unique key per passphrase
-          unitMap.set(dpskKey, {
+        if (!unitMap.has(unitNumber)) {
+          unitMap.set(unitNumber, {
             unit_number: unitNumber,
-            ap_identifiers: row.ap_serial_or_name ? [row.ap_serial_or_name] : [],
+            ap_identifiers: [],
             ssid_name: row.ssid_name,
             network_name: row.network_name || null,
-            ssid_password: passphrase,  // Passphrase for DPSK pool
+            ssid_password: row.ssid_password,
             security_type: securityType,
             default_vlan: row.default_vlan || '1',
-            // DPSK-specific fields
-            username: row.username || null,
-            email: row.email || null,
-            description: row.description || null,
           });
-        } else {
-          // PSK mode: Merge rows by unit_number (multiple APs share one SSID password)
-          if (!unitMap.has(unitNumber)) {
-            unitMap.set(unitNumber, {
-              unit_number: unitNumber,
-              ap_identifiers: [],
-              ssid_name: row.ssid_name,
-              network_name: row.network_name || null,
-              ssid_password: row.ssid_password,
-              security_type: securityType,
-              default_vlan: row.default_vlan || '1',
-              username: null,
-              email: null,
-              description: null,
-            });
-          }
-
-          // Add AP to this unit (if provided)
-          if (row.ap_serial_or_name) {
-            unitMap.get(unitNumber).ap_identifiers.push(row.ap_serial_or_name);
-          }
         }
-      }
 
-      // Auto-enable DPSK mode if any units have security_type = DPSK
-      if (hasDpskUnits && !dpskMode) {
-        setDpskMode(true);
+        // Add AP to this unit (if provided)
+        if (row.ap_serial_or_name) {
+          unitMap.get(unitNumber).ap_identifiers.push(row.ap_serial_or_name);
+        }
       }
 
       const units = Array.from(unitMap.values());
@@ -532,11 +473,6 @@ function PerUnitSSID() {
         model_port_configs: modelPortConfigs,
         parallel_execution: parallelExecution,
         max_concurrent: maxConcurrent,
-        // DPSK mode options
-        dpsk_mode: dpskMode || hasDpskUnits,
-        identity_group_name: identityGroupName,
-        dpsk_pool_name: dpskPoolName,
-        dpsk_pool_settings: dpskPoolSettings,
       };
 
       // V2 Flow: plan → confirm → execute
@@ -595,6 +531,63 @@ function PerUnitSSID() {
 
   const handleVenueSelect = (selectedVenueId: string | null, _venue: any) => {
     setVenueId(selectedVenueId);
+  };
+
+  const handlePopulateFetch = async () => {
+    if (!venueId || !activeControllerId) return;
+
+    setPopulateLoading(true);
+    setPopulateError("");
+    setPopulateResults(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/per-unit-ssid/populate`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          controller_id: activeControllerId,
+          venue_id: venueId,
+          ssid_pattern: ssidPattern,
+          unit_regex: unitRegex,
+          match_against: matchAgainst,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || `Request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setPopulateResults(data);
+    } catch (err: any) {
+      setPopulateError(err.message || "Failed to fetch SSIDs");
+    } finally {
+      setPopulateLoading(false);
+    }
+  };
+
+  const handlePopulateConfirm = () => {
+    if (!populateResults?.matches?.length) return;
+
+    const header = "unit_number,ap_serial_or_name,ssid_name,ssid_password,security_type,default_vlan";
+    const rows: string[] = [];
+
+    for (const match of populateResults.matches) {
+      if (match.aps.length === 0) {
+        // Unit with no APs - still include a row
+        rows.push(`${match.unit_number},,${match.ssid_name},,${match.security_type},${match.default_vlan}`);
+      } else {
+        for (const ap of match.aps) {
+          rows.push(`${match.unit_number},${ap.name},${match.ssid_name},,${match.security_type},${match.default_vlan}`);
+        }
+      }
+    }
+
+    setCsvInput(`${header}\n${rows.join('\n')}`);
+    setShowPopulateModal(false);
+    setPopulateResults(null);
   };
 
   // Audit progress message for UI feedback during polling
@@ -720,13 +713,12 @@ function PerUnitSSID() {
           Upload a CSV file with the following columns:
         </p>
         <div className="text-xs space-y-1 mb-3">
-          <div><strong>Required:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">unit_number, ssid_name, ssid_password, security_type, default_vlan</code></div>
-          <div><strong>Optional:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">ap_serial_or_name, network_name</code></div>
-          <div><strong>DPSK Only:</strong> <code className="bg-orange-100 px-1 py-0.5 rounded text-xs">username, email, description</code></div>
+          <div><strong>Required:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">unit_number, ssid_name, ssid_password, default_vlan</code></div>
+          <div><strong>Optional:</strong> <code className="bg-white px-1 py-0.5 rounded text-xs">ap_serial_or_name, network_name, security_type</code></div>
         </div>
         <p className="text-xs text-gray-600 mb-3 italic">
           💡 <strong>Tip:</strong> Multiple rows with the same <code className="bg-gray-100 px-1 rounded">unit_number</code> will be grouped into the same AP Group.
-          For DPSK mode, each row becomes a unique passphrase. Use <code className="bg-orange-100 px-1 rounded">security_type=DPSK</code> to enable.
+          Security type defaults to WPA3 if not specified. Valid values: WPA2, WPA3, WPA2/WPA3.
         </p>
         <div className="flex gap-3">
           <button
@@ -772,26 +764,6 @@ function PerUnitSSID() {
             📝 Template without APs
           </button>
 
-          <button
-            onClick={() => {
-              const template = `unit_number,ap_serial_or_name,ssid_name,ssid_password,security_type,default_vlan,username,email,description
-101,AP-101-Living,Unit-101-WiFi,SecurePass101!,DPSK,10,john.doe,john@example.com,Primary resident
-101,,Unit-101-WiFi,GuestPass101!,DPSK,99,guest-101,,Guest access (isolated VLAN)
-102,AP-102-Living,Unit-102-WiFi,SecurePass102!,DPSK,20,jane.smith,jane@example.com,Primary resident
-102,,Unit-102-WiFi,Family102Pass!,DPSK,20,family-102,,Family member (same VLAN)
-102,,Unit-102-WiFi,GuestPass102!,DPSK,99,guest-102,,Guest access (isolated VLAN)`;
-              const blob = new Blob([template], { type: 'text/csv' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'per-unit-dpsk-template.csv';
-              a.click();
-              URL.revokeObjectURL(url);
-            }}
-            className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 text-sm font-medium"
-          >
-            🔐 DPSK Template
-          </button>
         </div>
       </div>
 
@@ -832,22 +804,44 @@ function PerUnitSSID() {
           />
         </div>
 
-        {/* File Upload */}
+        {/* File Upload + Populate from Existing SSIDs */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Or upload a CSV file:
           </label>
-          <input
-            type="file"
-            accept=".csv,.txt"
-            onChange={handleFileUpload}
-            className="block w-full text-sm text-gray-500
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-md file:border-0
-              file:text-sm file:font-semibold
-              file:bg-blue-50 file:text-blue-700
-              hover:file:bg-blue-100"
-          />
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              accept=".csv,.txt"
+              onChange={handleFileUpload}
+              className="text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-md file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100"
+            />
+            <div>
+              <button
+                onClick={() => {
+                  setPopulateError("");
+                  setPopulateResults(null);
+                  setShowPopulateModal(true);
+                }}
+                disabled={!venueId}
+                className={`px-4 py-2 rounded text-sm font-medium whitespace-nowrap ${
+                  venueId
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                Populate from Existing SSIDs
+              </button>
+              <p className="text-xs text-gray-500 mt-1">
+                Scan venue for existing per-unit SSIDs and auto-fill the CSV above.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Network Name Conflict Resolution */}
@@ -866,147 +860,6 @@ function PerUnitSSID() {
           <p className="text-xs text-gray-500 mt-1">
             When SSID exists but internal network name differs: keep R1's name or update to match rtools CSV
           </p>
-        </div>
-
-        {/* DPSK Mode Configuration */}
-        <div className="mb-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-          <div className="flex items-start gap-3">
-            <input
-              type="checkbox"
-              id="dpskMode"
-              checked={dpskMode}
-              onChange={(e) => setDpskMode(e.target.checked)}
-              className="mt-1 h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-            />
-            <div className="flex-1">
-              <label htmlFor="dpskMode" className="block text-sm font-medium text-gray-700 cursor-pointer">
-                Enable DPSK Mode
-                <span className="ml-2 text-xs font-normal text-orange-600 bg-orange-100 px-2 py-0.5 rounded">
-                  Dynamic Pre-Shared Key
-                </span>
-              </label>
-              <p className="text-xs text-gray-500 mt-1">
-                Creates one shared Identity Group and DPSK Pool for all units. Each unit's SSID links to the same pool.
-                Auto-enabled when <code className="bg-gray-200 px-1 rounded">security_type=DPSK</code> in CSV.
-              </p>
-
-              {dpskMode && (
-                <div className="mt-4 space-y-4">
-                  {/* Shared Resource Naming */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        Identity Group Name
-                      </label>
-                      <input
-                        type="text"
-                        value={identityGroupName}
-                        onChange={(e) => setIdentityGroupName(e.target.value)}
-                        placeholder="e.g., Property Name IDG"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <p className="text-xs text-gray-400 mt-0.5">Shared across all units</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        DPSK Pool Name
-                      </label>
-                      <input
-                        type="text"
-                        value={dpskPoolName}
-                        onChange={(e) => setDpskPoolName(e.target.value)}
-                        placeholder="e.g., Property Name DPSK"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
-                      <p className="text-xs text-gray-400 mt-0.5">Shared across all units</p>
-                    </div>
-                  </div>
-
-                  {/* DPSK Pool Settings */}
-                  <div className="bg-white rounded border border-orange-100 p-3">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">DPSK Pool Settings</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Passphrase Format
-                        </label>
-                        <select
-                          value={dpskPoolSettings.passphrase_format}
-                          onChange={(e) => setDpskPoolSettings({
-                            ...dpskPoolSettings,
-                            passphrase_format: e.target.value as DpskPoolSettings['passphrase_format']
-                          })}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        >
-                          <option value="KEYBOARD_FRIENDLY">Keyboard Friendly</option>
-                          <option value="NUMBERS_ONLY">Numbers Only</option>
-                          <option value="MOST_SECURED">Most Secured</option>
-                        </select>
-                        <p className="text-xs text-gray-400 mt-0.5">For auto-gen only</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Passphrase Length
-                        </label>
-                        <input
-                          type="number"
-                          min="8"
-                          max="63"
-                          value={dpskPoolSettings.passphrase_length}
-                          onChange={(e) => setDpskPoolSettings({
-                            ...dpskPoolSettings,
-                            passphrase_length: parseInt(e.target.value) || 12
-                          })}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        />
-                        <p className="text-xs text-gray-400 mt-0.5">For auto-gen only</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Max Devices
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="999"
-                          value={dpskPoolSettings.max_devices_per_passphrase}
-                          onChange={(e) => setDpskPoolSettings({
-                            ...dpskPoolSettings,
-                            max_devices_per_passphrase: parseInt(e.target.value) || 0
-                          })}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        />
-                        <p className="text-xs text-gray-400 mt-0.5">0 = unlimited</p>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">
-                          Expiration (days)
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="3650"
-                          value={dpskPoolSettings.expiration_days || ''}
-                          onChange={(e) => setDpskPoolSettings({
-                            ...dpskPoolSettings,
-                            expiration_days: e.target.value ? parseInt(e.target.value) : null
-                          })}
-                          placeholder="No expiry"
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        />
-                        <p className="text-xs text-gray-400 mt-0.5">Empty = none</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-orange-700 bg-orange-100 p-2 rounded">
-                    <strong>Note:</strong> One DPSK pool serves all per-unit SSIDs. Passphrases from the <code className="bg-orange-200 px-1 rounded">ssid_password</code> column
-                    are added to this shared pool. Leave password empty to auto-generate.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* AP Group Naming (Prefix + Postfix) */}
@@ -1362,10 +1215,224 @@ function PerUnitSSID() {
         <V2PlanConfirmModal
           jobId={v2JobId}
           isOpen={showV2PlanModal}
-          workflowName={dpskMode ? 'per_unit_dpsk' : 'per_unit_psk'}
+          workflowName="per_unit_psk"
           onClose={() => setShowV2PlanModal(false)}
           onConfirm={handleV2Confirm}
         />
+      )}
+
+      {/* Populate from Existing SSIDs Modal */}
+      {showPopulateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 text-white px-6 py-4 flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Populate from Existing SSIDs</h3>
+              <button
+                onClick={() => {
+                  setShowPopulateModal(false);
+                  setPopulateResults(null);
+                  setPopulateError("");
+                }}
+                className="text-white hover:text-gray-200 text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1">
+              <p className="text-sm text-gray-600 mb-4">
+                Scan this venue's SSIDs and auto-build CSV data. Passwords cannot be retrieved from the API and will be left blank.
+              </p>
+
+              {/* Pattern Inputs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    SSID Pattern (glob)
+                  </label>
+                  <input
+                    type="text"
+                    value={ssidPattern}
+                    onChange={(e) => setSsidPattern(e.target.value)}
+                    placeholder="e.g. Unit-*-WiFi or *"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Use * as wildcard. Examples: <code className="bg-gray-100 px-1 rounded">Unit-*</code>, <code className="bg-gray-100 px-1 rounded">*-WiFi</code>, <code className="bg-gray-100 px-1 rounded">*</code> (all)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unit Number Regex
+                  </label>
+                  <input
+                    type="text"
+                    value={unitRegex}
+                    onChange={(e) => setUnitRegex(e.target.value)}
+                    placeholder="e.g. (\\d+)"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-mono"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Regex with capture group for unit number. Examples: <code className="bg-gray-100 px-1 rounded">(.+)@</code> for "10-203@Site", <code className="bg-gray-100 px-1 rounded">Unit-(\d+)</code>, <code className="bg-gray-100 px-1 rounded">(\d+)</code>
+                  </p>
+                </div>
+              </div>
+
+              {/* Match Against */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Extract unit number from:
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="matchAgainst"
+                      value="ssid_name"
+                      checked={matchAgainst === 'ssid_name'}
+                      onChange={() => setMatchAgainst('ssid_name')}
+                      className="text-indigo-600"
+                    />
+                    <span className="text-sm">SSID Name</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="matchAgainst"
+                      value="ap_group_name"
+                      checked={matchAgainst === 'ap_group_name'}
+                      onChange={() => setMatchAgainst('ap_group_name')}
+                      className="text-indigo-600"
+                    />
+                    <span className="text-sm">AP Group Name</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Fetch Button */}
+              <div className="mb-4">
+                <button
+                  onClick={handlePopulateFetch}
+                  disabled={populateLoading || !ssidPattern}
+                  className={`px-4 py-2 rounded text-sm font-medium ${
+                    populateLoading || !ssidPattern
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                >
+                  {populateLoading ? "Scanning..." : "Fetch SSIDs"}
+                </button>
+              </div>
+
+              {/* Error */}
+              {populateError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                  {populateError}
+                </div>
+              )}
+
+              {/* Results */}
+              {populateResults && (
+                <div>
+                  {/* Summary */}
+                  <div className="mb-3 p-3 bg-indigo-50 border border-indigo-200 rounded text-sm">
+                    <span className="font-medium">Scanned {populateResults.total_ssids_scanned} SSIDs</span>
+                    {' '}&mdash;{' '}
+                    <span className="text-indigo-700 font-semibold">{populateResults.total_matched} matched</span>
+                    {' '}({populateResults.matches?.length || 0} units)
+                  </div>
+
+                  {/* Warnings */}
+                  {populateResults.warnings?.length > 0 && (
+                    <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded">
+                      <p className="text-sm font-medium text-amber-800 mb-1">Warnings:</p>
+                      <ul className="text-sm text-amber-700 list-disc list-inside">
+                        {populateResults.warnings.map((w: string, i: number) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Matches Table */}
+                  {populateResults.matches?.length > 0 && (
+                    <div className="border border-gray-200 rounded overflow-hidden">
+                      <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-100 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">Unit</th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">SSID Name</th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">Security</th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">VLAN</th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">APs</th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">AP Group</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {populateResults.matches.map((match: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 font-mono font-medium">{match.unit_number}</td>
+                                <td className="px-3 py-2">{match.ssid_name}</td>
+                                <td className="px-3 py-2">
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                    {match.security_type}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 font-mono">{match.default_vlan}</td>
+                                <td className="px-3 py-2">
+                                  {match.aps.length > 0 ? (
+                                    <span title={match.aps.map((a: any) => a.name).join(', ')}>
+                                      {match.aps.length} AP{match.aps.length !== 1 ? 's' : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400 italic">none</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-xs text-gray-600">{match.ap_group_name}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {populateResults.matches?.length === 0 && (
+                    <div className="text-center py-6 text-gray-500">
+                      <p>No matching SSIDs found. Try adjusting your pattern or regex.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t">
+              <button
+                onClick={() => {
+                  setShowPopulateModal(false);
+                  setPopulateResults(null);
+                  setPopulateError("");
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm font-medium"
+              >
+                Cancel
+              </button>
+              {populateResults?.matches?.length > 0 && (
+                <button
+                  onClick={handlePopulateConfirm}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-medium"
+                >
+                  Use {populateResults.matches.length} Units ({populateResults.matches.reduce((acc: number, m: any) => acc + Math.max(m.aps.length, 1), 0)} rows)
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Audit Modal */}

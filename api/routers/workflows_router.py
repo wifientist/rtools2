@@ -112,15 +112,58 @@ class CancelJobResponse(BaseModel):
 
 # ==================== Helper Functions ====================
 
-def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
-    """Transform a V2 workflow job into the JobStatusResponse format."""
-    v2_progress = job.get_progress()
+def _derive_phase_status(
+    phase_stats: dict, total_units: int, is_per_unit: bool
+) -> str:
+    """Derive aggregate phase status from pre-computed phase_stats.
 
-    # Compute aggregate phase statuses (works for both global and per-unit phases)
-    phase_statuses = {
-        defn.id: job.get_phase_aggregate_status(defn.id)
-        for defn in job.phase_definitions
-    }
+    Avoids re-iterating all units per phase (O(units*phases) -> O(phases)).
+    """
+    if not is_per_unit:
+        # Global phase - status is directly in phase_stats
+        return phase_stats.get("status", "PENDING")
+
+    completed = phase_stats.get("completed", 0)
+    running = phase_stats.get("running", 0)
+    failed = phase_stats.get("failed", 0)
+
+    if completed == total_units:
+        return "COMPLETED"
+    elif running > 0:
+        return "RUNNING"
+    elif failed > 0 and completed + failed == total_units:
+        return "FAILED"
+    elif completed > 0:
+        return "RUNNING"  # Some completed, some pending
+    else:
+        return "PENDING"
+
+
+def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
+    """Transform a V2 workflow job into the JobStatusResponse format.
+
+    Optimized: derives phase statuses from get_progress() phase_stats
+    instead of calling get_phase_aggregate_status() per phase (which
+    re-iterates all units for each phase).
+    """
+    v2_progress = job.get_progress()
+    phase_stats = v2_progress.get("phase_stats", {})
+    total_units = v2_progress.get("total_units", 0)
+
+    # Derive phase statuses from phase_stats (no extra unit iteration)
+    # Check global_phase_status for SKIPPED overrides (per-unit phases
+    # that were skip_if'd still show 261/261 "completed" in unit counters,
+    # but the global SKIPPED status takes precedence)
+    phase_statuses = {}
+    for defn in job.phase_definitions:
+        global_status = job.global_phase_status.get(defn.id)
+        if global_status == PhaseStatus.SKIPPED:
+            phase_statuses[defn.id] = "SKIPPED"
+        else:
+            stats = phase_stats.get(defn.id, {})
+            phase_statuses[defn.id] = _derive_phase_status(
+                stats, total_units, defn.per_unit
+            )
 
     progress = {
         "total_tasks": v2_progress.get("total_work", 0),
@@ -130,32 +173,29 @@ def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
         "percent": v2_progress.get("percent", 0),
         "total_phases": v2_progress.get("total_phases", 0),
         "completed_phases": sum(
-            1 for s in phase_statuses.values()
-            if s == PhaseStatus.COMPLETED
+            1 for s in phase_statuses.values() if s == "COMPLETED"
         ),
         "failed_phases": sum(
-            1 for s in phase_statuses.values()
-            if s == PhaseStatus.FAILED
+            1 for s in phase_statuses.values() if s == "FAILED"
         ),
         "running_phases": sum(
-            1 for s in phase_statuses.values()
-            if s == PhaseStatus.RUNNING
+            1 for s in phase_statuses.values() if s == "RUNNING"
         ),
         # Include per-phase stats for frontend display
-        "phase_stats": v2_progress.get("phase_stats", {}),
+        "phase_stats": phase_stats,
     }
 
-    # Build phases array from phase definitions + aggregate status
+    # Build phases array from phase definitions + derived status
     current_phase = None
     phases = []
     for defn in job.phase_definitions:
-        status = phase_statuses.get(defn.id, PhaseStatus.PENDING)
+        status = phase_statuses.get(defn.id, "PENDING")
         result = job.global_phase_results.get(defn.id)
 
         phase_data = {
             "id": defn.id,
             "name": defn.name,
-            "status": status.value if isinstance(status, PhaseStatus) else status,
+            "status": status,
             "started_at": None,
             "completed_at": None,
             "tasks": [],
@@ -164,7 +204,7 @@ def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
             phase_data["result"] = result
         phases.append(phase_data)
 
-        if status == PhaseStatus.RUNNING and current_phase is None:
+        if status == "RUNNING" and current_phase is None:
             current_phase = {
                 "id": defn.id,
                 "name": defn.name,

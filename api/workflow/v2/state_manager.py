@@ -101,6 +101,21 @@ class RedisStateManagerV2:
 
         return job
 
+    async def get_job_metadata(self, job_id: str) -> Optional[WorkflowJobV2]:
+        """Retrieve job metadata WITHOUT reloading units from Redis.
+
+        Used by the brain's main loop where in-memory units are already
+        up-to-date (via update_unit_phase_status sync). Only refreshes
+        global_phase_status, global_phase_results, created_resources, errors.
+        """
+        key = f"{PREFIX}:jobs:{job_id}"
+        data = await self.redis.get(key)
+        if not data:
+            return None
+
+        job_dict = json.loads(data)
+        return WorkflowJobV2(**job_dict)
+
     async def delete_job(self, job_id: str) -> bool:
         """Delete job and all related data."""
         # Find all related keys
@@ -208,12 +223,22 @@ class RedisStateManagerV2:
         return True
 
     async def get_all_units(self, job_id: str) -> Dict[str, UnitMapping]:
-        """Get all units for a job."""
-        units = {}
+        """Get all units for a job using batch MGET for performance."""
+        # Collect all unit keys via SCAN
+        keys = []
         async for key in self.redis.scan_iter(
             match=f"{PREFIX}:jobs:{job_id}:units:*"
         ):
-            data = await self.redis.get(key)
+            keys.append(key)
+
+        if not keys:
+            return {}
+
+        # Batch fetch all values in one MGET call instead of N individual GETs
+        values = await self.redis.mget(keys)
+
+        units = {}
+        for data in values:
             if data:
                 unit = UnitMapping(**json.loads(data))
                 units[unit.unit_id] = unit
@@ -275,14 +300,11 @@ class RedisStateManagerV2:
                 setattr(unit.resolved, field_name, value)
                 await self.save_unit(job_id, unit)
                 return True
-            elif field_name in ('extra',):
-                # Merge into extra dict
-                unit.resolved.extra.update(value if isinstance(value, dict) else {field_name: value})
-                await self.save_unit(job_id, unit)
-                return True
 
-            logger.warning(f"Unknown resolved field: {field_name}")
-            return False
+            # Store unknown fields in the extensible extra dict
+            unit.resolved.extra[field_name] = value
+            await self.save_unit(job_id, unit)
+            return True
 
     # =========================================================================
     # Global Phase Status (for per_unit=False phases)

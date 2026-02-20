@@ -34,6 +34,8 @@ class CreateAPGroupPhase(PhaseExecutor):
         unit_id: str
         unit_number: str
         ap_group_name: str
+        # Pre-resolved by validation (skips individual R1 query)
+        ap_group_id: Optional[str] = None
 
     class Outputs(BaseModel):
         ap_group_id: str
@@ -41,6 +43,19 @@ class CreateAPGroupPhase(PhaseExecutor):
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Find or create an AP Group for this unit."""
+
+        # Fast path: validation already found this AP group.
+        # Skip the individual R1 query (saves 1 API call per unit).
+        if inputs.ap_group_id:
+            logger.info(
+                f"[{inputs.unit_number}] AP Group '{inputs.ap_group_name}' "
+                f"pre-resolved from validation (ID: {inputs.ap_group_id})"
+            )
+            await self.emit(
+                f"[{inputs.unit_number}] '{inputs.ap_group_name}' already exists"
+            )
+            return self.Outputs(ap_group_id=inputs.ap_group_id, reused=True)
+
         await self.emit(
             f"[{inputs.unit_number}] Checking AP Group '{inputs.ap_group_name}'..."
         )

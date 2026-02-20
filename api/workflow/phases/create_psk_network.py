@@ -11,6 +11,7 @@ Supports two distinct name concepts:
 
 import logging
 from pydantic import BaseModel
+from typing import Optional
 
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
@@ -37,6 +38,8 @@ class CreatePSKNetworkPhase(PhaseExecutor):
         security_type: str = "WPA3"
         default_vlan: str = "1"
         name_conflict_resolution: str = "keep"
+        # Pre-resolved by validation (skips individual R1 query)
+        network_id: Optional[str] = None
 
     class Outputs(BaseModel):
         network_id: str
@@ -44,6 +47,19 @@ class CreatePSKNetworkPhase(PhaseExecutor):
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Find or create a PSK WiFi network for this unit."""
+
+        # Fast path: validation already found this network.
+        # Skip the individual R1 query (saves 1-2 API calls per unit).
+        if inputs.network_id:
+            logger.info(
+                f"[{inputs.unit_number}] Network '{inputs.network_name}' "
+                f"pre-resolved from validation (ID: {inputs.network_id})"
+            )
+            await self.emit(
+                f"[{inputs.unit_number}] '{inputs.ssid_name}' already exists"
+            )
+            return self.Outputs(network_id=inputs.network_id, reused=True)
+
         await self.emit(
             f"[{inputs.unit_number}] Checking SSID '{inputs.ssid_name}'..."
         )

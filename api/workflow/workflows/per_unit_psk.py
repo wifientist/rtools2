@@ -7,17 +7,20 @@ Flow:
 1. validate (global) → Pre-check resources, build unit mappings, pause for confirmation
 2. create_ap_group (per-unit) → Create/reuse AP Group per unit
 3. create_psk_network (per-unit) → Create/reuse WiFi network per unit
-4. activate_network (per-unit) → Activate SSID on venue (must happen after network exists)
-5. assign_aps (per-unit) → Assign APs to group + 3-step SSID→AP Group config
+4. activate_network (per-unit) → Activate SSID on venue, then move to specific AP Group
+5. assign_aps (per-unit) → Assign APs to the AP Group
 6. configure_lan_ports (per-unit, optional) → Configure LAN port VLANs on APs
 
 Dependency graph (parallel execution):
-    validate ─┬─> create_ap_group ──────────┬─> assign_aps ──> configure_lan_ports
-              └─> create_psk_network ──> activate_network ─┘
+    validate ─┬─> create_ap_group ──┬─> activate_network
+              │                      └─> assign_aps ──> configure_lan_ports
+              └─> create_psk_network ─┘
 
-Units are processed independently: Unit 1's assign_aps can start as soon as
-Unit 1's create_ap_group and activate_network are done, even if Unit 50
-is still on create_psk_network.
+activate_network and assign_aps run in PARALLEL after both
+create_ap_group and create_psk_network complete.
+
+activate_network uses POST /networkActivations for single-step direct
+activation to specific AP groups (no venue-wide intermediate state).
 """
 
 from workflow.workflows.definition import Workflow, Phase
@@ -54,8 +57,7 @@ PerUnitPSKWorkflow = Workflow(
             id="create_ap_group",
             name="Create AP Groups",
             description=(
-                "Create or reuse AP Group for each unit. "
-                "Must happen BEFORE SSIDs to avoid 15-SSID limit."
+                "Create or reuse AP Group for each unit."
             ),
             executor="workflow.phases.create_ap_group.CreateAPGroupPhase",
             depends_on=["validate"],
@@ -85,36 +87,50 @@ PerUnitPSKWorkflow = Workflow(
             api_calls_per_unit=1,
         ),
 
-        # Phase 3: Activate Networks on Venue (per-unit, depends on network creation)
+        # Phase 3: Activate Networks directly on specific AP Group
+        # Depends on BOTH create_ap_group (need ap_group_id) and create_psk_network
+        # (need network_id). Runs in PARALLEL with assign_aps.
+        #
+        # Uses POST /networkActivations for single-step direct activation
+        # to a specific AP group (no venue-wide intermediate state).
+        # No activation_slot needed — never goes venue-wide.
+        #
+        # Old 3-step phase (activate_network.py) kept as fallback.
         Phase(
             id="activate_network",
             name="Activate Networks",
-            description="Activate SSIDs at venue level (required before AP Group config).",
-            executor="workflow.phases.activate_network.ActivateNetworkPhase",
-            depends_on=["create_psk_network"],
-            per_unit=True,
-            critical=True,
-            inputs=["unit_id", "unit_number", "network_id", "ssid_name"],
-            outputs=["activated", "already_active"],
-            api_calls_per_unit=1,
-        ),
-
-        # Phase 4: Assign APs & Configure SSID (per-unit, depends on AP group + activation)
-        Phase(
-            id="assign_aps",
-            name="Assign APs & Configure SSID",
             description=(
-                "Find APs, assign to AP Groups, and configure SSID "
-                "for specific AP Groups (3-step R1 process)."
+                "Activate SSIDs directly on specific AP Groups via "
+                "POST /networkActivations (single-step)."
             ),
-            executor="workflow.phases.assign_aps.AssignAPsPhase",
-            depends_on=["create_ap_group", "activate_network"],
+            executor="workflow.phases.activate_network_direct.ActivateNetworkDirectPhase",
+            depends_on=["create_ap_group", "create_psk_network"],
             per_unit=True,
             critical=True,
             inputs=["unit_id", "unit_number", "network_id", "ap_group_id",
                     "ap_group_name", "ssid_name", "default_vlan",
+                    "already_activated", "is_venue_wide"],
+            outputs=["activated", "already_active"],
+            api_calls_per_unit=1,
+        ),
+
+        # Phase 4: Assign APs to AP Group (per-unit, runs in PARALLEL with activate_network)
+        # Only depends on create_ap_group (need ap_group_id).
+        # AP assignment is independent of SSID activation.
+        Phase(
+            id="assign_aps",
+            name="Assign APs to AP Groups",
+            description=(
+                "Find APs and assign them to the unit's AP Group."
+            ),
+            executor="workflow.phases.assign_aps.AssignAPsPhase",
+            depends_on=["create_ap_group"],
+            per_unit=True,
+            critical=True,
+            inputs=["unit_id", "unit_number", "ap_group_id",
+                    "ap_group_name", "ssid_name",
                     "ap_serial_numbers", "all_venue_aps"],
-            outputs=["aps_matched", "aps_assigned", "ssid_configured"],
+            outputs=["aps_matched", "aps_assigned"],
             api_calls_per_unit="dynamic",
         ),
 

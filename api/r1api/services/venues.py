@@ -792,6 +792,7 @@ class VenueService:
         venue_id: str,
         wifi_network_id: str,
         dpsk_service_id: str = None,
+        radio_types: list = None,
         wait_for_completion: bool = True
     ):
         """
@@ -800,11 +801,17 @@ class VenueService:
         This MUST be done before activating the SSID on AP Groups.
         This makes the SSID available to the venue.
 
+        The payload must match what the R1 UI sends — an empty payload ({})
+        causes the entity store to not fully register the venue association,
+        leading to GET /wifiNetworks/{id} returning stale venueApGroups
+        while POST /wifiNetworks/query returns correct data.
+
         Args:
             tenant_id: Tenant/EC ID
             venue_id: Venue ID
             wifi_network_id: WiFi Network (SSID) ID to activate
             dpsk_service_id: For DPSK networks, the DPSK pool/service ID (required for DPSK activation)
+            radio_types: Radio types for the SSID (default: ["2.4-GHz", "5-GHz"])
             wait_for_completion: If True, wait for async task to complete (default: True)
 
         Returns:
@@ -812,8 +819,19 @@ class VenueService:
         """
         logger.info(f"[activate_ssid_on_venue] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}")
 
-        # Build payload - empty for PSK, include dpskServiceProfileId for DPSK
-        payload = {}
+        if radio_types is None:
+            radio_types = ["2.4-GHz", "5-GHz"]
+
+        # Full payload matching the R1 UI — required for proper entity store registration
+        payload = {
+            "apGroups": [],
+            "scheduler": {"type": "ALWAYS_ON"},
+            "isAllApGroups": True,
+            "allApGroupsRadio": "Both",
+            "allApGroupsRadioTypes": radio_types,
+            "venueId": venue_id,
+            "networkId": wifi_network_id,
+        }
         if dpsk_service_id:
             payload["dpskServiceProfileId"] = dpsk_service_id
             logger.info(f"[activate_ssid_on_venue] DPSK mode - including dpskServiceProfileId: {dpsk_service_id}")
@@ -848,6 +866,100 @@ class VenueService:
             return result
         else:
             logger.error(f"[activate_ssid_on_venue] FAILED: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def activate_network_direct(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        network_id: str,
+        ap_group_id: str,
+        ap_group_name: str = "",
+        radio_types: list = None,
+        vlan_id: int = None,
+        wait_for_completion: bool = True,
+    ):
+        """
+        Activate a WiFi network directly on a specific AP Group in one step.
+
+        Uses the deprecated but still-active POST /networkActivations endpoint.
+        This bypasses the 3-step process (venue-wide activate → move to AP group)
+        by going directly to the target AP group with isAllApGroups=false.
+
+        Eliminates:
+        - The "All AP Groups" intermediate state
+        - The 15-SSID venue-wide slot pressure
+        - The orphan cascade when step 2 of the old process fails
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID
+            network_id: WiFi Network ID to activate
+            ap_group_id: Target AP Group ID
+            ap_group_name: AP Group name (included in payload for R1)
+            radio_types: Radio types (default: ["2.4-GHz", "5-GHz"])
+            vlan_id: VLAN ID for the AP group binding (default: None, omitted)
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Response dict with requestId for activity tracking
+        """
+        logger.info(
+            f"[activate_network_direct] POST /networkActivations "
+            f"network={network_id[:12]}... → apGroup={ap_group_id[:12]}..."
+        )
+
+        if radio_types is None:
+            radio_types = ["2.4-GHz", "5-GHz"]
+
+        ap_group_entry = {
+            "apGroupId": ap_group_id,
+            "apGroupName": ap_group_name,
+            "radio": "Both",
+            "radioTypes": radio_types,
+        }
+        if vlan_id is not None:
+            ap_group_entry["vlanId"] = vlan_id
+
+        payload = {
+            "venueId": venue_id,
+            "networkId": network_id,
+            "isAllApGroups": False,
+            "apGroups": [ap_group_entry],
+            "scheduler": {"type": "ALWAYS_ON"},
+        }
+
+        if self.client.ec_type == "MSP":
+            response = self.client.post(
+                "/networkActivations",
+                payload=payload,
+                override_tenant_id=tenant_id,
+            )
+        else:
+            response = self.client.post(
+                "/networkActivations",
+                payload=payload,
+            )
+
+        logger.info(f"[activate_network_direct] Response: {response.status_code}")
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+            request_id = result.get('requestId') if response.status_code == 202 else None
+            logger.info(f"[activate_network_direct] Success (requestId: {request_id})")
+
+            if response.status_code == 202 and wait_for_completion:
+                if request_id:
+                    logger.info(f"[activate_network_direct] Waiting for task {request_id}...")
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+                    logger.info(f"[activate_network_direct] Task complete")
+
+            return result
+        else:
+            logger.error(
+                f"[activate_network_direct] FAILED: {response.status_code} - {response.text}"
+            )
             response.raise_for_status()
             return None
 
@@ -988,6 +1100,156 @@ class VenueService:
             response.raise_for_status()
             return None
 
+    async def activate_ssid_for_ap_group_direct(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        wifi_network_id: str,
+        ap_group_id: str,
+        radio_types: list = None,
+        vlan_id: int = None,
+        wait_for_completion: bool = True,
+    ):
+        """
+        Activate SSID directly on a specific AP Group, bypassing venue-wide broadcast.
+
+        Instead of the traditional approach:
+            activate_ssid_on_venue (isAllApGroups=true) → wait → 3-step move to group
+        This goes directly to the specific AP group, avoiding the 15-SSID-per-AP-Group
+        limit since the SSID never broadcasts to all groups.
+
+        Steps:
+        1. PUT /venues/{venueId}/wifiNetworks/{networkId}/settings
+           - Set isAllApGroups=false with target AP group and scheduler
+        2. PUT /venues/{venueId}/wifiNetworks/{networkId}/apGroups/{apGroupId}
+           - Bind the AP group to the network
+        3. PUT /venues/{venueId}/wifiNetworks/{networkId}/apGroups/{apGroupId}/settings
+           - Configure radio settings for the group
+        """
+        import asyncio
+
+        if radio_types is None:
+            radio_types = ["2.4-GHz", "5-GHz"]
+
+        logger.info(f"[activate_direct] Starting direct AP group activation:")
+        logger.info(f"  venue_id={venue_id}")
+        logger.info(f"  wifi_network_id={wifi_network_id}")
+        logger.info(f"  ap_group_id={ap_group_id}")
+        logger.info(f"  radio_types={radio_types}")
+        logger.info(f"  vlan_id={vlan_id}")
+
+        # =====================================================================
+        # 3-step process: each step MUST complete before the next fires.
+        # =====================================================================
+
+        # Step 1: Set network settings with isAllApGroups=false and target group
+        logger.info(f"[Step 1/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings")
+        ap_group_entry = {
+            "apGroupId": ap_group_id,
+            "radioTypes": radio_types,
+            "radio": "Both"
+        }
+        if vlan_id is not None:
+            ap_group_entry["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
+
+        settings_payload = {
+            "apGroups": [ap_group_entry],
+            "scheduler": {"type": "ALWAYS_ON"},
+            "isAllApGroups": False,
+            "allApGroupsRadio": "Both",
+            "allApGroupsRadioTypes": radio_types,
+            "venueId": venue_id,
+            "networkId": wifi_network_id,
+        }
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
+                payload=settings_payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
+                payload=settings_payload
+            )
+
+        if response.status_code not in [200, 201, 202]:
+            logger.error(f"[Step 1/3] FAILED: {response.status_code} - {response.text}")
+            response.raise_for_status()
+
+        result_1 = response.json() if response.content else {"status": "accepted"}
+        request_id_1 = result_1.get('requestId') if response.status_code == 202 else None
+
+        if request_id_1 and wait_for_completion:
+            logger.info(f"[Step 1/3] Waiting for task {request_id_1}...")
+            await self.client.await_task_completion(request_id_1, override_tenant_id=tenant_id)
+        logger.info(f"[Step 1/3] Complete")
+
+        # Step 2: Bind AP Group to the network (no payload)
+        logger.info(f"[Step 2/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}")
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}"
+            )
+
+        if response.status_code not in [200, 201, 202]:
+            logger.error(f"[Step 2/3] FAILED: {response.status_code} - {response.text}")
+            response.raise_for_status()
+
+        result_2 = response.json() if response.content else {"status": "accepted"}
+        request_id_2 = result_2.get('requestId') if response.status_code == 202 else None
+
+        if request_id_2 and wait_for_completion:
+            logger.info(f"[Step 2/3] Waiting for task {request_id_2}...")
+            await self.client.await_task_completion(request_id_2, override_tenant_id=tenant_id)
+        logger.info(f"[Step 2/3] Complete")
+
+        # Step 3: Configure AP Group settings (radio types, VLAN)
+        logger.info(f"[Step 3/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings")
+        ap_group_settings_payload = {
+            "apGroupId": ap_group_id,
+            "radioTypes": radio_types,
+            "radio": "Both"
+        }
+        if vlan_id is not None:
+            ap_group_settings_payload["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
+
+        if self.client.ec_type == "MSP":
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
+                payload=ap_group_settings_payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
+                payload=ap_group_settings_payload
+            )
+
+        if response.status_code not in [200, 201, 202]:
+            logger.error(f"[Step 3/3] FAILED: {response.status_code} - {response.text}")
+            response.raise_for_status()
+
+        result_3 = response.json() if response.content else {"status": "accepted"}
+        request_id_3 = result_3.get('requestId') if response.status_code == 202 else None
+
+        if request_id_3 and wait_for_completion:
+            logger.info(f"[Step 3/3] Waiting for task {request_id_3}...")
+            await self.client.await_task_completion(request_id_3, override_tenant_id=tenant_id)
+        logger.info(f"[Step 3/3] Complete")
+
+        logger.info(
+            f"[activate_direct] All 3 steps complete for "
+            f"SSID {wifi_network_id} -> AP Group {ap_group_id}"
+        )
+        return result_3
+
     async def configure_ssid_for_specific_ap_group(
         self,
         tenant_id: str,
@@ -997,7 +1259,8 @@ class VenueService:
         radio_types: list = None,
         vlan_id: int = None,
         wait_for_completion: bool = True,
-        debug_delay: float = 0
+        debug_delay: float = 0,
+        wait_callback=None
     ):
         """
         Configure SSID to use a specific AP Group (not All AP Groups).
@@ -1016,6 +1279,9 @@ class VenueService:
             vlan_id: Optional VLAN ID override
             wait_for_completion: If True, wait for async task to complete (default: True)
             debug_delay: Seconds to wait between steps (for debugging)
+            wait_callback: Optional async callback(request_id) -> ActivityResult for
+                centralized activity tracking. When provided, uses bulk polling via
+                ActivityTracker instead of individual GET /activities/{id} polling.
 
         Returns:
             Response from API
@@ -1033,7 +1299,13 @@ class VenueService:
         logger.info(f"  radio_types={radio_types}")
         logger.info(f"  vlan_id={vlan_id}")
 
-        # Step 1: Update venue SSID settings to set isAllApGroups=false
+        # =====================================================================
+        # 3-step process: each step MUST complete before the next fires.
+        # R1 processes async tasks in parallel, so firing all 3 at once
+        # causes steps 2 and 3 to fail because step 1 hasn't finished yet.
+        # =====================================================================
+
+        # Step 1: Set isAllApGroups=false (moves SSID off venue-wide broadcast)
         logger.info(f"[Step 1/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings")
         settings_payload = {
             "dual5gEnabled": False,
@@ -1054,13 +1326,9 @@ class VenueService:
             "venueId": venue_id
         }
 
-        # Add VLAN if specified
         if vlan_id is not None:
             settings_payload["apGroups"][0]["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
-        logger.info(f"[Step 1/3] Payload: isAllApGroups={settings_payload['isAllApGroups']}, apGroups={len(settings_payload['apGroups'])}")
-
-        # Step 1: PUT settings
         if self.client.ec_type == "MSP":
             response = self.client.put(
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
@@ -1073,21 +1341,28 @@ class VenueService:
                 payload=settings_payload
             )
 
-        logger.info(f"[Step 1/3] Response: {response.status_code}")
         if response.status_code not in [200, 201, 202]:
             logger.error(f"[Step 1/3] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
-            return None
 
         result_1 = response.json() if response.content else {"status": "accepted"}
         request_id_1 = result_1.get('requestId') if response.status_code == 202 else None
-        logger.info(f"[Step 1/3] Success (requestId: {request_id_1})")
+
+        # Wait for step 1 to complete BEFORE firing step 2
+        if request_id_1:
+            logger.info(f"[Step 1/3] Waiting for task {request_id_1}...")
+            if wait_callback:
+                result = await wait_callback(request_id_1)
+                if not result.success:
+                    raise RuntimeError(f"Step 1/3 failed: {result.error}")
+            else:
+                await self.client.await_task_completion(request_id_1, override_tenant_id=tenant_id)
+        logger.info(f"[Step 1/3] Complete")
 
         if debug_delay > 0:
-            logger.info(f"[DEBUG] Waiting {debug_delay}s before Step 2...")
             await asyncio.sleep(debug_delay)
 
-        # Step 2: Activate AP Group on the SSID (fire immediately, don't wait)
+        # Step 2: Activate AP Group on the SSID
         logger.info(f"[Step 2/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}")
         if self.client.ec_type == "MSP":
             response = self.client.put(
@@ -1099,21 +1374,28 @@ class VenueService:
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}"
             )
 
-        logger.info(f"[Step 2/3] Response: {response.status_code}")
         if response.status_code not in [200, 201, 202]:
             logger.error(f"[Step 2/3] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
-            return None
 
         result_2 = response.json() if response.content else {"status": "accepted"}
         request_id_2 = result_2.get('requestId') if response.status_code == 202 else None
-        logger.info(f"[Step 2/3] Success (requestId: {request_id_2})")
+
+        # Wait for step 2 to complete BEFORE firing step 3
+        if request_id_2:
+            logger.info(f"[Step 2/3] Waiting for task {request_id_2}...")
+            if wait_callback:
+                result = await wait_callback(request_id_2)
+                if not result.success:
+                    raise RuntimeError(f"Step 2/3 failed: {result.error}")
+            else:
+                await self.client.await_task_completion(request_id_2, override_tenant_id=tenant_id)
+        logger.info(f"[Step 2/3] Complete")
 
         if debug_delay > 0:
-            logger.info(f"[DEBUG] Waiting {debug_delay}s before Step 3...")
             await asyncio.sleep(debug_delay)
 
-        # Step 3: Configure AP Group settings on the SSID (fire immediately, don't wait)
+        # Step 3: Configure AP Group settings (radio types, VLAN)
         logger.info(f"[Step 3/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings")
         ap_group_settings_payload = {
             "apGroupId": ap_group_id,
@@ -1122,8 +1404,6 @@ class VenueService:
         }
         if vlan_id is not None:
             ap_group_settings_payload["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
-
-        logger.info(f"[Step 3/3] Payload: {ap_group_settings_payload}")
 
         if self.client.ec_type == "MSP":
             response = self.client.put(
@@ -1137,30 +1417,23 @@ class VenueService:
                 payload=ap_group_settings_payload
             )
 
-        logger.info(f"[Step 3/3] Response: {response.status_code}")
         if response.status_code not in [200, 201, 202]:
             logger.error(f"[Step 3/3] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
-            return None
 
         result_3 = response.json() if response.content else {"status": "accepted"}
         request_id_3 = result_3.get('requestId') if response.status_code == 202 else None
-        logger.info(f"[Step 3/3] Success (requestId: {request_id_3})")
 
-        # Now wait for all 3 to complete (in order)
-        if wait_for_completion:
-            if request_id_1:
-                logger.info(f"[Waiting] Step 1 task {request_id_1}...")
-                await self.client.await_task_completion(request_id_1, override_tenant_id=tenant_id)
-                logger.info(f"[Waiting] Step 1 complete")
-            if request_id_2:
-                logger.info(f"[Waiting] Step 2 task {request_id_2}...")
-                await self.client.await_task_completion(request_id_2, override_tenant_id=tenant_id)
-                logger.info(f"[Waiting] Step 2 complete")
-            if request_id_3:
-                logger.info(f"[Waiting] Step 3 task {request_id_3}...")
+        # Wait for step 3 to complete
+        if request_id_3:
+            logger.info(f"[Step 3/3] Waiting for task {request_id_3}...")
+            if wait_callback:
+                result = await wait_callback(request_id_3)
+                if not result.success:
+                    raise RuntimeError(f"Step 3/3 failed: {result.error}")
+            else:
                 await self.client.await_task_completion(request_id_3, override_tenant_id=tenant_id)
-                logger.info(f"[Waiting] Step 3 complete")
+        logger.info(f"[Step 3/3] Complete")
 
         logger.info(f"[configure_ssid_for_ap_group] All 3 steps complete for SSID {wifi_network_id} -> AP Group {ap_group_id}")
         return result_3

@@ -38,7 +38,8 @@ class NetworksService:
             "isOweMaster",
             "owePairNetworkId",
             "dsaeOnboardNetwork",
-            "venueApGroups"
+            "venueApGroups",
+            "securityProtocol",
             ]
 
         # Fetch first page to get totalCount
@@ -47,7 +48,7 @@ class NetworksService:
             'sortField': 'name',
             'sortOrder': 'ASC',
             'page': 1,
-            'pageSize': 100
+            'pageSize': 500
         }
 
         # Use override_tenant_id only for MSP accounts
@@ -86,19 +87,40 @@ class NetworksService:
 
     async def get_wifi_network_by_id(self, network_id: str, tenant_id: str = None):
         """
-        Get a specific WiFi network by ID
+        Get a specific WiFi network by ID via GET.
 
-        Args:
-            network_id: WiFi network ID
-            tenant_id: Tenant/EC ID (required for MSP)
-
-        Returns:
-            WiFi network details
+        NOTE: The GET endpoint does NOT return venueApGroups (venue association data).
+        If you need venue/AP group info, use query_wifi_network_by_id() instead.
         """
         if self.client.ec_type == "MSP" and tenant_id:
             return self.client.get(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id).json()
         else:
             return self.client.get(f"/wifiNetworks/{network_id}").json()
+
+    async def query_wifi_network_by_id(self, network_id: str, tenant_id: str = None):
+        """
+        Get a specific WiFi network by ID via POST /wifiNetworks/query.
+
+        Unlike get_wifi_network_by_id (GET), this returns venueApGroups
+        with full venue association data (isAllApGroups, apGroupIds, etc.).
+        """
+        body = {
+            'filters': {'id': [network_id]},
+            'fields': [
+                'id', 'name', 'ssid', 'vlan', 'nwSubType',
+                'venueApGroups', 'securityProtocol',
+            ],
+            'page': 1,
+            'pageSize': 1,
+        }
+        if self.client.ec_type == "MSP" and tenant_id:
+            resp = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id)
+        else:
+            resp = self.client.post("/wifiNetworks/query", payload=body)
+
+        data = resp.json() if resp.status_code == 200 else {}
+        networks = data.get('data', [])
+        return networks[0] if networks else {}
 
     async def deactivate_from_all_venues(
         self, network_id: str, tenant_id: str = None

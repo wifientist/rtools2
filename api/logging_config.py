@@ -96,6 +96,21 @@ def get_logging_config(log_level: str = "INFO") -> Dict[str, Any]:
                 "handlers": ["console"],
                 "propagate": False,
             },
+            "urllib3": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "boto3": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
+            "botocore": {
+                "level": "WARNING",
+                "handlers": ["console"],
+                "propagate": False,
+            },
         },
         # Root logger - catches everything not caught by specific loggers
         "root": {

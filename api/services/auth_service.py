@@ -28,6 +28,8 @@ def generate_and_send_otp(email: str, db: Session = Depends(get_db)):
 
     send_otp_email_via_api(user.email, otp)
 
+    logger.info(f"OTP for {email}: {otp}")
+
 def verify_otp_and_login(email: str, otp_code: str, db: Session = Depends(get_db)):
 
     user = get_user_by_email(db, email)

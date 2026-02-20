@@ -40,7 +40,6 @@ from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.v2.activity_tracker import ActivityTracker
 
 if TYPE_CHECKING:
-    from workflow.phases.registry import get_phase_class
     from workflow.phases.phase_executor import PhaseContext, PhaseExecutor
     from workflow.workflows.definition import Workflow
 
@@ -54,15 +53,39 @@ SCHEDULE_INTERVAL = 0.25  # seconds
 # This semaphore ensures we don't exceed Redis connection pool capacity
 MAX_CONCURRENT_PHASE_TASKS = 20
 
-# Default activation slots for R1's 15-SSID-per-AP-Group limit
-# Controls how many SSIDs can be "in-flight" (activated but not yet assigned to specific AP Group)
-# Default 12 leaves buffer for existing venue-wide SSIDs
-DEFAULT_MAX_ACTIVATION_SLOTS = 12
+# R1's SSID-per-AP-Group limit and safety buffer
+# When an SSID is activated with isAllApGroups=True, it consumes a slot in EVERY AP Group.
+# We track the actual count of venue-wide SSIDs and block new activations when near the limit.
+# The live R1 reconciliation (every ~15s) self-corrects any counter drift, so a
+# minimal safety buffer of 1 is sufficient while maximizing throughput.
+SSID_LIMIT_PER_AP_GROUP = 15
+SSID_SAFETY_BUFFER = 1
+DEFAULT_VENUE_WIDE_LIMIT = SSID_LIMIT_PER_AP_GROUP - SSID_SAFETY_BUFFER  # 14
 
 # Phase execution timeout (seconds) - prevents indefinite hangs on stuck API calls
-# Most phases complete in <30s, but some (like passphrase creation) may take longer
-# Set high enough to allow legitimate slow operations but catch real hangs
-PHASE_EXECUTION_TIMEOUT = 300  # 5 minutes
+# The sequential 3-step SSID config can take 3+ minutes (3 steps × ~60s polling each)
+# plus AP assignment time. Set high enough to allow these legitimate slow operations.
+PHASE_EXECUTION_TIMEOUT = 600  # 10 minutes (per-unit phases)
+
+# Global phase timeout (seconds) - longer because global phases process many
+# resources sequentially (e.g., deleting 274 WiFi networks at 5 concurrent).
+# Per-resource: ~30-60s for deactivation + deletion + retry delays.
+# 274 networks / 5 concurrent × 60s ≈ 55 min. Set to 1 hour.
+GLOBAL_PHASE_EXECUTION_TIMEOUT = 3600  # 60 minutes
+
+# Max time a unit waits with NO slot releases before failing.
+# This is a STALE timeout, not an absolute deadline: each time a slot is
+# released (notify_all), all waiters reset their timer. The timeout only
+# fires when no progress is made for this duration, indicating R1 is stuck.
+# Must exceed PHASE_EXECUTION_TIMEOUT since each slot is held for a full
+# phase execution (up to 10 min for 3-step SSID config).
+ACTIVATION_SLOT_STALE_TIMEOUT = PHASE_EXECUTION_TIMEOUT + 60  # 11 minutes
+
+# Max times a failed unit can be requeued for retry. When a unit fails and its
+# SSID is orphaned on venue-wide, we deactivate the SSID to free the R1 slot
+# and re-add the unit to the back of the queue. Only allow 1 requeue to avoid
+# infinite retry loops for genuinely broken units.
+MAX_REQUEUE_ATTEMPTS = 1
 
 
 class WorkflowBrain:
@@ -89,10 +112,20 @@ class WorkflowBrain:
         self._last_progress_time: float = 0
         self._phase_semaphore: Optional[asyncio.Semaphore] = None
 
-        # Activation slot management for R1's 15-SSID-per-AP-Group limit
-        # Limits how many SSIDs can be "in-flight" (activated but not assigned to AP Group)
-        self._activation_semaphore: Optional[asyncio.Semaphore] = None
-        self._activation_slots: Set[str] = set()  # unit_ids holding activation slots
+        # Venue-wide SSID activation gating for R1's 15-SSID-per-AP-Group limit.
+        # Counter ONLY tracks our NEW activations (Scenario C units).
+        # Existing venue-wide SSIDs are accounted for in the limit, not the count.
+        # This prevents deadlocks when existing SSIDs can't be drained.
+        self._venue_wide_count: int = 0  # New activations currently in-flight
+        self._venue_wide_limit: int = DEFAULT_VENUE_WIDE_LIMIT  # Overridden at execution time
+        self._venue_wide_condition: Optional[asyncio.Condition] = None
+        self._activation_slots: Set[str] = set()  # unit_ids that did a NEW activation
+        # Last known R1 venue-wide count (updated every reconcile cycle)
+        self._last_r1_venue_wide: Optional[int] = None
+        # Count of units currently waiting for an activation slot
+        self._units_waiting_count: int = 0
+        # Track how many times each unit has been requeued after failure
+        self._requeue_counts: Dict[str, int] = {}
 
     # =========================================================================
     # Job Creation
@@ -130,12 +163,6 @@ class WorkflowBrain:
 
         # Merge options: workflow defaults < user options
         merged_options = {**(workflow.default_options or {}), **(options or {})}
-
-        # Ensure max_activation_slots is set from workflow if not overridden
-        if 'max_activation_slots' not in merged_options:
-            merged_options['max_activation_slots'] = getattr(
-                workflow, 'max_activation_slots', DEFAULT_MAX_ACTIVATION_SLOTS
-            )
 
         job = WorkflowJobV2(
             id=str(uuid.uuid4()),
@@ -205,8 +232,7 @@ class WorkflowBrain:
 
         try:
             # Execute validation phase
-            from workflow.phases.registry import get_phase_class
-            phase_class = get_phase_class(phase_id)
+            phase_class = self._resolve_phase_class(phase_id, validate_phase)
             context = self._build_context(job)
             executor = phase_class(context)
 
@@ -317,6 +343,7 @@ class WorkflowBrain:
         job.started_at = datetime.utcnow()
         await self.state.save_job(job)
         await self._publish_event(job.id, "workflow_started", {})
+        last_heartbeat = time.time()
 
         # Build dependency graph from all phases
         # (Phase 0 is already in global_phase_status, so it won't re-run)
@@ -326,27 +353,46 @@ class WorkflowBrain:
         # This prevents Redis connection pool exhaustion with large unit counts
         self._phase_semaphore = asyncio.Semaphore(MAX_CONCURRENT_PHASE_TASKS)
 
-        # Initialize activation slot semaphore for R1's 15-SSID limit
-        # Check if validation phase calculated a dynamic limit based on existing venue SSIDs
-        max_slots = job.options.get('max_activation_slots', DEFAULT_MAX_ACTIVATION_SLOTS)
-
-        # Override with validation result if available (more accurate, based on venue state)
-        validate_results = job.global_phase_results.get('validate_and_plan', {})
-        if 'max_activation_slots' in validate_results:
-            max_slots = validate_results['max_activation_slots']
-            venue_ssids = validate_results.get('venue_wide_ssid_count', 0)
-            logger.info(
-                f"Job {job.id}: Using calculated activation slot limit = {max_slots} "
-                f"(venue has {venue_ssids} existing venue-wide SSIDs)"
-            )
-        else:
-            logger.info(f"Job {job.id}: Using default activation slot limit = {max_slots}")
-
-        self._activation_semaphore = asyncio.Semaphore(max_slots)
+        # Initialize venue-wide SSID activation gating for R1's 15-SSID-per-AP-Group limit.
+        #
+        # Simple formula: limit = counter + available_new
+        #   available_new = max(0, 15 - actual_venue_wide - buffer)
+        #
+        # This directly uses R1's actual state. No baseline estimation needed.
+        # Counter tracks our NEW activations. Available is how many more R1 can take.
+        # As recovery units (already-venue-wide) complete 3-step config and free
+        # R1 capacity, available_new increases and the limit goes up.
+        validate_results = (
+            job.global_phase_results.get('validate_and_plan', {})
+            or job.global_phase_results.get('validate', {})
+        )
+        existing_venue_wide = validate_results.get('venue_wide_ssid_count', 0)
+        self._venue_wide_count = 0  # Only tracks OUR new activations
+        available_new = max(0, SSID_LIMIT_PER_AP_GROUP - existing_venue_wide - SSID_SAFETY_BUFFER)
+        self._venue_wide_limit = max(1, min(available_new, DEFAULT_VENUE_WIDE_LIMIT))
+        self._venue_wide_condition = asyncio.Condition()
         self._activation_slots = set()
+
+        logger.info(
+            f"Job {job.id}: [SSID-GATE] Initialized: "
+            f"venue_wide={existing_venue_wide}/{SSID_LIMIT_PER_AP_GROUP}, "
+            f"available_new={available_new}, limit={self._venue_wide_limit} "
+            f"(buffer={SSID_SAFETY_BUFFER})"
+        )
+
+        # Pre-flight: verify against ACTUAL R1 state.
+        # Validation data may be stale if user waited before confirming.
+        await self._reconcile_venue_wide_limit(job)
+
+        # Pre-complete phases whose outcomes are already determined by
+        # validation data (pre-resolved IDs, no APs, already activated).
+        # This immediately reflects in progress stats and avoids scheduling
+        # overhead for no-op phase executions.
+        await self._pre_complete_resolved_phases(job)
 
         # Track in-flight work
         in_flight: Dict[str, asyncio.Task] = {}  # "unit:phase" → task
+        last_reconcile = time.time()
 
         try:
             while not await self._is_workflow_complete(job, graph):
@@ -403,27 +449,103 @@ class WorkflowBrain:
                             await self._handle_phase_result(job, result, graph)
                         except Exception as e:
                             logger.error(f"Job {job.id}: Phase task error: {e}")
+                            # Task raised an exception instead of returning a
+                            # PhaseResult.  This can happen when:
+                            #   - Activation slot wait times out
+                            #   - Phase execution times out
+                            # Mark the unit/phase as failed so it doesn't stay RUNNING.
+                            parts = key.split(':')
+
+                            # Global phase failure — mark as FAILED so
+                            # downstream phases don't wait forever.
+                            if len(parts) == 2 and parts[0] == "global":
+                                global_phase_id = parts[1]
+                                error_msg = str(e)
+                                await self.state.update_global_phase_status(
+                                    job.id, global_phase_id, PhaseStatus.FAILED
+                                )
+                                job.global_phase_status[global_phase_id] = PhaseStatus.FAILED
+                                job.errors.append(
+                                    f"Phase '{global_phase_id}' failed: {error_msg}"
+                                )
+                                await self._publish_event(job.id, "phase_failed", {
+                                    "phase_id": global_phase_id,
+                                    "error": error_msg,
+                                })
+                                logger.error(
+                                    f"Job {job.id}: Global phase '{global_phase_id}' "
+                                    f"failed: {error_msg}"
+                                )
+
+                            # Per-unit phase failure
+                            elif len(parts) == 2 and parts[0] != "global":
+                                unit_id_err, phase_id_err = parts
+                                unit_err = job.units.get(unit_id_err)
+                                if unit_err and unit_err.status != UnitStatus.FAILED:
+                                    # Release leaked activation slot if the exception
+                                    # bypassed normal slot release (e.g. phase timeout)
+                                    if unit_id_err in self._activation_slots:
+                                        self._activation_slots.discard(unit_id_err)
+                                        async with self._venue_wide_condition:
+                                            self._venue_wide_count -= 1
+                                            self._venue_wide_condition.notify_all()
+
+                                    # Try deactivate-and-requeue before marking failed.
+                                    # Works for both new activations (slot just released
+                                    # above) and recovery units (no slot held).
+                                    requeued = await self._try_deactivate_and_requeue(
+                                        job, unit_id_err, phase_id_err, None
+                                    )
+                                    if requeued:
+                                        continue  # Unit reset; skip failure marking
+
+                                    error_msg = str(e)
+                                    await self.state.update_unit_phase_status(
+                                        job.id, unit_id_err, phase_id_err,
+                                        failed=True, error=error_msg
+                                    )
+                                    unit_err.status = UnitStatus.FAILED
+                                    await self.state.save_unit(job.id, unit_err)
+                                    await self._publish_event(job.id, "unit_completed", {
+                                        "unit_id": unit_id_err,
+                                        "unit_number": unit_err.unit_number,
+                                        "phases_completed": len(unit_err.completed_phases),
+                                        "phases_failed": len(unit_err.failed_phases) + 1,
+                                        "success": False,
+                                    })
 
                 for key in completed_keys:
                     del in_flight[key]
 
-                # Refresh job state from Redis (other workers may have updated)
-                refreshed = await self.state.get_job(job.id)
+                # Refresh global job metadata from Redis (other workers may
+                # have updated global_phase_status, created_resources, etc.)
+                # Uses get_job_metadata() to avoid reloading all 261+ units —
+                # in-memory units are already kept in sync by Fix 1 (each
+                # update_unit_phase_status call applies the result to job.units).
+                refreshed = await self.state.get_job_metadata(job.id)
                 if refreshed:
                     job.global_phase_status = refreshed.global_phase_status
                     job.global_phase_results = refreshed.global_phase_results
                     job.created_resources = refreshed.created_resources
                     job.errors = refreshed.errors
 
-                # Periodic diagnostic summary (every 30 seconds)
-                if int(time.time()) % 30 == 0 and in_flight:
+                # Periodic heartbeat (every 15 seconds) - ensures frontend
+                # sees progress even during long-running phases like 3-step config
+                now_ts = time.time()
+                if now_ts - last_heartbeat >= 15 and in_flight:
+                    last_heartbeat = now_ts
                     await self._log_diagnostic_summary(job, in_flight)
 
-                # Refresh unit states
-                for unit_id in job.units:
-                    refreshed_unit = await self.state.get_unit(job.id, unit_id)
-                    if refreshed_unit:
-                        job.units[unit_id] = refreshed_unit
+                # SSID gate reconciliation (every 30s when activate_network
+                # phases are in-flight — either new activations or recovery
+                # 3-step configs). Each call fetches all WiFi networks from
+                # R1 to count venue-wide SSIDs, so keep it infrequent.
+                has_activation_work = any(
+                    ':activate_network' in key for key in in_flight
+                )
+                if has_activation_work and now_ts - last_reconcile >= 30:
+                    last_reconcile = now_ts
+                    await self._reconcile_venue_wide_limit(job)
 
         except Exception as e:
             logger.error(f"Job {job.id}: Workflow execution error: {e}")
@@ -506,6 +628,93 @@ class WorkflowBrain:
             logger.warning(
                 f"Job {job.id} FAILURE SAMPLE: Phase '{phase_id}' error: {error[:200]}"
             )
+
+    # =========================================================================
+    # Pre-completion of Resolved Phases
+    # =========================================================================
+
+    async def _pre_complete_resolved_phases(self, job: WorkflowJobV2) -> None:
+        """
+        Pre-complete phases whose outcomes are already determined by validation.
+
+        After validation, many units already have resolved IDs (AP group exists,
+        network exists, already activated, no APs to assign). Instead of
+        scheduling these as real phase executions (261 units × 4 phases =
+        1000+ async tasks through the semaphore), mark them complete immediately.
+
+        This gives instant progress stats and frees the scheduling loop to
+        focus on phases that actually need R1 API calls.
+        """
+        pre_completed: Dict[str, int] = {}  # phase_id → count
+
+        for unit_id, unit in job.units.items():
+            phases_added = []
+
+            # create_ap_group: validation already found the AP group
+            if (
+                unit.resolved.ap_group_id
+                and "create_ap_group" not in unit.completed_phases
+            ):
+                unit.completed_phases.append("create_ap_group")
+                phases_added.append("create_ap_group")
+
+            # create_psk_network: validation already found the network
+            if (
+                unit.resolved.network_id
+                and "create_psk_network" not in unit.completed_phases
+            ):
+                unit.completed_phases.append("create_psk_network")
+                phases_added.append("create_psk_network")
+
+            # assign_aps: no APs to assign for this unit
+            if (
+                not unit.plan.ap_serial_numbers
+                and "assign_aps" not in unit.completed_phases
+            ):
+                unit.completed_phases.append("assign_aps")
+                phases_added.append("assign_aps")
+
+            # activate_network: already activated on a specific AP group
+            # (Fast Path A in activate_network.py — nothing to do at all)
+            # Note: is_venue_wide=True still needs the 3-step config, so skip those.
+            if (
+                unit.input_config.get("already_activated")
+                and not unit.input_config.get("is_venue_wide")
+                and "activate_network" not in unit.completed_phases
+            ):
+                unit.completed_phases.append("activate_network")
+                # Apply the outputs that activate_network would have produced
+                unit.resolved.activated = True
+                unit.resolved.already_active = True
+                phases_added.append("activate_network")
+
+            # configure_lan_ports: skipped when LAN port config is disabled
+            # (matches skip_if="not options.get('configure_lan_ports', False)")
+            if (
+                not job.options.get("configure_lan_ports", False)
+                and "configure_lan_ports" not in unit.completed_phases
+            ):
+                unit.completed_phases.append("configure_lan_ports")
+                phases_added.append("configure_lan_ports")
+
+            if phases_added:
+                await self.state.save_unit(job.id, unit)
+                for pid in phases_added:
+                    pre_completed[pid] = pre_completed.get(pid, 0) + 1
+
+        if pre_completed:
+            total = sum(pre_completed.values())
+            details = ", ".join(
+                f"{pid}={count}" for pid, count in sorted(pre_completed.items())
+            )
+            logger.info(
+                f"Job {job.id}: Pre-completed {total} phase executions "
+                f"from validation data ({details})"
+            )
+            # Single progress event so frontend updates immediately
+            await self._publish_event(job.id, "progress", {
+                "progress": job.get_progress(),
+            })
 
     # =========================================================================
     # Work Scheduling
@@ -618,20 +827,171 @@ class WorkflowBrain:
         Wraps _execute_phase_for_unit with semaphore to prevent
         Redis connection pool exhaustion.
 
-        Also handles activation slot management for R1's 15-SSID limit:
-        - Phases with activation_slot="acquire" get a slot before starting
-        - Phases with activation_slot="release" release the slot after completing
+        Also manages venue-wide SSID activation gating for R1's 15-SSID limit.
+        The counter ONLY tracks our NEW activations (Scenario C).
+        Existing SSIDs (Scenarios A & B) run freely without counter interaction.
+
+        - Scenario A (already on specific group): no counter interaction
+        - Scenario B (existing on All AP Groups): no counter interaction
+        - Scenario C (new SSID): acquire increments, release decrements
         """
         phase_def = job.get_phase_definition(phase_id)
         activation_slot = getattr(phase_def, 'activation_slot', None) if phase_def else None
 
-        # Acquire activation slot if this phase requires it
-        if activation_slot == "acquire" and unit_id not in self._activation_slots:
-            logger.debug(f"Job {job.id}: Unit {unit_id} acquiring activation slot for {phase_id}")
-            await self._activation_semaphore.acquire()
-            self._activation_slots.add(unit_id)
-            logger.debug(f"Job {job.id}: Unit {unit_id} acquired activation slot ({len(self._activation_slots)} held)")
+        # Three scenarios for activation slot handling:
+        # A) Already on specific AP group → skip entirely (pre-completed)
+        # B) Already on venue-wide (All AP Groups) → recovery path (3-step config
+        #    with concurrency control to prevent R1 overload)
+        # C) New SSID → acquire slot, wait for capacity, full activation
+        needs_slot = False
+        needs_recovery = False
+        if activation_slot in ("acquire", "acquire_release"):
+            unit = job.units.get(unit_id)
+            if unit and unit.input_config.get('already_activated', False):
+                if unit.input_config.get('is_venue_wide', False):
+                    # Scenario B: stuck on venue-wide, needs 3-step config
+                    needs_recovery = True
+                    logger.info(
+                        f"Job {job.id}: [SSID-GATE] {unit_id} RECOVERY "
+                        f"(venue-wide → specific AP group, {self._ssid_gate_status()})"
+                    )
+                else:
+                    # Scenario A: already on specific group, skip
+                    logger.debug(
+                        f"Job {job.id}: [SSID-GATE] {unit_id} SKIP "
+                        f"(already on specific AP group)"
+                    )
+            else:
+                needs_slot = True
 
+        # Scenario C: wait for capacity before activating a NEW SSID.
+        #
+        # Uses a STALE timeout: each wait_for() call has a fresh timeout.
+        # When a slot is released (notify_all), all waiters wake up — even if
+        # they don't get the slot, the system is making progress, so they
+        # loop back with a fresh timeout. The timeout only fires when NO
+        # slot is released for ACTIVATION_SLOT_STALE_TIMEOUT seconds,
+        # indicating R1 is genuinely stuck.
+        #
+        # This prevents the old cascade where all ~160 waiting units shared
+        # an absolute deadline and all timed out simultaneously.
+        if needs_slot and unit_id not in self._activation_slots:
+            wait_start = asyncio.get_event_loop().time()
+            self._units_waiting_count += 1
+            # Only log at INFO when slots are available (imminent acquire).
+            # When at capacity, use DEBUG to avoid flooding with 150+ identical lines.
+            at_capacity = self._venue_wide_count >= self._venue_wide_limit
+            log_fn = logger.debug if at_capacity else logger.info
+            log_fn(
+                f"Job {job.id}: [SSID-GATE] {unit_id} WAITING for slot "
+                f"({self._ssid_gate_status()}, queued={self._units_waiting_count})"
+            )
+            try:
+                async with self._venue_wide_condition:
+                    while self._venue_wide_count >= self._venue_wide_limit:
+                        try:
+                            await asyncio.wait_for(
+                                self._venue_wide_condition.wait(),
+                                timeout=ACTIVATION_SLOT_STALE_TIMEOUT,
+                            )
+                            # Notification received — a slot was released somewhere.
+                            # Loop back to re-check the condition with a fresh timeout.
+                        except asyncio.TimeoutError:
+                            elapsed = asyncio.get_event_loop().time() - wait_start
+                            raise RuntimeError(
+                                f"No activation slots released for "
+                                f"{ACTIVATION_SLOT_STALE_TIMEOUT}s "
+                                f"(waited {elapsed:.0f}s total, "
+                                f"{self._ssid_gate_status()}). "
+                                f"R1 activities may be stuck. "
+                                f"This unit will be retried on the next run."
+                            )
+                    self._venue_wide_count += 1
+                    self._activation_slots.add(unit_id)
+            except:
+                self._units_waiting_count -= 1
+                raise
+            self._units_waiting_count -= 1
+            elapsed = asyncio.get_event_loop().time() - wait_start
+            logger.info(
+                f"Job {job.id}: [SSID-GATE] {unit_id} ACQUIRED slot "
+                f"after {elapsed:.0f}s wait "
+                f"({self._ssid_gate_status()}, queued={self._units_waiting_count})"
+            )
+
+        # =====================================================================
+        # Recovery path: already-venue-wide SSIDs doing 3-step config.
+        # No extra concurrency limit — these REMOVE SSIDs from venue-wide,
+        # freeing R1 capacity. The only constraint is _phase_semaphore (20).
+        # When recovery completes, immediately recalculate the limit so
+        # new activations can start without waiting for the next reconcile.
+        # =====================================================================
+        if needs_recovery:
+            async with self._phase_semaphore:
+                try:
+                    result = await asyncio.wait_for(
+                        self._execute_phase_for_unit(job, unit_id, phase_id),
+                        timeout=PHASE_EXECUTION_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Job {job.id}: Phase {phase_id} timed out for {unit_id} "
+                        f"(recovery) after {PHASE_EXECUTION_TIMEOUT}s"
+                    )
+                    raise RuntimeError(
+                        f"Recovery 3-step config timed out after "
+                        f"{PHASE_EXECUTION_TIMEOUT}s"
+                    )
+
+            if result.success:
+                # 3-step config completed — SSID moved off venue-wide.
+                # Update limit immediately so new activations can start
+                # without waiting for the next 30s reconcile cycle.
+                if self._last_r1_venue_wide is not None and self._last_r1_venue_wide > 0:
+                    self._last_r1_venue_wide -= 1
+                available = max(
+                    0,
+                    SSID_LIMIT_PER_AP_GROUP
+                    - (self._last_r1_venue_wide or 0)
+                    - SSID_SAFETY_BUFFER,
+                )
+                async with self._venue_wide_condition:
+                    old_limit = self._venue_wide_limit
+                    self._venue_wide_limit = max(
+                        1,
+                        min(
+                            self._venue_wide_count + available,
+                            DEFAULT_VENUE_WIDE_LIMIT,
+                        ),
+                    )
+                    self._venue_wide_condition.notify_all()
+                logger.info(
+                    f"Job {job.id}: [SSID-GATE] {unit_id} RECOVERY COMPLETE "
+                    f"(limit {old_limit}→{self._venue_wide_limit}, "
+                    f"{self._ssid_gate_status()})"
+                )
+            else:
+                # Recovery 3-step config failed — SSID may still be on
+                # venue-wide, consuming an R1 slot for nothing.
+                # Try deactivate-and-requeue to free the slot and retry.
+                requeued = await self._try_deactivate_and_requeue(
+                    job, unit_id, phase_id, result
+                )
+                if requeued:
+                    return PhaseResult(
+                        success=True, phase_id=phase_id, unit_id=unit_id,
+                        outputs={"requeued": True},
+                    )
+                logger.warning(
+                    f"Job {job.id}: [SSID-GATE] {unit_id} RECOVERY FAILED "
+                    f"(SSID still on venue-wide, {self._ssid_gate_status()})"
+                )
+
+            return result
+
+        # =====================================================================
+        # Normal path: new SSID activations (Scenario C)
+        # =====================================================================
         try:
             async with self._phase_semaphore:
                 # Wrap execution in timeout to prevent indefinite hangs
@@ -649,11 +1009,85 @@ class WorkflowBrain:
                         f"Phase execution timed out after {PHASE_EXECUTION_TIMEOUT}s"
                     )
 
-            # Release activation slot if this phase completes the cycle
-            if activation_slot == "release" and unit_id in self._activation_slots:
+            # Phase failed: release the slot immediately to prevent leak.
+            #
+            # CRITICAL: _execute_phase_for_unit catches all exceptions internally
+            # and returns PhaseResult(success=False). This means the `except`
+            # handler below is NOT triggered — only raised exceptions reach it.
+            # Without this check, failed phases permanently leak their slot,
+            # eventually starving all remaining units of activation capacity.
+            if not result.success and unit_id in self._activation_slots:
                 self._activation_slots.discard(unit_id)
-                self._activation_semaphore.release()
-                logger.debug(f"Job {job.id}: Unit {unit_id} released activation slot ({len(self._activation_slots)} held)")
+                async with self._venue_wide_condition:
+                    self._venue_wide_count -= 1
+                    self._venue_wide_condition.notify_all()
+
+                # Deactivate-and-requeue: if this unit's SSID is orphaned on
+                # venue-wide (consuming one of the 15 R1 slots for nothing),
+                # deactivate it to free capacity, then requeue the unit for
+                # one more attempt.
+                requeued = await self._try_deactivate_and_requeue(
+                    job, unit_id, phase_id, result
+                )
+                if requeued:
+                    # Return a "requeued" result so _handle_phase_result doesn't
+                    # re-mark the unit as FAILED (it checks success=False + critical).
+                    return PhaseResult(
+                        success=True, phase_id=phase_id, unit_id=unit_id,
+                        outputs={"requeued": True},
+                    )
+
+                logger.info(
+                    f"Job {job.id}: [SSID-GATE] {unit_id} RELEASED (phase failed) "
+                    f"({self._ssid_gate_status()})"
+                )
+
+            # Early release: if activate_network discovered the SSID was already
+            # active (race between validate and execute), it didn't actually add
+            # a new venue-wide SSID, so undo the increment.
+            elif (
+                activation_slot in ("acquire", "acquire_release")
+                and unit_id in self._activation_slots
+                and result.outputs.get('already_active', False)
+            ):
+                self._activation_slots.discard(unit_id)
+                async with self._venue_wide_condition:
+                    self._venue_wide_count -= 1
+                    self._venue_wide_condition.notify_all()
+                logger.info(
+                    f"Job {job.id}: [SSID-GATE] {unit_id} RELEASED (already_active) "
+                    f"({self._ssid_gate_status()})"
+                )
+
+            # Self-releasing slot (acquire_release): phase does both venue-wide
+            # activation AND 3-step config, so release when the phase completes.
+            elif (
+                activation_slot == "acquire_release"
+                and unit_id in self._activation_slots
+                and result.success
+            ):
+                self._activation_slots.discard(unit_id)
+                async with self._venue_wide_condition:
+                    self._venue_wide_count -= 1
+                    self._venue_wide_condition.notify_all()
+                logger.info(
+                    f"Job {job.id}: [SSID-GATE] {unit_id} RELEASED (phase complete) "
+                    f"({self._ssid_gate_status()})"
+                )
+
+            # Release phase (assign_aps): 3-step config moved SSID to specific AP Group.
+            # Used by Cloudpath where activate and assign are separate phases.
+            if activation_slot == "release":
+                if unit_id in self._activation_slots:
+                    # Scenario C: new SSID completed 3-step, release the slot
+                    self._activation_slots.discard(unit_id)
+                    async with self._venue_wide_condition:
+                        self._venue_wide_count -= 1
+                        self._venue_wide_condition.notify_all()
+                    logger.info(
+                        f"Job {job.id}: [SSID-GATE] {unit_id} RELEASED (3-step done) "
+                        f"({self._ssid_gate_status()})"
+                    )
 
             return result
 
@@ -661,8 +1095,13 @@ class WorkflowBrain:
             # On failure, release the slot to prevent deadlock
             if unit_id in self._activation_slots:
                 self._activation_slots.discard(unit_id)
-                self._activation_semaphore.release()
-                logger.debug(f"Job {job.id}: Unit {unit_id} released activation slot on error")
+                async with self._venue_wide_condition:
+                    self._venue_wide_count -= 1
+                    self._venue_wide_condition.notify_all()
+                logger.info(
+                    f"Job {job.id}: [SSID-GATE] {unit_id} RELEASED (error) "
+                    f"({self._ssid_gate_status()})"
+                )
             raise
 
     async def _execute_global_phase_with_limit(
@@ -675,20 +1114,25 @@ class WorkflowBrain:
 
         Wraps _execute_global_phase with semaphore to prevent
         Redis connection pool exhaustion.
+
+        Uses GLOBAL_PHASE_EXECUTION_TIMEOUT (60 min) instead of
+        PHASE_EXECUTION_TIMEOUT (10 min) because global phases can
+        process hundreds of resources (e.g., deleting 274 WiFi networks).
         """
         async with self._phase_semaphore:
             try:
                 return await asyncio.wait_for(
                     self._execute_global_phase(job, phase_id),
-                    timeout=PHASE_EXECUTION_TIMEOUT
+                    timeout=GLOBAL_PHASE_EXECUTION_TIMEOUT
                 )
             except asyncio.TimeoutError:
                 logger.error(
                     f"Job {job.id}: Global phase {phase_id} timed out "
-                    f"after {PHASE_EXECUTION_TIMEOUT}s"
+                    f"after {GLOBAL_PHASE_EXECUTION_TIMEOUT}s"
                 )
                 raise RuntimeError(
-                    f"Phase execution timed out after {PHASE_EXECUTION_TIMEOUT}s"
+                    f"Phase execution timed out after "
+                    f"{GLOBAL_PHASE_EXECUTION_TIMEOUT}s"
                 )
 
     async def _execute_phase_for_unit(
@@ -720,9 +1164,11 @@ class WorkflowBrain:
                 if should_skip:
                     logger.debug(f"Skipping phase {phase_id} for {unit_id}")
                     # Mark as complete so we don't re-schedule
-                    await self.state.update_unit_phase_status(
+                    updated = await self.state.update_unit_phase_status(
                         job.id, unit_id, phase_id, completed=True
                     )
+                    if updated:
+                        job.units[unit_id] = updated
                     return PhaseResult(
                         success=True,
                         phase_id=phase_id,
@@ -741,15 +1187,17 @@ class WorkflowBrain:
                 "total_phases": len(per_unit_phases),
             })
 
-        # Update unit status
-        await self.state.update_unit_phase_status(job.id, unit_id, phase_id)
+        # Update unit status (starting phase)
+        updated = await self.state.update_unit_phase_status(job.id, unit_id, phase_id)
+        if updated:
+            job.units[unit_id] = updated
 
         start_time = datetime.utcnow()
 
         try:
-            # Get phase executor class
-            from workflow.phases.registry import get_phase_class
-            phase_class = get_phase_class(phase_id)
+            # Get phase executor class (uses executor path from definition,
+            # falls back to registry by phase_id)
+            phase_class = self._resolve_phase_class(phase_id, phase_def)
 
             # Build context
             context = self._build_context(job, unit_id=unit_id)
@@ -771,10 +1219,13 @@ class WorkflowBrain:
             output_dict = outputs.model_dump() if hasattr(outputs, 'model_dump') else outputs
             await self._apply_outputs(job.id, unit_id, output_dict)
 
-            # Mark phase complete for this unit
-            await self.state.update_unit_phase_status(
+            # Mark phase complete for this unit and sync in-memory
+            # so job.get_progress() returns accurate counts immediately
+            updated = await self.state.update_unit_phase_status(
                 job.id, unit_id, phase_id, completed=True
             )
+            if updated:
+                job.units[unit_id] = updated
 
             duration = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
@@ -799,9 +1250,11 @@ class WorkflowBrain:
                 f"Job {job.id}: Phase {phase_id} failed for {unit_id}: {error_msg}"
             )
 
-            await self.state.update_unit_phase_status(
+            updated = await self.state.update_unit_phase_status(
                 job.id, unit_id, phase_id, failed=True, error=error_msg
             )
+            if updated:
+                job.units[unit_id] = updated
 
             duration = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
@@ -835,8 +1288,7 @@ class WorkflowBrain:
         start_time = datetime.utcnow()
 
         try:
-            from workflow.phases.registry import get_phase_class
-            phase_class = get_phase_class(phase_id)
+            phase_class = self._resolve_phase_class(phase_id, phase_def)
             context = self._build_context(job)
             executor = phase_class(context)
 
@@ -1134,23 +1586,42 @@ class WorkflowBrain:
             job.status = JobStatus.COMPLETED
             return job
 
+        # Build set of required per-unit phases (excluding skipped)
+        required_phases: Set[str] = set()
+        for phase_def in job.phase_definitions:
+            if not phase_def.per_unit:
+                continue
+            if phase_def.skip_if:
+                try:
+                    if eval(phase_def.skip_if, {}, {"options": job.options}):
+                        continue
+                except Exception:
+                    pass
+            required_phases.add(phase_def.id)
+
+        # Finalize unit statuses.
+        # Units that completed all required phases are COMPLETED, even if
+        # their status is still RUNNING (state manager doesn't auto-transition).
+        # Units that are still RUNNING/PENDING with incomplete phases are FAILED
+        # (tasks raised exceptions or got cancelled).
+        for unit in job.units.values():
+            if unit.status in (UnitStatus.RUNNING, UnitStatus.PENDING):
+                completed = set(unit.completed_phases)
+                if required_phases.issubset(completed):
+                    unit.status = UnitStatus.COMPLETED
+                else:
+                    remaining = required_phases - completed
+                    logger.warning(
+                        f"Job {job.id}: Unit {unit.unit_id} still "
+                        f"{unit.status.value} with incomplete phases: "
+                        f"{remaining} — marking as FAILED"
+                    )
+                    unit.status = UnitStatus.FAILED
+
         failed_units = sum(
             1 for u in job.units.values()
             if u.status == UnitStatus.FAILED
         )
-        completed_units = sum(
-            1 for u in job.units.values()
-            if u.status == UnitStatus.COMPLETED
-        )
-
-        # Update unit statuses and emit unit_completed for remaining units
-        for unit in job.units.values():
-            if unit.status == UnitStatus.RUNNING:
-                # Shouldn't happen but handle gracefully
-                unit.status = UnitStatus.COMPLETED
-            # Note: unit_completed for FAILED units is already emitted in _handle_phase_result
-            # Here we only need to mark successful units that completed all phases
-            # (event emission happens async so we don't await here in sync method)
 
         if failed_units == 0:
             job.status = JobStatus.COMPLETED
@@ -1195,12 +1666,30 @@ class WorkflowBrain:
             if completed > 0 or failed > 0:
                 phase_counts[phase_def.id] = {'completed': completed, 'failed': failed}
 
-        # Log summary
+        # Build concise unit summary
+        unit_parts = []
+        for s in ('COMPLETED', 'RUNNING', 'PENDING', 'FAILED'):
+            if s in status_counts:
+                unit_parts.append(f"{status_counts[s]} {s.lower()}")
+        unit_summary = ", ".join(unit_parts) if unit_parts else str(status_counts)
+
+        # Activity status from tracker
+        activity_status = ""
+        if self.tracker and hasattr(self.tracker, '_last_poll_status'):
+            ps = self.tracker._last_poll_status
+            if ps:
+                activity_parts = [f"{c} {s.lower()}" for s, c in sorted(ps.items())]
+                activity_status = (
+                    f" | Activities: {', '.join(activity_parts)} "
+                    f"({self.tracker.pending_count} tracked)"
+                )
+
         logger.info(
             f"Job {job.id} DIAGNOSTIC: "
-            f"Units: {status_counts} | "
-            f"In-flight: {len(in_flight)} | "
-            f"Activation slots: {len(self._activation_slots)}/{self._activation_semaphore._value if self._activation_semaphore else 'N/A'}"
+            f"Units: {unit_summary} | "
+            f"SSID-GATE: {self._ssid_gate_status()}, "
+            f"queued={self._units_waiting_count}"
+            f"{activity_status}"
         )
 
         # Log phase breakdown for phases with failures
@@ -1212,7 +1701,7 @@ class WorkflowBrain:
                     f"{counts['failed']} failed"
                 )
 
-        # Log what's currently in-flight
+        # Log what's currently in-flight (at DEBUG to reduce noise)
         if in_flight:
             in_flight_summary = {}
             for key in in_flight:
@@ -1220,7 +1709,7 @@ class WorkflowBrain:
                 if len(parts) == 2:
                     phase = parts[1]
                     in_flight_summary[phase] = in_flight_summary.get(phase, 0) + 1
-            logger.info(
+            logger.debug(
                 f"Job {job.id} DIAGNOSTIC: In-flight by phase: {in_flight_summary}"
             )
 
@@ -1228,12 +1717,273 @@ class WorkflowBrain:
         # This ensures clients see progress during long-running operations
         await self._publish_event(job.id, "progress_update", {
             "progress": job.get_progress(),
-            "heartbeat": True,  # Flag to indicate this is a periodic heartbeat
         })
+
+    async def _reconcile_venue_wide_limit(self, job: WorkflowJobV2) -> None:
+        """
+        Query R1 for the ACTUAL venue-wide SSID count and adjust the limit.
+
+        Simple formula: limit = counter + available_new
+          available_new = max(0, 15 - actual_venue_wide - buffer)
+
+        This directly uses R1's actual state with no baseline estimation.
+        Our counter already tracks new activations that are included in
+        R1's actual_venue_wide. The available slots are how many more
+        R1 can accommodate before hitting the 15-SSID limit.
+
+        Also cross-references venue-wide SSIDs with job's managed network_ids
+        for definitive managed vs external classification (logging only).
+
+        Called periodically from the main scheduling loop (~every 30s).
+        """
+        if not self.r1_client or not self._venue_wide_condition:
+            return
+
+        try:
+            networks_response = await self.r1_client.networks.get_wifi_networks(
+                job.tenant_id
+            )
+            all_networks = (
+                networks_response.get('data', [])
+                if isinstance(networks_response, dict)
+                else networks_response
+            )
+
+            # Count SSIDs currently on "All AP Groups" for this venue
+            actual_venue_wide = 0
+            venue_wide_ssid_names: list = []
+            venue_wide_network_ids: set = set()
+            for network in all_networks:
+                for vag in network.get('venueApGroups', []):
+                    if vag.get('venueId') == job.venue_id and vag.get('isAllApGroups', False):
+                        actual_venue_wide += 1
+                        venue_wide_ssid_names.append(
+                            network.get('ssid', network.get('name', '?'))
+                        )
+                        venue_wide_network_ids.add(network.get('id'))
+                        break
+
+            # Store last known R1 count for status display
+            self._last_r1_venue_wide = actual_venue_wide
+
+            # Definitive managed/external split by cross-referencing
+            # with our job's network IDs
+            managed_network_ids = {
+                unit.resolved.network_id
+                for unit in job.units.values()
+                if unit.resolved.network_id
+            }
+            managed_vw = len(venue_wide_network_ids & managed_network_ids)
+            external_vw = actual_venue_wide - managed_vw
+
+            # Identify failed units with SSIDs orphaned on venue-wide
+            failed_orphans = 0
+            for unit in job.units.values():
+                if (
+                    unit.status == UnitStatus.FAILED
+                    and unit.resolved.network_id
+                    and unit.resolved.network_id in venue_wide_network_ids
+                ):
+                    failed_orphans += 1
+
+            # Simple, correct limit formula:
+            # available_new = how many more venue-wide SSIDs R1 can take
+            # limit = counter (already in R1) + available_new
+            available_new = max(
+                0,
+                SSID_LIMIT_PER_AP_GROUP - actual_venue_wide - SSID_SAFETY_BUFFER,
+            )
+            new_limit = max(
+                1,
+                min(
+                    self._venue_wide_count + available_new,
+                    DEFAULT_VENUE_WIDE_LIMIT,
+                ),
+            )
+
+            old_limit = self._venue_wide_limit
+            async with self._venue_wide_condition:
+                self._venue_wide_limit = new_limit
+                if new_limit > old_limit:
+                    self._venue_wide_condition.notify_all()
+
+            orphan_note = f", orphaned={failed_orphans}" if failed_orphans else ""
+            limit_change = (
+                f"limit {old_limit}→{new_limit}"
+                if new_limit != old_limit
+                else f"limit={new_limit}"
+            )
+            logger.info(
+                f"Job {job.id}: [SSID-GATE] RECONCILE: "
+                f"R1 venue-wide={actual_venue_wide}/{SSID_LIMIT_PER_AP_GROUP} "
+                f"(managed={managed_vw}, external={external_vw}{orphan_note}), "
+                f"{limit_change}, "
+                f"in-flight={self._venue_wide_count}, "
+                f"available_new={available_new} | "
+                f"SSIDs on All AP Groups: {venue_wide_ssid_names}"
+            )
+
+            if failed_orphans > 0:
+                # Count how many orphans have already exhausted their requeue attempts
+                permanently_failed = sum(
+                    1 for unit in job.units.values()
+                    if (
+                        unit.status == UnitStatus.FAILED
+                        and unit.resolved.network_id
+                        and unit.resolved.network_id in venue_wide_network_ids
+                        and self._requeue_counts.get(unit.unit_id, 0) >= MAX_REQUEUE_ATTEMPTS
+                    )
+                )
+                pending_requeue = failed_orphans - permanently_failed
+                if pending_requeue > 0:
+                    logger.warning(
+                        f"Job {job.id}: [SSID-GATE] {failed_orphans} failed units "
+                        f"have SSIDs stuck on venue-wide (consuming R1 capacity). "
+                        f"{pending_requeue} will be deactivated and requeued on failure."
+                    )
+                elif permanently_failed > 0:
+                    logger.warning(
+                        f"Job {job.id}: [SSID-GATE] {failed_orphans} failed units "
+                        f"have SSIDs stuck on venue-wide (consuming R1 capacity). "
+                        f"All have exhausted requeue attempts."
+                    )
+
+        except Exception as e:
+            # Non-fatal: just log and continue with current limit
+            logger.warning(f"Job {job.id}: [SSID-GATE] RECONCILE failed: {e}")
 
     # =========================================================================
     # Helpers
     # =========================================================================
+
+    def _ssid_gate_status(self) -> str:
+        """Format SSID gate status for log messages.
+
+        Shows our slot count, the limit, the last known actual R1
+        venue-wide count, and available new slots.
+        """
+        r1 = self._last_r1_venue_wide if self._last_r1_venue_wide is not None else "?"
+        available = max(
+            0,
+            SSID_LIMIT_PER_AP_GROUP
+            - (self._last_r1_venue_wide or 0)
+            - SSID_SAFETY_BUFFER,
+        ) if self._last_r1_venue_wide is not None else "?"
+        return (
+            f"slots={self._venue_wide_count}/{self._venue_wide_limit}, "
+            f"R1_vw={r1}/{SSID_LIMIT_PER_AP_GROUP}, "
+            f"avail={available}"
+        )
+
+    async def _try_deactivate_and_requeue(
+        self,
+        job: WorkflowJobV2,
+        unit_id: str,
+        phase_id: str,
+        result,
+    ) -> bool:
+        """
+        After a phase failure, check if the unit's SSID is orphaned on venue-wide.
+        If so, deactivate it from R1 to free the slot, then reset the unit to
+        PENDING so the main loop re-schedules it.
+
+        Returns True if the unit was requeued, False otherwise.
+        """
+        # Guard: only requeue once
+        if self._requeue_counts.get(unit_id, 0) >= MAX_REQUEUE_ATTEMPTS:
+            return False
+
+        # Guard: need R1 client and venue/tenant info
+        if not self.r1_client:
+            return False
+
+        unit = job.units.get(unit_id)
+        if not unit or not unit.resolved.network_id:
+            return False
+
+        network_id = unit.resolved.network_id
+
+        # Attempt deactivation directly without verifying venue-wide status.
+        # The individual GET /wifiNetworks/{id} can return stale data that
+        # disagrees with the bulk query (which correctly shows the SSID on
+        # All AP Groups). The DELETE is idempotent — if the SSID isn't on
+        # the venue, it returns 404 which deactivate_ssid_from_venue handles.
+        try:
+            ssid_name = unit.resolved.ssid_name or unit_id
+            logger.info(
+                f"Job {job.id}: [SSID-GATE] {unit_id} DEACTIVATING orphaned SSID "
+                f"'{ssid_name}' from venue to free R1 slot "
+                f"(attempt {self._requeue_counts.get(unit_id, 0) + 1}/{MAX_REQUEUE_ATTEMPTS})"
+            )
+
+            await asyncio.wait_for(
+                self.r1_client.venues.deactivate_ssid_from_venue(
+                    tenant_id=job.tenant_id,
+                    venue_id=job.venue_id,
+                    wifi_network_id=network_id,
+                    wait_for_completion=True,
+                ),
+                timeout=120,  # 2 min max for deactivation
+            )
+
+            logger.info(
+                f"Job {job.id}: [SSID-GATE] {unit_id} DEACTIVATED — "
+                f"resetting unit for retry ({self._ssid_gate_status()})"
+            )
+
+            # Reset the unit to PENDING so _find_ready_work picks it up again.
+            # Clear the stale validation flags — the SSID is no longer on the
+            # venue, so it needs a fresh Scenario C activation (not recovery).
+            unit.status = UnitStatus.PENDING
+            unit.current_phase = None
+            if phase_id in unit.failed_phases:
+                unit.failed_phases.remove(phase_id)
+            if phase_id in unit.phase_errors:
+                del unit.phase_errors[phase_id]
+            unit.input_config.pop('already_activated', None)
+            unit.input_config.pop('is_venue_wide', None)
+            await self.state.save_unit(job.id, unit)
+
+            # Track the requeue
+            self._requeue_counts[unit_id] = self._requeue_counts.get(unit_id, 0) + 1
+
+            # Update R1 venue-wide estimate since we just removed one
+            if self._last_r1_venue_wide is not None and self._last_r1_venue_wide > 0:
+                self._last_r1_venue_wide -= 1
+
+            # Recalculate limit to reflect freed capacity
+            available = max(
+                0,
+                SSID_LIMIT_PER_AP_GROUP
+                - (self._last_r1_venue_wide or 0)
+                - SSID_SAFETY_BUFFER,
+            )
+            async with self._venue_wide_condition:
+                old_limit = self._venue_wide_limit
+                self._venue_wide_limit = max(
+                    1,
+                    min(
+                        self._venue_wide_count + available,
+                        DEFAULT_VENUE_WIDE_LIMIT,
+                    ),
+                )
+                self._venue_wide_condition.notify_all()
+
+            logger.info(
+                f"Job {job.id}: [SSID-GATE] {unit_id} REQUEUED for retry "
+                f"(limit {old_limit}→{self._venue_wide_limit}, "
+                f"{self._ssid_gate_status()})"
+            )
+            return True
+
+        except Exception as e:
+            # Deactivation failed — fall through to normal failure handling.
+            # The orphan stays, but we're no worse off than before.
+            logger.warning(
+                f"Job {job.id}: [SSID-GATE] {unit_id} deactivate-and-requeue "
+                f"failed: {e} — falling back to normal failure"
+            )
+            return False
 
     def _aggregate_unit_outputs(self, job: WorkflowJobV2) -> Dict[str, Any]:
         """
@@ -1302,6 +2052,36 @@ class WorkflowBrain:
             options=job.options,
             unit_id=unit_id,
         )
+
+    def _resolve_phase_class(self, phase_id: str, phase_def=None):
+        """
+        Resolve phase executor class from definition or registry.
+
+        Uses the executor path from PhaseDefinitionV2 (e.g.,
+        "workflow.phases.activate_network_direct.ActivateNetworkDirectPhase")
+        as the authoritative source. Falls back to registry lookup by phase ID
+        only if the executor path is missing or fails to import.
+
+        This ensures the workflow definition controls which class runs,
+        not the import-order-dependent registry.
+        """
+        import importlib
+
+        # Try executor path from phase definition (authoritative)
+        if phase_def and phase_def.executor:
+            try:
+                module_path, class_name = phase_def.executor.rsplit('.', 1)
+                module = importlib.import_module(module_path)
+                return getattr(module, class_name)
+            except (ImportError, AttributeError, ValueError) as e:
+                logger.warning(
+                    f"Failed to import executor '{phase_def.executor}': {e}, "
+                    f"falling back to registry for '{phase_id}'"
+                )
+
+        # Fallback to registry
+        from workflow.phases.registry import get_phase_class
+        return get_phase_class(phase_id)
 
     async def _publish_event(
         self,

@@ -36,6 +36,9 @@ SECURITY_TYPE_MAP = {
     "WEP": WlanSecurity.WEP,
 }
 
+# Reverse mapping (API values -> user-friendly names)
+REVERSE_SECURITY_TYPE_MAP = {v: k for k, v in SECURITY_TYPE_MAP.items()}
+
 
 # VLAN ID Constraints
 class VlanConstraints:

@@ -1,4 +1,6 @@
 import logging
+import os
+import json
 import requests
 import time
 import asyncio
@@ -111,8 +113,8 @@ class R1Client:
 
     def _request(self, method, path, payload=None, params=None, override_tenant_id=None):
         """General request wrapper."""
-        #self._ensure_token()
         url = f"https://{self.host}{path}"
+        verbose = os.environ.get('R1_VERBOSE', '').lower() in ('1', 'true', 'yes')
 
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -121,18 +123,12 @@ class R1Client:
         if override_tenant_id:
             headers["x-rks-tenantid"] = override_tenant_id
 
-        logger.debug(f"R1Client Request: client_id={self.client_id}, tenant_id={self.tenant_id}, host={self.host}{path}")
-        #print("Preparing _request:")
-        #print(f"Method: {method.upper()}")
-        #print(f"URL: {url}")
-        # if payload is None:
-        #     payload = {}
-        # if params is None:
-        #     params = {}
-        #print("Payload, Params:")
-        # print(headers)
-        #print(payload)
-        #print(params)
+        if verbose:
+            logger.info(f">>> {method.upper()} {path}")
+            if payload:
+                logger.info(f">>> PAYLOAD: {json.dumps(payload, indent=2)[:2000]}")
+            if params:
+                logger.info(f">>> PARAMS: {params}")
 
         response = self.session.request(
             method,
@@ -143,7 +139,12 @@ class R1Client:
             verify=True
         )
 
-        logger.debug(f"{method.upper()} {url} --> {response.status_code}")
+        if verbose:
+            body = response.text[:3000] if response.text else '(empty)'
+            logger.info(f"<<< {response.status_code} {path}\n{body}")
+        else:
+            logger.debug(f"{method.upper()} {url} --> {response.status_code}")
+
         if not response.ok:
             logger.warning(f"Request error: {response.status_code} - {response.text[:500]}")
 
@@ -477,7 +478,7 @@ class R1Client:
             },
             "pageSize": min(len(activity_ids), 500),  # R1 max page size
             "page": 1,
-            "sortField": "createdAt",
+            "sortField": "startDatetime",
             "sortOrder": "DESC",
         }
 

@@ -303,6 +303,7 @@ CloudpathImportWorkflow = Workflow(
             skip_if="options.get('ssid_mode', 'none') == 'none'",
             inputs=[
                 "unit_id", "unit_number", "network_id", "ssid_name",
+                "already_activated", "is_venue_wide",
             ],
             outputs=["activated", "already_active"],
             api_calls_per_unit=1,
@@ -333,7 +334,7 @@ CloudpathImportWorkflow = Workflow(
             inputs=[
                 "unit_id", "unit_number", "network_id", "ap_group_id",
                 "ap_group_name", "ssid_name", "default_vlan",
-                "ap_serial_numbers", "all_venue_aps",
+                "ap_serial_numbers", "all_venue_aps", "is_venue_wide",
             ],
             outputs=["aps_matched", "aps_assigned", "ssid_configured"],
             api_calls_per_unit="dynamic",

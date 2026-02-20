@@ -12,6 +12,8 @@ Uses the workflow engine for background execution with real-time progress tracki
 """
 
 import asyncio
+import fnmatch
+import re
 import uuid
 import logging
 from datetime import datetime
@@ -72,27 +74,15 @@ class ModelPortConfigs(BaseModel):
     )
 
 
-class DpskPoolSettings(BaseModel):
-    """DPSK pool configuration settings"""
-    passphrase_length: int = Field(default=12, description="Length for auto-generated passphrases (not used when CSV provides passphrase)")
-    passphrase_format: str = Field(default="KEYBOARD_FRIENDLY", description="Format: NUMBERS_ONLY, KEYBOARD_FRIENDLY, or MOST_SECURED")
-    max_devices_per_passphrase: int = Field(default=0, description="Max devices per passphrase (0 = unlimited)")
-    expiration_days: Optional[int] = Field(default=None, description="Passphrase expiration in days (None = no expiration)")
-
-
 class UnitConfig(BaseModel):
-    """Configuration for a single unit (or DPSK passphrase row in DPSK mode)"""
+    """Configuration for a single unit"""
     unit_number: str = Field(..., description="Unit number (e.g., '101', '102')")
     ap_identifiers: List[str] = Field(default_factory=list, description="List of AP serial numbers or names in this unit")
     ssid_name: str = Field(..., description="SSID broadcast name for this unit (what clients see)")
     network_name: Optional[str] = Field(default=None, description="Internal network name in R1 (defaults to ssid_name if not provided)")
-    ssid_password: Optional[str] = Field(default=None, description="Password for PSK mode (required), or passphrase for DPSK mode (optional - can be in CSV)")
-    security_type: str = Field(default="WPA3", description="Security type: WPA2, WPA3, WPA2/WPA3, or DPSK")
+    ssid_password: Optional[str] = Field(default=None, description="Password for PSK mode (required)")
+    security_type: str = Field(default="WPA3", description="Security type: WPA2, WPA3, or WPA2/WPA3")
     default_vlan: str = Field(default="1", description="Default VLAN ID for this SSID (e.g., '1', '10', '100')")
-    # DPSK-specific optional fields (used when security_type is DPSK)
-    username: Optional[str] = Field(default=None, description="Identity/passphrase username (DPSK mode)")
-    email: Optional[str] = Field(default=None, description="User email for passphrase (DPSK mode)")
-    description: Optional[str] = Field(default=None, description="Description for passphrase (DPSK mode)")
 
 
 class PerUnitSSIDRequest(BaseModel):
@@ -108,24 +98,7 @@ class PerUnitSSIDRequest(BaseModel):
         default='overwrite',
         description="When SSID exists but network name differs: 'keep' (use existing R1 name) or 'overwrite' (update to ruckus.tools name)"
     )
-    # DPSK Mode options - single shared pool for entire venue
-    dpsk_mode: bool = Field(
-        default=False,
-        description="Enable DPSK mode - creates one shared Identity Group and DPSK Pool for all unit SSIDs"
-    )
-    identity_group_name: str = Field(
-        default="",
-        description="Name for the shared identity group (DPSK mode). Required if dpsk_mode=True."
-    )
-    dpsk_pool_name: str = Field(
-        default="",
-        description="Name for the shared DPSK pool (DPSK mode). Required if dpsk_mode=True."
-    )
-    dpsk_pool_settings: DpskPoolSettings = Field(
-        default_factory=DpskPoolSettings,
-        description="DPSK pool settings (DPSK mode only)"
-    )
-    # Phase 5: LAN port configuration for APs with configurable ports
+    # LAN port configuration for APs with configurable ports
     configure_lan_ports: bool = Field(default=False, description="Configure LAN port VLANs on APs with configurable LAN ports")
     model_port_configs: ModelPortConfigs = Field(
         default_factory=ModelPortConfigs,
@@ -716,3 +689,271 @@ async def get_port_config_metadata(
             "lan5_uplink": [m for m, p in MODEL_UPLINK_PORTS.items() if p == "LAN5"],
         }
     }
+
+
+# ==================== Populate from Existing SSIDs ====================
+
+class PopulateRequest(BaseModel):
+    """Request to populate CSV from existing venue SSIDs"""
+    controller_id: int = Field(..., description="RuckusONE controller ID")
+    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
+    venue_id: str = Field(..., description="Venue ID to scan")
+    ssid_pattern: str = Field(..., description="Glob pattern to match SSID broadcast names (e.g., 'Unit-*-WiFi')")
+    unit_regex: str = Field(..., description="Regex with capture group to extract unit number (e.g., 'Unit-(\\d+)')")
+    match_against: str = Field(default="ssid_name", description="Apply unit_regex to 'ssid_name' or 'ap_group_name'")
+
+
+class PopulateMatchAP(BaseModel):
+    name: str
+    serial: str
+
+
+class PopulateMatch(BaseModel):
+    unit_number: str
+    ssid_name: str
+    security_type: str
+    default_vlan: str
+    aps: List[PopulateMatchAP]
+    ap_group_name: str
+
+
+class PopulateResponse(BaseModel):
+    matches: List[PopulateMatch]
+    warnings: List[str]
+    total_ssids_scanned: int
+    total_matched: int
+
+
+@router.post("/populate", response_model=PopulateResponse)
+async def populate_from_existing(
+    request: PopulateRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Scan a venue's existing SSIDs and build CSV data for the per-unit SSID tool.
+
+    Matches SSIDs by glob pattern, extracts unit numbers via regex capture group,
+    and returns structured data including AP assignments, security type, and VLANs.
+
+    Note: SSID passwords cannot be read from the API and will not be included.
+    """
+    from r1api.constants import REVERSE_SECURITY_TYPE_MAP
+
+    logger.info(
+        f"Populate request - controller: {request.controller_id}, "
+        f"venue: {request.venue_id}, pattern: {request.ssid_pattern}"
+    )
+
+    # Validate controller access
+    controller = validate_controller_access(request.controller_id, current_user, db)
+
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller must be RuckusONE, got {controller.controller_type}"
+        )
+
+    tenant_id = request.tenant_id or controller.r1_tenant_id
+    if controller.controller_subtype == "MSP" and not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+
+    # Validate regex
+    try:
+        unit_pattern = re.compile(request.unit_regex)
+    except re.error as e:
+        raise HTTPException(status_code=400, detail=f"Invalid unit_regex: {e}")
+
+    r1_client = create_r1_client_from_controller(controller.id, db)
+
+    try:
+        # 1. Fetch all WiFi networks
+        networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+        all_networks = networks_response.get('data', []) if isinstance(networks_response, dict) else networks_response
+
+        # 2. Fetch venue APs first (needed for isAllApGroups resolution)
+        aps_response = await r1_client.venues.get_aps_by_tenant_venue(tenant_id, request.venue_id)
+        all_aps = aps_response.get('data', []) if isinstance(aps_response, dict) else aps_response
+
+        # Build AP group ID -> list of APs and group names
+        apgroup_aps = {}  # group_id -> [{name, serial}]
+        apgroup_names = {}  # group_id -> group_name
+        for ap in all_aps:
+            group_id = ap.get('apGroupId')
+            if not group_id:
+                continue
+            if group_id not in apgroup_aps:
+                apgroup_aps[group_id] = []
+                apgroup_names[group_id] = ap.get('apGroupName', group_id)
+            apgroup_aps[group_id].append({
+                'name': ap.get('name') or ap.get('serialNumber', ''),
+                'serial': ap.get('serialNumber', ''),
+            })
+
+        all_venue_group_ids = list(apgroup_aps.keys())
+
+        # 3. Filter by SSID name pattern, then enrich with venue activation info
+        matched_networks = []
+        for network in all_networks:
+            ssid_name = network.get('ssid', '')
+            if not fnmatch.fnmatch(ssid_name, request.ssid_pattern):
+                continue
+
+            base_vlan = network.get('vlan')
+            ap_group_ids = []
+            is_all_groups = False
+            effective_vlan = base_vlan
+            activated_on_venue = False
+
+            # Check if activated on the selected venue (enriches with AP group/VLAN info)
+            for vag in network.get('venueApGroups', []):
+                if vag.get('venueId') != request.venue_id:
+                    continue
+
+                activated_on_venue = True
+                is_all_groups = vag.get('isAllApGroups', False)
+                ap_group_ids = vag.get('apGroupIds', [])
+
+                if is_all_groups:
+                    ap_group_ids = all_venue_group_ids
+
+                vlan_override = vag.get('vlanId')
+                effective_vlan = vlan_override if vlan_override is not None else base_vlan
+                break
+
+            matched_networks.append({
+                'network': network,
+                'ap_group_ids': ap_group_ids,
+                'effective_vlan': effective_vlan,
+                'is_all_groups': is_all_groups,
+                'activated_on_venue': activated_on_venue,
+            })
+
+        logger.info(f"Pattern-matched {len(matched_networks)} of {len(all_networks)} SSIDs")
+
+        # 4. Build matches (before security lookups to minimize API calls)
+        matches = []  # Tuples: (match, network_id) - security_type filled later
+        warnings = []
+        matched_network_ids = set()  # Track which networks need security lookups
+
+        for item in matched_networks:
+            network = item['network']
+            network_id = network.get('id', '')
+            ssid_name = network.get('ssid', '')
+            effective_vlan = item['effective_vlan']
+            is_all_groups = item.get('is_all_groups', False)
+            ap_group_ids = item['ap_group_ids']
+
+            activated = item.get('activated_on_venue', False)
+
+            # For non-activated, isAllApGroups, or no specific AP group assignment:
+            # extract unit from SSID name and produce one match per SSID.
+            if not activated or is_all_groups or not ap_group_ids:
+                match_target = ssid_name
+                m = unit_pattern.search(match_target)
+                if m and m.groups():
+                    unit_number = m.group(1)
+                    matched_network_ids.add(network_id)
+                    matches.append((PopulateMatch(
+                        unit_number=unit_number,
+                        ssid_name=ssid_name,
+                        security_type='',  # filled later
+                        default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
+                        aps=[],
+                        ap_group_name='(all groups)' if is_all_groups else '(not activated)' if not activated else '',
+                    ), network_id))
+                else:
+                    warnings.append(
+                        f"No unit number extracted from '{match_target}' (SSID: {ssid_name})"
+                    )
+                continue
+
+            # For SSIDs with specific AP group assignments, produce one match per group
+            for group_id in ap_group_ids:
+                group_name = apgroup_names.get(group_id, group_id)
+                group_aps = apgroup_aps.get(group_id, [])
+
+                match_target = ssid_name if request.match_against == 'ssid_name' else group_name
+                m = unit_pattern.search(match_target)
+                if m and m.groups():
+                    unit_number = m.group(1)
+                    matched_network_ids.add(network_id)
+                    matches.append((PopulateMatch(
+                        unit_number=unit_number,
+                        ssid_name=ssid_name,
+                        security_type='',  # filled later
+                        default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
+                        aps=[PopulateMatchAP(**ap) for ap in group_aps],
+                        ap_group_name=group_name,
+                    ), network_id))
+                else:
+                    warnings.append(
+                        f"No unit number extracted from '{match_target}' "
+                        f"(SSID: {ssid_name}, Group: {group_name})"
+                    )
+
+        logger.info(
+            f"Unit regex matched {len(matches)} entries from "
+            f"{len(matched_network_ids)} unique SSIDs"
+        )
+
+        # 5. Get security type from bulk query data (avoid individual GET per network)
+        # The bulk /wifiNetworks/query returns "securityProtocol" as a flattened
+        # field (per OpenAPI spec WifiNetworkQueryData schema). This uses the same
+        # values as wlanSettings.wlanSecurity (e.g., WPA3, WPA2Personal, WPA23Mixed).
+        security_cache = {}
+        networks_by_id = {n.get('id'): n for n in all_networks if n.get('id')}
+
+        missing_security_ids = []
+        for network_id in matched_network_ids:
+            network = networks_by_id.get(network_id, {})
+            api_security = network.get('securityProtocol', '')
+            if api_security:
+                security_cache[network_id] = REVERSE_SECURITY_TYPE_MAP.get(api_security, 'WPA3')
+            else:
+                missing_security_ids.append(network_id)
+
+        # Fallback: parallel GETs only for networks missing security info
+        if missing_security_ids:
+            logger.info(
+                f"Bulk query missing wlanSecurity for {len(missing_security_ids)} networks, "
+                f"fetching individually..."
+            )
+
+            async def fetch_security(nid: str) -> tuple:
+                try:
+                    detail = await r1_client.networks.get_wifi_network_by_id(nid, tenant_id)
+                    ws = detail.get('wlanSettings', {}) if isinstance(detail, dict) else {}
+                    sec = ws.get('wlanSecurity', '')
+                    return nid, REVERSE_SECURITY_TYPE_MAP.get(sec, 'WPA3')
+                except Exception as e:
+                    logger.warning(f"Failed to get details for network {nid}: {e}")
+                    return nid, 'WPA3'
+
+            results = await asyncio.gather(
+                *(fetch_security(nid) for nid in missing_security_ids)
+            )
+            for nid, sec_type in results:
+                security_cache[nid] = sec_type
+
+        # Fill in security types
+        final_matches = []
+        for match, network_id in matches:
+            match.security_type = security_cache.get(network_id, 'WPA3')
+            final_matches.append(match)
+
+        # Sort by unit number (numeric if possible)
+        final_matches.sort(key=lambda m: (int(m.unit_number) if m.unit_number.isdigit() else float('inf'), m.unit_number))
+
+        return PopulateResponse(
+            matches=final_matches,
+            warnings=warnings,
+            total_ssids_scanned=len(all_networks),
+            total_matched=len(final_matches),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Populate failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to populate: {str(e)}")
