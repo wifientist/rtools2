@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from database import engine, SessionLocal
 import models
 from scheduler.service import init_scheduler
-from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid, ap_port_config, ap_rename
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid, ap_port_config, ap_rename, bulk_wlan
 from routers.sz.sz_router import router as sz_router
 from routers.sz.audit_router import router as sz_audit_router
 from routers.cloudpath.cloudpath_router import router as cloudpath_router
@@ -146,6 +146,9 @@ app.include_router(ap_port_config.router_v2, tags=["AP Port Config V2"])
 
 # AP Rename Router - bulk AP name editing
 app.include_router(ap_rename.router, tags=["AP Rename"])
+
+# Bulk WLAN Edit Router - bulk WiFi network settings editing
+app.include_router(bulk_wlan.router, tags=["Bulk WLAN Edit"])
 
 # Workflow Job Management Router - generic job management for all workflows
 app.include_router(workflows_router)

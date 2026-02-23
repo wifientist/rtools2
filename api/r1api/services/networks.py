@@ -413,6 +413,54 @@ class NetworksService:
             response.raise_for_status()
             return None
 
+    async def update_wifi_network(
+        self,
+        network_id: str,
+        payload: dict,
+        tenant_id: str = None,
+        wait_for_completion: bool = False
+    ):
+        """
+        Update a WiFi network with a full object replacement (PUT).
+
+        R1's PUT /wifiNetworks/{id} is async (202 Accepted + requestId).
+        Caller should GET the current network first, modify fields, then PUT back.
+
+        Args:
+            network_id: WiFi network ID
+            payload: Full network object to PUT
+            tenant_id: Tenant/EC ID (required for MSP)
+            wait_for_completion: If True, poll until the async task finishes
+
+        Returns:
+            dict with requestId (if 202) or the response body
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}",
+                payload=payload,
+                override_tenant_id=tenant_id
+            )
+        else:
+            response = self.client.put(
+                f"/wifiNetworks/{network_id}",
+                payload=payload
+            )
+
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+
+            return result
+        else:
+            logger.error(f"Failed to update network {network_id}: {response.status_code} - {response.text[:500]}")
+            response.raise_for_status()
+            return None
+
     async def update_wifi_network_name(
         self,
         tenant_id: str,

@@ -29,6 +29,7 @@ import Users from "@/pages/Users";
 import PerUnitSSID from "@/pages/PerUnitSSID";
 import APPortConfig from "@/pages/APPortConfig";
 import APRename from "@/pages/APRename";
+import BulkWlanEdit from "@/pages/BulkWlanEdit";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
@@ -68,6 +69,7 @@ const App = () => {
           <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
           <Route path="/ap-port-config" element={<BetaRoute element={<APPortConfig />} />} />
           <Route path="/ap-rename" element={<BetaRoute element={<APRename />} />} />
+          <Route path="/bulk-wlan" element={<BetaRoute element={<BulkWlanEdit />} />} />
           <Route path="/cloudpath-import" element={<BetaRoute element={<CloudpathImport />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
