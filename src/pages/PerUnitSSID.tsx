@@ -571,21 +571,44 @@ function PerUnitSSID() {
   const handlePopulateConfirm = () => {
     if (!populateResults?.matches?.length) return;
 
-    const header = "unit_number,ap_serial_or_name,ssid_name,ssid_password,security_type,default_vlan";
+    const header = "unit_number,ap_serial_or_name,ssid_name,network_name,ssid_password,security_type,default_vlan";
     const rows: string[] = [];
 
     for (const match of populateResults.matches) {
+      const networkName = match.network_name || '';
       if (match.aps.length === 0) {
         // Unit with no APs - still include a row
-        rows.push(`${match.unit_number},,${match.ssid_name},,${match.security_type},${match.default_vlan}`);
+        rows.push(`${match.unit_number},,${match.ssid_name},${networkName},,${match.security_type},${match.default_vlan}`);
       } else {
         for (const ap of match.aps) {
-          rows.push(`${match.unit_number},${ap.name},${match.ssid_name},,${match.security_type},${match.default_vlan}`);
+          rows.push(`${match.unit_number},${ap.name},${match.ssid_name},${networkName},,${match.security_type},${match.default_vlan}`);
         }
       }
     }
 
     setCsvInput(`${header}\n${rows.join('\n')}`);
+
+    // Auto-detect AP Group prefix/postfix from SSID naming pattern
+    // For each match, find where unit_number appears in ssid_name and extract prefix+postfix
+    const prefixes = new Set<string>();
+    const postfixes = new Set<string>();
+    for (const match of populateResults.matches) {
+      const idx = match.ssid_name.indexOf(match.unit_number);
+      if (idx !== -1) {
+        prefixes.add(match.ssid_name.slice(0, idx));
+        postfixes.add(match.ssid_name.slice(idx + match.unit_number.length));
+      }
+    }
+    // Only auto-fill if all matches agree on the same prefix and postfix
+    if (prefixes.size === 1 && postfixes.size === 1) {
+      const prefix = [...prefixes][0];
+      const postfix = [...postfixes][0];
+      if (prefix || postfix) {
+        setApGroupPrefix(prefix);
+        setApGroupPostfix(postfix);
+      }
+    }
+
     setShowPopulateModal(false);
     setPopulateResults(null);
   };
@@ -802,6 +825,44 @@ function PerUnitSSID() {
             placeholder="unit_number,ap_serial_or_name,ssid_name,network_name,ssid_password,security_type,default_vlan&#10;101,AP-101-Living,MyWiFi,Unit-101-Network,SecurePass101!,WPA3,10"
             className="w-full h-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
           />
+          {/* Match Network Names button — only shown when CSV has mismatched network_name vs ssid_name */}
+          {(() => {
+            if (!csvInput.trim()) return null;
+            const lines = csvInput.trim().split('\n');
+            if (lines.length < 2) return null;
+            const headers = lines[0].split(',').map(h => h.trim());
+            const ssidIdx = headers.indexOf('ssid_name');
+            const nameIdx = headers.indexOf('network_name');
+            if (ssidIdx === -1 || nameIdx === -1) return null;
+            const mismatchCount = lines.slice(1).filter(line => {
+              const vals = line.split(',').map(v => v.trim());
+              const ssid = vals[ssidIdx] || '';
+              const name = vals[nameIdx] || '';
+              return name && ssid && name !== ssid;
+            }).length;
+            if (mismatchCount === 0) return null;
+            return (
+              <button
+                onClick={() => {
+                  const lines = csvInput.trim().split('\n');
+                  const headers = lines[0].split(',').map(h => h.trim());
+                  const ssidIdx = headers.indexOf('ssid_name');
+                  const nameIdx = headers.indexOf('network_name');
+                  const updated = [lines[0], ...lines.slice(1).map(line => {
+                    const vals = line.split(',');
+                    if (vals[nameIdx] !== undefined) {
+                      vals[nameIdx] = vals[ssidIdx] || vals[nameIdx];
+                    }
+                    return vals.join(',');
+                  })];
+                  setCsvInput(updated.join('\n'));
+                }}
+                className="mt-2 px-3 py-1.5 bg-amber-50 border border-amber-300 text-amber-800 rounded text-xs font-medium hover:bg-amber-100"
+              >
+                {mismatchCount} network name{mismatchCount !== 1 ? 's' : ''} differ from SSID name — click to match
+              </button>
+            );
+          })()}
         </div>
 
         {/* File Upload + Populate from Existing SSIDs */}
@@ -1366,6 +1427,7 @@ function PerUnitSSID() {
                             <tr>
                               <th className="px-3 py-2 text-left font-medium text-gray-700">Unit</th>
                               <th className="px-3 py-2 text-left font-medium text-gray-700">SSID Name</th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">Network Name</th>
                               <th className="px-3 py-2 text-left font-medium text-gray-700">Security</th>
                               <th className="px-3 py-2 text-left font-medium text-gray-700">VLAN</th>
                               <th className="px-3 py-2 text-left font-medium text-gray-700">APs</th>
@@ -1377,6 +1439,7 @@ function PerUnitSSID() {
                               <tr key={idx} className="hover:bg-gray-50">
                                 <td className="px-3 py-2 font-mono font-medium">{match.unit_number}</td>
                                 <td className="px-3 py-2">{match.ssid_name}</td>
+                                <td className="px-3 py-2 text-xs text-gray-600">{match.network_name}</td>
                                 <td className="px-3 py-2">
                                   <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">
                                     {match.security_type}

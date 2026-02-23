@@ -2016,6 +2016,10 @@ class VenueService:
             result['poeMode'] = specific_settings.get('poeMode')
             result['poeOut'] = specific_settings.get('poeOut', False)
             result['useVenueSettings'] = specific_settings.get('useVenueSettings', True)
+        else:
+            # AP-level query failed (AP likely never connected to cloud) — skip per-port queries
+            logger.debug(f"AP {serial_number}: lanPortSpecificSettings failed, skipping individual port queries")
+            return result
 
         # Determine which ports to query based on model
         if model:

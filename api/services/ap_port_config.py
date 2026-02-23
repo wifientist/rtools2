@@ -239,6 +239,14 @@ async def configure_single_ap(
         ap_model=model
     )
 
+    # Check if AP is connected — disconnected APs return 500 for LAN port queries
+    connection_status = (ap.get('connectionStatus') or ap.get('status') or '').lower()
+    if connection_status in ('disconnect', 'disconnected', 'offline'):
+        result.status = 'skipped'
+        result.skipped_reason = f"AP not connected (status: {connection_status})"
+        logger.debug(f"  Skipping {ap_name} - not connected to cloud ({connection_status})")
+        return result
+
     # Check if this AP has configurable LAN ports
     if not has_configurable_lan_ports(model):
         result.status = 'skipped'
@@ -634,6 +642,13 @@ async def audit_ap_ports(
             'configurable_ports': model_info['configurable_ports'],
             'port_settings': {}
         }
+
+        # Skip disconnected APs — they return 500 for LAN port queries
+        connection_status = (ap.get('connectionStatus') or ap.get('status') or '').lower()
+        if connection_status in ('disconnect', 'disconnected', 'offline'):
+            ap_audit['skipped'] = f"AP not connected ({connection_status})"
+            audit_results.append(ap_audit)
+            continue
 
         if model_info['has_lan_ports']:
             try:

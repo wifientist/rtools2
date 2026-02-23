@@ -711,6 +711,7 @@ class PopulateMatchAP(BaseModel):
 class PopulateMatch(BaseModel):
     unit_number: str
     ssid_name: str
+    network_name: str
     security_type: str
     default_vlan: str
     aps: List[PopulateMatchAP]
@@ -857,6 +858,7 @@ async def populate_from_existing(
                     matches.append((PopulateMatch(
                         unit_number=unit_number,
                         ssid_name=ssid_name,
+                        network_name=network.get('name', ''),
                         security_type='',  # filled later
                         default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
                         aps=[],
@@ -881,6 +883,7 @@ async def populate_from_existing(
                     matches.append((PopulateMatch(
                         unit_number=unit_number,
                         ssid_name=ssid_name,
+                        network_name=network.get('name', ''),
                         security_type='',  # filled later
                         default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
                         aps=[PopulateMatchAP(**ap) for ap in group_aps],
