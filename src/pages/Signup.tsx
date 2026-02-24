@@ -44,14 +44,8 @@ const Signup = () => {
             });
 
             if (!response.ok) {
-                if (response.status === 403) {
-                    const errorData = await response.json();
-                    // Show domain approval message if that's the specific reason
-                    if (errorData.detail && errorData.detail.includes("approved")) {
-                        throw new Error(errorData.detail);
-                    }
-                }
-                throw new Error("OTP verification failed.");
+                const errorData = await response.json().catch(() => null);
+                throw new Error(errorData?.detail || "OTP verification failed.");
             }
 
             setSuccess(true);

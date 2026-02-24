@@ -15,6 +15,7 @@ from services.auth_service import generate_and_send_otp, verify_otp_and_login
 from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
 from utils.email import send_otp_email_via_api
 from constants.roles import role_hierarchy
+from constants.access import MIGRATION_DASHBOARD_DOMAINS
 
 logger = logging.getLogger(__name__)
 
@@ -200,17 +201,30 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
         if secondary_controller:
             secondary_controller_name = secondary_controller.name
 
+    # Feature access flags (single source of truth: constants/access.py)
+    user_role = payload.get("role")
+    user_company_id = payload.get("company_id")
+    is_super = user_role == "super"
+
+    # Resolve company domain for feature gating (uses domains so config works across dev/prod)
+    user_domain = None
+    if user.company:
+        user_domain = user.company.domain
+
     return JSONResponse(content={
         "message": "Authenticated",
         "user": payload.get("sub"),
         "id": payload.get("id"),
-        "role": payload.get("role"),
-        "company_id": payload.get("company_id"),
+        "role": user_role,
+        "company_id": user_company_id,
         "beta_enabled": user.beta_enabled if hasattr(user, 'beta_enabled') else False,  # Read from DB, not token
         "active_controller_id": user.active_controller_id,
         "active_controller_name": active_controller_name,
         "secondary_controller_id": user.secondary_controller_id,
         "secondary_controller_name": secondary_controller_name,
+        "feature_access": {
+            "migration_dashboard": is_super or user_domain in MIGRATION_DASHBOARD_DOMAINS,
+        },
     })
 
 

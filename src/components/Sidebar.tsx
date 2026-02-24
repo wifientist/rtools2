@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -11,6 +11,7 @@ interface NavItem {
   requiresAuth: boolean;
   rolesAllowed?: string[];
   requiresBeta?: boolean;
+  requiresFeature?: string;
   isExternal?: boolean;
 }
 
@@ -22,7 +23,7 @@ interface NavCategory {
 }
 
 const Sidebar = () => {
-  const { isAuthenticated, userRole, roleHierarchy, betaEnabled } = useAuth();
+  const { isAuthenticated, userRole, featureAccess, roleHierarchy, betaEnabled } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [openCategories, setOpenCategories] = useState<{ [key: string]: boolean }>({
     informational: true,
@@ -52,6 +53,7 @@ const Sidebar = () => {
       icon: <Info size={18} />,
       items: [
         { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/migration-dashboard", icon: <BarChart3 size={20} />, label: "Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresFeature: "migration_dashboard" },
         { to: "/snapshot", icon: <Camera size={20} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/diff", icon: <GitCompareArrows size={20} />, label: "Diff Tenant", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/diff-venue", icon: <GitCompareArrows size={20} />, label: "Diff Venue", requiresAuth: true, rolesAllowed: ["user","admin"] },
@@ -126,6 +128,9 @@ const Sidebar = () => {
 
     // Check beta access
     if (item.requiresBeta && !betaEnabled) return false;
+
+    // Check feature access (computed server-side from company + role)
+    if (item.requiresFeature && !featureAccess[item.requiresFeature as keyof typeof featureAccess]) return false;
 
     // Check role access
     return canAccess(item.rolesAllowed, userRole, roleHierarchy);

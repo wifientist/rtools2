@@ -2,11 +2,17 @@ import { createContext, useContext, useState, useEffect, useRef, type ReactNode 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+interface FeatureAccess {
+  migration_dashboard: boolean;
+}
+
 // Define context structure
 interface AuthContextType {
   isAuthenticated: boolean | null;
   userRole: string | null;
   userId: number | null;
+  companyId: number | null;
+  featureAccess: FeatureAccess;
   betaEnabled: boolean;
   activeControllerId: number | null;
   activeControllerName: string | null;
@@ -44,6 +50,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
+  const [companyId, setCompanyId] = useState<number | null>(null);
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccess>({ migration_dashboard: false });
   const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
   const [controllers, setControllers] = useState<{ id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[]>([]);
   const [activeControllerId, setActiveControllerId] = useState<number | null>(null);
@@ -117,6 +125,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsAuthenticated(false);
         setUserRole(null);
         setUserId(null);
+        setCompanyId(null);
+        setFeatureAccess({ migration_dashboard: false });
         setBetaEnabled(false);
         setControllers([]);
         setActiveControllerId(null);
@@ -132,6 +142,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setUserRole(data.role);
       setUserId(data.id);
+      setCompanyId(data.company_id ?? null);
+      setFeatureAccess(data.feature_access ?? { migration_dashboard: false });
 
       // Log beta flag changes to help debug any unexpected disabling
       if (data.beta_enabled !== undefined) {
@@ -179,6 +191,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(false);
       setUserRole(null);
       setUserId(null);
+      setCompanyId(null);
+      setFeatureAccess({ migration_dashboard: false });
       setBetaEnabled(false);
       setActiveControllerId(null);
       setActiveControllerName(null);
@@ -272,6 +286,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isAuthenticated,
       userId,
       userRole,
+      companyId,
+      featureAccess,
       betaEnabled,
       activeControllerId,
       activeControllerName,

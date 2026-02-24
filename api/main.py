@@ -30,6 +30,7 @@ from routers.cleanup_v2_router import router as cleanup_v2_router
 from routers.orchestrator import orchestrator_router, webhook_router
 from routers.scheduler_router import router as scheduler_router
 from routers.fileshare import router as fileshare_router
+from routers.migration_dashboard import router as migration_dashboard_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -174,6 +175,9 @@ app.include_router(scheduler_router, tags=["Scheduler Admin"])
 
 # Fileshare Router - S3-based file sharing
 app.include_router(fileshare_router, tags=["Fileshare"])
+
+# Migration Dashboard
+app.include_router(migration_dashboard_router, tags=["Migration Dashboard"])
 
 # Debug: Log all routes to check for conflicts
 logger.info("=== ALL ROUTES ===")

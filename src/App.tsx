@@ -30,6 +30,7 @@ import PerUnitSSID from "@/pages/PerUnitSSID";
 import APPortConfig from "@/pages/APPortConfig";
 import APRename from "@/pages/APRename";
 import BulkWlanEdit from "@/pages/BulkWlanEdit";
+import MigrationDashboard from "@/pages/MigrationDashboard";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
@@ -73,6 +74,7 @@ const App = () => {
           <Route path="/cloudpath-import" element={<BetaRoute element={<CloudpathImport />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
+          <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />
           <Route path="/danger-zone" element={<BetaRoute element={<DangerZone />} />} />
           <Route path="/fileshare" element={<ProtectedRoute element={<FilesharePage />} />} />
           <Route path="/fileshare/admin" element={<AdminRoute element={<FileshareAdmin />} />} />
