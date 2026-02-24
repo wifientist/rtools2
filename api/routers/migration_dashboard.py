@@ -221,11 +221,11 @@ def update_settings(
 @router.get("/snapshots/{controller_id}")
 def get_snapshots(
     controller_id: int = Path(...),
-    days: int = Query(30, ge=1, le=90),
+    days: int = Query(30, ge=1, le=365),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get historical snapshots for a controller (default 30 days, max 90)."""
+    """Get historical snapshots for a controller (default 30 days, max 365)."""
     _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 

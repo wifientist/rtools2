@@ -141,6 +141,65 @@ function TrendIndicator({ data }: { data: number[] }) {
   );
 }
 
+interface PeriodDelta {
+  aps: number;
+  operational: number;
+  venues: number;
+  clients: number;
+}
+
+function getPeriodDelta(snapshots: SnapshotPoint[], days: number): PeriodDelta | null {
+  if (snapshots.length < 2) return null;
+  const latest = snapshots[snapshots.length - 1];
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  // Find the snapshot closest to the cutoff date
+  const baseline = snapshots.reduce((best, s) => {
+    const d = Math.abs(new Date(s.captured_at).getTime() - cutoff.getTime());
+    const bestD = Math.abs(new Date(best.captured_at).getTime() - cutoff.getTime());
+    return d < bestD ? s : best;
+  });
+  // Only use if the baseline is old enough to represent this period
+  const baselineAge = (Date.now() - new Date(baseline.captured_at).getTime()) / 86400000;
+  if (baselineAge < days * 0.5) return null;
+  return {
+    aps: latest.total_aps - baseline.total_aps,
+    operational: latest.operational_aps - baseline.operational_aps,
+    venues: latest.total_venues - baseline.total_venues,
+    clients: latest.total_clients - baseline.total_clients,
+  };
+}
+
+function DeltaRow({ label, value }: { label: string; value: number }) {
+  const color = value > 0 ? "text-green-600" : value < 0 ? "text-red-500" : "text-gray-400";
+  const prefix = value > 0 ? "+" : "";
+  const display = value === 0 ? "\u2014" : `${prefix}${value.toLocaleString()}`;
+  return (
+    <div className="flex justify-between text-sm">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-mono font-medium ${color}`}>{display}</span>
+    </div>
+  );
+}
+
+function PeriodCard({ label, delta }: { label: string; delta: PeriodDelta | null }) {
+  return (
+    <div className="bg-white rounded-xl shadow p-5">
+      <div className="text-sm font-semibold text-gray-700 mb-3">{label}</div>
+      {delta ? (
+        <div className="space-y-1.5">
+          <DeltaRow label="APs" value={delta.aps} />
+          <DeltaRow label="Operational" value={delta.operational} />
+          <DeltaRow label="Venues" value={delta.venues} />
+          <DeltaRow label="Clients" value={delta.clients} />
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400 italic">Not enough data</p>
+      )}
+    </div>
+  );
+}
+
 function getMessage(pct: number): string {
   if (pct >= 100) return "Migration complete!";
   if (pct >= 90) return "Almost there!";
@@ -214,7 +273,7 @@ const MigrationDashboard = () => {
       return res.json();
     });
 
-    const snapshotFetch = fetch(`${API_BASE_URL}/migration-dashboard/snapshots/${ctrlId}?days=30`, {
+    const snapshotFetch = fetch(`${API_BASE_URL}/migration-dashboard/snapshots/${ctrlId}?days=365`, {
       credentials: "include",
       signal: abortController.signal,
     })
@@ -698,31 +757,46 @@ const MigrationDashboard = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Snapshot History ({snapshots.length})
                     </label>
-                    <div className="max-h-48 overflow-y-auto border rounded-lg divide-y">
-                      {[...snapshots].reverse().map((s) => (
-                        <div key={s.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                          <span className="text-gray-600 font-mono text-xs">
-                            {new Date(s.captured_at).toLocaleDateString()} {new Date(s.captured_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                          <span className="text-gray-700">
-                            {s.total_aps.toLocaleString()} APs
-                            <span className="text-gray-400 ml-2">
-                              {s.operational_aps.toLocaleString()} op
-                            </span>
-                            <span className="text-gray-400 ml-2">
-                              {s.total_venues.toLocaleString()} venues
-                            </span>
-                          </span>
-                          <button
-                            onClick={() => deleteSnapshot(s.id)}
-                            disabled={deletingSnapshot === s.id}
-                            className="text-gray-300 hover:text-red-500 p-1 disabled:opacity-50"
-                            title="Delete snapshot"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
+                    <div className="max-h-64 overflow-y-auto border rounded-lg">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-50 text-gray-500">
+                          <tr>
+                            <th className="text-left font-medium px-3 py-1.5">Date</th>
+                            <th className="text-right font-medium px-3 py-1.5">APs</th>
+                            <th className="text-right font-medium px-3 py-1.5">Online</th>
+                            <th className="text-right font-medium px-3 py-1.5">Offline</th>
+                            <th className="text-right font-medium px-3 py-1.5">Venues</th>
+                            <th className="text-right font-medium px-3 py-1.5">Clients</th>
+                            <th className="text-right font-medium px-3 py-1.5">ECs</th>
+                            <th className="w-12"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {[...snapshots].reverse().map((s) => (
+                            <tr key={s.id} className="hover:bg-gray-50">
+                              <td className="px-3 py-1.5 text-gray-600 font-mono whitespace-nowrap">
+                                {new Date(s.captured_at).toLocaleDateString()} {new Date(s.captured_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-700">{s.total_aps.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-700">{s.operational_aps.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-700">{(s.total_aps - s.operational_aps).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-700">{s.total_venues.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-700">{s.total_clients.toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right font-mono font-medium text-gray-700">{s.total_ecs.toLocaleString()}</td>
+                              <td className="px-3 py-1.5">
+                                <button
+                                  onClick={() => deleteSnapshot(s.id)}
+                                  disabled={deletingSnapshot === s.id}
+                                  className="text-gray-300 hover:text-red-500 p-2 disabled:opacity-50"
+                                  title="Delete snapshot"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -885,6 +959,15 @@ const MigrationDashboard = () => {
               sparkData={snapshots.map((s) => s.total_ecs)}
             />
           </div>
+
+          {/* 30/60/90 Day Period Tracker */}
+          {snapshots.length >= 2 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <PeriodCard label="Last 30 Days" delta={getPeriodDelta(snapshots, 30)} />
+              <PeriodCard label="Last 60 Days" delta={getPeriodDelta(snapshots, 60)} />
+              <PeriodCard label="Last 90 Days" delta={getPeriodDelta(snapshots, 90)} />
+            </div>
+          )}
 
           {/* Status Breakdown */}
           {showStatusBreakdown && data.status_counts && (
