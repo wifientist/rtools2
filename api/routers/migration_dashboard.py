@@ -382,12 +382,12 @@ async def fetch_controller_progress(
 
         async with semaphore:
             try:
-                ap_result, venue_result = await asyncio.gather(
+                ap_result, venue_result, client_result = await asyncio.gather(
                     asyncio.to_thread(
                         r1_client.post,
                         "/venues/aps/query",
                         payload={
-                            "fields": ["status", "clientCount"],
+                            "fields": ["status"],
                             "page": 0,
                             "pageSize": 5000,
                         },
@@ -396,6 +396,16 @@ async def fetch_controller_progress(
                     asyncio.to_thread(
                         r1_client.get,
                         "/venues",
+                        override_tenant_id=tenant_id,
+                    ),
+                    asyncio.to_thread(
+                        r1_client.post,
+                        "/venues/aps/clients/query",
+                        payload={
+                            "fields": ["macAddress"],
+                            "page": 0,
+                            "pageSize": 1,
+                        },
                         override_tenant_id=tenant_id,
                     ),
                     return_exceptions=True,
@@ -407,7 +417,6 @@ async def fetch_controller_progress(
                     for ap in ap_data.get("data", []):
                         s = ap.get("status", "Unknown")
                         status_counts[s] = status_counts.get(s, 0) + 1
-                        client_count += ap.get("clientCount", 0) or 0
                 elif isinstance(ap_result, Exception):
                     error = str(ap_result)
 
@@ -421,6 +430,12 @@ async def fetch_controller_progress(
                         )
                 elif isinstance(venue_result, Exception) and not error:
                     error = str(venue_result)
+
+                if not isinstance(client_result, Exception) and client_result.ok:
+                    client_data = client_result.json()
+                    client_count = client_data.get("totalCount", 0)
+                elif isinstance(client_result, Exception) and not error:
+                    error = str(client_result)
 
             except Exception as e:
                 logger.warning(f"Error fetching stats for EC '{tenant_name}': {e}")
