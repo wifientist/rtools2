@@ -42,20 +42,10 @@ router = APIRouter(prefix="/bulk-wlan", tags=["Bulk WLAN Edit"])
 
 WORKFLOW_NAME = "bulk_wlan_edit"
 
-# MVP settings paths within wlan.advancedCustomization
-MVP_SETTINGS = [
-    "clientIsolation",
-    "clientIsolationPacketsType",  # nested in clientIsolationOptions
-    "applicationVisibilityEnabled",
-    "bssMinimumPhyRate",       # nested in radioCustomization
-    "phyTypeConstraint",       # nested in radioCustomization (OFDM Only)
-    "enableJoinRSSIThreshold",
-    "joinRSSIThreshold",
-    "dtimInterval",
-    "qosMirroringEnabled",
-    "qosMirroringScope",
-    "enableApHostNameAdvertisement",
-]
+# Field routing — which fields live where in the R1 network object
+WLAN_LEVEL_FIELDS = {"vlanId", "enabled", "managementFrameProtection", "macAddressAuthentication"}
+RADIO_FIELDS = {"rfBandUsage", "bssMinimumPhyRate", "managementFrameMinimumPhyRate", "phyTypeConstraint"}
+ISOLATION_OPTION_FIELDS = {"clientIsolationPacketsType", "clientIsolationAutoVrrp"}
 
 
 # ============================================================================
@@ -64,17 +54,104 @@ MVP_SETTINGS = [
 
 class WlanChanges(BaseModel):
     """Settings changes to apply. Only include fields that should change."""
+
+    # === WLAN-level fields (network.wlan.*) ===
+    vlanId: Optional[int] = Field(None, ge=1, le=4094)
+    enabled: Optional[bool] = None
+    managementFrameProtection: Optional[str] = None  # "Disabled", "Optional", "Required"
+    macAddressAuthentication: Optional[bool] = None
+
+    # === radioCustomization (network.wlan.advancedCustomization.radioCustomization.*) ===
+    rfBandUsage: Optional[str] = None  # "2.4GHZ", "5.0GHZ", "BOTH"
+    bssMinimumPhyRate: Optional[str] = None  # "1", "2", "5.5", "12", "24", "default"
+    managementFrameMinimumPhyRate: Optional[str] = None  # "1","2","5.5","6","9","11","12","18","24"
+    phyTypeConstraint: Optional[str] = None  # "OFDM" or "NONE"
+
+    # === clientIsolationOptions ===
     clientIsolation: Optional[bool] = None
     clientIsolationPacketsType: Optional[str] = None  # "UNICAST", "MULTICAST", "UNICAST_MULTICAST"
-    applicationVisibilityEnabled: Optional[bool] = None
-    bssMinimumPhyRate: Optional[str] = None  # "1", "2", "5.5", "12", "24", "default"
-    phyTypeConstraint: Optional[str] = None  # "OFDM" or "NONE"
+    clientIsolationAutoVrrp: Optional[bool] = None
+
+    # === advancedCustomization — Wi-Fi standards ===
+    wifi6Enabled: Optional[bool] = None
+    wifi7Enabled: Optional[bool] = None
+    enableBandBalancing: Optional[bool] = None
+
+    # === advancedCustomization — Client management ===
+    maxClientsOnWlanPerRadio: Optional[int] = Field(None, ge=1, le=512)
+    clientInactivityTimeout: Optional[int] = Field(None, ge=60, le=86400)
+    clientLoadBalancingEnable: Optional[bool] = None
+    enableTransientClientManagement: Optional[bool] = None
+
+    # === advancedCustomization — Roaming & RSSI ===
     enableJoinRSSIThreshold: Optional[bool] = None
-    joinRSSIThreshold: Optional[int] = None  # -90 to -60
-    dtimInterval: Optional[int] = None
+    joinRSSIThreshold: Optional[int] = Field(None, ge=-90, le=-60)
+    rssiAssociationRejectionThreshold: Optional[int] = Field(None, ge=-90, le=-60)
+    enableFastRoaming: Optional[bool] = None
+    mobilityDomainId: Optional[int] = Field(None, ge=1, le=65535)
+    joinExpireTime: Optional[int] = Field(None, ge=1, le=300)
+    joinWaitThreshold: Optional[int] = Field(None, ge=1, le=50)
+    joinWaitTime: Optional[int] = Field(None, ge=1, le=60)
+
+    # === advancedCustomization — Rate limiting ===
+    userDownlinkRateLimiting: Optional[int] = Field(None, ge=0, le=200)
+    userUplinkRateLimiting: Optional[int] = Field(None, ge=0, le=200)
+    totalDownlinkRateLimiting: Optional[int] = Field(None, ge=0, le=500)
+    totalUplinkRateLimiting: Optional[int] = Field(None, ge=0, le=500)
+    enableMulticastDownlinkRateLimiting: Optional[bool] = None
+    multicastDownlinkRateLimiting: Optional[int] = Field(None, ge=1, le=12)
+    enableMulticastUplinkRateLimiting: Optional[bool] = None
+    multicastUplinkRateLimiting: Optional[int] = Field(None, ge=1, le=100)
+
+    # === advancedCustomization — QoS & Application ===
     qosMirroringEnabled: Optional[bool] = None
     qosMirroringScope: Optional[str] = None  # "MSCS_REQUESTS_ONLY" or "ALL_CLIENTS"
+    applicationVisibilityEnabled: Optional[bool] = None
+    bssPriority: Optional[str] = None  # "HIGH", "LOW"
+
+    # === advancedCustomization — Security ===
+    enableGtkRekey: Optional[bool] = None
+    enableAntiSpoofing: Optional[bool] = None
     enableApHostNameAdvertisement: Optional[bool] = None
+    hideSsid: Optional[bool] = None
+
+    # === advancedCustomization — Access control (enable toggles only) ===
+    accessControlEnable: Optional[bool] = None
+    applicationPolicyEnable: Optional[bool] = None
+    l2AclEnable: Optional[bool] = None
+    l3AclEnable: Optional[bool] = None
+
+    # === advancedCustomization — DHCP ===
+    dhcpOption82Enabled: Optional[bool] = None
+    dhcpOption82MacFormat: Optional[str] = None  # "COLON", "HYPHEN", "NODELIMITER"
+    dhcpOption82SubOption1Enabled: Optional[bool] = None
+    dhcpOption82SubOption1Format: Optional[str] = None
+    dhcpOption82SubOption2Enabled: Optional[bool] = None
+    dhcpOption82SubOption2Format: Optional[str] = None
+    dhcpOption82SubOption150Enabled: Optional[bool] = None
+    dhcpOption82SubOption151Enabled: Optional[bool] = None
+    dhcpOption82SubOption151Format: Optional[str] = None  # "SUBOPT151_AREA_NAME", "SUBOPT151_ESSID"
+    dhcpOption82SubOption151Input: Optional[str] = None
+    forceMobileDeviceDhcp: Optional[bool] = None
+
+    # === advancedCustomization — Frame & broadcast limits ===
+    enableArpRequestRateLimit: Optional[bool] = None
+    arpRequestRateLimit: Optional[int] = Field(None, ge=15, le=100)
+    enableDhcpRequestRateLimit: Optional[bool] = None
+    dhcpRequestRateLimit: Optional[int] = Field(None, ge=15, le=100)
+    broadcastProbeResponseDelay: Optional[int] = Field(None, ge=8, le=120)
+    directedThreshold: Optional[int] = Field(None, ge=0, le=5)
+
+    # === advancedCustomization — Advanced features ===
+    enableNeighborReport: Optional[bool] = None
+    enableOptimizedConnectivityExperience: Optional[bool] = None
+    enableAirtimeDecongestion: Optional[bool] = None
+    enableAdditionalRegulatoryDomains: Optional[bool] = None
+    proxyARP: Optional[bool] = None
+    multicastFilterEnabled: Optional[bool] = None
+    enableSyslog: Optional[bool] = None
+    multiLinkOperationEnabled: Optional[bool] = None
+    wifiCallingEnabled: Optional[bool] = None
 
 
 class FetchSettingsRequest(BaseModel):
@@ -102,61 +179,77 @@ class FieldDiff(BaseModel):
 # Helpers
 # ============================================================================
 
-def extract_mvp_settings(network: dict) -> dict:
-    """Extract the MVP settings from a full network object."""
-    adv = (network.get("wlan") or {}).get("advancedCustomization") or {}
+def extract_settings(network: dict) -> dict:
+    """Extract all editable settings from a full network object.
+
+    Reads from four locations:
+    - wlan.*                              → WLAN_LEVEL_FIELDS
+    - wlan.advancedCustomization.radioCustomization.* → RADIO_FIELDS
+    - wlan.advancedCustomization.clientIsolationOptions.* → ISOLATION_OPTION_FIELDS
+    - wlan.advancedCustomization.*        → everything else
+    """
+    wlan = network.get("wlan") or {}
+    adv = wlan.get("advancedCustomization") or {}
     radio = adv.get("radioCustomization") or {}
+    iso_opts = adv.get("clientIsolationOptions") or {}
 
-    isolation_opts = adv.get("clientIsolationOptions") or {}
-
-    return {
-        "clientIsolation": adv.get("clientIsolation"),
-        "clientIsolationPacketsType": isolation_opts.get("packetsType"),
-        "applicationVisibilityEnabled": adv.get("applicationVisibilityEnabled"),
-        "bssMinimumPhyRate": radio.get("bssMinimumPhyRate"),
-        "phyTypeConstraint": radio.get("phyTypeConstraint"),
-        "enableJoinRSSIThreshold": adv.get("enableJoinRSSIThreshold"),
-        "joinRSSIThreshold": adv.get("joinRSSIThreshold"),
-        "dtimInterval": adv.get("dtimInterval"),
-        "qosMirroringEnabled": adv.get("qosMirroringEnabled"),
-        "qosMirroringScope": adv.get("qosMirroringScope"),
-        "enableApHostNameAdvertisement": adv.get("enableApHostNameAdvertisement"),
+    # Map isolation option fields: our flat key → nested key in clientIsolationOptions
+    ISO_KEY_MAP = {
+        "clientIsolationPacketsType": "packetsType",
+        "clientIsolationAutoVrrp": "autoVrrp",
     }
+
+    settings = {}
+
+    # Get all field names from the pydantic model
+    for field_name in WlanChanges.model_fields:
+        if field_name in WLAN_LEVEL_FIELDS:
+            settings[field_name] = wlan.get(field_name)
+        elif field_name in RADIO_FIELDS:
+            settings[field_name] = radio.get(field_name)
+        elif field_name in ISOLATION_OPTION_FIELDS:
+            settings[field_name] = iso_opts.get(ISO_KEY_MAP[field_name])
+        else:
+            # Default: advancedCustomization
+            settings[field_name] = adv.get(field_name)
+
+    return settings
 
 
 def apply_changes_to_network(network: dict, changes: dict) -> dict:
     """
     Apply settings changes to a full network object (mutates in place).
 
-    Handles nested paths (radioCustomization) and top-level mirrors.
+    Routes each field to its correct nesting location using the field sets.
+    Handles top-level mirrors for bssMinimumPhyRate and phyTypeConstraint.
     """
-    adv = network.setdefault("wlan", {}).setdefault("advancedCustomization", {})
+    wlan = network.setdefault("wlan", {})
+    adv = wlan.setdefault("advancedCustomization", {})
     radio = adv.setdefault("radioCustomization", {})
+    iso_opts = adv.setdefault("clientIsolationOptions", {})
+
+    ISO_KEY_MAP = {
+        "clientIsolationPacketsType": "packetsType",
+        "clientIsolationAutoVrrp": "autoVrrp",
+    }
 
     for field, value in changes.items():
         if value is None:
             continue
 
-        # Fields nested in radioCustomization
-        if field == "bssMinimumPhyRate":
-            radio["bssMinimumPhyRate"] = value
-            # Mirror at top level
-            network["bssMinimumPhyRate"] = value
-        elif field == "phyTypeConstraint":
-            radio["phyTypeConstraint"] = value
-            # Mirror: enableOfdmOnly at top level
-            network["enableOfdmOnly"] = (value == "OFDM")
-        # Client isolation packets type (nested in clientIsolationOptions)
-        elif field == "clientIsolationPacketsType":
-            iso_opts = adv.setdefault("clientIsolationOptions", {})
-            iso_opts["packetsType"] = value
-        # Fields directly in advancedCustomization
-        elif field in (
-            "clientIsolation", "applicationVisibilityEnabled",
-            "enableJoinRSSIThreshold", "joinRSSIThreshold",
-            "dtimInterval", "qosMirroringEnabled", "qosMirroringScope",
-            "enableApHostNameAdvertisement",
-        ):
+        if field in WLAN_LEVEL_FIELDS:
+            wlan[field] = value
+        elif field in RADIO_FIELDS:
+            radio[field] = value
+            # Top-level mirrors required by R1 API
+            if field == "bssMinimumPhyRate":
+                network["bssMinimumPhyRate"] = value
+            elif field == "phyTypeConstraint":
+                network["enableOfdmOnly"] = (value == "OFDM")
+        elif field in ISOLATION_OPTION_FIELDS:
+            iso_opts[ISO_KEY_MAP[field]] = value
+        else:
+            # Default catch-all: advancedCustomization
             adv[field] = value
 
     return network
@@ -211,9 +304,9 @@ async def list_networks(
                 "securityProtocol": n.get("securityProtocol"),
                 "vlan": n.get("vlan"),
                 "type": n.get("nwSubType"),
-                "venues": len(n.get("venues") or []),
-                "aps": n.get("aps"),
-                "clients": n.get("clients"),
+                "venues": len(n.get("venueApGroups") or []),
+                "aps": n.get("apCount"),
+                "clients": n.get("clientCount"),
             }
             for n in networks
         ],
@@ -227,10 +320,10 @@ async def fetch_settings(
     db: Session = Depends(get_db),
 ):
     """
-    Batch-fetch current advanced settings for selected networks.
+    Batch-fetch current settings for selected networks.
 
     Fetches full network details via concurrent GET calls and extracts
-    the MVP settings from wlan.advancedCustomization.
+    editable settings from the network object.
     """
     controller = validate_controller_access(request.controller_id, current_user, db)
     effective_tenant_id = _get_effective_tenant(controller, request.tenant_id)
@@ -249,7 +342,7 @@ async def fetch_settings(
                 results[network_id] = {
                     "name": network.get("name"),
                     "ssid": (network.get("wlan") or {}).get("ssid"),
-                    "settings": extract_mvp_settings(network),
+                    "settings": extract_settings(network),
                 }
             except Exception as e:
                 logger.warning(f"Failed to fetch network {network_id}: {e}")
@@ -387,7 +480,7 @@ async def run_bulk_wlan_update(
                     ssid = (network.get("wlan") or {}).get("ssid", "")
 
                     # Check if changes actually differ
-                    current = extract_mvp_settings(network)
+                    current = extract_settings(network)
                     field_diffs = compute_diff(current, changes)
 
                     if not field_diffs:

@@ -29,6 +29,8 @@ class NetworksService:
             "venues",
             "aps",
             "clients",
+            "apCount",
+            "clientCount",
             "vlan",
             "cog",
             "ssid",
