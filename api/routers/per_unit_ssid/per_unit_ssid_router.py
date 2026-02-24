@@ -847,9 +847,9 @@ async def populate_from_existing(
 
             activated = item.get('activated_on_venue', False)
 
-            # For non-activated, isAllApGroups, or no specific AP group assignment:
-            # extract unit from SSID name and produce one match per SSID.
-            if not activated or is_all_groups or not ap_group_ids:
+            # For non-activated or no AP group assignment:
+            # extract unit from SSID name and produce one match per SSID (no APs).
+            if not activated or not ap_group_ids:
                 match_target = ssid_name
                 m = unit_pattern.search(match_target)
                 if m and m.groups():
@@ -862,11 +862,53 @@ async def populate_from_existing(
                         security_type='',  # filled later
                         default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
                         aps=[],
-                        ap_group_name='(all groups)' if is_all_groups else '(not activated)' if not activated else '',
+                        ap_group_name='(not activated)',
                     ), network_id))
                 else:
                     warnings.append(
                         f"No unit number extracted from '{match_target}' (SSID: {ssid_name})"
+                    )
+                continue
+
+            # For isAllApGroups: extract unit from SSID name, find APs by name match
+            if is_all_groups:
+                m = unit_pattern.search(ssid_name)
+                if m and m.groups():
+                    unit_number = m.group(1)
+                    matched_network_ids.add(network_id)
+
+                    # Find all venue APs whose name yields the same unit number
+                    unit_aps = []
+                    for ap in all_aps:
+                        ap_name = ap.get('name', '')
+                        am = unit_pattern.search(ap_name)
+                        if am and am.groups() and am.group(1) == unit_number:
+                            unit_aps.append({
+                                'name': ap_name or ap.get('serialNumber', ''),
+                                'serial': ap.get('serialNumber', ''),
+                            })
+
+                    # Find the matching AP group name for display
+                    matched_group_name = '(all groups)'
+                    for gid in ap_group_ids:
+                        gname = apgroup_names.get(gid, gid)
+                        gm = unit_pattern.search(gname)
+                        if gm and gm.groups() and gm.group(1) == unit_number:
+                            matched_group_name = gname
+                            break
+
+                    matches.append((PopulateMatch(
+                        unit_number=unit_number,
+                        ssid_name=ssid_name,
+                        network_name=network.get('name', ''),
+                        security_type='',  # filled later
+                        default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
+                        aps=[PopulateMatchAP(**ap) for ap in unit_aps],
+                        ap_group_name=matched_group_name,
+                    ), network_id))
+                else:
+                    warnings.append(
+                        f"No unit number extracted from '{ssid_name}' (SSID: {ssid_name})"
                     )
                 continue
 
