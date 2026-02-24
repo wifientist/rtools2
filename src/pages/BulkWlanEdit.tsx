@@ -754,6 +754,8 @@ export default function BulkWlanEdit() {
                                 : opt === "enable"
                                 ? true
                                 : false,
+                            // Clear threshold value when not enabling
+                            ...(opt !== "enable" && { joinRSSIThreshold: undefined }),
                           }))
                         }
                         className={`px-3 py-1 text-xs rounded ${
@@ -837,7 +839,12 @@ export default function BulkWlanEdit() {
             <TriStateToggle
               label="QoS Mirroring"
               value={changes.qosMirroringEnabled}
-              onChange={(v) => setChanges((c) => ({ ...c, qosMirroringEnabled: v }))}
+              onChange={(v) => setChanges((c) => ({
+                ...c,
+                qosMirroringEnabled: v,
+                // Clear scope when not enabling
+                ...(v !== true && { qosMirroringScope: undefined }),
+              }))}
               summaryKey="qosMirroringEnabled"
             />
 
