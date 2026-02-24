@@ -1,26 +1,145 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown, AlertCircle, Wifi, MapPin, Building2, Target, ShieldX } from "lucide-react";
+import {
+  BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown,
+  AlertCircle, Wifi, WifiOff, MapPin, Building2, Target, ShieldX, Settings, X, EyeOff, Users,
+  TrendingUp, TrendingDown, Minus, Plus, Trash2, Calendar,
+} from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+interface StatusSummary {
+  operational: number;
+  offline: number;
+}
 
 interface ECTenantStats {
   id: string;
   name: string;
   ap_count: number;
   venue_count: number;
+  client_count: number;
+  status_summary: StatusSummary;
+  status_counts: Record<string, number>;
   error: string | null;
+  ignored: boolean;
 }
 
 interface DashboardData {
   total_aps: number;
   total_venues: number;
+  total_clients: number;
   total_ecs: number;
   errors: number;
+  status_summary: StatusSummary;
+  status_counts: Record<string, number>;
   tenants: ECTenantStats[];
 }
 
+interface DashboardSettings {
+  target_aps: number;
+  ignored_tenant_ids: string[];
+}
+
 type SortField = "name" | "ap_count" | "venue_count";
+
+const STATUS_LABELS: Record<string, string> = {
+  "1_01_NeverContactedCloud": "Never Contacted Cloud",
+  "1_07_Initializing": "Initializing",
+  "1_09_Offline": "Offline (Setup)",
+  "2_00_Operational": "Operational",
+  "2_01_ApplyingFirmware": "Applying Firmware",
+  "2_02_ApplyingConfiguration": "Applying Configuration",
+  "3_02_FirmwareUpdateFailed": "Firmware Update Failed",
+  "3_03_ConfigurationUpdateFailed": "Config Update Failed",
+  "3_04_DisconnectedFromCloud": "Disconnected from Cloud",
+  "4_01_Rebooting": "Rebooting",
+  "4_04_HeartbeatLost": "Heartbeat Lost",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  "1_": "text-gray-500",
+  "2_": "text-green-600",
+  "3_": "text-red-500",
+  "4_": "text-amber-500",
+};
+
+function getStatusColor(code: string): string {
+  const prefix = code.substring(0, 2);
+  return STATUS_COLORS[prefix] ?? "text-gray-500";
+}
+
+interface SnapshotPoint {
+  id: number;
+  captured_at: string;
+  total_aps: number;
+  operational_aps: number;
+  total_venues: number;
+  total_clients: number;
+  total_ecs: number;
+}
+
+interface BackfillRow {
+  date: string;
+  total_aps: string;
+  operational_aps: string;
+  total_venues: string;
+  total_clients: string;
+  total_ecs: string;
+}
+
+function Sparkline({
+  data,
+  color = "#6366f1",
+  width = 64,
+  height = 20,
+}: {
+  data: number[];
+  color?: string;
+  width?: number;
+  height?: number;
+}) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data
+    .map(
+      (v, i) =>
+        `${(i / (data.length - 1)) * width},${height - ((v - min) / range) * (height - 2) - 1}`
+    )
+    .join(" ");
+  return (
+    <svg width={width} height={height} className="inline-block ml-2 opacity-70">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TrendIndicator({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const first = data[0];
+  const last = data[data.length - 1];
+  if (first === 0 && last === 0) return null;
+  const change = first > 0 ? ((last - first) / first) * 100 : last > 0 ? 100 : 0;
+  if (Math.abs(change) < 0.5) {
+    return (
+      <span className="inline-flex items-center text-xs text-gray-400 ml-1">
+        <Minus size={12} />
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`inline-flex items-center text-xs ml-1 ${
+        change > 0 ? "text-green-500" : "text-red-500"
+      }`}
+    >
+      {change > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+      <span className="ml-0.5">{Math.abs(change).toFixed(0)}%</span>
+    </span>
+  );
+}
 
 function getMessage(pct: number): string {
   if (pct >= 100) return "Migration complete!";
@@ -32,7 +151,7 @@ function getMessage(pct: number): string {
 }
 
 const MigrationDashboard = () => {
-  const { controllers, featureAccess } = useAuth();
+  const { controllers, featureAccess, userRole } = useAuth();
 
   const mspControllers = controllers.filter(
     (c) => c.controller_subtype === "MSP"
@@ -40,17 +159,37 @@ const MigrationDashboard = () => {
 
   const [controllerID, setControllerID] = useState<number | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
+  const [settings, setSettings] = useState<DashboardSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [target, setTarget] = useState<number>(() => {
-    const saved = localStorage.getItem("migration-dashboard-target");
-    return saved ? parseInt(saved, 10) : 180000;
-  });
   const [editingTarget, setEditingTarget] = useState(false);
   const [targetInput, setTargetInput] = useState("");
   const [sortField, setSortField] = useState<SortField>("ap_count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [animatedPct, setAnimatedPct] = useState(0);
+
+  // Status breakdown expand
+  const [showStatusBreakdown, setShowStatusBreakdown] = useState(false);
+
+  // Snapshots
+  const [snapshots, setSnapshots] = useState<SnapshotPoint[]>([]);
+
+  // Settings panel
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTarget, setSettingsTarget] = useState("");
+  const [settingsIgnored, setSettingsIgnored] = useState<Set<string>>(new Set());
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Backfill
+  const emptyBackfillRow = (): BackfillRow => ({
+    date: "", total_aps: "", operational_aps: "", total_venues: "", total_clients: "", total_ecs: "",
+  });
+  const [backfillRows, setBackfillRows] = useState<BackfillRow[]>([emptyBackfillRow()]);
+  const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
+  const [savingBackfill, setSavingBackfill] = useState(false);
+  const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null);
+
+  const target = settings?.target_aps ?? 180000;
 
   // Auto-select first MSP controller
   useEffect(() => {
@@ -59,25 +198,36 @@ const MigrationDashboard = () => {
     }
   }, [controllers]);
 
-  // Fetch data when controller changes
-  useEffect(() => {
-    if (!controllerID) return;
+  // Fetch progress data + snapshots in parallel
+  const fetchData = useCallback((ctrlId: number) => {
     const abortController = new AbortController();
 
     setLoading(true);
     setError(null);
     setAnimatedPct(0);
 
-    fetch(`${API_BASE_URL}/migration-dashboard/progress/${controllerID}`, {
+    const progressFetch = fetch(`${API_BASE_URL}/migration-dashboard/progress/${ctrlId}`, {
+      credentials: "include",
+      signal: abortController.signal,
+    }).then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    });
+
+    const snapshotFetch = fetch(`${API_BASE_URL}/migration-dashboard/snapshots/${ctrlId}?days=30`, {
       credentials: "include",
       signal: abortController.signal,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((json) => {
-        setData(json.data);
+      .then((res) => (res.ok ? res.json() : { data: [] }))
+      .catch(() => ({ data: [] }));
+
+    Promise.all([progressFetch, snapshotFetch])
+      .then(([progressJson, snapshotJson]) => {
+        setData(progressJson.data);
+        if (progressJson.settings) {
+          setSettings(progressJson.settings);
+        }
+        setSnapshots(snapshotJson.data ?? []);
         setLoading(false);
       })
       .catch((err) => {
@@ -88,7 +238,13 @@ const MigrationDashboard = () => {
       });
 
     return () => abortController.abort();
-  }, [controllerID]);
+  }, []);
+
+  // Fetch data when controller changes
+  useEffect(() => {
+    if (!controllerID) return;
+    return fetchData(controllerID);
+  }, [controllerID, fetchData]);
 
   // Animate progress bar after data loads
   useEffect(() => {
@@ -136,13 +292,147 @@ const MigrationDashboard = () => {
     );
   };
 
-  const saveTarget = () => {
+  // Inline target editing (saves to DB)
+  const saveTarget = async () => {
     const val = parseInt(targetInput, 10);
-    if (!isNaN(val) && val > 0) {
-      setTarget(val);
-      localStorage.setItem("migration-dashboard-target", String(val));
+    if (!isNaN(val) && val > 0 && controllerID) {
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/migration-dashboard/settings/${controllerID}`,
+          {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target_aps: val }),
+          }
+        );
+        if (res.ok) {
+          const updated = await res.json();
+          setSettings(updated);
+        }
+      } catch {
+        // Silently fail — target stays unchanged
+      }
     }
     setEditingTarget(false);
+  };
+
+  // Open settings panel
+  const openSettings = () => {
+    setSettingsTarget(String(target));
+    setSettingsIgnored(new Set(settings?.ignored_tenant_ids ?? []));
+    setShowSettings(true);
+  };
+
+  // Save full settings
+  const saveSettings = async () => {
+    if (!controllerID) return;
+    setSavingSettings(true);
+    try {
+      const val = parseInt(settingsTarget, 10);
+      const res = await fetch(
+        `${API_BASE_URL}/migration-dashboard/settings/${controllerID}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_aps: !isNaN(val) && val > 0 ? val : undefined,
+            ignored_tenant_ids: Array.from(settingsIgnored),
+          }),
+        }
+      );
+      if (res.ok) {
+        setShowSettings(false);
+        // Refetch progress so totals reflect new ignored tenants
+        fetchData(controllerID);
+      }
+    } catch {
+      // Keep panel open on error
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const toggleIgnored = (tenantId: string) => {
+    setSettingsIgnored((prev) => {
+      const next = new Set(prev);
+      if (next.has(tenantId)) next.delete(tenantId);
+      else next.add(tenantId);
+      return next;
+    });
+  };
+
+  const updateBackfillRow = (idx: number, field: keyof BackfillRow, value: string) => {
+    setBackfillRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  };
+
+  const addBackfillRow = () => {
+    setBackfillRows((prev) => [...prev, emptyBackfillRow()]);
+  };
+
+  const removeBackfillRow = (idx: number) => {
+    setBackfillRows((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const submitBackfill = async () => {
+    if (!controllerID) return;
+    const entries = backfillRows
+      .filter((r) => r.date && r.total_aps)
+      .map((r) => ({
+        date: r.date,
+        total_aps: parseInt(r.total_aps, 10) || 0,
+        operational_aps: parseInt(r.operational_aps, 10) || 0,
+        total_venues: parseInt(r.total_venues, 10) || 0,
+        total_clients: parseInt(r.total_clients, 10) || 0,
+        total_ecs: parseInt(r.total_ecs, 10) || 0,
+      }));
+    if (entries.length === 0) return;
+
+    setSavingBackfill(true);
+    setBackfillStatus(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/migration-dashboard/snapshots/${controllerID}/backfill`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries }),
+        }
+      );
+      if (res.ok) {
+        const result = await res.json();
+        setBackfillStatus(`Inserted ${result.inserted}, skipped ${result.skipped} (duplicates)`);
+        setBackfillRows([emptyBackfillRow()]);
+        fetchData(controllerID);
+      } else {
+        const err = await res.json().catch(() => ({ detail: "Request failed" }));
+        setBackfillStatus(`Error: ${err.detail}`);
+      }
+    } catch {
+      setBackfillStatus("Error: Network request failed");
+    } finally {
+      setSavingBackfill(false);
+    }
+  };
+
+  const deleteSnapshot = async (snapshotId: number) => {
+    if (!controllerID) return;
+    setDeletingSnapshot(snapshotId);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/migration-dashboard/snapshots/${controllerID}/${snapshotId}`,
+        { method: "DELETE", credentials: "include" }
+      );
+      if (res.ok) {
+        setSnapshots((prev) => prev.filter((s) => s.id !== snapshotId));
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setDeletingSnapshot(null);
+    }
   };
 
   if (!featureAccess.migration_dashboard) {
@@ -182,7 +472,14 @@ const MigrationDashboard = () => {
           <h1 className="text-3xl font-bold text-gray-900">
             Migration Dashboard
           </h1>
-          <p className="text-gray-500 mt-1">SZ to R1 Migration Progress</p>
+          <p className="text-gray-500 mt-1">
+            SZ to R1 Migration Progress
+            {mspControllers.length === 1 && controllerID && (
+              <span className="ml-1">
+                &mdash; {mspControllers[0].name}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           {mspControllers.length > 1 && (
@@ -199,15 +496,14 @@ const MigrationDashboard = () => {
             </select>
           )}
           <button
-            onClick={() => {
-              if (controllerID) {
-                setData(null);
-                // Trigger re-fetch by briefly clearing and setting
-                const id = controllerID;
-                setControllerID(null);
-                setTimeout(() => setControllerID(id), 0);
-              }
-            }}
+            onClick={openSettings}
+            className="flex items-center gap-2 px-3 py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm"
+            title="Dashboard Settings"
+          >
+            <Settings size={16} />
+          </button>
+          <button
+            onClick={() => controllerID && fetchData(controllerID)}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm disabled:opacity-50"
           >
@@ -216,6 +512,225 @@ const MigrationDashboard = () => {
           </button>
         </div>
       </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="bg-white rounded-xl shadow-lg border mb-6 overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50">
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <Settings size={18} /> Dashboard Settings
+            </h2>
+            <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-6 space-y-6">
+            {/* Target APs */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Target AP Count
+              </label>
+              <input
+                type="number"
+                value={settingsTarget}
+                onChange={(e) => setSettingsTarget(e.target.value)}
+                className="w-48 px-3 py-2 border rounded-lg text-sm"
+                min={1}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Shared across all users viewing this controller's dashboard.
+              </p>
+            </div>
+
+            {/* Ignored Tenants */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Ignored Tenants
+                <span className="font-normal text-gray-400 ml-1">
+                  (excluded from totals)
+                </span>
+              </label>
+              {data?.tenants && data.tenants.length > 0 ? (
+                <div className="max-h-64 overflow-y-auto border rounded-lg divide-y">
+                  {[...data.tenants]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={settingsIgnored.has(t.id)}
+                          onChange={() => toggleIgnored(t.id)}
+                          className="rounded border-gray-300"
+                        />
+                        <span className={`text-sm flex-1 ${settingsIgnored.has(t.id) ? "text-gray-400 line-through" : "text-gray-700"}`}>
+                          {t.name}
+                        </span>
+                        <span className="text-xs text-gray-400 font-mono">
+                          {t.ap_count.toLocaleString()} APs
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">
+                  Load the dashboard first to see tenants.
+                </p>
+              )}
+            </div>
+
+            {/* Save */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={saveSettings}
+                disabled={savingSettings}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-50"
+              >
+                {savingSettings ? "Saving..." : "Save Settings"}
+              </button>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm"
+              >
+                Cancel
+              </button>
+              {settingsIgnored.size > 0 && (
+                <span className="text-xs text-gray-400">
+                  {settingsIgnored.size} tenant{settingsIgnored.size > 1 ? "s" : ""} will be excluded from totals
+                </span>
+              )}
+            </div>
+
+            {/* Historical Data (super only) */}
+            {userRole === "super" && (
+              <>
+                <hr className="border-gray-200" />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <Calendar size={14} />
+                    Add Historical Snapshots
+                  </label>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Backfill past migration data. Date and Total APs are required. One entry per day; duplicates are skipped.
+                  </p>
+                  <div className="space-y-2">
+                    {backfillRows.map((row, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={row.date}
+                          onChange={(e) => updateBackfillRow(idx, "date", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-40"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Total APs *"
+                          value={row.total_aps}
+                          onChange={(e) => updateBackfillRow(idx, "total_aps", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-28"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Operational"
+                          value={row.operational_aps}
+                          onChange={(e) => updateBackfillRow(idx, "operational_aps", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-28"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Venues"
+                          value={row.total_venues}
+                          onChange={(e) => updateBackfillRow(idx, "total_venues", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-24"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Clients"
+                          value={row.total_clients}
+                          onChange={(e) => updateBackfillRow(idx, "total_clients", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-24"
+                        />
+                        <input
+                          type="number"
+                          placeholder="ECs"
+                          value={row.total_ecs}
+                          onChange={(e) => updateBackfillRow(idx, "total_ecs", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-20"
+                        />
+                        {backfillRows.length > 1 && (
+                          <button
+                            onClick={() => removeBackfillRow(idx)}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3 mt-3">
+                    <button
+                      onClick={addBackfillRow}
+                      className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700"
+                    >
+                      <Plus size={14} /> Add row
+                    </button>
+                    <button
+                      onClick={submitBackfill}
+                      disabled={savingBackfill || backfillRows.every((r) => !r.date || !r.total_aps)}
+                      className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-50"
+                    >
+                      {savingBackfill ? "Inserting..." : "Insert Snapshots"}
+                    </button>
+                    {backfillStatus && (
+                      <span className={`text-xs ${backfillStatus.startsWith("Error") ? "text-red-500" : "text-green-600"}`}>
+                        {backfillStatus}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Existing snapshots list */}
+                {snapshots.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Snapshot History ({snapshots.length})
+                    </label>
+                    <div className="max-h-48 overflow-y-auto border rounded-lg divide-y">
+                      {[...snapshots].reverse().map((s) => (
+                        <div key={s.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                          <span className="text-gray-600 font-mono text-xs">
+                            {new Date(s.captured_at).toLocaleDateString()} {new Date(s.captured_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          <span className="text-gray-700">
+                            {s.total_aps.toLocaleString()} APs
+                            <span className="text-gray-400 ml-2">
+                              {s.operational_aps.toLocaleString()} op
+                            </span>
+                            <span className="text-gray-400 ml-2">
+                              {s.total_venues.toLocaleString()} venues
+                            </span>
+                          </span>
+                          <button
+                            onClick={() => deleteSnapshot(s.id)}
+                            disabled={deletingSnapshot === s.id}
+                            className="text-gray-300 hover:text-red-500 p-1 disabled:opacity-50"
+                            title="Delete snapshot"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -320,32 +835,77 @@ const MigrationDashboard = () => {
           </div>
 
           {/* Metrics Strip */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <MetricCard
               icon={<Wifi size={24} />}
               label="Total APs"
               value={data.total_aps.toLocaleString()}
               color="blue"
+              sparkData={snapshots.map((s) => s.total_aps)}
             />
+            <MetricCard
+              icon={<Wifi size={24} />}
+              label="Operational"
+              value={(data.status_summary?.operational ?? 0).toLocaleString()}
+              color="teal"
+              sparkData={snapshots.map((s) => s.operational_aps)}
+            />
+            <div
+              className="cursor-pointer"
+              onClick={() => setShowStatusBreakdown((v) => !v)}
+              title="Click for detailed status breakdown"
+            >
+              <MetricCard
+                icon={<WifiOff size={24} />}
+                label={`Offline ${showStatusBreakdown ? "\u25B2" : "\u25BC"}`}
+                value={(data.status_summary?.offline ?? 0).toLocaleString()}
+                color="amber"
+                sparkData={snapshots.map((s) => s.total_aps - s.operational_aps)}
+              />
+            </div>
             <MetricCard
               icon={<MapPin size={24} />}
               label="Total Venues"
               value={data.total_venues.toLocaleString()}
               color="purple"
+              sparkData={snapshots.map((s) => s.total_venues)}
+            />
+            <MetricCard
+              icon={<Users size={24} />}
+              label="Clients"
+              value={(data.total_clients ?? 0).toLocaleString()}
+              color="blue"
+              sparkData={snapshots.map((s) => s.total_clients)}
             />
             <MetricCard
               icon={<Building2 size={24} />}
               label="EC Tenants"
               value={data.total_ecs.toLocaleString()}
               color="teal"
-            />
-            <MetricCard
-              icon={<Target size={24} />}
-              label="Remaining"
-              value={remaining.toLocaleString()}
-              color="amber"
+              sparkData={snapshots.map((s) => s.total_ecs)}
             />
           </div>
+
+          {/* Status Breakdown */}
+          {showStatusBreakdown && data.status_counts && (
+            <div className="bg-white rounded-xl shadow p-5 mb-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">AP Status Breakdown</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {Object.entries(data.status_counts)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([code, count]) => (
+                    <div key={code} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                      <span className={`text-sm ${getStatusColor(code)}`}>
+                        {STATUS_LABELS[code] ?? code}
+                      </span>
+                      <span className="text-sm font-mono font-medium text-gray-800 ml-2">
+                        {count.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
 
           {/* Errors banner */}
           {data.errors > 0 && (
@@ -382,11 +942,17 @@ const MigrationDashboard = () => {
                     >
                       APs <SortIcon field="ap_count" />
                     </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Operational
+                    </th>
                     <th
                       className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                       onClick={() => handleSort("venue_count")}
                     >
                       Venues <SortIcon field="venue_count" />
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Clients
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Share
@@ -395,20 +961,28 @@ const MigrationDashboard = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {sortedTenants.map((tenant, idx) => {
+                    const allAps = data.tenants.reduce((s, t) => s + t.ap_count, 0);
                     const share =
-                      data.total_aps > 0
-                        ? (tenant.ap_count / data.total_aps) * 100
+                      allAps > 0
+                        ? (tenant.ap_count / allAps) * 100
                         : 0;
                     return (
                       <tr
                         key={tenant.id}
-                        className="hover:bg-gray-50 transition-colors"
+                        className={`hover:bg-gray-50 transition-colors ${tenant.ignored ? "opacity-40" : ""}`}
                       >
                         <td className="px-6 py-3 text-sm text-gray-400">
                           {idx + 1}
                         </td>
                         <td className="px-6 py-3 text-sm font-medium text-gray-800">
-                          {tenant.name}
+                          <span className={tenant.ignored ? "line-through" : ""}>
+                            {tenant.name}
+                          </span>
+                          {tenant.ignored && (
+                            <span className="ml-2 text-gray-400" title="Ignored — excluded from totals">
+                              <EyeOff size={14} className="inline -mt-0.5" />
+                            </span>
+                          )}
                           {tenant.error && (
                             <span
                               className="ml-2 text-red-400"
@@ -424,8 +998,25 @@ const MigrationDashboard = () => {
                         <td className="px-6 py-3 text-sm text-right font-mono text-gray-700">
                           {tenant.ap_count.toLocaleString()}
                         </td>
+                        <td className="px-6 py-3 text-sm text-right font-mono">
+                          {(() => {
+                            const op = tenant.status_summary?.operational ?? 0;
+                            const pct = tenant.ap_count > 0 ? (op / tenant.ap_count) * 100 : 0;
+                            return (
+                              <span className={pct >= 90 ? "text-green-600" : pct >= 50 ? "text-amber-600" : "text-red-500"}>
+                                {op.toLocaleString()}
+                                <span className="text-xs text-gray-400 ml-1">
+                                  ({pct.toFixed(0)}%)
+                                </span>
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="px-6 py-3 text-sm text-right font-mono text-gray-700">
                           {tenant.venue_count.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-right font-mono text-gray-700">
+                          {(tenant.client_count ?? 0).toLocaleString()}
                         </td>
                         <td className="px-6 py-3">
                           <div className="flex items-center gap-2">
@@ -455,17 +1046,27 @@ const MigrationDashboard = () => {
   );
 };
 
+// Sparkline color mapping per metric color
+const SPARK_COLORS: Record<string, string> = {
+  blue: "#3b82f6",
+  purple: "#8b5cf6",
+  teal: "#14b8a6",
+  amber: "#f59e0b",
+};
+
 // Metric card component
 function MetricCard({
   icon,
   label,
   value,
   color,
+  sparkData,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   color: "blue" | "purple" | "teal" | "amber";
+  sparkData?: number[];
 }) {
   const colors = {
     blue: "bg-blue-50 text-blue-600",
@@ -481,8 +1082,16 @@ function MetricCard({
       >
         {icon}
       </div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
-      <div className="text-sm text-gray-500 mt-1">{label}</div>
+      <div className="text-2xl font-bold text-gray-900 flex items-center">
+        {value}
+        {sparkData && sparkData.length >= 2 && (
+          <Sparkline data={sparkData} color={SPARK_COLORS[color] ?? "#6366f1"} />
+        )}
+      </div>
+      <div className="text-sm text-gray-500 mt-1 flex items-center">
+        {label}
+        {sparkData && <TrendIndicator data={sparkData} />}
+      </div>
     </div>
   );
 }

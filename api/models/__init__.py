@@ -28,6 +28,10 @@ from models.fileshare import (
     PermissionType
 )
 
+# Migration Dashboard
+from models.migration_dashboard_settings import MigrationDashboardSettings
+from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
+
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
     'PendingSignupOtp', 'RevokedToken', 'AuditLog',
@@ -38,5 +42,7 @@ __all__ = [
     'OrchestratorSyncEvent', 'PassphraseMapping',
     # Fileshare
     'FileFolder', 'FileSubfolder', 'FolderPermission',
-    'SharedFile', 'FileshareAuditLog', 'PermissionType'
+    'SharedFile', 'FileshareAuditLog', 'PermissionType',
+    # Migration Dashboard
+    'MigrationDashboardSettings', 'MigrationDashboardSnapshot',
 ]

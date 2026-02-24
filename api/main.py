@@ -56,6 +56,10 @@ async def lifespan(app: FastAPI):
     await scheduler.start(SessionLocal)
     logger.info("Scheduler service started")
 
+    # Register system-level scheduled jobs
+    from jobs.migration_snapshot_job import ensure_registered as ensure_snapshot_job
+    await ensure_snapshot_job(scheduler)
+
     yield
 
     # === Shutdown ===
