@@ -960,15 +960,6 @@ const MigrationDashboard = () => {
             />
           </div>
 
-          {/* 30/60/90 Day Period Tracker */}
-          {snapshots.length >= 2 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <PeriodCard label="Last 30 Days" delta={getPeriodDelta(snapshots, 30)} />
-              <PeriodCard label="Last 60 Days" delta={getPeriodDelta(snapshots, 60)} />
-              <PeriodCard label="Last 90 Days" delta={getPeriodDelta(snapshots, 90)} />
-            </div>
-          )}
-
           {/* Status Breakdown */}
           {showStatusBreakdown && data.status_counts && (
             <div className="bg-white rounded-xl shadow p-5 mb-6">
@@ -987,6 +978,15 @@ const MigrationDashboard = () => {
                     </div>
                   ))}
               </div>
+            </div>
+          )}
+
+          {/* 30/60/90 Day Period Tracker */}
+          {snapshots.length >= 2 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <PeriodCard label="Last 30 Days" delta={getPeriodDelta(snapshots, 30)} />
+              <PeriodCard label="Last 60 Days" delta={getPeriodDelta(snapshots, 60)} />
+              <PeriodCard label="Last 90 Days" delta={getPeriodDelta(snapshots, 90)} />
             </div>
           )}
 
