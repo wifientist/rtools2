@@ -832,7 +832,53 @@ async def populate_from_existing(
 
         logger.info(f"Pattern-matched {len(matched_networks)} of {len(all_networks)} SSIDs")
 
-        # 4. Build matches (before security lookups to minimize API calls)
+        # 4. Build AP-by-unit lookup: match APs to units by name
+        # Three-tier matching:
+        #   a) Regex matches AP name (e.g. AP named "13-201@valley" → unit "13-201")
+        #   b) AP name IS a known unit number (e.g. AP named "13-201" → unit "13-201")
+        #   c) Neither → group fallback only (e.g. AP named "AP14" in group "10-101")
+
+        # First, pre-compute valid unit numbers from matched SSIDs/groups
+        valid_units: set = set()
+        for item in matched_networks:
+            ssid = item['network'].get('ssid', '')
+            m = unit_pattern.search(ssid)
+            if m and m.groups():
+                valid_units.add(m.group(1))
+            for gid in item.get('ap_group_ids', []):
+                gname = apgroup_names.get(gid, gid)
+                gm = unit_pattern.search(gname)
+                if gm and gm.groups():
+                    valid_units.add(gm.group(1))
+
+        # Now index APs by unit number
+        aps_by_unit: Dict[str, list] = {}  # unit_number -> [{name, serial}]
+        placed_serials: set = set()  # APs placed by name (regex or direct match)
+        for ap in all_aps:
+            ap_name = ap.get('name', '')
+            serial = ap.get('serialNumber', '')
+            if not ap_name:
+                continue
+
+            # Try regex first (AP name has unit@property format)
+            am = unit_pattern.search(ap_name)
+            if am and am.groups():
+                ap_unit = am.group(1)
+            elif ap_name in valid_units:
+                # AP name IS the unit number (no @ in name)
+                ap_unit = ap_name
+            else:
+                # Can't determine unit from name — group fallback will handle
+                continue
+
+            aps_by_unit.setdefault(ap_unit, []).append({
+                'name': ap_name,
+                'serial': serial,
+            })
+            if serial:
+                placed_serials.add(serial)
+
+        # 5. Build matches (before security lookups to minimize API calls)
         matches = []  # Tuples: (match, network_id) - security_type filled later
         warnings = []
         matched_network_ids = set()  # Track which networks need security lookups
@@ -847,21 +893,21 @@ async def populate_from_existing(
 
             activated = item.get('activated_on_venue', False)
 
-            # For non-activated or no AP group assignment:
-            # extract unit from SSID name and produce one match per SSID (no APs).
+            # For non-activated SSIDs: extract unit from SSID name
             if not activated or not ap_group_ids:
                 match_target = ssid_name
                 m = unit_pattern.search(match_target)
                 if m and m.groups():
                     unit_number = m.group(1)
                     matched_network_ids.add(network_id)
+                    unit_aps = aps_by_unit.get(unit_number, [])
                     matches.append((PopulateMatch(
                         unit_number=unit_number,
                         ssid_name=ssid_name,
                         network_name=network.get('name', ''),
                         security_type='',  # filled later
                         default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
-                        aps=[],
+                        aps=[PopulateMatchAP(**ap) for ap in unit_aps],
                         ap_group_name='(not activated)',
                     ), network_id))
                 else:
@@ -870,23 +916,14 @@ async def populate_from_existing(
                     )
                 continue
 
-            # For isAllApGroups: extract unit from SSID name, find APs by name match
+            # For isAllApGroups or specific groups: extract unit, find APs by name match
             if is_all_groups:
+                # All AP Groups: extract unit from SSID name, one match per SSID
                 m = unit_pattern.search(ssid_name)
                 if m and m.groups():
                     unit_number = m.group(1)
                     matched_network_ids.add(network_id)
-
-                    # Find all venue APs whose name yields the same unit number
-                    unit_aps = []
-                    for ap in all_aps:
-                        ap_name = ap.get('name', '')
-                        am = unit_pattern.search(ap_name)
-                        if am and am.groups() and am.group(1) == unit_number:
-                            unit_aps.append({
-                                'name': ap_name or ap.get('serialNumber', ''),
-                                'serial': ap.get('serialNumber', ''),
-                            })
+                    unit_aps = aps_by_unit.get(unit_number, [])
 
                     # Find the matching AP group name for display
                     matched_group_name = '(all groups)'
@@ -912,23 +949,42 @@ async def populate_from_existing(
                     )
                 continue
 
-            # For SSIDs with specific AP group assignments, produce one match per group
+            # Specific AP group assignments: one match per group
+            # Two AP sources:
+            #   1. Regex-matched APs by name (primary — correct even if AP is in wrong group)
+            #   2. Current group members ONLY if regex couldn't place them anywhere
+            #      (catches APs like "AP14" whose names don't match the regex at all)
             for group_id in ap_group_ids:
                 group_name = apgroup_names.get(group_id, group_id)
-                group_aps = apgroup_aps.get(group_id, [])
 
                 match_target = ssid_name if request.match_against == 'ssid_name' else group_name
                 m = unit_pattern.search(match_target)
                 if m and m.groups():
                     unit_number = m.group(1)
                     matched_network_ids.add(network_id)
+
+                    # Start with regex-matched APs (trust name over group)
+                    seen_serials = set()
+                    merged_aps = []
+                    for ap in aps_by_unit.get(unit_number, []):
+                        seen_serials.add(ap['serial'])
+                        merged_aps.append(ap)
+
+                    # Only add group members that couldn't be placed by name
+                    # (e.g. "AP14" with no unit pattern). Skip APs already placed
+                    # elsewhere by name — their name is the source of truth.
+                    for ap in apgroup_aps.get(group_id, []):
+                        if ap['serial'] not in placed_serials:
+                            seen_serials.add(ap['serial'])
+                            merged_aps.append(ap)
+
                     matches.append((PopulateMatch(
                         unit_number=unit_number,
                         ssid_name=ssid_name,
                         network_name=network.get('name', ''),
                         security_type='',  # filled later
                         default_vlan=str(effective_vlan) if effective_vlan is not None else '1',
-                        aps=[PopulateMatchAP(**ap) for ap in group_aps],
+                        aps=[PopulateMatchAP(**ap) for ap in merged_aps],
                         ap_group_name=group_name,
                     ), network_id))
                 else:
@@ -942,7 +998,7 @@ async def populate_from_existing(
             f"{len(matched_network_ids)} unique SSIDs"
         )
 
-        # 5. Get security type from bulk query data (avoid individual GET per network)
+        # 6. Get security type from bulk query data (avoid individual GET per network)
         # The bulk /wifiNetworks/query returns "securityProtocol" as a flattened
         # field (per OpenAPI spec WifiNetworkQueryData schema). This uses the same
         # values as wlanSettings.wlanSecurity (e.g., WPA3, WPA2Personal, WPA23Mixed).
