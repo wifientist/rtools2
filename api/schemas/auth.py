@@ -18,6 +18,7 @@ class UserCreate(UserBase):
     email: EmailStr
     role: str | None = None  # Optional: Only used by admin endpoints
     beta_enabled: bool | None = None  # Optional: Only used by admin endpoints
+    alpha_enabled: bool | None = None  # Optional: Only used by admin endpoints (super-only)
     # Note: For public signup, role is NOT accepted from client input
     # New users from public signup are always assigned "user" role by default
 
@@ -26,6 +27,7 @@ class UserResponse(UserBase):
     email: EmailStr
     role: str
     beta_enabled: bool
+    alpha_enabled: bool
     company_id: int | None
 
     class Config:

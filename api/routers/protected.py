@@ -20,7 +20,8 @@ def user_profile(user: User = Depends(get_current_user)):
     return {
         "email": user.email,
         "role": user.role,
-        "beta_enabled": user.beta_enabled
+        "beta_enabled": user.beta_enabled,
+        "alpha_enabled": user.alpha_enabled,
     }
 
 
@@ -51,6 +52,39 @@ def toggle_beta(
     )
 
     return response
+
+
+class AlphaToggleRequest(BaseModel):
+    alpha_enabled: bool
+
+
+@router.post("/toggle_alpha")
+@require_role(RoleEnum.super)
+def toggle_alpha(
+    request: AlphaToggleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    current_user.alpha_enabled = request.alpha_enabled
+    db.commit()
+    db.refresh(current_user)
+
+    new_token = create_user_token(current_user)
+
+    response = JSONResponse(content={
+        "message": "Alpha features updated",
+        "alpha_enabled": current_user.alpha_enabled
+    })
+    response.set_cookie(
+        key="session",
+        value=new_token,
+        httponly=True,
+        secure=is_production(),
+        samesite="Strict",
+    )
+
+    return response
+
 
 @router.get("/admin")
 @require_role(RoleEnum.admin)

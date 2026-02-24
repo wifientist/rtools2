@@ -11,6 +11,11 @@ def create_user(db: Session, user: schemas.auth.UserCreate):
         user_data["role"] = user.role
     if user.beta_enabled is not None:
         user_data["beta_enabled"] = user.beta_enabled
+    if user.alpha_enabled is not None:
+        user_data["alpha_enabled"] = user.alpha_enabled
+    # Auto-enable alpha for super users
+    if user.role == "super" and "alpha_enabled" not in user_data:
+        user_data["alpha_enabled"] = True
 
     db_user = models.user.User(**user_data) #, hashed_password=hashed_pw)
     db.add(db_user)

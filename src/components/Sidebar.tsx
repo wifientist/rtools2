@@ -11,6 +11,7 @@ interface NavItem {
   requiresAuth: boolean;
   rolesAllowed?: string[];
   requiresBeta?: boolean;
+  requiresAlpha?: boolean;
   requiresFeature?: string;
   isExternal?: boolean;
 }
@@ -23,7 +24,7 @@ interface NavCategory {
 }
 
 const Sidebar = () => {
-  const { isAuthenticated, userRole, featureAccess, roleHierarchy, betaEnabled } = useAuth();
+  const { isAuthenticated, userRole, featureAccess, roleHierarchy, betaEnabled, alphaEnabled } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [openCategories, setOpenCategories] = useState<{ [key: string]: boolean }>({
     informational: true,
@@ -59,7 +60,7 @@ const Sidebar = () => {
         { to: "/diff-venue", icon: <GitCompareArrows size={20} />, label: "Diff Venue", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/sz-audit", icon: <ClipboardList size={20} />, label: "SZ Audit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/firmware-matrix", icon: <Table2 size={20} />, label: "Firmware Matrix", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/diagrams", icon: <Network size={20} />, label: "Network Diagrams", requiresAuth: true, requiresBeta: true, isExternal: true },
+        { to: "/diagrams", icon: <Network size={20} />, label: "Network Diagrams", requiresAuth: true, requiresAlpha: true, isExternal: true },
       ],
     },
     {
@@ -76,13 +77,13 @@ const Sidebar = () => {
       items: [
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
-        { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, rolesAllowed: ["admin","super"], requiresBeta: true },
-        { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/option43", icon: <Camera size={20} />, label: "Option 43 Calc", requiresAuth: false },
       ],
     },
@@ -125,6 +126,9 @@ const Sidebar = () => {
 
     // Hide "Admin" menu for super admins (they have "Super" menu instead)
     if (item.label === "Admin" && userRole === "super") return false;
+
+    // Check alpha access (super-only early preview)
+    if (item.requiresAlpha && !alphaEnabled) return false;
 
     // Check beta access
     if (item.requiresBeta && !betaEnabled) return false;

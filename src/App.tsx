@@ -5,6 +5,7 @@ import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 import BetaRoute from "@/components/BetaRoute";
+import AlphaRoute from "@/components/AlphaRoute";
 
 import { AuthProvider } from "@/context/AuthContext";
 

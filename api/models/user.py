@@ -23,8 +23,9 @@ class User(Base):
     otp_expires_at = Column(DateTime, nullable=True)
     last_authenticated_at = Column(DateTime, nullable=True)
 
-    # Beta feature flag
+    # Feature flags
     beta_enabled = Column(Boolean, default=False, nullable=False)
+    alpha_enabled = Column(Boolean, default=False, nullable=False)
 
     # 🔹 Add ForeignKey to link Users to Companies
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, default=-1)

@@ -7,9 +7,9 @@ import { apiGet, apiPost } from "@/utils/api";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 const Profile = () => {
-    const { userRole, betaEnabled, setBetaEnabled, checkAuth } = useAuth();
+    const { userRole, betaEnabled, setBetaEnabled, alphaEnabled, setAlphaEnabled, checkAuth } = useAuth();
 
-    const [user, setUser] = useState<{ email: string; role: string; beta_enabled: boolean } | null>(null);
+    const [user, setUser] = useState<{ email: string; role: string; beta_enabled: boolean; alpha_enabled: boolean } | null>(null);
     const [company, setCompany] = useState<{ id: number; name: string } | null>(null);
     const [error, setError] = useState("");
     const [updating, setUpdating] = useState(false);
@@ -19,7 +19,7 @@ const Profile = () => {
         const fetchProfile = async () => {
             try {
                 // Uses apiFetch with auto-refresh on 401
-                const data = await apiGet<{ email: string; role: string; beta_enabled: boolean }>(
+                const data = await apiGet<{ email: string; role: string; beta_enabled: boolean; alpha_enabled: boolean }>(
                     `${API_BASE_URL}/user_profile`
                 );
                 setUser(data);
@@ -43,6 +43,23 @@ const Profile = () => {
         fetchCompany();
         fetchProfile();
     }, []);
+
+    const handleAlphaToggle = async () => {
+        setUpdating(true);
+        try {
+            const newAlphaState = !alphaEnabled;
+            const data = await apiPost<{ alpha_enabled: boolean }>(
+                `${API_BASE_URL}/toggle_alpha`,
+                { alpha_enabled: newAlphaState }
+            );
+            setAlphaEnabled(data.alpha_enabled);
+            await checkAuth();
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setUpdating(false);
+        }
+    };
 
     const handleBetaToggle = async () => {
         setUpdating(true);
@@ -100,6 +117,33 @@ const Profile = () => {
                             </button>
                         </div>
                     </div>
+
+                    {/* Alpha Features Toggle (super only) */}
+                    {userRole === "super" && (
+                        <div className="border-t pt-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="font-semibold">Alpha Features</p>
+                                    <p className="text-sm text-gray-600">
+                                        Early preview features (super admin only)
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={handleAlphaToggle}
+                                    disabled={updating}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                        alphaEnabled ? "bg-purple-600" : "bg-gray-300"
+                                    } ${updating ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                                >
+                                    <span
+                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                            alphaEnabled ? "translate-x-6" : "translate-x-1"
+                                        }`}
+                                    />
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* ✅ Show Admin Panel Button Only for Admins */}
                     {userRole === "admin" && (

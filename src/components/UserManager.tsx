@@ -8,6 +8,7 @@ interface User {
   email: string;
   role: string;
   beta_enabled: boolean;
+  alpha_enabled: boolean;
   company_id: number | null;
 }
 
@@ -32,12 +33,14 @@ export default function UserManager() {
     email: "",
     role: "user",
     beta_enabled: false,
+    alpha_enabled: false,
   });
 
   // Edit form state
   const [editFormData, setEditFormData] = useState({
     role: "user",
     beta_enabled: false,
+    alpha_enabled: false,
   });
 
   // Fetch all users
@@ -125,7 +128,7 @@ export default function UserManager() {
       }
 
       setShowCreateForm(false);
-      setFormData({ email: "", role: "user", beta_enabled: false });
+      setFormData({ email: "", role: "user", beta_enabled: false, alpha_enabled: false });
       await fetchUsers();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -138,6 +141,7 @@ export default function UserManager() {
     setEditFormData({
       role: user.role,
       beta_enabled: user.beta_enabled,
+      alpha_enabled: user.alpha_enabled,
     });
   };
 
@@ -274,6 +278,19 @@ export default function UserManager() {
                 <label htmlFor="beta" className="ml-2 text-sm">Enable beta features</label>
               </div>
 
+              {currentUserRole === "super" && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="alpha"
+                    checked={formData.alpha_enabled}
+                    onChange={(e) => setFormData({ ...formData, alpha_enabled: e.target.checked })}
+                    className="rounded"
+                  />
+                  <label htmlFor="alpha" className="ml-2 text-sm">Enable alpha features (super only)</label>
+                </div>
+              )}
+
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
@@ -285,7 +302,7 @@ export default function UserManager() {
                   type="button"
                   onClick={() => {
                     setShowCreateForm(false);
-                    setFormData({ email: "", role: "user", beta_enabled: false });
+                    setFormData({ email: "", role: "user", beta_enabled: false, alpha_enabled: false });
                   }}
                   className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
                 >
@@ -336,6 +353,19 @@ export default function UserManager() {
                 <label htmlFor="edit-beta" className="ml-2 text-sm">Enable beta features</label>
               </div>
 
+              {currentUserRole === "super" && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="edit-alpha"
+                    checked={editFormData.alpha_enabled}
+                    onChange={(e) => setEditFormData({ ...editFormData, alpha_enabled: e.target.checked })}
+                    className="rounded"
+                  />
+                  <label htmlFor="edit-alpha" className="ml-2 text-sm">Enable alpha features (super only)</label>
+                </div>
+              )}
+
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
@@ -373,6 +403,11 @@ export default function UserManager() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Beta Access
               </th>
+              {currentUserRole === "super" && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Alpha Access
+                </th>
+              )}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -403,6 +438,15 @@ export default function UserManager() {
                     {user.beta_enabled ? "Enabled" : "Disabled"}
                   </span>
                 </td>
+                {currentUserRole === "super" && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.alpha_enabled ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-800"
+                    }`}>
+                      {user.alpha_enabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <div className="flex items-center gap-2">
                     <button

@@ -65,6 +65,54 @@ def require_role(required_role: RoleEnum):
     return decorator
 
 
+def require_alpha():
+    """
+    Decorator to require alpha access for a feature.
+    Alpha features are restricted to super users with alpha_enabled.
+
+    Usage:
+        @router.get("/alpha/feature")
+        @require_alpha()
+        def alpha_feature(current_user: User = Depends(get_current_user)):
+            ...
+    """
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, current_user: User = None, **kwargs):
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+            if not getattr(current_user, 'alpha_enabled', False):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Alpha access required. This feature is in early preview."
+                )
+            return await func(*args, current_user=current_user, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, current_user: User = None, **kwargs):
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+            if not getattr(current_user, 'alpha_enabled', False):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Alpha access required. This feature is in early preview."
+                )
+            return func(*args, current_user=current_user, **kwargs)
+
+        import inspect
+        if inspect.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    return decorator
+
+
 def require_beta():
     """
     Decorator to require beta access for a feature.

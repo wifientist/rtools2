@@ -20,6 +20,7 @@ class UserUpdateSchema(BaseModel):
     email: EmailStr | None = None
     role: str | None = None
     beta_enabled: bool | None = None
+    alpha_enabled: bool | None = None
     company_id: int | None = None
 
 ### 🚀 Create New User (Admin Only)
@@ -158,10 +159,24 @@ def update_user_endpoint(
 
         changes["role"] = {"from": user.role, "to": user_update.role}
         user.role = user_update.role
+        # Auto-enable alpha when promoting to super
+        if user_update.role == "super" and not user.alpha_enabled:
+            changes["alpha_enabled"] = {"from": False, "to": True}
+            user.alpha_enabled = True
 
     if user_update.beta_enabled is not None and user_update.beta_enabled != user.beta_enabled:
         changes["beta_enabled"] = {"from": user.beta_enabled, "to": user_update.beta_enabled}
         user.beta_enabled = user_update.beta_enabled
+
+    if user_update.alpha_enabled is not None and user_update.alpha_enabled != user.alpha_enabled:
+        # Only super admins can manage alpha access
+        if current_user.role != RoleEnum.super:
+            raise HTTPException(
+                status_code=403,
+                detail="Only super admins can manage alpha access"
+            )
+        changes["alpha_enabled"] = {"from": user.alpha_enabled, "to": user_update.alpha_enabled}
+        user.alpha_enabled = user_update.alpha_enabled
 
     if user_update.company_id is not None and user_update.company_id != user.company_id:
         # Only super admins can change company assignments
