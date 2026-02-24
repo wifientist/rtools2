@@ -174,6 +174,7 @@ def get_settings(
     db: Session = Depends(get_db),
 ):
     """Get dashboard settings for a controller (returns defaults if none saved)."""
+    logger.info(f"[dashboard] GET settings controller={controller_id} user={current_user.email}")
     _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 
@@ -194,6 +195,7 @@ def update_settings(
     db: Session = Depends(get_db),
 ):
     """Upsert dashboard settings for a controller."""
+    logger.info(f"[dashboard] PUT settings controller={controller_id} user={current_user.email} body={body.dict()}")
     _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 
@@ -226,6 +228,7 @@ def get_snapshots(
     db: Session = Depends(get_db),
 ):
     """Get historical snapshots for a controller (default 30 days, max 365)."""
+    logger.info(f"[dashboard] GET snapshots controller={controller_id} days={days} user={current_user.email}")
     _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 
@@ -239,6 +242,8 @@ def get_snapshots(
         .order_by(MigrationDashboardSnapshot.captured_at.asc())
         .all()
     )
+
+    logger.info(f"[dashboard] Returning {len(snapshots)} snapshots for controller={controller_id}")
 
     return {
         "status": "success",
@@ -265,6 +270,7 @@ def backfill_snapshots(
     db: Session = Depends(get_db),
 ):
     """Insert historical snapshot data points. Requires super role."""
+    logger.info(f"[dashboard] POST backfill controller={controller_id} entries={len(body.entries)} user={current_user.email}")
     if current_user.role != RoleEnum.super:
         raise HTTPException(status_code=403, detail="Super role required for backfill")
     validate_controller_access(controller_id, current_user, db)
@@ -303,7 +309,9 @@ def backfill_snapshots(
         inserted += 1
 
     db.commit()
-    return {"status": "success", "inserted": inserted, "skipped": len(body.entries) - inserted}
+    skipped = len(body.entries) - inserted
+    logger.info(f"[dashboard] Backfill complete controller={controller_id}: inserted={inserted} skipped={skipped}")
+    return {"status": "success", "inserted": inserted, "skipped": skipped}
 
 
 @router.delete("/snapshots/{controller_id}/{snapshot_id}")
@@ -314,6 +322,7 @@ def delete_snapshot(
     db: Session = Depends(get_db),
 ):
     """Delete a single snapshot. Requires super role."""
+    logger.info(f"[dashboard] DELETE snapshot controller={controller_id} snapshot={snapshot_id} user={current_user.email}")
     if current_user.role != RoleEnum.super:
         raise HTTPException(status_code=403, detail="Super role required")
     validate_controller_access(controller_id, current_user, db)
@@ -345,11 +354,13 @@ async def fetch_controller_progress(
     Returns (progress_data, tenants, settings_data).
     Captures a snapshot as a side effect (throttled to once per 24h).
     """
+    logger.info(f"[dashboard] Fetching progress for controller={controller_id}")
     r1_client = create_r1_client_from_controller(controller_id, db)
 
     # 1. Get all EC tenants
     ecs_response = await r1_client.msp.get_msp_ecs()
     ec_list = ecs_response.get("data", [])
+    logger.info(f"[dashboard] Found {len(ec_list)} EC tenants for controller={controller_id}")
 
     # Load settings (ignored tenants, target)
     settings = _get_settings(controller_id, db)
@@ -499,6 +510,12 @@ async def fetch_controller_progress(
         "tenants": sorted(tenants, key=lambda t: t["ap_count"], reverse=True),
     }
 
+    logger.info(
+        f"[dashboard] Progress for controller={controller_id}: "
+        f"{total_aps} APs, {total_summary['operational']} online, "
+        f"{total_venues} venues, {total_clients} clients, {len(tenants)} ECs, {errors} errors"
+    )
+
     # Auto-capture snapshot (throttled to once per 24h, skip if unchanged)
     _maybe_capture_snapshot(controller_id, progress_data, tenants, db)
 
@@ -522,6 +539,7 @@ async def get_migration_progress(
 
     Ignored tenants (from settings) are still returned but excluded from totals.
     """
+    logger.info(f"[dashboard] GET progress controller={controller_id} user={current_user.email}")
     _check_dashboard_access(current_user)
 
     controller = validate_controller_access(controller_id, current_user, db)
