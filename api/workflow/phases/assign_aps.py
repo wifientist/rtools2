@@ -119,28 +119,38 @@ class AssignAPsPhase(PhaseExecutor):
         ap_identifiers: List[str],
         all_venue_aps: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """Find APs matching the given identifiers (serial or name)."""
+        """Find APs matching the given identifiers (serial or name, exact match only)."""
         if not ap_identifiers:
             return []
 
-        matched = []
-        for identifier in ap_identifiers:
-            for ap in all_venue_aps:
-                if (
-                    ap.get('serialNumber') == identifier
-                    or ap.get('name') == identifier
-                    or identifier in ap.get('name', '')
-                ):
-                    matched.append(ap)
-                    logger.debug(
-                        f"Matched AP: {ap.get('name')} "
-                        f"({ap.get('serialNumber')})"
-                    )
-                    break
+        # Build lookup maps for O(1) matching (exact only)
+        by_serial = {}
+        by_name = {}
+        for ap in all_venue_aps:
+            serial = ap.get('serialNumber', '')
+            name = ap.get('name', '')
+            if serial:
+                by_serial[serial] = ap
+            if name:
+                by_name[name] = ap
 
-        if len(matched) != len(ap_identifiers):
+        matched = []
+        unmatched = []
+        for identifier in ap_identifiers:
+            ap = by_serial.get(identifier) or by_name.get(identifier)
+            if ap:
+                matched.append(ap)
+                logger.debug(
+                    f"Matched AP: {ap.get('name')} "
+                    f"({ap.get('serialNumber')})"
+                )
+            else:
+                unmatched.append(identifier)
+
+        if unmatched:
             logger.warning(
-                f"Only matched {len(matched)}/{len(ap_identifiers)} APs"
+                f"Could not match {len(unmatched)}/{len(ap_identifiers)} APs: "
+                f"{unmatched[:5]}"
             )
 
         return matched

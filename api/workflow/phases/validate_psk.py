@@ -197,12 +197,23 @@ class ValidatePSKPhase(PhaseExecutor):
             if existing_by_ssid:
                 mapping.plan.network_exists = True
                 mapping.plan.will_create_network = False
-                mapping.resolved.network_id = existing_by_ssid.get('id')
+
+                existing_name = existing_by_ssid.get('name', '')
+                needs_rename = (
+                    inputs.name_conflict_resolution == 'overwrite'
+                    and existing_name != network_name
+                )
+
+                if not needs_rename:
+                    # Pre-resolve: fast-path in execute phase skips individual query
+                    mapping.resolved.network_id = existing_by_ssid.get('id')
+                # else: leave network_id unresolved so execute phase handles rename
+
                 summary.networks_to_reuse += 1
                 actions.append(ResourceAction(
                     resource_type="wifi_network",
                     name=ssid_name,
-                    action="reuse",
+                    action="rename" if needs_rename else "reuse",
                     existing_id=existing_by_ssid.get('id'),
                 ))
             else:
