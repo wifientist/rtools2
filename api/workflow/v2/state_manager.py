@@ -118,6 +118,16 @@ class RedisStateManagerV2:
 
     async def delete_job(self, job_id: str) -> bool:
         """Delete job and all related data."""
+        # Retrieve venue_id before deleting so we can clean by_venue index
+        job_key = f"{PREFIX}:jobs:{job_id}"
+        job_data = await self.redis.get(job_key)
+        venue_id = None
+        if job_data:
+            try:
+                venue_id = json.loads(job_data).get("venue_id")
+            except Exception:
+                pass
+
         # Find all related keys
         keys = []
         async for key in self.redis.scan_iter(match=f"{PREFIX}:jobs:{job_id}*"):
@@ -129,8 +139,12 @@ class RedisStateManagerV2:
             await self.redis.delete(*keys)
 
         # Clean up indexes
-        await self.redis.zrem(f"{PREFIX}:jobs:index", job_id)
-        await self.redis.srem(f"{PREFIX}:jobs:active", job_id)
+        pipe = self.redis.pipeline()
+        pipe.zrem(f"{PREFIX}:jobs:index", job_id)
+        pipe.srem(f"{PREFIX}:jobs:active", job_id)
+        if venue_id:
+            pipe.srem(f"{PREFIX}:jobs:by_venue:{venue_id}", job_id)
+        await pipe.execute()
 
         return True
 
@@ -468,18 +482,83 @@ class RedisStateManagerV2:
     # Cleanup
     # =========================================================================
 
-    async def cleanup_expired_jobs(self) -> int:
-        """Clean up expired jobs."""
-        cutoff = datetime.utcnow() - timedelta(seconds=JOB_TTL_SECONDS)
-        expired_ids = await self.redis.zrangebyscore(
-            f"{PREFIX}:jobs:index", 0, cutoff.timestamp()
-        )
+    async def cleanup_expired_jobs(self) -> Dict[str, int]:
+        """
+        Clean up stale Redis indexes where job data has already expired.
 
-        count = 0
-        for job_id in expired_ids:
-            if await self.delete_job(job_id):
-                count += 1
-        return count
+        Prunes: jobs:index, jobs:active, jobs:by_venue:*, and the
+        legacy v1 workflow:jobs:index.
+        """
+        stats = {"index": 0, "active": 0, "by_venue": 0, "v1_index": 0}
+
+        # 1. Clean v2 jobs:index — remove entries whose job data no longer exists
+        all_indexed = await self.redis.zrange(f"{PREFIX}:jobs:index", 0, -1)
+        if all_indexed:
+            job_keys = [f"{PREFIX}:jobs:{jid}" for jid in all_indexed]
+            exists_results = await self.redis.mget(job_keys)
+            stale_ids = [
+                jid for jid, data in zip(all_indexed, exists_results) if data is None
+            ]
+            if stale_ids:
+                await self.redis.zrem(f"{PREFIX}:jobs:index", *stale_ids)
+                stats["index"] = len(stale_ids)
+
+        # 2. Clean jobs:active — remove entries whose job data no longer exists
+        active_ids = await self.redis.smembers(f"{PREFIX}:jobs:active")
+        if active_ids:
+            job_keys = [f"{PREFIX}:jobs:{jid}" for jid in active_ids]
+            exists_results = await self.redis.mget(job_keys)
+            stale_ids = [
+                jid for jid, data in zip(active_ids, exists_results) if data is None
+            ]
+            if stale_ids:
+                await self.redis.srem(f"{PREFIX}:jobs:active", *stale_ids)
+                stats["active"] = len(stale_ids)
+
+        # 3. Clean by_venue sets — remove stale job IDs, delete empty sets
+        by_venue_keys = []
+        async for key in self.redis.scan_iter(match=f"{PREFIX}:jobs:by_venue:*"):
+            by_venue_keys.append(key)
+
+        for venue_key in by_venue_keys:
+            members = await self.redis.smembers(venue_key)
+            if not members:
+                continue
+            job_keys = [f"{PREFIX}:jobs:{jid}" for jid in members]
+            exists_results = await self.redis.mget(job_keys)
+            stale_ids = [
+                jid for jid, data in zip(members, exists_results) if data is None
+            ]
+            if stale_ids:
+                await self.redis.srem(venue_key, *stale_ids)
+                stats["by_venue"] += len(stale_ids)
+            # Remove the set entirely if now empty
+            if await self.redis.scard(venue_key) == 0:
+                await self.redis.delete(venue_key)
+
+        # 4. Clean legacy v1 index (workflow:jobs:index)
+        v1_index_key = "workflow:jobs:index"
+        v1_count = await self.redis.zcard(v1_index_key)
+        if v1_count > 0:
+            # V1 data keys are all expired — safe to delete the entire index
+            v1_ids = await self.redis.zrange(v1_index_key, 0, -1)
+            v1_keys = [f"workflow:jobs:{jid}" for jid in v1_ids]
+            exists_results = await self.redis.mget(v1_keys)
+            stale_ids = [
+                jid for jid, data in zip(v1_ids, exists_results) if data is None
+            ]
+            if stale_ids:
+                await self.redis.zrem(v1_index_key, *stale_ids)
+                stats["v1_index"] = len(stale_ids)
+            if await self.redis.zcard(v1_index_key) == 0:
+                await self.redis.delete(v1_index_key)
+
+        logger.info(
+            f"Redis cleanup complete: {stats['index']} from index, "
+            f"{stats['active']} from active, {stats['by_venue']} from by_venue, "
+            f"{stats['v1_index']} from v1 index"
+        )
+        return stats
 
 
 class _RedisLock:
