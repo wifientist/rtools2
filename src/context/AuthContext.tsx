@@ -236,17 +236,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }, REFRESH_INTERVAL);
     };
 
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (document.visibilityState === 'visible') {
-        // When tab becomes visible, re-check auth status
-        // This handles: token expired while tab was backgrounded,
-        // or user logged out in another tab, etc.
         const timeSinceRefresh = Date.now() - lastRefreshTime;
 
         if (timeSinceRefresh > REFRESH_INTERVAL) {
-          console.log("Tab became visible after idle, re-checking auth...");
-          checkAuth();
+          // Access token likely expired while tab was backgrounded.
+          // Refresh it first, then re-check auth status.
+          console.log("Tab became visible after idle, refreshing token...");
+          await refreshAccessToken();
           lastRefreshTime = Date.now();
+          checkAuth();
         }
       }
     };

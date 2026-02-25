@@ -3,7 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown,
   AlertCircle, Wifi, WifiOff, MapPin, Building2, Target, ShieldX, Settings, X, EyeOff, Users,
-  TrendingUp, TrendingDown, Minus, Plus, Trash2, Calendar,
+  Plus, Trash2, Calendar,
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -116,30 +116,6 @@ function Sparkline({
   );
 }
 
-function TrendIndicator({ data }: { data: number[] }) {
-  if (data.length < 2) return null;
-  const first = data[0];
-  const last = data[data.length - 1];
-  if (first === 0 && last === 0) return null;
-  const change = first > 0 ? ((last - first) / first) * 100 : last > 0 ? 100 : 0;
-  if (Math.abs(change) < 0.5) {
-    return (
-      <span className="inline-flex items-center text-xs text-gray-400 ml-1">
-        <Minus size={12} />
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`inline-flex items-center text-xs ml-1 ${
-        change > 0 ? "text-green-500" : "text-red-500"
-      }`}
-    >
-      {change > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-      <span className="ml-0.5">{Math.abs(change).toFixed(0)}%</span>
-    </span>
-  );
-}
 
 interface PeriodDelta {
   aps: number;
@@ -170,28 +146,38 @@ function getPeriodDelta(snapshots: SnapshotPoint[], days: number): PeriodDelta |
   };
 }
 
-function DeltaRow({ label, value }: { label: string; value: number }) {
+function DeltaRow({ label, value, sparkData }: { label: string; value: number; sparkData?: number[] }) {
   const color = value > 0 ? "text-green-600" : value < 0 ? "text-red-500" : "text-gray-400";
   const prefix = value > 0 ? "+" : "";
   const display = value === 0 ? "\u2014" : `${prefix}${value.toLocaleString()}`;
   return (
-    <div className="flex justify-between text-sm">
+    <div className="flex items-center justify-between text-sm">
       <span className="text-gray-500">{label}</span>
-      <span className={`font-mono font-medium ${color}`}>{display}</span>
+      <div className="flex items-center gap-3">
+        {sparkData && sparkData.length >= 2 && (
+          <Sparkline data={sparkData} color="#6366f1" width={80} height={18} />
+        )}
+        <span className={`font-mono font-medium ${color}`}>{display}</span>
+      </div>
     </div>
   );
 }
 
-function PeriodCard({ label, delta }: { label: string; delta: PeriodDelta | null }) {
+function getSnapshotsForPeriod(snapshots: SnapshotPoint[], days: number): SnapshotPoint[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return snapshots.filter(s => new Date(s.captured_at) >= cutoff);
+}
+
+function PeriodCard({ label, delta, snapshots }: { label: string; delta: PeriodDelta | null; snapshots?: SnapshotPoint[] }) {
   return (
     <div className="bg-white rounded-xl shadow p-5">
       <div className="text-sm font-semibold text-gray-700 mb-3">{label}</div>
       {delta ? (
         <div className="space-y-1.5">
-          <DeltaRow label="APs" value={delta.aps} />
-          <DeltaRow label="Operational" value={delta.operational} />
-          <DeltaRow label="Venues" value={delta.venues} />
-          <DeltaRow label="Clients" value={delta.clients} />
+          <DeltaRow label="APs" value={delta.aps} sparkData={snapshots?.map(s => s.total_aps)} />
+          <DeltaRow label="Venues" value={delta.venues} sparkData={snapshots?.map(s => s.total_venues)} />
+          <DeltaRow label="Clients" value={delta.clients} sparkData={snapshots?.map(s => s.total_clients)} />
         </div>
       ) : (
         <p className="text-sm text-gray-400 italic">Not enough data</p>
@@ -201,12 +187,27 @@ function PeriodCard({ label, delta }: { label: string; delta: PeriodDelta | null
 }
 
 function getMessage(pct: number): string {
-  if (pct >= 100) return "Migration complete!";
-  if (pct >= 90) return "Almost there!";
-  if (pct >= 75) return "The finish line is in sight!";
-  if (pct >= 50) return "Past the halfway mark!";
-  if (pct >= 25) return "Making great progress!";
-  return "The journey begins!";
+  if (pct >= 100) return "All APs have entered the building!";
+  if (pct >= 95) return "Can we just round up and call it done?";
+  if (pct >= 90) return "The last few are just being dramatic.";
+  if (pct >= 85) return "SZ is starting to feel lonely.";
+  if (pct >= 80) return "4 out of 5 APs recommend R1!";
+  if (pct >= 75) return "Three quarters baked!";
+  if (pct >= 70) return "SZ is losing this breakup badly.";
+  if (pct >= 65) return "Two-thirds done — no turning back now!";
+  if (pct >= 60) return "The APs are voting with their feet.";
+  if (pct >= 55) return "More APs in R1 than not!";
+  if (pct >= 50) return "Perfectly balanced... for now.";
+  if (pct >= 45) return "Almost halfway — can you feel it?";
+  if (pct >= 40) return "SZ is starting to sweat.";
+  if (pct >= 35) return "Over a third — past the point of no return!";
+  if (pct >= 30) return "R1 is becoming the cool kids' club.";
+  if (pct >= 25) return "A quarter down, three quarters to go!";
+  if (pct >= 20) return "1 of 5 APs agree, R1 is the place to be!";
+  if (pct >= 15) return "The trickle is becoming a stream!";
+  if (pct >= 10) return "Double digits — now we're cooking!";
+  if (pct >= 5) return "First APs are settling into their new home!";
+  return "The great migration begins!";
 }
 
 const MigrationDashboard = () => {
@@ -226,9 +227,6 @@ const MigrationDashboard = () => {
   const [sortField, setSortField] = useState<SortField>("ap_count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [animatedPct, setAnimatedPct] = useState(0);
-
-  // Status breakdown expand
-  const [showStatusBreakdown, setShowStatusBreakdown] = useState(false);
 
   // Snapshots
   const [snapshots, setSnapshots] = useState<SnapshotPoint[]>([]);
@@ -915,53 +913,50 @@ const MigrationDashboard = () => {
               label="Total APs"
               value={data.total_aps.toLocaleString()}
               color="blue"
-              sparkData={snapshots.map((s) => s.total_aps)}
             />
             <MetricCard
               icon={<Wifi size={24} />}
               label="Operational"
               value={(data.status_summary?.operational ?? 0).toLocaleString()}
               color="teal"
-              sparkData={snapshots.map((s) => s.operational_aps)}
             />
-            <div
-              className="cursor-pointer"
-              onClick={() => setShowStatusBreakdown((v) => !v)}
-              title="Click for detailed status breakdown"
-            >
-              <MetricCard
-                icon={<WifiOff size={24} />}
-                label={`Offline ${showStatusBreakdown ? "\u25B2" : "\u25BC"}`}
-                value={(data.status_summary?.offline ?? 0).toLocaleString()}
-                color="amber"
-                sparkData={snapshots.map((s) => s.total_aps - s.operational_aps)}
-              />
-            </div>
+            <MetricCard
+              icon={<WifiOff size={24} />}
+              label="Offline"
+              value={(data.status_summary?.offline ?? 0).toLocaleString()}
+              color="amber"
+            />
             <MetricCard
               icon={<MapPin size={24} />}
               label="Total Venues"
               value={data.total_venues.toLocaleString()}
               color="purple"
-              sparkData={snapshots.map((s) => s.total_venues)}
             />
             <MetricCard
               icon={<Users size={24} />}
               label="Clients"
               value={(data.total_clients ?? 0).toLocaleString()}
               color="blue"
-              sparkData={snapshots.map((s) => s.total_clients)}
             />
             <MetricCard
               icon={<Building2 size={24} />}
               label="EC Tenants"
               value={data.total_ecs.toLocaleString()}
               color="teal"
-              sparkData={snapshots.map((s) => s.total_ecs)}
             />
           </div>
 
-          {/* Status Breakdown */}
-          {showStatusBreakdown && data.status_counts && (
+          {/* 30/60/90 Day Period Tracker */}
+          {snapshots.length >= 2 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <PeriodCard label="Last 30 Days" delta={getPeriodDelta(snapshots, 30)} snapshots={getSnapshotsForPeriod(snapshots, 30)} />
+              <PeriodCard label="Last 60 Days" delta={getPeriodDelta(snapshots, 60)} snapshots={getSnapshotsForPeriod(snapshots, 60)} />
+              <PeriodCard label="Last 90 Days" delta={getPeriodDelta(snapshots, 90)} snapshots={getSnapshotsForPeriod(snapshots, 90)} />
+            </div>
+          )}
+
+          {/* AP Status Breakdown */}
+          {data.status_counts && (
             <div className="bg-white rounded-xl shadow p-5 mb-6">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">AP Status Breakdown</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -978,15 +973,6 @@ const MigrationDashboard = () => {
                     </div>
                   ))}
               </div>
-            </div>
-          )}
-
-          {/* 30/60/90 Day Period Tracker */}
-          {snapshots.length >= 2 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <PeriodCard label="Last 30 Days" delta={getPeriodDelta(snapshots, 30)} />
-              <PeriodCard label="Last 60 Days" delta={getPeriodDelta(snapshots, 60)} />
-              <PeriodCard label="Last 90 Days" delta={getPeriodDelta(snapshots, 90)} />
             </div>
           )}
 
@@ -1129,27 +1115,17 @@ const MigrationDashboard = () => {
   );
 };
 
-// Sparkline color mapping per metric color
-const SPARK_COLORS: Record<string, string> = {
-  blue: "#3b82f6",
-  purple: "#8b5cf6",
-  teal: "#14b8a6",
-  amber: "#f59e0b",
-};
-
 // Metric card component
 function MetricCard({
   icon,
   label,
   value,
   color,
-  sparkData,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   color: "blue" | "purple" | "teal" | "amber";
-  sparkData?: number[];
 }) {
   const colors = {
     blue: "bg-blue-50 text-blue-600",
@@ -1165,16 +1141,8 @@ function MetricCard({
       >
         {icon}
       </div>
-      <div className="text-2xl font-bold text-gray-900 flex items-center">
-        {value}
-        {sparkData && sparkData.length >= 2 && (
-          <Sparkline data={sparkData} color={SPARK_COLORS[color] ?? "#6366f1"} />
-        )}
-      </div>
-      <div className="text-sm text-gray-500 mt-1 flex items-center">
-        {label}
-        {sparkData && <TrendIndicator data={sparkData} />}
-      </div>
+      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-sm text-gray-500 mt-1">{label}</div>
     </div>
   );
 }
