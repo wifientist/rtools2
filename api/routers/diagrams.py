@@ -3,12 +3,15 @@ Network diagram generation API endpoints.
 
 Generates fossflow-compatible diagram JSON from network topology data.
 """
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Literal
 from datetime import datetime
 import httpx
 import os
+
+from dependencies import get_current_user
+from models.user import User
 
 router = APIRouter(prefix="/diagrams")
 
@@ -205,7 +208,7 @@ async def _generate_diagram_data(request: NetworkDiagramRequest) -> dict:
 
 
 @router.post("/network/generate", response_model=FossFLowDiagram)
-async def generate_network_diagram(request: NetworkDiagramRequest):
+async def generate_network_diagram(request: NetworkDiagramRequest, current_user: User = Depends(get_current_user)):
     """
     Generate a network topology diagram in fossflow format.
 
@@ -219,7 +222,7 @@ async def generate_network_diagram(request: NetworkDiagramRequest):
 
 
 @router.post("/network/generate-and-save")
-async def generate_and_save_to_fossflow(diagram_request: NetworkDiagramRequest, request: Request):
+async def generate_and_save_to_fossflow(diagram_request: NetworkDiagramRequest, request: Request, current_user: User = Depends(get_current_user)):
     """
     Generate a network diagram AND save it to fossflow backend storage.
 
@@ -285,7 +288,7 @@ async def generate_and_save_to_fossflow(diagram_request: NetworkDiagramRequest, 
 
 
 @router.get("/network/{venue_id}", response_model=FossFLowDiagram)
-async def get_venue_network_diagram(venue_id: str):
+async def get_venue_network_diagram(venue_id: str, current_user: User = Depends(get_current_user)):
     """
     Get a pre-generated network diagram for a venue.
 
@@ -302,7 +305,8 @@ async def add_node_to_diagram(
     node_type: str,
     position: Position,
     name: str,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
 ):
     """
     Programmatically add a node to an existing diagram.
@@ -323,7 +327,8 @@ async def add_connector_to_diagram(
     from_node: str,
     to_node: str,
     name: Optional[str] = None,
-    color: Optional[str] = None
+    color: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
 ):
     """
     Programmatically add a connector between two nodes.
@@ -341,7 +346,8 @@ async def add_connector_to_diagram(
 @router.put("/layout/{diagram_id}")
 async def apply_layout_algorithm(
     diagram_id: str,
-    algorithm: Literal["hierarchical", "grid", "force-directed", "circular"]
+    algorithm: Literal["hierarchical", "grid", "force-directed", "circular"],
+    current_user: User = Depends(get_current_user)
 ):
     """
     Apply a layout algorithm to reposition nodes in a diagram.

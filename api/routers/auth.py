@@ -14,6 +14,7 @@ from dependencies import get_db, get_current_user
 from services.auth_service import generate_and_send_otp, verify_otp_and_login
 from services.signup_service import generate_and_store_signup_otp, verify_signup_otp
 from utils.email import send_otp_email_via_api
+from utils.audit import log_login, log_user_creation
 from constants.roles import role_hierarchy
 from constants.access import MIGRATION_DASHBOARD_DOMAINS
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.get("/roles")
-def get_role_hierarchy():
+def get_role_hierarchy(current_user: User = Depends(get_current_user)):
     """ Statically serve the role hierarchy """
     return {
         'hierarchy': role_hierarchy
@@ -41,7 +42,7 @@ async def request_otp(payload: RequestOtpSchema, db: Session = Depends(get_db)):
 
 # login OTP for existing users
 @router.post("/login-otp")
-async def login_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
+async def login_otp(payload: LoginOtpSchema, request: Request, db: Session = Depends(get_db)):
     try:
         # Get user from OTP verification
         user = db.query(User).filter(User.email == payload.email).first()
@@ -50,6 +51,9 @@ async def login_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
 
         # Verify OTP (this updates last_authenticated_at)
         token = verify_otp_and_login(payload.email, payload.otp_code, db)
+
+        # Audit log: successful login
+        log_login(db, user.id, success=True, method="otp", request=request)
 
         # Generate both access and refresh tokens
         from security import create_user_tokens
@@ -64,7 +68,7 @@ async def login_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
             httponly=True,
             secure=is_production(),
             samesite="Strict",
-            max_age=720 * 60  # 12 hours
+            max_age=30 * 60  # 30 minutes
         )
 
         # Set refresh token (7 days)
@@ -78,7 +82,12 @@ async def login_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
         )
 
         return response
+    except HTTPException:
+        raise
     except Exception as e:
+        # Audit log: failed login
+        if user:
+            log_login(db, user.id, success=False, method="otp", request=request)
         raise HTTPException(status_code=401, detail=str(e))
 
 
@@ -99,7 +108,7 @@ async def signup_request_otp(payload: RequestOtpSchema, db: Session = Depends(ge
 
 # Verify OTP for new user signup
 @router.post("/signup-verify-otp")
-async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_db)):
+async def signup_verify_otp(payload: LoginOtpSchema, request: Request, db: Session = Depends(get_db)):
     if not verify_signup_otp(payload.email, payload.otp_code, db):
         raise HTTPException(status_code=401, detail="Invalid or expired OTP")
 
@@ -143,20 +152,24 @@ async def signup_verify_otp(payload: LoginOtpSchema, db: Session = Depends(get_d
     db.commit()
     db.refresh(new_user)
 
+    # Audit log: new user signup
+    log_user_creation(db, admin=None, new_user_id=new_user.id, creation_method="otp_signup", request=request)
+    log_login(db, new_user.id, success=True, method="otp_signup", request=request)
+
     # Issue both access and refresh tokens immediately after signup
     from security import create_user_tokens
     tokens = create_user_tokens(new_user)
 
     response = JSONResponse(content={"message": "Signup and login successful"})
 
-    # Set access token (12 hours)
+    # Set access token (30 minutes — refresh token handles renewal)
     response.set_cookie(
         key="session",
         value=tokens["access_token"],
         httponly=True,
         secure=is_production(),
         samesite="Strict",
-        max_age=720 * 60  # 12 hours
+        max_age=30 * 60  # 30 minutes
     )
 
     # Set refresh token (7 days)
@@ -311,7 +324,7 @@ def refresh_access_token(request: Request, db: Session = Depends(get_db)):
         httponly=True,
         secure=is_production(),
         samesite="Strict",
-        max_age=720 * 60  # 12 hours in seconds
+        max_age=30 * 60  # 30 minutes (refresh token handles renewal)
     )
 
     return response

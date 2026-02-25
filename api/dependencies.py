@@ -39,6 +39,13 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):  #token: 
         if email is None or role is None:
             raise credentials_exception
 
+        # Check if token has been revoked
+        jti = payload.get("jti")
+        if jti:
+            from security import is_token_revoked
+            if is_token_revoked(jti, db):
+                raise credentials_exception
+
         user = db.query(User).filter(User.email == email).first()
         if user is None:
             raise credentials_exception

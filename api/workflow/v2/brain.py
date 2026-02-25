@@ -35,6 +35,7 @@ from workflow.v2.models import (
     PhaseResult,
     PhaseDefinitionV2,
 )
+from utils.safe_eval import safe_eval
 from workflow.v2.graph import DependencyGraph
 from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.v2.activity_tracker import ActivityTracker
@@ -1160,7 +1161,7 @@ class WorkflowBrain:
         # Check skip condition
         if phase_def.skip_if:
             try:
-                should_skip = eval(phase_def.skip_if, {}, {"options": job.options})
+                should_skip = safe_eval(phase_def.skip_if, {"options": job.options})
                 if should_skip:
                     logger.debug(f"Skipping phase {phase_id} for {unit_id}")
                     # Mark as complete so we don't re-schedule
@@ -1476,7 +1477,7 @@ class WorkflowBrain:
             for phase_def in job.phase_definitions:
                 if phase_def.skip_if and phase_def.per_unit:
                     try:
-                        should_skip = eval(phase_def.skip_if, {}, {"options": job.options})
+                        should_skip = safe_eval(phase_def.skip_if, {"options": job.options})
                         if should_skip:
                             completed_and_failed.add(phase_def.id)
                     except Exception:
@@ -1511,7 +1512,7 @@ class WorkflowBrain:
                 phase_def = job.get_phase_definition(phase_id)
                 if phase_def and phase_def.skip_if:
                     try:
-                        should_skip = eval(phase_def.skip_if, {}, {"options": job.options})
+                        should_skip = safe_eval(phase_def.skip_if, {"options": job.options})
                         if should_skip:
                             continue
                     except Exception:
@@ -1562,8 +1563,8 @@ class WorkflowBrain:
         for phase_def in job.phase_definitions:
             if phase_def.skip_if:
                 try:
-                    should_skip = eval(
-                        phase_def.skip_if, {}, {"options": job.options}
+                    should_skip = safe_eval(
+                        phase_def.skip_if, {"options": job.options}
                     )
                     if should_skip:
                         job.global_phase_status[phase_def.id] = PhaseStatus.SKIPPED
@@ -1593,7 +1594,7 @@ class WorkflowBrain:
                 continue
             if phase_def.skip_if:
                 try:
-                    if eval(phase_def.skip_if, {}, {"options": job.options}):
+                    if safe_eval(phase_def.skip_if, {"options": job.options}):
                         continue
                 except Exception:
                     pass

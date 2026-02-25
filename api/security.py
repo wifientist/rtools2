@@ -14,7 +14,7 @@ load_dotenv()
 # 📌 Load environment variables
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = 720  # 12 hours (one workday)
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes (refresh token handles seamless renewal)
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days (weekly OTP)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Default to development for safety
 
@@ -52,6 +52,11 @@ def create_refresh_token(user_id: int):
     """
     Create a long-lived refresh token (7 days).
     Used to obtain new access tokens without re-authenticating via OTP.
+
+    NOTE: Refresh tokens use sub=user_id (int) while access tokens use sub=email (str).
+    This is intentional — each token type is consumed by different code paths:
+      - Access token sub → get_current_user() queries User by email
+      - Refresh token sub → /auth/refresh queries User by id
     """
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     jti = str(uuid.uuid4())
@@ -185,13 +190,17 @@ def cleanup_expired_revoked_tokens(db: Session):
 # NOTE: require_role has been moved to decorators.py for better organization
 # Import from decorators instead: from decorators import require_role
 
-#TODO add some more checks here for who can and cannot access certain endpoints
-def require_same_company(requested_company_id: int):
-    def company_checker(user: User = Depends(get_current_user)):
-        if not user.company_id == requested_company_id:
-            raise HTTPException(status_code=403, detail="User does not belong to that company")
+def require_same_company(company_id: int, user: User = Depends(get_current_user)):
+    """
+    FastAPI dependency: ensures the current user belongs to the company
+    identified by `company_id` (resolved from path/query param).
+    Super admins bypass the check.
+    """
+    if user.role == "super":
         return user
-    return company_checker
+    if user.company_id != company_id:
+        raise HTTPException(status_code=403, detail="User does not belong to that company")
+    return user
 
 def require_admin_company(required_company_id: int):
     def company_checker(user: User = Depends(get_current_user)):

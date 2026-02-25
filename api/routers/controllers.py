@@ -15,9 +15,10 @@ from schemas.controller import (
     ControllerResponse,
     SetActiveControllerRequest,
     SetSecondaryControllerRequest,
-    UserControllerInfo
+    UserControllerInfo,
+    validate_sz_host
 )
-from security import create_access_token
+from security import create_access_token, is_production
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,7 @@ def update_controller(
         if "name" in controller_data:
             controller.name = controller_data["name"]
         if "sz_host" in controller_data:
+            validate_sz_host(controller_data["sz_host"])
             controller.sz_host = controller_data["sz_host"]
         if "sz_port" in controller_data:
             controller.sz_port = controller_data["sz_port"]
@@ -267,7 +269,7 @@ def set_active_controller(
         key="session",
         value=access_token,
         httponly=True,
-        secure=False,  # Set to True in production!
+        secure=is_production(),
         samesite="Strict",
     )
 
@@ -314,7 +316,7 @@ def set_secondary_controller(
         key="session",
         value=access_token,
         httponly=True,
-        secure=False,  # Set to True in production!
+        secure=is_production(),
         samesite="Strict",
     )
 

@@ -27,8 +27,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from starlette.requests import ClientDisconnect
 from sqlalchemy.orm import Session
 
-from dependencies import get_db
+from dependencies import get_db, get_current_user
 from models.controller import Controller
+from models.user import User
+from routers.orchestrator.orchestrator_router import can_access_orchestrator
 from redis_client import get_redis_client
 from models.orchestrator import DPSKOrchestrator, OrchestratorSourcePool, PassphraseMapping, OrchestratorSyncEvent
 from routers.orchestrator.sync_engine import SyncEngine
@@ -954,6 +956,7 @@ async def simulate_webhook(
     pool_id: str,
     background_tasks: BackgroundTasks,
     passphrase_ids: Optional[str] = None,  # Comma-separated list of passphrase IDs
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -975,6 +978,9 @@ async def simulate_webhook(
     orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
     if not orchestrator:
         raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    if not can_access_orchestrator(db, current_user, orchestrator):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if not orchestrator.enabled:
         raise HTTPException(status_code=400, detail="Orchestrator is disabled")
@@ -1063,6 +1069,7 @@ async def sync_source_pool(
     orchestrator_id: int,
     pool_id: str,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1086,6 +1093,9 @@ async def sync_source_pool(
     orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
     if not orchestrator:
         raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    if not can_access_orchestrator(db, current_user, orchestrator):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if not orchestrator.enabled:
         raise HTTPException(status_code=400, detail="Orchestrator is disabled")
@@ -1147,6 +1157,7 @@ async def sync_all_source_pools(
     orchestrator_id: int,
     background_tasks: BackgroundTasks,
     parallel: bool = True,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1166,6 +1177,9 @@ async def sync_all_source_pools(
     orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
     if not orchestrator:
         raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    if not can_access_orchestrator(db, current_user, orchestrator):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if not orchestrator.enabled:
         raise HTTPException(status_code=400, detail="Orchestrator is disabled")
@@ -1248,6 +1262,7 @@ async def pause_orchestrator_webhooks(
     orchestrator_id: int,
     reason: str = "manual",
     ttl_seconds: int = 3600,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1268,6 +1283,9 @@ async def pause_orchestrator_webhooks(
     if not orchestrator:
         raise HTTPException(status_code=404, detail="Orchestrator not found")
 
+    if not can_access_orchestrator(db, current_user, orchestrator):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     # Limit TTL to 24 hours max
     ttl_seconds = min(ttl_seconds, 86400)
 
@@ -1287,6 +1305,7 @@ async def pause_orchestrator_webhooks(
 @router.post("/resume/{orchestrator_id}")
 async def resume_orchestrator_webhooks(
     orchestrator_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1302,6 +1321,9 @@ async def resume_orchestrator_webhooks(
     if not orchestrator:
         raise HTTPException(status_code=404, detail="Orchestrator not found")
 
+    if not can_access_orchestrator(db, current_user, orchestrator):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     if resume_webhooks_for_orchestrator(orchestrator_id):
         return {
             "status": "resumed",
@@ -1316,6 +1338,7 @@ async def resume_orchestrator_webhooks(
 @router.get("/pause-status/{orchestrator_id}")
 async def get_orchestrator_pause_status(
     orchestrator_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1330,6 +1353,9 @@ async def get_orchestrator_pause_status(
     orchestrator = db.query(DPSKOrchestrator).filter_by(id=orchestrator_id).first()
     if not orchestrator:
         raise HTTPException(status_code=404, detail="Orchestrator not found")
+
+    if not can_access_orchestrator(db, current_user, orchestrator):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     paused, reason = is_webhook_paused(orchestrator_id)
 

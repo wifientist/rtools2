@@ -72,10 +72,23 @@ def create_user_endpoint(
 
 ### 🚀 Get User by ID
 @router.get("/{user_id}", response_model=schemas.auth.UserResponse)
-def get_user_endpoint(user_id: int, db: Session = Depends(get_db)):
+def get_user_endpoint(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     user = get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Scope access: users can view themselves, admins their company, super anyone
+    if current_user.role != RoleEnum.super:
+        if current_user.role == RoleEnum.admin:
+            if user.company_id != current_user.company_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        else:
+            if user.id != current_user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
 
     return user
 

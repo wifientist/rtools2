@@ -68,11 +68,11 @@ const App = () => {
           <Route path="/speed-explainer" element={<SpeedExplainer />} />
           <Route path="/roaming-explainer" element={<RoamingExplainer />} />
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
-          <Route path="/per-unit-ssid" element={<BetaRoute element={<PerUnitSSID />} />} />
-          <Route path="/ap-port-config" element={<BetaRoute element={<APPortConfig />} />} />
-          <Route path="/ap-rename" element={<BetaRoute element={<APRename />} />} />
-          <Route path="/bulk-wlan" element={<BetaRoute element={<BulkWlanEdit />} />} />
-          <Route path="/cloudpath-import" element={<BetaRoute element={<CloudpathImport />} />} />
+          <Route path="/per-unit-ssid" element={<ProtectedRoute element={<PerUnitSSID />} />} />
+          <Route path="/ap-port-config" element={<ProtectedRoute element={<APPortConfig />} />} />
+          <Route path="/ap-rename" element={<ProtectedRoute element={<APRename />} />} />
+          <Route path="/bulk-wlan" element={<ProtectedRoute element={<BulkWlanEdit />} />} />
+          <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />

@@ -1,5 +1,59 @@
 from typing import Optional, Literal, Union
-from pydantic import BaseModel, Field
+from ipaddress import ip_address, ip_network
+import socket
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ===== SSRF Protection =====
+
+BLOCKED_NETWORKS = [
+    ip_network("10.0.0.0/8"),
+    ip_network("172.16.0.0/12"),
+    ip_network("192.168.0.0/16"),
+    ip_network("127.0.0.0/8"),
+    ip_network("169.254.0.0/16"),
+    ip_network("0.0.0.0/8"),
+    ip_network("::1/128"),
+]
+
+BLOCKED_HOSTNAMES = {"localhost", "metadata.google.internal"}
+
+
+def validate_sz_host(host: str) -> str:
+    """Reject hosts that resolve to private/reserved IP ranges."""
+    if not host:
+        return host
+
+    hostname = host.lower().strip()
+    if hostname in BLOCKED_HOSTNAMES:
+        raise ValueError(f"Blocked hostname: {host}")
+
+    # Try to parse as IP directly
+    try:
+        addr = ip_address(hostname)
+        for net in BLOCKED_NETWORKS:
+            if addr in net:
+                raise ValueError(f"SmartZone host must not be a private/reserved IP address")
+        return host
+    except ValueError as e:
+        if "private" in str(e) or "Blocked" in str(e):
+            raise
+        # Not an IP literal — treat as hostname and resolve
+        pass
+
+    try:
+        resolved = socket.getaddrinfo(hostname, None)
+        for _family, _type, _proto, _canonname, sockaddr in resolved:
+            addr = ip_address(sockaddr[0])
+            for net in BLOCKED_NETWORKS:
+                if addr in net:
+                    raise ValueError(f"SmartZone host resolves to a private/reserved IP address")
+    except socket.gaierror:
+        # Can't resolve — allow it (will fail at connection time instead)
+        pass
+
+    return host
 
 
 # ===== Base Schemas =====
@@ -47,6 +101,11 @@ class SmartZoneControllerCreate(BaseModel):
     sz_password: str = Field(..., description="API password")
     sz_version: Optional[str] = Field(None, description="Controller version (e.g., '6.1', '7.0')")
 
+    @field_validator("sz_host")
+    @classmethod
+    def check_sz_host(cls, v):
+        return validate_sz_host(v)
+
 
 class SmartZoneControllerUpdate(BaseModel):
     """Schema for updating a SmartZone controller"""
@@ -57,6 +116,13 @@ class SmartZoneControllerUpdate(BaseModel):
     sz_username: Optional[str] = None
     sz_password: Optional[str] = None
     sz_version: Optional[str] = None
+
+    @field_validator("sz_host")
+    @classmethod
+    def check_sz_host(cls, v):
+        if v is None:
+            return v
+        return validate_sz_host(v)
 
 
 # ===== Union Type for API Endpoints =====

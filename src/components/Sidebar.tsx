@@ -158,11 +158,13 @@ const Sidebar = () => {
       isNested ? 'pl-8 space-x-2' : 'space-x-3'
     } ${inCollapsedSubmenu ? 'w-full' : ''}`;
 
+    const iconClass = item.requiresBeta ? 'text-orange-300' : item.requiresAlpha ? 'text-purple-300' : '';
+
     const content = (
       <>
-        {item.icon}
+        {iconClass ? <span className={iconClass}>{item.icon}</span> : item.icon}
         {/* Show label when expanded OR in collapsed submenu */}
-        {(!collapsed || inCollapsedSubmenu) && <span className="text-sm">{item.label}</span>}
+        {(!collapsed || inCollapsedSubmenu) && <span className={`text-sm ${iconClass}`}>{item.label}</span>}
 
         {/* When collapsed and NOT in submenu, show floating label on hover */}
         {collapsed && !inCollapsedSubmenu && (

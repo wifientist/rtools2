@@ -181,7 +181,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSecondaryControllerName(null);
       }
 
-      const rolesResponse = await fetch(`${API_BASE_URL}/auth/roles`);
+      const rolesResponse = await fetch(`${API_BASE_URL}/auth/roles`, {
+        credentials: "include",
+      });
       if (rolesResponse.ok) {
         const rolesData = await rolesResponse.json();
         setRoleHierarchy(rolesData.hierarchy);
@@ -214,13 +216,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkAuth();
   }, []);
 
-  // Auto-refresh access token every 11 hours (before 12-hour expiry)
+  // Auto-refresh access token before it expires (30-min token, refresh at 25 min)
   // With visibility API support to handle backgrounded tabs
   useEffect(() => {
     if (!isAuthenticated) return;
 
     let intervalId: NodeJS.Timeout;
     let lastRefreshTime = Date.now();
+    const REFRESH_INTERVAL = 25 * 60 * 1000; // 25 minutes (before 30-min token expires)
 
     const startInterval = () => {
       intervalId = setInterval(() => {
@@ -230,18 +233,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           refreshAccessToken();
           lastRefreshTime = Date.now();
         }
-      }, 11 * 60 * 60 * 1000); // 11 hours
+      }, REFRESH_INTERVAL);
     };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // When tab becomes visible, check if refresh is needed
+        // When tab becomes visible, re-check auth status
+        // This handles: token expired while tab was backgrounded,
+        // or user logged out in another tab, etc.
         const timeSinceRefresh = Date.now() - lastRefreshTime;
-        const elevenHours = 11 * 60 * 60 * 1000;
 
-        if (timeSinceRefresh > elevenHours) {
-          console.log("Tab became visible after long idle, refreshing token...");
-          refreshAccessToken();
+        if (timeSinceRefresh > REFRESH_INTERVAL) {
+          console.log("Tab became visible after idle, re-checking auth...");
+          checkAuth();
           lastRefreshTime = Date.now();
         }
       }
