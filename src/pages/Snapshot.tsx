@@ -47,7 +47,7 @@ function Snapshot() {
 
     return (
         <div className="p-4">
-            <h1 className="text-2xl font-bold mb-4">MSP Details {activeControllerName ? `for ${activeControllerName}` : ""}</h1>
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">MSP Details {activeControllerName ? `for ${activeControllerName}` : ""}</h2>
                 
             <section className="mb-4">
                 <h2 className="font-semibold">End Customers</h2>

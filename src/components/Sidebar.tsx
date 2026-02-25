@@ -55,9 +55,7 @@ const Sidebar = () => {
       items: [
         { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migration-dashboard", icon: <BarChart3 size={20} />, label: "Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresFeature: "migration_dashboard" },
-        { to: "/snapshot", icon: <Camera size={20} />, label: "MSP Snapshot", requiresAuth: true, rolesAllowed: ["user","admin"] },
-        { to: "/diff", icon: <GitCompareArrows size={20} />, label: "Diff Tenant", requiresAuth: true, rolesAllowed: ["user","admin"] },
-        { to: "/diff-venue", icon: <GitCompareArrows size={20} />, label: "Diff Venue", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/r1-details", icon: <CloudCog size={20} />, label: "R1 Details", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/sz-audit", icon: <ClipboardList size={20} />, label: "SZ Audit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/firmware-matrix", icon: <Table2 size={20} />, label: "Firmware Matrix", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/diagrams", icon: <Network size={20} />, label: "Network Diagrams", requiresAuth: true, requiresAlpha: true, isExternal: true },

@@ -23,6 +23,7 @@ import MigrateR1ToR1 from "@/pages/MigrateR1ToR1";
 import MigrateSzToR1 from "@/pages/MigrateSzToR1";
 import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
+import R1Details from "@/pages/R1Details";
 import TestCalls from "@/pages/TestCalls";
 import Option43Calculator from "@/pages/Option43Calculator";
 import CompanyManager from "@/components/CompanyManager";
@@ -63,8 +64,9 @@ const App = () => {
           <Route path="/companies" element={<AdminRoute element={<CompanyManager />} />} />
           <Route path="/users" element={<AdminRoute element={<Users />} />} />
           <Route path="/controllers" element={<ProtectedRoute element={<Controllers />} />} />
-          <Route path="/diff" element={<ProtectedRoute element={<DiffTenant />} />} />
-          <Route path="/diff-venue" element={<ProtectedRoute element={<DiffVenue />} />} />
+          <Route path="/r1-details" element={<ProtectedRoute element={<R1Details />} />} />
+          <Route path="/diff" element={<Navigate to="/r1-details" />} />
+          <Route path="/diff-venue" element={<Navigate to="/r1-details" />} />
           <Route path="/speed-explainer" element={<SpeedExplainer />} />
           <Route path="/roaming-explainer" element={<RoamingExplainer />} />
           <Route path="/firmware-matrix" element={<BetaRoute element={<FirmwareMatrix />} />} />
@@ -85,7 +87,7 @@ const App = () => {
           <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />
           <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
-          <Route path="/snapshot" element={<ProtectedRoute element={<Snapshot />} />} />
+          <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
           

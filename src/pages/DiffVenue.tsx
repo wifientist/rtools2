@@ -105,11 +105,7 @@ function DiffVenue() {
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
-      <h2 className="text-3xl font-bold mb-4">Compare Venues</h2>
-      <p className="text-gray-600 mb-6">
-        Compare detailed venue WiFi settings between two Ruckus ONE tenants including AP radio settings,
-        load balancing, channel configurations, and more.
-      </p>
+      <h2 className="text-xl font-semibold mb-4 text-gray-700">Compare Venues</h2>
 
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h3 className="text-lg font-semibold mb-4">Step 1: Select Source and Destination Tenants</h3>

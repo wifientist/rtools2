@@ -59,7 +59,7 @@ function DiffTenant() {
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
-      <h2 className="text-3xl font-bold mb-4">Compare End Customers</h2>
+      <h2 className="text-xl font-semibold mb-4 text-gray-700">Compare End Customers</h2>
 
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <DoubleEc
