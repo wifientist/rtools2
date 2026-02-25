@@ -106,7 +106,7 @@ export default function UserManager() {
 
   // Helper to get company name by ID
   const getCompanyName = (companyId: number | null) => {
-    if (!companyId) return "Unassigned";
+    if (!companyId) return "Unknown";
     const company = companies.find(c => c.id === companyId);
     return company?.name || "Unknown";
   };

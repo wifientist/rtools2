@@ -59,8 +59,10 @@ async def lifespan(app: FastAPI):
     # Register system-level scheduled jobs
     from jobs.migration_snapshot_job import ensure_registered as ensure_snapshot_job
     from jobs.redis_cleanup_job import ensure_registered as ensure_redis_cleanup
+    from jobs.signup_attempt_cleanup_job import ensure_registered as ensure_signup_cleanup
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
+    await ensure_signup_cleanup(scheduler)
 
     yield
 

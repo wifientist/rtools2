@@ -8,7 +8,7 @@ from datetime import timedelta
 from models.user import User, RoleEnum
 from models.company import Company
 from models.controller import Controller
-from schemas.auth import TokenResponse, UserCreate, RequestOtpSchema, LoginOtpSchema
+from schemas.auth import RequestOtpSchema, LoginOtpSchema
 from security import create_access_token, verify_access_token, create_user_token, is_production
 from dependencies import get_db, get_current_user
 from services.auth_service import generate_and_send_otp, verify_otp_and_login
@@ -17,6 +17,7 @@ from utils.email import send_otp_email_via_api
 from utils.audit import log_login, log_user_creation
 from constants.roles import role_hierarchy
 from constants.access import MIGRATION_DASHBOARD_DOMAINS
+from models.signup_attempt import SignupAttempt
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,36 @@ async def signup_request_otp(payload: RequestOtpSchema, db: Session = Depends(ge
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists.")
 
+    # Block unapproved domains before sending OTP (prevents email abuse)
+    email_domain = payload.email.split('@')[1]
+    company = db.query(Company).filter(Company.domain == email_domain).first()
+
+    if not company:
+        # Auto-create unapproved company record so super admin can see the domain
+        company = Company(
+            name=email_domain.split('.')[0].capitalize(),
+            domain=email_domain,
+            is_approved=False,
+        )
+        db.add(company)
+        db.commit()
+        db.refresh(company)
+
+        db.add(SignupAttempt(email=payload.email, domain=email_domain, reason="domain_not_approved"))
+        db.commit()
+        raise HTTPException(
+            status_code=403,
+            detail=f"Domain '{email_domain}' is not approved for signup. Please contact an administrator.",
+        )
+
+    if not company.is_approved:
+        db.add(SignupAttempt(email=payload.email, domain=email_domain, reason="domain_pending"))
+        db.commit()
+        raise HTTPException(
+            status_code=403,
+            detail=f"Domain '{email_domain}' is pending approval. Please contact an administrator.",
+        )
+
     otp = generate_and_store_signup_otp(payload.email, db)
 
     # Send OTP to the user's email
@@ -129,6 +160,8 @@ async def signup_verify_otp(payload: LoginOtpSchema, request: Request, db: Sessi
         db.refresh(company)
 
         # Block signup - company needs admin approval
+        db.add(SignupAttempt(email=payload.email, domain=email_domain, reason="domain_not_approved"))
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail=f"Domain '{email_domain}' is not approved for signup. Please contact an administrator."
@@ -136,6 +169,8 @@ async def signup_verify_otp(payload: LoginOtpSchema, request: Request, db: Sessi
 
     # Check if company is approved
     if not company.is_approved:
+        db.add(SignupAttempt(email=payload.email, domain=email_domain, reason="domain_pending"))
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail=f"Domain '{email_domain}' is pending approval. Please contact an administrator."
@@ -241,56 +276,6 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
         },
     })
 
-
-### 🚀 Signup Route
-@router.post("/signup", response_model=TokenResponse)
-def signup(user_data: UserCreate, db: Session = Depends(get_db)):
-    
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already exists")
-
-    unassigned_company_id = -1  #default Unassigned company
-    company = db.query(Company).filter(Company.id == unassigned_company_id).first()
-    #company = db.query(Company).filter(Company.id == user_data.company_id).first()
-    #if not company:
-    #    raise HTTPException(status_code=404, detail="Invalid company ID")
-
-    # SECURITY: Public signup always creates regular users, never admin/super
-    # Explicitly ignore any role field from the request payload
-    # Explicitly set role to "user" to prevent privilege escalation
-    #hashed_password = get_password_hash(user_data.password)
-    new_user = User(
-        email=user_data.email,
-        role=RoleEnum.user  # Explicitly set to user role for security
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    #access_token = create_access_token({"sub": new_user.email})
-    #return {"access_token": access_token, "token_type": "bearer"}
-    
-    access_token = create_access_token({
-        "sub": new_user.email, 
-        "id": new_user.id, 
-        "role": new_user.role, 
-        "company_id": new_user.company_id, 
-        # "active_tenant_id": new_user.active_tenant_id, 
-        # "active_tenant_instance_name": new_user.active_tenant.instance_name if new_user.active_tenant_id else None,
-        # "secondary_tenant_id": new_user.secondary_tenant_id, 
-        # "secondary_tenant_instance_name": new_user.secondary_tenant.instance_name if new_user.secondary_tenant_id else None,
-    })
-    response = JSONResponse(content={"message": "Signup successful"})
-    response.set_cookie(
-        key="session",
-        value=access_token,
-        httponly=True,
-        secure=is_production(),
-        samesite="Strict",
-    )
-
-    return response
 
 @router.post("/refresh")
 def refresh_access_token(request: Request, db: Session = Depends(get_db)):

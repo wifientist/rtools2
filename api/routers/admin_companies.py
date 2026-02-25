@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from models.user import User, RoleEnum
 from models.company import Company
+from models.signup_attempt import SignupAttempt
 from dependencies import get_db, get_current_user
 from decorators import require_role
 from pydantic import BaseModel
@@ -174,13 +175,6 @@ def update_company(
             detail="You can only update your own company"
         )
 
-    # Prevent modifying the Unassigned company's approval status
-    if company.id == -1 and company_data.is_approved is False:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot unapprove the 'Unassigned' company"
-        )
-
     # Update fields if provided
     if company_data.name is not None:
         # Check name uniqueness
@@ -280,13 +274,6 @@ def unapprove_company(
             detail="You can only unapprove your own company"
         )
 
-    # Prevent unapproving the Unassigned company
-    if company.id == -1:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot unapprove the 'Unassigned' company"
-        )
-
     company.is_approved = False
     db.commit()
     db.refresh(company)
@@ -317,13 +304,6 @@ def delete_company(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
-    # Prevent deleting the Unassigned company
-    if company.id == -1:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot delete the 'Unassigned' company"
-        )
-
     # Check if company has users
     if len(company.users) > 0:
         raise HTTPException(
@@ -335,3 +315,33 @@ def delete_company(
     db.commit()
 
     return None
+
+
+# Signup attempt schemas
+class SignupAttemptResponse(BaseModel):
+    id: int
+    email: str
+    domain: str
+    reason: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# List recent rejected signup attempts (super only)
+@router.get("/signup-attempts", response_model=List[SignupAttemptResponse])
+@require_role(RoleEnum.super)
+def list_signup_attempts(
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List recent rejected signup attempts, newest first."""
+    attempts = (
+        db.query(SignupAttempt)
+        .order_by(SignupAttempt.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return attempts

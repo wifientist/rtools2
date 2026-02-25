@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Building2, Check, X, Plus, Trash2 } from "lucide-react";
+import { Building2, Check, X, Plus, Trash2, AlertCircle } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -12,8 +12,17 @@ interface Company {
   user_count: number;
 }
 
+interface SignupAttempt {
+  id: number;
+  email: string;
+  domain: string;
+  reason: string;
+  created_at: string;
+}
+
 export default function CompanyManager() {
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [signupAttempts, setSignupAttempts] = useState<SignupAttempt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string>("admin");
@@ -55,10 +64,26 @@ export default function CompanyManager() {
       });
       if (response.ok) {
         const data = await response.json();
-        setCurrentUserRole(data.role || "admin");
+        const role = data.role || "admin";
+        setCurrentUserRole(role);
+        if (role === "super") fetchSignupAttempts();
       }
     } catch (err) {
       console.error("Error fetching current user role:", err);
+    }
+  };
+
+  // Fetch rejected signup attempts (super only)
+  const fetchSignupAttempts = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/companies/signup-attempts`, {
+        credentials: "include",
+      });
+      if (response.ok) {
+        setSignupAttempts(await response.json());
+      }
+    } catch (err) {
+      console.error("Error fetching signup attempts:", err);
     }
   };
 
@@ -348,13 +373,8 @@ export default function CompanyManager() {
                           onClick={() =>
                             handleUnapprove(company.id, company.name)
                           }
-                          disabled={company.id === -1}
-                          className="text-yellow-600 hover:text-yellow-800 disabled:text-gray-400 disabled:cursor-not-allowed"
-                          title={
-                            company.id === -1
-                              ? "Cannot unapprove Unassigned company"
-                              : "Unapprove company"
-                          }
+                          className="text-yellow-600 hover:text-yellow-800"
+                          title="Unapprove company"
                         >
                           <X size={18} />
                         </button>
@@ -370,14 +390,10 @@ export default function CompanyManager() {
                       {currentUserRole === "super" && (
                         <button
                           onClick={() => handleDelete(company.id, company.name)}
-                          disabled={
-                            company.id === -1 || company.user_count > 0
-                          }
+                          disabled={company.user_count > 0}
                           className="text-red-600 hover:text-red-800 disabled:text-gray-400 disabled:cursor-not-allowed"
                           title={
-                            company.id === -1
-                              ? "Cannot delete Unassigned company"
-                              : company.user_count > 0
+                            company.user_count > 0
                               ? "Cannot delete company with users"
                               : "Delete company"
                           }
@@ -393,6 +409,48 @@ export default function CompanyManager() {
           </tbody>
         </table>
       </div>
+
+      {/* Rejected Signup Attempts */}
+      {currentUserRole === "super" && signupAttempts.length > 0 && (
+        <div className="mt-6 bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="px-6 py-4 border-b bg-amber-50 flex items-center gap-2">
+            <AlertCircle size={18} className="text-amber-600" />
+            <h3 className="font-semibold text-amber-900">Rejected Signup Attempts</h3>
+            <span className="text-xs text-amber-600 ml-1">({signupAttempts.length})</span>
+          </div>
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+                <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {signupAttempts.map((attempt) => (
+                <tr key={attempt.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-2 text-sm font-medium text-gray-800">{attempt.email}</td>
+                  <td className="px-6 py-2 text-sm text-gray-600">@{attempt.domain}</td>
+                  <td className="px-6 py-2 text-sm">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      attempt.reason === "domain_not_approved"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-yellow-100 text-yellow-700"
+                    }`}>
+                      {attempt.reason === "domain_not_approved" ? "New Domain" : "Pending Approval"}
+                    </span>
+                  </td>
+                  <td className="px-6 py-2 text-sm text-gray-500">
+                    {new Date(attempt.created_at).toLocaleDateString()}{" "}
+                    {new Date(attempt.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="mt-6 p-4 bg-blue-50 rounded-lg">
         <h4 className="font-semibold text-blue-900 mb-2">How it works:</h4>

@@ -6,6 +6,7 @@ from models.controller import Controller  # NEW: Replaces Tenant
 from models.pending_signup import PendingSignupOtp
 from models.revoked_token import RevokedToken
 from models.audit_log import AuditLog
+from models.signup_attempt import SignupAttempt
 
 # Scheduler models
 from models.scheduler import ScheduledJob, ScheduledJobRun
@@ -34,7 +35,7 @@ from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
 
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
-    'PendingSignupOtp', 'RevokedToken', 'AuditLog',
+    'PendingSignupOtp', 'RevokedToken', 'AuditLog', 'SignupAttempt',
     # Scheduler
     'ScheduledJob', 'ScheduledJobRun',
     # Orchestrator

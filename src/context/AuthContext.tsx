@@ -111,10 +111,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (!response.ok) {
-        // If auth check fails, try to refresh the access token
+        // If auth check fails, try to refresh the access token (with retry)
         if (response.status === 401) {
           console.log("Access token expired, attempting refresh...");
-          const refreshed = await refreshAccessToken();
+          let refreshed = await refreshAccessToken();
+
+          if (!refreshed) {
+            // First attempt failed — wait briefly and retry once more
+            // (handles transient network blips or race conditions)
+            console.warn("First refresh attempt failed, retrying in 2s...");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            refreshed = await refreshAccessToken();
+          }
 
           if (refreshed) {
             // Retry auth check with new access token
@@ -122,8 +130,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
-        const errorData = await response.json();
-        console.warn("Auth check failed:", errorData.error);
+        let errorMsg = "Unknown error";
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorData.detail || errorMsg;
+        } catch { /* response body may already be consumed */ }
+        console.warn("Auth check failed:", errorMsg);
 
         setIsAuthenticated(false);
         setUserRole(null);
@@ -216,22 +228,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkAuth();
   }, []);
 
-  // Auto-refresh access token before it expires (30-min token, refresh at 25 min)
+  // Auto-refresh access token before it expires (30-min token, refresh at 20 min)
   // With visibility API support to handle backgrounded tabs
   useEffect(() => {
     if (!isAuthenticated) return;
 
     let intervalId: NodeJS.Timeout;
+    let retryTimeoutId: NodeJS.Timeout;
     let lastRefreshTime = Date.now();
-    const REFRESH_INTERVAL = 25 * 60 * 1000; // 25 minutes (before 30-min token expires)
+    const REFRESH_INTERVAL = 20 * 60 * 1000; // 20 minutes (10-min buffer before 30-min expiry)
+    const RETRY_DELAY = 60 * 1000; // Retry failed refresh after 60 seconds
+
+    const doRefresh = async () => {
+      const success = await refreshAccessToken();
+      if (success) {
+        lastRefreshTime = Date.now();
+      } else {
+        // Refresh failed — schedule a retry so we don't silently lose the session
+        console.warn("Auto-refresh failed, retrying in 60s...");
+        retryTimeoutId = setTimeout(doRefresh, RETRY_DELAY);
+      }
+      return success;
+    };
 
     const startInterval = () => {
       intervalId = setInterval(() => {
         // Only refresh if page is visible (prevents throttled background timers)
         if (document.visibilityState === 'visible') {
           console.log("Auto-refreshing access token...");
-          refreshAccessToken();
-          lastRefreshTime = Date.now();
+          doRefresh();
         }
       }, REFRESH_INTERVAL);
     };
@@ -244,9 +269,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // Access token likely expired while tab was backgrounded.
           // Refresh it first, then re-check auth status.
           console.log("Tab became visible after idle, refreshing token...");
-          await refreshAccessToken();
-          lastRefreshTime = Date.now();
-          checkAuth();
+          const success = await doRefresh();
+          if (success) checkAuth();
         }
       }
     };
@@ -256,6 +280,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return () => {
       clearInterval(intervalId);
+      clearTimeout(retryTimeoutId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [isAuthenticated]);

@@ -28,7 +28,7 @@ class User(Base):
     alpha_enabled = Column(Boolean, default=False, nullable=False)
 
     # 🔹 Add ForeignKey to link Users to Companies
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, default=-1)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
 
     # 🔹 Track the active controller (RuckusONE or SmartZone)
     active_controller_id = Column(Integer, ForeignKey("controllers.id"), nullable=True)
