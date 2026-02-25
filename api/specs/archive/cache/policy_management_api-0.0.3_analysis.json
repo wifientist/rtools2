@@ -1,0 +1,21 @@
+{
+  "name": "Policy Management API",
+  "version": "0.0.3",
+  "url": "https://docs.ruckus.cloud/_bundle/api/policy-evaluator-0.0.3.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.353842",
+  "endpoint_count": 1,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/policySets/{policySetId}/evaluationReports",
+      "method": "POST",
+      "summary": "Evaluate Criteria",
+      "description": "Evaluates the criteria provided and returns the matched response from the first matching policy within the specified set, or it will indicate that no match was found. A policy has additional required criteria and no matching test criteria is provided, that will be considered a failure. Additional test attributes that are provided but are not required within a policy will be ignored and not considered a match failure.",
+      "operation_id": "evaluateReport",
+      "tags": [
+        "Criteria Evaluation"
+      ]
+    }
+  ]
+}

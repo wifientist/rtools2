@@ -1,0 +1,148 @@
+openapi: 3.0.1
+info:
+  title: File Service API & Model Documentation
+  description: |
+    # Overview
+
+    ## Rate Limit
+    For the File REST API the following will be true: 
+    - Limits are applied to each tenant.
+    - A maximum of 200 calls can be made per second.
+    - Each second 100 calls will be returned to be used.
+  version: 0.2.7
+externalDocs:
+  description: Ruckus Network Technical Documents
+  url: https://support.ruckuswireless.com/documents
+servers:
+  - url: http://localhost
+    description: Generated server url
+tags:
+  - name: File
+    description: Manage upload or download files.
+paths:
+  /files/uploadurls:
+    post:
+      tags:
+        - File
+      summary: Get Upload URL
+      description: Get a URL with which to upload a file.
+      operationId: getUploadUrl
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+  /files/{fileId}:
+    get:
+      tags:
+        - File
+      summary: Get Download URL
+      description: Get the URL from which to download this file.
+      operationId: getDownloadUrl
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: >-
+            Returns: Redirect (302) with the file signed url in 'Location'
+            header
+          headers:
+            Location:
+              description: The File Signed URL
+              style: simple
+          content:
+            '*/*':
+              schema:
+                type: string
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+  /files/{fileId}/urls:
+    get:
+      tags:
+        - File
+      summary: Get File Download URL
+      description: Get the URL from which to download this file.
+      operationId: getFileDownloadUrl
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 'Returns: the file signed url'
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+components:
+  schemas:
+    UploadUrlRequest:
+      type: object
+      properties:
+        fileExtension:
+          type: string
+    SignedUrlResponse:
+      type: object
+      properties:
+        fileId:
+          type: string
+        signedUrl:
+          type: string
+          description: >-
+            A signed URL is a URL that provides limited permission and time to
+            make a request.

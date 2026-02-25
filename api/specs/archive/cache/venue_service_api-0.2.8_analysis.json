@@ -1,0 +1,171 @@
+{
+  "name": "Venue Service API",
+  "version": "0.2.8",
+  "url": "https://docs.ruckus.cloud/_bundle/api/venue-0.2.8.yaml",
+  "downloaded_at": "2025-12-02T18:45:28.696743",
+  "endpoint_count": 16,
+  "base_url": "http://localhost",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/venues/{venueId}",
+      "method": "GET",
+      "summary": "Access Venue by ID",
+      "description": "Get venue.",
+      "operation_id": "GetVenue",
+      "tags": [
+        "Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}",
+      "method": "PUT",
+      "summary": "Replace Venue",
+      "description": "Update venue.",
+      "operation_id": "UpdateVenue",
+      "tags": [
+        "Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}",
+      "method": "DELETE",
+      "summary": "Revoke Venue by ID",
+      "description": "Delete venues by ID.\nWARNING: Note that all network devices under this venue will be removed as well.",
+      "operation_id": "DeleteVenue",
+      "tags": [
+        "Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/{floorPlanId}",
+      "method": "GET",
+      "summary": "Access Floor Plan",
+      "description": "Get floor plan by ID.",
+      "operation_id": "GetVenueFloorPlan",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/{floorPlanId}",
+      "method": "PUT",
+      "summary": "Replace Floor Plan",
+      "description": "Update floor plan.",
+      "operation_id": "UpdateVenueFloorPlan",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/{floorPlanId}",
+      "method": "DELETE",
+      "summary": "Revoke Floor Plan",
+      "description": "Delete floor plan.",
+      "operation_id": "DeleteVenueFloorPlan",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}",
+      "method": "GET",
+      "summary": "Get Venue Template by ID",
+      "description": "Get venue template.",
+      "operation_id": "getVenueTemplate",
+      "tags": [
+        "Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}",
+      "method": "PUT",
+      "summary": "Update Venue Template",
+      "description": "Update venue template.",
+      "operation_id": "updateVenueTemplate",
+      "tags": [
+        "Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Venue Template by ID",
+      "description": "Delete venue template by ID.\nWARNING: Note that all network devices under this venue Template will be removed as well.",
+      "operation_id": "deleteVenueTemplate",
+      "tags": [
+        "Venue Template"
+      ]
+    },
+    {
+      "path": "/venues",
+      "method": "POST",
+      "summary": "Request Venue",
+      "description": "Create venue.",
+      "operation_id": "CreateVenue",
+      "tags": [
+        "Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/signurls/uploadurls",
+      "method": "POST",
+      "summary": "Access Image Upload URL",
+      "description": "Get a URL where to upload a floor plan image.",
+      "operation_id": "GetFloorPlanImageUploadUrl",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans",
+      "method": "GET",
+      "summary": "Access Floor Plans",
+      "description": "Get floor plans by a venue ID.",
+      "operation_id": "GetVenueFloorPlans",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans",
+      "method": "POST",
+      "summary": "Request Floor Plan",
+      "description": "Create floor plan.",
+      "operation_id": "createVenueFloorPlan",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/query",
+      "method": "POST",
+      "summary": "Query Floor Plans",
+      "description": "Get floor plans by query criteria.",
+      "operation_id": "QueryVenueFloorPlans",
+      "tags": [
+        "Floor Plan"
+      ]
+    },
+    {
+      "path": "/templates/venues",
+      "method": "POST",
+      "summary": "Create Venue Template",
+      "description": "Create venue template.",
+      "operation_id": "createVenueTemplate",
+      "tags": [
+        "Venue Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/signurls/{fileId}/urls",
+      "method": "GET",
+      "summary": "Access Image Download URL",
+      "description": "Get the URL where to download a floor plan image.",
+      "operation_id": "GetFloorPlanImageDownloadUrl",
+      "tags": [
+        "Floor Plan"
+      ]
+    }
+  ]
+}

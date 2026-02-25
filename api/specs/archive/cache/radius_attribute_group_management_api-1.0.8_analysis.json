@@ -1,0 +1,151 @@
+{
+  "name": "RADIUS Attribute Group Management API",
+  "version": "1.0.8",
+  "url": "https://docs.ruckus.cloud/_bundle/api/radiusattribgroup-1.0.8.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.755309",
+  "endpoint_count": 14,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/radiusAttributes/query",
+      "method": "POST",
+      "summary": "Get RADIUS Attributes",
+      "description": "Gets the list of RADIUS attributes using the specified query. Paging is indexed starting at one.",
+      "operation_id": "getAllRadiusAttributesByQuery",
+      "tags": [
+        "RADIUS Attribute"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups",
+      "method": "GET",
+      "summary": "Get RADIUS Attribute Groups",
+      "description": "Gets the complete list of RADIUS attribute group in a paged format.",
+      "operation_id": "getAllRadiusAttributeGroups",
+      "tags": [
+        "RADIUS Attribute Group"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups",
+      "method": "POST",
+      "summary": "Create RADIUS Attribute Group",
+      "description": "Creates a RADIUS attribute group with the requested values.",
+      "operation_id": "createRadiusAttributeGroup",
+      "tags": [
+        "RADIUS Attribute Group"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}/assignments",
+      "method": "GET",
+      "summary": "Get External Assignments",
+      "description": "Gets the external assignments for the specified Radius attribute group.",
+      "operation_id": "getAllExternalAssignments",
+      "tags": [
+        "RADIUS Attribute Group Assignments"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}/assignments",
+      "method": "POST",
+      "summary": "Create External Assignment",
+      "description": "Create an external service assignment to the requested RADIUS attribute group.",
+      "operation_id": "createExternalAssignment",
+      "tags": [
+        "RADIUS Attribute Group Assignments"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/query",
+      "method": "POST",
+      "summary": "Get RADIUS Attribute Groups",
+      "description": "Gets the list of RADIUS attribute groups using the specified query.",
+      "operation_id": "getAllRadiusAttributeGroupsByQuery",
+      "tags": [
+        "RADIUS Attribute Group"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}",
+      "method": "GET",
+      "summary": "Get RADIUS Attribute Group",
+      "description": "Gets the requested RADIUS attribute group by the id.",
+      "operation_id": "getAttributeGroupById",
+      "tags": [
+        "RADIUS Attribute Group"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}",
+      "method": "DELETE",
+      "summary": "Delete RADIUS Attribute Group",
+      "description": "Deletes the requested RADIUS attribute group.",
+      "operation_id": "deleteAttributeGroup",
+      "tags": [
+        "RADIUS Attribute Group"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}",
+      "method": "PATCH",
+      "summary": "Update RADIUS Attribute Group",
+      "description": "Updates the properties on the requested RADIUS attribute group.",
+      "operation_id": "updateRadiusAttribGroup",
+      "tags": [
+        "RADIUS Attribute Group"
+      ]
+    },
+    {
+      "path": "/radiusAttributes",
+      "method": "GET",
+      "summary": "Get RADIUS Attributes",
+      "description": "Gets the list of RADIUS attributes in a paged format.",
+      "operation_id": "getAllRadiusAttribute",
+      "tags": [
+        "RADIUS Attribute"
+      ]
+    },
+    {
+      "path": "/radiusAttributes/{id}",
+      "method": "GET",
+      "summary": "Get RADIUS Attribute",
+      "description": "Gets the specific RADIUS attribute requested.",
+      "operation_id": "getAttributeById",
+      "tags": [
+        "RADIUS Attribute"
+      ]
+    },
+    {
+      "path": "/radiusAttributes/vendors",
+      "method": "GET",
+      "summary": "Get RADIUS Attribute Vendors",
+      "description": "Gets the list of vendors that are supported in the RADIUS attributes.",
+      "operation_id": "getAllRadiusAttributeVendors",
+      "tags": [
+        "RADIUS Attribute"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}/assignments/{assignmentId}",
+      "method": "GET",
+      "summary": "Get External Assignment",
+      "description": "Gets the external assignment for the specified RADIUS attribute group.",
+      "operation_id": "getExternalAssignmentByID",
+      "tags": [
+        "RADIUS Attribute Group Assignments"
+      ]
+    },
+    {
+      "path": "/radiusAttributeGroups/{groupId}/assignments/{assignmentId}",
+      "method": "DELETE",
+      "summary": "Delete External Assignment",
+      "description": "Delete the requested external assignment for this RADIUS attribute group.",
+      "operation_id": "deleteExternalAssignment",
+      "tags": [
+        "RADIUS Attribute Group Assignments"
+      ]
+    }
+  ]
+}

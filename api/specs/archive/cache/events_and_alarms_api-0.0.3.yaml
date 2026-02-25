@@ -1,0 +1,655 @@
+openapi: 3.0.1
+info:
+  title: Events and Alarms API
+  version: v0.0.3
+servers:
+  - url: http://localhost
+    description: Generated server url
+tags:
+  - name: Alarm
+    description: Alarm List API
+  - name: Event
+    description: Event List API
+paths:
+  /historicalClients/query:
+    post:
+      tags:
+        - Event
+      summary: Get Historical Clients
+      description: Get historical client list information grouped by client MAC address.
+      operationId: getEventAggList
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventRequestDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EventRequestDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /events/query:
+    post:
+      tags:
+        - Event
+      summary: Get Events
+      description: Get event list information.
+      operationId: getEventList
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventRequestDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EventRequestDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /events/metas/query:
+    post:
+      tags:
+        - Event
+      summary: Get Events Venue,AP and Network Data
+      description: Get events with venue, access point and network data.
+      operationId: getEventListMetaData
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetasRequestDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MetasRequestDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /events/details/query:
+    post:
+      tags:
+        - Event
+      summary: Get Events Details Like Venue, AP and Network Data
+      description: Get events details with venue, access point and network data.
+      operationId: getEventDetails
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetasRequestDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MetasRequestDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EventData'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /events/csvFiles:
+    post:
+      tags:
+        - Event
+      summary: Export Events Within a Date Range
+      description: Export specific events within a date range.
+      operationId: exportEvents
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamicQueryPayloadDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DynamicQueryPayloadDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamingResponseBody'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/StreamingResponseBody'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /alarms/query:
+    post:
+      tags:
+        - Alarm
+      summary: Get Alarms
+      description: >-
+        Returns the set of alarms. Added the support for MSP tenant. For MSP
+        tenant need to pass tenant ids and sort order.
+      operationId: getAlarmList
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlarmRequestDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AlarmRequestDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlarmData'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AlarmData'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /alarms/metas/query:
+    post:
+      tags:
+        - Alarm
+      summary: Get Alarms Venue,AP and Network Data
+      description: >-
+        Get all alarms filtered by the query. Includes venue, access point and
+        network data.
+      operationId: getAlarmListMetaData
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetasRequestDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MetasRequestDto'
+        required: true
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlarmData'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AlarmData'
+        '400':
+          description: Invalid payload supplied
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /alarms/{alarmId}:
+    patch:
+      tags:
+        - Alarm
+      summary: Clear Alarm
+      description: Clear the alarm.
+      operationId: clearAlarm
+      parameters:
+        - name: alarmId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: string
+      responses:
+        '204':
+          description: successful operation
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+  /events/adminGroups/{adminGroupId}/latestLogins:
+    get:
+      tags:
+        - Group Members Last login Event
+        - Event
+      summary: Get Admin Members Last Logins
+      description: Get admin members last logins.
+      operationId: adminGroupMemberLastLogin
+      parameters:
+        - name: adminGroupId
+          in: path
+          description: Admin Group Id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastLoginResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/LastLoginResponse'
+        '400':
+          description: Invalid payload supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: not implemented
+components:
+  schemas:
+    EventRequestDto:
+      type: object
+      properties:
+        searchString:
+          type: string
+        searchTargetFields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+            description: Users need to pass a list of string or string as map values.
+          description: Users need to pass a list of string or string as map values.
+        detailLevel:
+          type: string
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+        suggestion:
+          type: string
+    ErrorResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        error:
+          $ref: '#/components/schemas/Error'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Error'
+    EventData:
+      type: object
+      properties:
+        requestId:
+          type: string
+        error:
+          $ref: '#/components/schemas/Error'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Error'
+        data:
+          type: array
+          description: Event information.
+          items:
+            type: object
+            additionalProperties:
+              type: object
+              description: Event information.
+            description: Event information.
+        fields:
+          type: array
+          description: Relevant fields
+          items:
+            type: string
+            description: Relevant fields
+        totalCount:
+          type: integer
+          description: Total count.
+          format: int32
+        subsequentQueries:
+          type: array
+          description: Subsequent queries.
+          items:
+            type: object
+            additionalProperties:
+              type: object
+              description: Subsequent queries.
+            description: Subsequent queries.
+        message:
+          type: string
+          description: Error message.
+    MetasRequestDto:
+      type: object
+      properties:
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+            description: >-
+              Filters alarm metadata by ids. Must provide 'ids' in the filters
+              as a key, whether value of the filters is empty or not.
+          description: >-
+            Filters alarm metadata by ids. Must provide 'ids' in the filters as
+            a key, whether value of the filters is empty or not.
+    DynamicQueryPayloadDto:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        support:
+          type: boolean
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        clientTimeZone:
+          type: string
+        clientDateFormat:
+          type: string
+        detailLevel:
+          type: string
+        isSupport:
+          type: boolean
+        eventsPeriodForExport:
+          type: object
+          additionalProperties:
+            type: string
+        termField:
+          $ref: '#/components/schemas/TermFieldDto'
+    TermFieldDto:
+      type: object
+      properties:
+        field:
+          type: string
+        value:
+          type: string
+    StreamingResponseBody:
+      type: object
+    AlarmRequestDto:
+      type: object
+      properties:
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        filters:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        mspEcTenants:
+          type: array
+          items:
+            type: string
+    AlarmData:
+      type: object
+      properties:
+        requestId:
+          type: string
+        error:
+          $ref: '#/components/schemas/Error'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Error'
+        data:
+          type: array
+          description: Alarm information.
+          items:
+            type: object
+            additionalProperties:
+              type: object
+              description: Alarm information.
+            description: Alarm information.
+        fields:
+          type: array
+          description: Relevant fields
+          items:
+            type: string
+            description: Relevant fields
+        totalCount:
+          type: integer
+          description: Total count.
+          format: int32
+        subsequentQueries:
+          type: array
+          description: Subsequent queries.
+          items:
+            type: object
+            additionalProperties:
+              type: object
+              description: Subsequent queries.
+            description: Subsequent queries.
+        status:
+          type: string
+          description: Status
+        mspEcAlarmCountList:
+          type: array
+          description: MSP EC alarm count
+          items:
+            $ref: '#/components/schemas/MspEcAlarmCount'
+    MspEcAlarmCount:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        alarmCount:
+          type: integer
+          format: int64
+      description: MSP EC alarm count
+    LastLogin:
+      type: object
+      properties:
+        email:
+          type: string
+          description: Member's email.
+        lastLoginDate:
+          type: string
+          description: Member's last login date time in ISO format.
+      description: Member's last login list.
+    LastLoginResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        error:
+          $ref: '#/components/schemas/Error'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Error'
+        count:
+          type: integer
+          description: Number of members in a group.
+          format: int32
+        lastLoginList:
+          type: array
+          description: Member's last login list.
+          items:
+            $ref: '#/components/schemas/LastLogin'

@@ -1,0 +1,71 @@
+{
+  "name": "Config Template Service API",
+  "version": "1.0.0",
+  "url": "https://docs.ruckus.cloud/_bundle/api/cfg-template-service-1.0.0.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.433488",
+  "endpoint_count": 6,
+  "base_url": "https://api.ruckus.cloud",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/templates/{templateId}/enforcementSettings",
+      "method": "PUT",
+      "summary": "Set Template Enforcement Settings",
+      "description": "Set template enforcement settings.  Add Prefix '/rec' for REC Templates.",
+      "operation_id": "enforcementSettings",
+      "tags": [
+        "Configuration Template"
+      ]
+    },
+    {
+      "path": "/templates/{templateId}/tenants/{tenantId}",
+      "method": "POST",
+      "summary": "Apply Template",
+      "description": "Apply a template to the target tenant for creating instances. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "applyTemplateV1",
+      "tags": [
+        "Configuration Template"
+      ]
+    },
+    {
+      "path": "/templates/{templateId}/instances/query",
+      "method": "POST",
+      "summary": "Query Drift Instances",
+      "description": "Query drift instances with filter for template. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "queryInstances",
+      "tags": [
+        "Configuration Template"
+      ]
+    },
+    {
+      "path": "/templates/{templateId}/dependencies/query",
+      "method": "POST",
+      "summary": "Query Template Dependency",
+      "description": "Query template dependency (direct children only) for a specific template with pagination and sorting. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "queryDependency",
+      "tags": [
+        "Configuration Template"
+      ]
+    },
+    {
+      "path": "/templates/{templateId}/tenants/{tenantId}/diffReports",
+      "method": "GET",
+      "summary": "Retrieve Diff Reports",
+      "description": "Retrieve diff reports from drift tenant.",
+      "operation_id": "getDiffReport",
+      "tags": [
+        "Configuration Template"
+      ]
+    },
+    {
+      "path": "/templates/{templateId}/tenants/{tenantId}/diffReports",
+      "method": "PATCH",
+      "summary": "Sync Template",
+      "description": "Sync the configuration template to a drift tenant.",
+      "operation_id": "sync",
+      "tags": [
+        "Configuration Template"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,285 @@
+{
+  "name": "MSP Services",
+  "version": "0.3.3",
+  "url": "https://docs.ruckus.cloud/_bundle/api/mspservice-0.3.3.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.262250",
+  "endpoint_count": 27,
+  "base_url": "https://api.ruckus.cloud",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/tenants/{tenantId}",
+      "method": "GET",
+      "summary": "Retrieve Managed Tenant",
+      "description": "Retrieve a managed tenant.",
+      "operation_id": "getTenantAccount",
+      "tags": [
+        "Managed-Tenant Operations"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}",
+      "method": "PUT",
+      "summary": "Update Managed Tenant",
+      "description": "Update a managed tenant.",
+      "operation_id": "updateManagedTenant",
+      "tags": [
+        "Managed-Tenant Operations"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}",
+      "method": "DELETE",
+      "summary": "Remove Managed Tenant",
+      "description": "Remove a managed tenant.",
+      "operation_id": "deleteTenant",
+      "tags": [
+        "Managed-Tenant Operations"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/tenantDelegations",
+      "method": "GET",
+      "summary": "Retrieve Active Relationships Between Designated Accounts and Their Managed Tenant",
+      "description": "Retrieve active relationships between designated accounts and their managed tenant.",
+      "operation_id": "getTenantDelegations",
+      "tags": [
+        "Tenant Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/tenantDelegations",
+      "method": "PUT",
+      "summary": "Update Active Relationships Between Designated Accounts and Their Managed Tenant",
+      "description": "Update active relationships between designated accounts and their managed tenant.",
+      "operation_id": "updateTenantDelegations",
+      "tags": [
+        "Tenant Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/invitations",
+      "method": "PUT",
+      "summary": "Resend Email Invitation",
+      "description": "Send or resend email invitation.",
+      "operation_id": "sendInvitationEmail",
+      "tags": [
+        "Resend email Invitation"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/admins/{adminId}",
+      "method": "GET",
+      "summary": "Retrieve Administrator",
+      "description": "Retrieve an administrator.",
+      "operation_id": "getTenantAdmin",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/admins/{adminId}",
+      "method": "PUT",
+      "summary": "Assign Administrator",
+      "description": "Assign an administrator.",
+      "operation_id": "updateTenantAdmin",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/admins/{adminId}",
+      "method": "DELETE",
+      "summary": "Revoke Administrator",
+      "description": "Revoke an administrator.",
+      "operation_id": "deleteTenantAdmin",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/adminDelegations",
+      "method": "GET",
+      "summary": "Retrieve Active Relationships Between Designated Administrators and Their Assigned Tenants",
+      "description": "Retrieve active relationships between designated administrators and their assigned tenants.",
+      "operation_id": "getDelegatedAdmins",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/adminDelegations",
+      "method": "PUT",
+      "summary": "Update Active Relationships Between Designated Administrators and Their Managed Tenant",
+      "description": "Update active relationships between designated administrators and their managed tenant.",
+      "operation_id": "updateDelegatedAdmins",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenantActivations/{tenantId}",
+      "method": "PUT",
+      "summary": "Reactivate",
+      "description": "Re-enable login access and all operations.",
+      "operation_id": "reActivateTenant",
+      "tags": [
+        "Reactivation",
+        "Reactivation and Deactivation"
+      ]
+    },
+    {
+      "path": "/tenantActivations/{tenantId}",
+      "method": "DELETE",
+      "summary": "Deactivate",
+      "description": "Disable login access and all operations.",
+      "operation_id": "deActivateTenant",
+      "tags": [
+        "Deactivation",
+        "Reactivation and Deactivation"
+      ]
+    },
+    {
+      "path": "/tenantActivations/supportStatus/{tenantId}",
+      "method": "GET",
+      "summary": "Retrieve Support Team Assistance Status",
+      "description": "Retrieve the status of support team assistance, indicating whether it is currently enabled or disabled.",
+      "operation_id": "getRuckusSupportStatus",
+      "tags": [
+        "Support Team assistance"
+      ]
+    },
+    {
+      "path": "/tenantActivations/supportStatus/{tenantId}",
+      "method": "PUT",
+      "summary": "Enable Support Team Assistance",
+      "description": "Enable support team assistance.",
+      "operation_id": "enableSupport",
+      "tags": [
+        "Enable Support Team Assistance",
+        "Support Team Assistance"
+      ]
+    },
+    {
+      "path": "/tenantActivations/supportStatus/{tenantId}",
+      "method": "DELETE",
+      "summary": "Disable Support Team Assistance",
+      "description": "Disable support team assistance.",
+      "operation_id": "disableSupport",
+      "tags": [
+        "Disable Support Team Assistance",
+        "Support Team Assistance"
+      ]
+    },
+    {
+      "path": "/brandings",
+      "method": "GET",
+      "summary": "Retrieve Brand Settings",
+      "description": "Retrieve brand settings.",
+      "operation_id": "getBrandInfo",
+      "tags": [
+        "Brand Settings"
+      ]
+    },
+    {
+      "path": "/brandings",
+      "method": "PUT",
+      "summary": "Update Brand Settings",
+      "description": "Update brand settings.",
+      "operation_id": "updateBrandInfo",
+      "tags": [
+        "Brand Settings"
+      ]
+    },
+    {
+      "path": "/brandings",
+      "method": "POST",
+      "summary": "Add Brand Settings",
+      "description": "Create brand settings.",
+      "operation_id": "addBrandInfo",
+      "tags": [
+        "Brand Settings"
+      ]
+    },
+    {
+      "path": "/tenants",
+      "method": "POST",
+      "summary": "Add Managed Tenants",
+      "description": "Add managed tenants.",
+      "operation_id": "createTenantV2",
+      "tags": [
+        "Managed-Tenant Operations"
+      ]
+    },
+    {
+      "path": "/tenants/devices/apCounts/query",
+      "method": "POST",
+      "summary": null,
+      "description": null,
+      "operation_id": "apCountSummary",
+      "tags": [
+        "tenant-device-query-controller"
+      ]
+    },
+    {
+      "path": "/logoFiles",
+      "method": "POST",
+      "summary": "Update Brand Logos",
+      "description": "Update brand logo files.",
+      "operation_id": "uploadBrandLogoFileUrl",
+      "tags": [
+        "Brand Settings"
+      ]
+    },
+    {
+      "path": "/firmwareUpgradeSchedules",
+      "method": "POST",
+      "summary": "Update Firmware Upgrade Schedules",
+      "description": "Update firmware upgrade schedules.",
+      "operation_id": "setScheduleForFirmwareUpgrades",
+      "tags": [
+        "Manage Firmware Upgrade Schedules"
+      ]
+    },
+    {
+      "path": "/tenantDelegations",
+      "method": "PATCH",
+      "summary": "Add Designated Accounts to Manage Tenants",
+      "description": "Retrieve active relationships between designated accounts and their assigned tenants.",
+      "operation_id": "patchTenantDelegations",
+      "tags": [
+        "Tenant Delegation Management"
+      ]
+    },
+    {
+      "path": "/adminDelegations",
+      "method": "PATCH",
+      "summary": "Assign Administrators",
+      "description": "Add designated administrators to manage assigned tenants.",
+      "operation_id": "patchAdminDelegations",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/tenants/{tenantId}/admins",
+      "method": "GET",
+      "summary": "Retrieve Administrators",
+      "description": "Retrieve administrators.",
+      "operation_id": "getTenantAdmins",
+      "tags": [
+        "Admin Delegation Management"
+      ]
+    },
+    {
+      "path": "/logoFiles/{fileId}",
+      "method": "GET",
+      "summary": "Retrieve Brand Logos",
+      "description": "Retrieve the download links for the brand logo files.",
+      "operation_id": "getBrandLogoFileDownloadUrl",
+      "tags": [
+        "Brand Settings"
+      ]
+    }
+  ]
+}

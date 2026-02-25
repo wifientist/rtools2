@@ -1,0 +1,191 @@
+{
+  "name": "MAC Registration API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/mac-registration-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.345770",
+  "endpoint_count": 18,
+  "base_url": "http://localhost:8080",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/macRegistrationPools/{id}/policySets/{policySetId}",
+      "method": "PUT",
+      "summary": "Update Policy Set for a Registration Pool",
+      "description": null,
+      "operation_id": "macPoolUpdatePolicySetId",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{id}/policySets/{policySetId}",
+      "method": "DELETE",
+      "summary": "Delete Policy Set from a Registration Pool",
+      "description": null,
+      "operation_id": "macPoolRemovePolicySetId",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations/query",
+      "method": "POST",
+      "summary": "Search for MAC Registrations with the Specified Criteria",
+      "description": null,
+      "operation_id": "searchRegistrations",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations/csvFile",
+      "method": "POST",
+      "summary": "Import MAC Registrations with the Specified Registration Pool",
+      "description": null,
+      "operation_id": "importRegistrations_1",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations",
+      "method": "GET",
+      "summary": "MAC Registrations in the Specified Registration Pool",
+      "description": null,
+      "operation_id": "listAllRegistrations",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations",
+      "method": "POST",
+      "summary": "Create a MAC Registration in the Specified Registration Pool",
+      "description": null,
+      "operation_id": "createRegistration_1",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations",
+      "method": "DELETE",
+      "summary": "Delete the Specific MAC Registrations",
+      "description": null,
+      "operation_id": "deleteRegistrations_1",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/query",
+      "method": "POST",
+      "summary": "Search for Registration Pools with the Specified Criteria",
+      "description": null,
+      "operation_id": "searchPools",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools",
+      "method": "GET",
+      "summary": "Registration Pools That Contain MAC Registrations",
+      "description": null,
+      "operation_id": "listAllPools",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools",
+      "method": "POST",
+      "summary": "Create a Registration Pool",
+      "description": null,
+      "operation_id": "createPool_1",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/identityGroups/{identityGroupId}/macRegistrationPools",
+      "method": "POST",
+      "summary": "Create a Registration Pool with Identity Group",
+      "description": null,
+      "operation_id": "createPoolWithIdentityGroup",
+      "tags": [
+        "Assign Identity Group"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations/{id}",
+      "method": "GET",
+      "summary": "Returns the Specific MAC Registration",
+      "description": null,
+      "operation_id": "getRegistrationById",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations/{id}",
+      "method": "DELETE",
+      "summary": "Delete the Specific MAC Registration",
+      "description": null,
+      "operation_id": "deleteRegistration_1",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{poolId}/registrations/{id}",
+      "method": "PATCH",
+      "summary": "Update Properties in the Specific MAC Registration",
+      "description": null,
+      "operation_id": "updateRegistration_1",
+      "tags": [
+        "MAC Registration"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{id}",
+      "method": "GET",
+      "summary": "Returns the Specific Registration Pool Containing MAC Registrations",
+      "description": null,
+      "operation_id": "getPoolById",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{id}",
+      "method": "DELETE",
+      "summary": "Delete the Specific Registration Pool",
+      "description": null,
+      "operation_id": "deletePool_1",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/macRegistrationPools/{id}",
+      "method": "PATCH",
+      "summary": "Update Properties in the Specific Registration Pool",
+      "description": null,
+      "operation_id": "updatePool_1",
+      "tags": [
+        "Registration Pool"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{networkId}/macRegistrationPools",
+      "method": "GET",
+      "summary": "Get MAC Registration Pools by Network",
+      "description": null,
+      "operation_id": "getPoolsByNetworkId",
+      "tags": [
+        "Wifi Network"
+      ]
+    }
+  ]
+}

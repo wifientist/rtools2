@@ -1,0 +1,434 @@
+openapi: 3.0.1
+info:
+  title: Policy Management REST API
+  description: >-
+    # Overview
+
+
+    The Policy Evaluation REST API's allow the evaluation of a policy with the
+    provided criteria. A policy with attributes set, where the provided criteria
+    is not provided will always fail.  The text for matching criteria can be
+    found in the policy criteria attributes in the policy management API.
+
+    ## Rate Limit
+
+    For the Policy Management REST API the following will be true: 
+
+    - Limits are applied to each tenant.
+
+    - A maximum of 40 calls can be made per second.
+
+    - Each second 20 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 0.0.3
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: Criteria Evaluation
+    description: Evaluates policy criteria provided and identifies the matching policy.
+paths:
+  /policySets/{policySetId}/evaluationReports:
+    post:
+      tags:
+        - Criteria Evaluation
+      summary: Evaluate Criteria
+      description: >-
+        Evaluates the criteria provided and returns the matched response from
+        the first matching policy within the specified set, or it will indicate
+        that no match was found. A policy has additional required criteria and
+        no matching test criteria is provided, that will be considered a
+        failure. Additional test attributes that are provided but are not
+        required within a policy will be ignored and not considered a match
+        failure.
+      operationId: evaluateReport
+      parameters:
+        - name: policySetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Evaluation Report V2'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Evaluation Report V2'
+        required: true
+      responses:
+        '200':
+          description: Policy set was evaluated and results are returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Evaluation Report V2'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Evaluation Report V2'
+        '400':
+          description: Invalid evaluation criteria provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Policy set to evaluate is not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: The Date range criteria provided could not be properly parsed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+components:
+  schemas:
+    Boolean Evaluation:
+      required:
+        - booleanValue
+      type: object
+      description: >-
+        When requesting a policy set evaluation, this defined the boolean value
+        to be used in evaluation.
+      allOf:
+        - $ref: '#/components/schemas/EvaluationValue'
+        - type: object
+          properties:
+            booleanValue:
+              type: boolean
+              description: The boolean value to use for evaluation.
+    Date Time Evaluation:
+      required:
+        - evaluationDateTime
+      type: object
+      description: >-
+        When requesting a policy set evaluation, this defined the date to be
+        used in evaluation. This should only be used in testing a policy set
+        evaluation, as when actually using a policy for authentication, only
+        current time should be used.
+      allOf:
+        - $ref: '#/components/schemas/EvaluationValue'
+        - type: object
+          properties:
+            evaluationDateTime:
+              type: string
+              description: >-
+                This needs to be an ISO-8601 string. It expects plus or minus a
+                number in the format xx:xx, or Z to defined the timezone. The
+                timezone provided will be appropriately adjusted to the
+                specified evaluation timezone defined in the policy criteria.
+              format: date-time
+    Evaluation Criteria:
+      required:
+        - matchName
+        - value
+      type: object
+      properties:
+        matchName:
+          type: string
+          description: >-
+            The name of the attribute to match. This must be an exact match to
+            the attribute text as defined in the policy template attribute
+            defined in the policy.
+        value:
+          oneOf:
+            - $ref: '#/components/schemas/Boolean Evaluation'
+            - $ref: '#/components/schemas/Date Time Evaluation'
+            - $ref: '#/components/schemas/Number Evaluation'
+            - $ref: '#/components/schemas/String Evaluation'
+      description: >-
+        The criteria provided by the requesting service to use in evaluation. 
+        If a policy has additional criteria, and no test criteria is provided,
+        that will be considered a failure. Additional attributes that are
+        provided,but are not tested in a policy will be ignored and not
+        considered a match failure.
+    Evaluation Report V2:
+      required:
+        - evaluationCriteria
+      type: object
+      properties:
+        evaluationCriteria:
+          type: array
+          description: The complete list of criteria to evaluate against this policy set.
+          items:
+            $ref: '#/components/schemas/Evaluation Criteria'
+        wasMatched:
+          type: boolean
+          description: >-
+            The overall results of the matched request. This will be ignored on
+            the post if it is provided.
+        policyName:
+          type: string
+          description: >-
+            The name of the specific policy that was matched. Ignored on the
+            post, and will not be set if no match was made.
+        policyId:
+          type: string
+          description: >-
+            The unique identifier of the specific policy that was found during
+            evaluation. It will be ignored on the post and will not be set if no
+            matching policy was found.
+          format: uuid
+        policyType:
+          type: string
+          description: >-
+            The type of policy that was found during evaluation. Optional, and
+            will be used on the post if it is a valid policy type, and can be
+            evaluated. UNMATCHED, DPSK and RADIUS map to the existing policy
+            types, any other policy types are not available.
+          enum:
+            - BASE
+            - RADIUS
+            - DPSK
+            - UNMATCHED
+        onMatchResponse:
+          type: string
+          description: The response value that was defined in the policy that was matched.
+        identityGroupId:
+          type: string
+          description: >-
+            Identity group identifier. If provided policy set associated to the
+            identity group is evaluated prior to user provided policy set.
+        policySetId:
+          type: string
+          description: The identifier for the policy set to evaluate.
+          format: uuid
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        A request, and the response, to evaluate a policy set with the criteria
+        and the results.
+    EvaluationValue:
+      type: object
+      description: >-
+        The data to use when evaluating this attribute on a policy. The type is
+        expected to be correct for the policy template defined in the match
+        name. This value is only validated when evaluating the policy.
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    Number Evaluation:
+      required:
+        - numberValue
+      type: object
+      description: >-
+        When requesting a policy set evaluation, this defined the number to be
+        used in evaluation.
+      allOf:
+        - $ref: '#/components/schemas/EvaluationValue'
+        - type: object
+          properties:
+            numberValue:
+              type: number
+              description: The number value to use for evaluation.
+    String Evaluation:
+      required:
+        - stringValue
+      type: object
+      description: >-
+        When requesting a policy set evaluation, this defines the string value
+        to be used in an evaluation.
+      allOf:
+        - $ref: '#/components/schemas/EvaluationValue'
+        - type: object
+          properties:
+            stringValue:
+              type: string
+              description: The string value to use for evaluation.
+    ErrorResource:
+      type: object
+      properties:
+        requestId:
+          type: string
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        debugMessage:
+          type: string
+        nestedErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestErrorDetails'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/UxNestedError'
+    RestErrorDetails:
+      type: object
+    UxNestedError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+        suggestion:
+          type: string
+    Evaluation Report:
+      required:
+        - evaluationCriteria
+      type: object
+      properties:
+        evaluationCriteria:
+          type: array
+          description: The complete list of criteria to evaluate against this policy set.
+          items:
+            $ref: '#/components/schemas/Evaluation Criteria'
+        wasMatched:
+          type: boolean
+          description: >-
+            The overall results of the matched request. This will be ignored on
+            the post if it is provided.
+        policyName:
+          type: string
+          description: >-
+            The name of the specific policy that was matched. Ignored on the
+            post, and will not be set if no match was made.
+        policyId:
+          type: string
+          description: >-
+            The unique identifier of the specific policy that was found during
+            evaluation. It will be ignored on the post and will not be set if no
+            matching policy was found.
+          format: uuid
+        policyType:
+          type: string
+          description: >-
+            The type of policy that was found during evaluation. Optional, and
+            will be used on the post if it is a valid policy type, and can be
+            evaluated. UNMATCHED, DPSK and RADIUS map to the existing policy
+            types, any other policy types are not available.
+          enum:
+            - BASE
+            - RADIUS
+            - DPSK
+            - UNMATCHED
+        onMatchResponse:
+          type: string
+          description: The response value that was defined in the policy that was matched.
+        identityGroupId:
+          type: string
+          description: >-
+            Identity group identifier. If provided policy set associated to the
+            identity group is evaluated prior to user provided policy set.
+        policySetId:
+          type: string
+          description: The identifier for the policy set to evaluate.
+          format: uuid
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        A request, and the response, to evaluate a policy set with the criteria
+        and the results.
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean

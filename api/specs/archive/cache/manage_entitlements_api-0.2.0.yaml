@@ -1,0 +1,1672 @@
+openapi: 3.0.1
+info:
+  title: Manage Entitlements API
+  description: >-
+    The Manage Entitlements API provides endpoints to manage entitlements. You
+    can use this API to retrieve detailed information about entitlements, usage
+    statistics, available licenses, and expired licenses. This API helps you
+    effectively manage your entitlements and make informed decisions about
+    licensing. Assignments API manage entitlement assignments. You can retrieve
+    a list of assignments, create new assignments, update existing ones, and
+    delete individual assignments.
+  contact:
+    email: TBD@ruckuswireless.com
+  version: 0.2.0
+externalDocs:
+  description: Ruckus Network Technical Documents
+  url: https://support.ruckuswireless.com/documents
+servers:
+  - url: https://api.devalto.ruckuswireless.com
+tags:
+  - name: Entitlement
+    description: Endpoints for Managing Entitlements
+paths:
+  /entitlements:
+    get:
+      tags:
+        - Entitlement
+      summary: Get Entitlements
+      description: >-
+        Get the list of device entitlements.Please note that this API will be
+        retired on 04/2024 and will be fully removed no earlier than 10/2024.
+        For updated functionality, refer to '/entitlements/query'
+      operationId: getEntitlements_1
+      parameters:
+        - name: type
+          in: query
+          description: >-
+            Filter by device type (optional). If device agnostic sku feature is
+            enabled, all device types will be treated as APSW except ANALYTICS.
+          required: false
+          schema:
+            type: string
+            enum:
+              - UNASSIGNED_DEVICE_TYPE
+              - WIFI
+              - LTE
+              - SWITCH
+              - ANALYTICS
+              - RWG
+              - EDGE
+              - VIRTUAL_EDGE
+              - APSW
+              - EDGE_SECS
+              - EDGE_SECL
+              - SLTN_PIN_FOR_IDENTITY
+              - SLTN_TOKEN
+              - SLTN_PMS_INTEGRATION
+        - name: licenseType
+          in: query
+          description: Filter by license type (optional)
+          required: false
+          schema:
+            type: string
+            enum:
+              - UNKNOWN
+              - APSW
+              - URLF
+              - EDGE_SECS
+              - EDGE_SECL
+              - SLTN_TOKEN
+      responses:
+        '200':
+          description: Returns the entitlements.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Entitlement'
+        '404':
+          description: This tenant does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestApiErrorDto'
+        '417':
+          description: Entitlement ID is missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestApiErrorDto'
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /entitlements/summaries:
+    get:
+      tags:
+        - Entitlement
+      summary: Get Entitlement Summaries
+      description: >-
+        Get summaries of the device entitlements.Please note that this API will
+        be retired on 4/2024 and will be fully removed no earlier than 10/2024.
+        For updated functionality, refer to '/entitlements/utilizations/query'.
+      operationId: getSummary
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: type
+          in: query
+          description: >-
+            Filter by device type (optional). If device agnostic sku feature is
+            enabled, all device types will be treated as APSW except ANALYTICS.
+          required: false
+          schema:
+            type: string
+            enum:
+              - UNASSIGNED_DEVICE_TYPE
+              - WIFI
+              - LTE
+              - SWITCH
+              - ANALYTICS
+              - RWG
+              - EDGE
+              - VIRTUAL_EDGE
+              - APSW
+              - EDGE_SECS
+              - EDGE_SECL
+              - SLTN_PIN_FOR_IDENTITY
+              - SLTN_TOKEN
+              - SLTN_PMS_INTEGRATION
+        - name: licenseType
+          in: query
+          description: Filter by license type (optional)
+          required: false
+          schema:
+            type: string
+            enum:
+              - UNKNOWN
+              - APSW
+              - URLF
+              - EDGE_SECS
+              - EDGE_SECL
+              - SLTN_TOKEN
+      responses:
+        '200':
+          description: >-
+            Returns the entitlement summary. The response is actual in case when
+            the refresh request parameter value is false
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalRefreshLicensesResponse'
+        '202':
+          description: >-
+            Returns Use activity link in the Location header to track the
+            refresh status. The response is actual in case when the refresh
+            request parameter value is true
+          headers:
+            Location:
+              description: The URL to get the operation result
+              style: simple
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedDto'
+        '404':
+          description: This tenant does not exist.
+          content:
+            application/json:
+              schema:
+                type: object
+        '417':
+          description: This tenant does not have Entitlement ID.
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /banners:
+    get:
+      tags:
+        - Entitlement
+      summary: Get Banners
+      description: >-
+        Retrieve entitlement banner data. Banners provide information about
+        entitlements that are either near their expiry or have expired.Please
+        note that this API will be retired on 4/2024 and will be fully removed
+        no earlier than 10/2024. For updated functionality, refer to
+        '/entitlements/banners/query'.
+      operationId: getBanners_1
+      parameters:
+        - name: type
+          in: query
+          description: >-
+            Filter by device type (Optional). If device agnostic sku feature is
+            enabled, all device types will be treated as APSW except ANALYTICS.
+          required: false
+          schema:
+            type: string
+            enum:
+              - UNASSIGNED_DEVICE_TYPE
+              - WIFI
+              - LTE
+              - SWITCH
+              - ANALYTICS
+              - RWG
+              - EDGE
+              - VIRTUAL_EDGE
+              - APSW
+              - EDGE_SECS
+              - EDGE_SECL
+              - SLTN_PIN_FOR_IDENTITY
+              - SLTN_TOKEN
+              - SLTN_PMS_INTEGRATION
+        - name: licenseType
+          in: query
+          description: Filter by license type (optional)
+          required: false
+          schema:
+            type: string
+            enum:
+              - UNKNOWN
+              - APSW
+              - URLF
+              - EDGE_SECS
+              - EDGE_SECL
+              - SLTN_TOKEN
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LicenseBannerDto'
+        '500':
+          description: Internal Server Error
+      deprecated: true
+components:
+  schemas:
+    QueryAssignmentFilters:
+      type: object
+      properties:
+        licenseType:
+          type: array
+          description: The list of entitlement types.
+          example:
+            - APSW
+          items:
+            type: string
+            description: The list of entitlement types.
+            example: '["APSW"]'
+            enum:
+              - APSW
+          enum:
+            - APSW
+        status:
+          type: array
+          description: The list of assignment status.
+          example:
+            - VALID
+          items:
+            type: string
+            description: The list of assignment status.
+            example: '["VALID"]'
+            enum:
+              - VALID
+              - REVOKED
+              - EXPIRED
+              - FUTURE
+        createdBy:
+          type: array
+          description: The list of users who created the assignments.
+          example:
+            - admin@test.com
+          items:
+            type: string
+            description: The list of users who created the assignments.
+            example: '["admin@test.com"]'
+        isTrial:
+          type: boolean
+          description: >-
+            Flag indicating if assignments are for trial or not. If missing, all
+            assignments will be returned.
+          example: false
+      description: The query filters.
+    QueryAssignmentReq:
+      type: object
+      properties:
+        fields:
+          uniqueItems: true
+          type: array
+          description: A list of assignment data fields to be returned.
+          example:
+            - id
+            - quantity
+          items:
+            type: string
+            description: A list of assignment data fields to be returned.
+            example: '["id","quantity"]'
+        page:
+          type: integer
+          description: The page number to be returned, 1 based, default 1.
+          format: int32
+          example: 1
+        pageSize:
+          type: integer
+          description: The page number to be returned, default 20.
+          format: int32
+          example: 30
+        sortField:
+          type: string
+          description: The data filed name which will be used for sorting the query result.
+          example: expirationDate
+          enum:
+            - expirationDate
+            - effectiveDate
+        sortOrder:
+          type: string
+          description: The sorting order, default is ascending order.
+          example: ASC
+          enum:
+            - ASC
+            - DESC
+        filters:
+          $ref: '#/components/schemas/QueryAssignmentFilters'
+    ErrorDto:
+      type: object
+      properties:
+        requestId:
+          type: string
+        error:
+          $ref: '#/components/schemas/RestApiErrorDto'
+    RestApiErrorDto:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+        suggestion:
+          type: string
+    QueryResponse:
+      type: object
+      properties:
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        objectId:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDto'
+        subsequentQueries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubsequentQuery'
+    SubsequentQuery:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        url:
+          type: string
+          format: uri
+        httpMethod:
+          type: string
+          enum:
+            - GET
+            - HEAD
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+            - TRACE
+        payload:
+          type: object
+    CreateAssignmentReq:
+      required:
+        - effectiveDate
+        - expirationDate
+        - licenseType
+        - quantity
+      type: object
+      properties:
+        effectiveDate:
+          type: string
+          description: Effective date of the entitlement assignment.
+          example: '2024-01-22 15:08:10Z'
+        expirationDate:
+          type: string
+          description: Expiration date of the entitlement assignment.
+          example: '2024-02-21 15:07:10Z'
+        quantity:
+          type: integer
+          description: Quantity of entitlements assigned.
+          format: int32
+          example: 5
+        licenseType:
+          type: string
+          description: Type of entitlement
+          example: APSW
+        trial:
+          type: boolean
+      description: Entitlement Assignment Details
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the assignment.
+          format: int64
+          example: 1234
+        effectiveDate:
+          type: string
+          description: Effective date of the assignment.
+          example: '2024-01-22T15:08:10Z'
+        expirationDate:
+          type: string
+          description: Expiration date of the assignment.
+          example: '2024-02-21T15:07:10Z'
+        quantity:
+          type: integer
+          description: Quantity of entitlements assigned.
+          format: int32
+          example: 5
+        licenseType:
+          type: string
+          description: Type of license.
+          example: APSW
+        status:
+          type: string
+          description: Status of the assignment.
+          example: VALID
+          enum:
+            - VALID
+            - REVOKED
+            - EXPIRED
+            - FUTURE
+        createdDate:
+          type: string
+          description: Date when the assignment was created.
+          example: '2024-01-16T06:06:02.776Z'
+        revokedDate:
+          type: string
+          description: Date when the assignment was revoked.
+          example: 'null'
+        createdBy:
+          type: string
+          description: User who created the assignment.
+          example: rohitmsp.ruckusone5@email.com
+        revokedBy:
+          type: string
+          description: User who revoked the assignment.
+          example: 'null'
+        isTrial:
+          type: boolean
+          description: Flag indicating if the assignment is a trial.
+          example: false
+      description: Data containing assignment details.
+    EntitlementAssignmentResp:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response.
+          example: success
+        message:
+          type: string
+          description: Message providing additional details about the response.
+          example: Object created/updated successfully.
+        data:
+          $ref: '#/components/schemas/Assignment'
+    DynamicQueryPayloadFilterDto:
+      type: object
+      properties:
+        licenseType:
+          uniqueItems: true
+          type: array
+          description: The list of entitlement types.
+          example:
+            - APSW
+          items:
+            type: string
+            description: The list of entitlement types.
+            example: '["APSW"]'
+        isTrial:
+          type: boolean
+          description: Flag indicating if summary is for trial or not.
+          example: false
+        status:
+          uniqueItems: true
+          type: array
+          description: The list of status.
+          example:
+            - VALID
+          items:
+            type: string
+            description: The list of status.
+            example: '["VALID"]'
+        isAssignedLicense:
+          type: boolean
+          description: Flag indicating if licenses are assigned or not.
+          example: false
+        usageType:
+          type: string
+          description: Usage type can be self or assigned.
+          example: Self
+      description: 'The query filters '
+    EntitlementUtilizationQueryRequest:
+      type: object
+      properties:
+        filters:
+          $ref: '#/components/schemas/DynamicQueryPayloadFilterDto'
+    DataResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDto'
+    EntitlementUtilizationQueryResponse:
+      type: object
+      properties:
+        licenseType:
+          type: string
+          description: The type of license.
+          example: APSW
+        quantity:
+          type: integer
+          description: The total quantity of licenses.
+          format: int64
+          example: 100
+        usedQuantity:
+          type: integer
+          description: The quantity of licenses currently in use.
+          format: int64
+          example: 70
+        assignedQuantity:
+          type: integer
+          description: The quantity of licenses assigned.
+          format: int64
+          example: 50
+        purchasedQuantity:
+          type: integer
+          description: The total quantity of licenses purchased.
+          format: int64
+          example: 120
+        remainingQuantity:
+          type: integer
+          description: The quantity of licenses remaining.
+          format: int64
+          example: 30
+        usageType:
+          type: string
+          description: The type of usage for the licenses.
+          example: SELF
+    AssignedEntitlementSummariesResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: object
+    DynamicQueryPayloadDto:
+      type: object
+      properties:
+        defaultPageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        filters:
+          $ref: '#/components/schemas/DynamicQueryPayloadFilterDto'
+    CalculatorFilterRequestDto:
+      required:
+        - licenseType
+        - usageType
+      type: object
+      properties:
+        usageType:
+          type: string
+          description: Type of usage
+          example: ASSIGNED
+          enum:
+            - SELF
+            - ASSIGNED
+            - UNKNOWN
+        licenseType:
+          type: string
+          description: Type of entitlement
+          example: APSW
+        isTrial:
+          type: boolean
+          description: Flag indicating if looking for trial license availability.
+          example: true
+      description: Filter criteria for the request
+    MileageRequestDto:
+      required:
+        - filters
+      type: object
+      properties:
+        page:
+          type: integer
+          description: The page number to be returned, 1 based, default 1.
+          format: int32
+          example: 1
+        pageSize:
+          type: integer
+          description: The page number to be returned, default 20.
+          format: int32
+          example: 30
+        filters:
+          $ref: '#/components/schemas/CalculatorFilterRequestDto'
+      description: Calculator Request
+    LicenseBreakUpDto:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          description: Quantity available as last day of month.
+          format: int64
+          example: 20
+        expirationDate:
+          type: string
+          description: Expired license date
+          example: '2024-09-16'
+      description: License available breakup in current month.
+    MileageDataDto:
+      required:
+        - isTrial
+        - lastDate
+        - licenseType
+      type: object
+      properties:
+        licenseType:
+          type: string
+          description: Type of the license
+          example: APSW
+        lastDate:
+          type: string
+          description: Last date of the license.
+          example: '2024-09-30'
+        device:
+          type: integer
+          description: Device identifier
+          format: int32
+          example: 350
+        usedQuantity:
+          type: integer
+          description: Used quantity by devices
+          format: int64
+          example: 350
+        quantity:
+          type: integer
+          description: Quantity of licenses
+          format: int64
+          example: 400
+        availableBreakUp:
+          type: array
+          description: License available breakup in current month.
+          items:
+            $ref: '#/components/schemas/LicenseBreakUpDto'
+        isTrial:
+          type: boolean
+          description: Indicates whether this is a trial license.
+          example: false
+      description: Data object containing license details.
+    MileageResponseDto:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response.
+          example: success
+        message:
+          type: string
+          description: Message providing additional details about the response.
+          example: Object created/updated successfully.
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalCount:
+          type: integer
+          format: int64
+        data:
+          type: array
+          description: Data object containing license details.
+          items:
+            $ref: '#/components/schemas/MileageDataDto'
+    LicenseComplianceFilter:
+      type: object
+      properties:
+        licenseType:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        complianceType:
+          type: string
+          enum:
+            - SELF
+            - MSP_SUMMARY
+    LicenseComplianceRequest:
+      type: object
+      properties:
+        filters:
+          $ref: '#/components/schemas/LicenseComplianceFilter'
+    DeviceCompliance:
+      type: object
+      properties:
+        deviceType:
+          type: string
+          enum:
+            - UNASSIGNED_DEVICE_TYPE
+            - WIFI
+            - LTE
+            - SWITCH
+            - ANALYTICS
+            - RWG
+            - EDGE
+            - VIRTUAL_EDGE
+            - APSW
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_PIN_FOR_IDENTITY
+            - SLTN_TOKEN
+            - SLTN_PMS_INTEGRATION
+        installedDeviceCount:
+          type: integer
+          format: int64
+        usedLicenseCount:
+          type: integer
+          format: int64
+    LicenseCompliance:
+      type: object
+      properties:
+        licenseType:
+          type: string
+          enum:
+            - UNKNOWN
+            - APSW
+            - URLF
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_TOKEN
+        tenantId:
+          type: string
+        tenantName:
+          type: string
+        deviceCompliances:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceCompliance'
+        totalActivePaidLicenseCount:
+          type: integer
+          format: int64
+        totalActiveTrialLicenseCount:
+          type: integer
+          format: int64
+        nextPaidExpirationDate:
+          type: string
+          format: date
+        nextTotalPaidExpiringLicenseCount:
+          type: integer
+          format: int64
+        nextTrialExpirationDate:
+          type: string
+          format: date
+        nextTotalTrialExpiringLicenseCount:
+          type: integer
+          format: int64
+        totalActivePaidAssignedLicenseCount:
+          type: integer
+          format: int64
+        totalActiveTrialAssignedLicenseCount:
+          type: integer
+          format: int64
+        licensesUsed:
+          type: integer
+          format: int64
+        licenseGap:
+          type: integer
+          format: int64
+    LicenseComplianceResponse:
+      type: object
+      properties:
+        compliances:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantLicenseCompliance'
+    TenantLicenseCompliance:
+      type: object
+      properties:
+        licenseType:
+          type: string
+          enum:
+            - UNKNOWN
+            - APSW
+            - URLF
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_TOKEN
+        self:
+          $ref: '#/components/schemas/LicenseCompliance'
+        mspEcSummary:
+          $ref: '#/components/schemas/LicenseCompliance'
+    EntitlementBannerRequestDto:
+      type: object
+      properties:
+        filters:
+          $ref: '#/components/schemas/Filters'
+    Filters:
+      type: object
+      properties:
+        licenseType:
+          type: array
+          items:
+            type: string
+        usageType:
+          type: string
+    EntitlementBannerInfo:
+      type: object
+      properties:
+        type:
+          type: string
+        multipleLicense:
+          type: boolean
+        effectDate:
+          type: string
+        effectiveDays:
+          type: integer
+          format: int64
+        licenseCount:
+          type: integer
+          format: int32
+        licenseType:
+          type: string
+        usageType:
+          type: string
+    EntitlementBannerResponseDto:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntitlementBannerInfo'
+    CalculatorRequestDto:
+      required:
+        - effectiveDate
+        - filters
+        - operator
+      type: object
+      properties:
+        effectiveDate:
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          type: string
+          description: Start date from which the license is valid.
+          example: '2024-01-22'
+        expirationDate:
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          type: string
+          description: >-
+            End date until which the license is valid. Required if operator max
+            quantity is selected.
+          example: '2025-02-21'
+        quantity:
+          type: integer
+          description: >-
+            Number of licenses available. Required if operator max period is
+            selected.
+          format: int32
+          example: 5
+        operator:
+          type: string
+          description: Operator to be used.
+          example: MAX_QUANTITY
+          enum:
+            - MAX_QUANTITY
+            - MAX_PERIOD
+        filters:
+          $ref: '#/components/schemas/CalculatorFilterRequestDto'
+      description: Calculator Request
+    CalculatorDataDto:
+      required:
+        - effectiveDate
+        - expirationDate
+        - isTrial
+      type: object
+      properties:
+        effectiveDate:
+          type: string
+          description: Effective date of the license.
+          example: '2024-01-22'
+        expirationDate:
+          type: string
+          description: Expiration date of the license.
+          example: '2024-02-21'
+        quantity:
+          type: integer
+          description: Number of licenses
+          format: int64
+          example: 5
+        licenseType:
+          type: string
+          description: Type of license
+          example: APSW
+        isTrial:
+          type: boolean
+          description: Indicates whether this is a trial license.
+          example: false
+      description: Data object containing license details
+    CalculatorResponseDto:
+      required:
+        - data
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response.
+          example: success
+        message:
+          type: string
+          description: Message providing additional details about the response.
+          example: Object created/updated successfully.
+        data:
+          $ref: '#/components/schemas/CalculatorDataDto'
+    AttentionNoteQueryDto:
+      type: object
+      properties:
+        sortField:
+          type: string
+          description: Sorting field, it can be any of the fields of attention notes.
+          example: startDate
+        sortOrder:
+          type: string
+          description: Sorting order, default is ascending order if missing.
+          example: DESC
+          enum:
+            - ASC
+            - DESC
+        page:
+          type: integer
+          description: Page number, 1 based, default is 1 if missing.
+          format: int32
+          example: 1
+        pageSize:
+          type: integer
+          description: Page size, default is 20 if missing.
+          format: int32
+          example: 30
+        fields:
+          uniqueItems: true
+          type: array
+          description: Fields to return, all fields will be returned if missing.
+          example:
+            - summary
+            - details
+          items:
+            type: string
+            description: Fields to return, all fields will be returned if missing.
+            example: '["summary","details"]'
+            enum:
+              - id
+              - type
+              - tenantType
+              - enabled
+              - startDate
+              - endDate
+              - summary
+              - details
+              - createdDate
+              - updatedDate
+              - status
+          enum:
+            - id
+            - type
+            - tenantType
+            - enabled
+            - startDate
+            - endDate
+            - summary
+            - details
+            - createdDate
+            - updatedDate
+            - status
+        filters:
+          $ref: '#/components/schemas/AttentionNoteQueryFilterDto'
+    AttentionNoteQueryFilterDto:
+      type: object
+      properties:
+        type:
+          uniqueItems: true
+          type: array
+          description: The list of attention note types.
+          example:
+            - STOP_COURTESY
+          items:
+            type: string
+            description: The list of attention note types.
+            example: '["STOP_COURTESY"]'
+        tenantType:
+          uniqueItems: true
+          type: array
+          description: The list of tenant types.
+          example:
+            - REC
+            - MSP
+          items:
+            type: string
+            description: The list of tenant types.
+            example: '["REC","MSP"]'
+            enum:
+              - REC
+              - MSP
+              - ALL
+          enum:
+            - REC
+            - MSP
+            - ALL
+        status:
+          uniqueItems: true
+          type: array
+          description: The list of attention note status.
+          example:
+            - VALID
+            - FUTURE
+          items:
+            type: string
+            description: The list of attention note status.
+            example: '["VALID","FUTURE"]'
+            enum:
+              - VALID
+              - FUTURE
+              - EXPIRED
+              - DISABLED
+          enum:
+            - VALID
+            - FUTURE
+            - EXPIRED
+            - DISABLED
+        enabled:
+          type: boolean
+          description: Flag indicating if the attention note is enabled or not.
+          example: true
+        licenseCheck:
+          type: boolean
+          description: >-
+            Flag indicating if licenses should be checked against any business
+            rules or not.
+          example: true
+    QueryResponseMapStringObject:
+      type: object
+      properties:
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        objectId:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: object
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDto'
+        subsequentQueries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubsequentQuery'
+    UpdateAssignmentReq:
+      required:
+        - expirationDate
+        - quantity
+      type: object
+      properties:
+        expirationDate:
+          type: string
+          description: Expiration date of the entitlement assignment.
+          example: '2024-02-21 15:07:10Z'
+        quantity:
+          type: integer
+          description: Quantity of entitlements assigned.
+          format: int32
+          example: 5
+        valid:
+          type: boolean
+      description: Entitlement Assignment Details
+    SyncEntitlementRequestDto:
+      type: object
+      properties:
+        usageType:
+          type: string
+        status:
+          type: string
+        refreshType:
+          type: string
+          enum:
+            - FULL
+            - DELTA
+    AcceptedDto:
+      type: object
+      properties:
+        link:
+          type: string
+          format: uri
+        desc:
+          type: string
+        requestId:
+          type: string
+    UsageSettingPatchDto:
+      type: object
+      properties:
+        featureType:
+          type: string
+        maxQuantity:
+          type: integer
+          format: int32
+        enabled:
+          type: boolean
+        capped:
+          type: boolean
+    UsageSettingGetDto:
+      required:
+        - capped
+        - enabled
+        - featureCostUnit
+        - featureName
+        - featureType
+        - featureUnit
+        - licenseToken
+        - maxQuantity
+      type: object
+      properties:
+        featureType:
+          type: string
+          description: Type of the feature.
+          example: SLTN_PI_NET
+        featureName:
+          type: string
+          description: Name of the feature.
+          example: Personal Identity Network
+        maxQuantity:
+          type: integer
+          description: Maximum license quantity for the feature.
+          format: int32
+          example: 100
+        enabled:
+          type: boolean
+          description: Indicates whether the feature is enabled or not.
+          example: true
+        capped:
+          type: boolean
+          description: >-
+            Indicates whether the license usage of the feature is capped by max
+            quantity or not.
+          example: true
+        licenseToken:
+          type: integer
+          description: Indicates the token
+          format: int32
+          example: 1
+        featureCostUnit:
+          type: string
+          description: Indicates the feature-cost unit
+          example: per Tunnel
+        featureUnit:
+          type: string
+          description: Indicates the feature unit
+          example: Tunnel
+    Entitlement:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+        updatedDate:
+          type: string
+          format: date-time
+        externalId:
+          type: string
+        deviceType:
+          type: string
+          enum:
+            - UNASSIGNED_DEVICE_TYPE
+            - WIFI
+            - LTE
+            - SWITCH
+            - ANALYTICS
+            - RWG
+            - EDGE
+            - VIRTUAL_EDGE
+            - APSW
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_PIN_FOR_IDENTITY
+            - SLTN_TOKEN
+            - SLTN_PMS_INTEGRATION
+        effectiveDate:
+          type: string
+          format: date-time
+        expirationDate:
+          type: string
+          format: date-time
+        quantity:
+          type: integer
+          format: int64
+        sku:
+          type: string
+        licenseName:
+          type: string
+        licenseDesc:
+          type: string
+        emailStage:
+          type: string
+        deviceSubType:
+          type: string
+        alm:
+          type: boolean
+        almLicenseType:
+          type: string
+          enum:
+            - UNKNOWN
+            - APSW
+            - URLF
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_TOKEN
+        almActivationId:
+          type: string
+        almSoEntQuantity:
+          type: integer
+          format: int64
+        almUsedQuantity:
+          type: integer
+          format: int64
+        extendedLicensesAssignment:
+          type: boolean
+        r1Sku:
+          type: boolean
+        tempLicense:
+          type: boolean
+        assignedLicense:
+          type: boolean
+        historical:
+          type: boolean
+        graceEndDate:
+          type: string
+          format: date-time
+        parentId:
+          type: string
+    AlmExtraEntitlementInfoDto:
+      type: object
+      properties:
+        licenseType:
+          type: string
+          enum:
+            - UNKNOWN
+            - APSW
+            - URLF
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_TOKEN
+        remainingQuantity:
+          type: integer
+          format: int64
+        soEntQuantity:
+          type: integer
+          format: int64
+        activeApCount:
+          type: integer
+          format: int64
+        activeSwitchCount:
+          type: integer
+          format: int64
+        activeEdgeCount:
+          type: integer
+          format: int64
+    EntitlementOperationInfo:
+      type: object
+      properties:
+        alm:
+          type: boolean
+        almExtraInfo:
+          $ref: '#/components/schemas/AlmExtraEntitlementInfoDto'
+        deviceType:
+          type: string
+          enum:
+            - UNASSIGNED_DEVICE_TYPE
+            - WIFI
+            - LTE
+            - SWITCH
+            - ANALYTICS
+            - RWG
+            - EDGE
+            - VIRTUAL_EDGE
+            - APSW
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_PIN_FOR_IDENTITY
+            - SLTN_TOKEN
+            - SLTN_PMS_INTEGRATION
+        effectiveDate:
+          type: string
+          format: date-time
+        errorCode:
+          type: string
+        expirationDate:
+          type: string
+          format: date-time
+        internalMessage:
+          type: string
+        quantity:
+          type: integer
+          format: int64
+        deviceCount:
+          type: integer
+          format: int64
+        activeDeviceCountMap:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        remainingDays:
+          type: integer
+          format: int64
+        remainingQuantity:
+          type: integer
+          format: int64
+        toBeRemovedDeviceCount:
+          type: integer
+          format: int64
+        deviceSubType:
+          type: string
+        sku:
+          type: string
+        closestLiceseQtty:
+          type: integer
+          format: int64
+        closestLicenseQuantity:
+          type: integer
+          format: int64
+          deprecated: true
+        tempLicense:
+          type: boolean
+        licenseName:
+          type: string
+        licenseDesc:
+          type: string
+        outOfComplianceDevices:
+          type: integer
+          format: int64
+        futureOutOfComplianceDevices:
+          type: integer
+          format: int64
+        futureOfComplianceDate:
+          type: string
+          format: date-time
+        assignedLicenses:
+          type: integer
+          format: int64
+        purchasedLicenses:
+          type: integer
+          format: int64
+    InternalRefreshLicensesResponse:
+      type: object
+      properties:
+        entitlements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entitlement'
+        summary:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntitlementOperationInfo'
+        banners:
+          type: array
+          items:
+            $ref: '#/components/schemas/LicenseBannerDto'
+    LicenseBannerDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - INITIAL
+            - CLOSE_TO_EXPIRATION
+            - GRACE_PERIOD
+            - AFTER_GRACE_PERIOD
+            - RA_BELOW_90_PERCENT_OF_DEVICES
+            - RA_BELOW_50_PERCENT_OF_DEVICES
+            - RA_ONBOARD_ONLY
+        alm:
+          type: boolean
+        almExtraInfo:
+          $ref: '#/components/schemas/AlmExtraEntitlementInfoDto'
+        multipleLicense:
+          type: boolean
+        effectDate:
+          type: string
+          format: date-time
+        effectDays:
+          type: integer
+          format: int64
+        deviceCount:
+          type: integer
+          format: int64
+        deviceType:
+          type: string
+          enum:
+            - UNASSIGNED_DEVICE_TYPE
+            - WIFI
+            - LTE
+            - SWITCH
+            - ANALYTICS
+            - RWG
+            - EDGE
+            - VIRTUAL_EDGE
+            - APSW
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_PIN_FOR_IDENTITY
+            - SLTN_TOKEN
+            - SLTN_PMS_INTEGRATION
+        licenseType:
+          type: string
+          enum:
+            - UNKNOWN
+            - APSW
+            - URLF
+            - EDGE_SECS
+            - EDGE_SECL
+            - SLTN_TOKEN
+        deviceSubType:
+          type: string
+        totalRALicense:
+          type: integer
+          format: int64
+        totalActiveDevices:
+          type: integer
+          format: int64
+    EntitlementAssignmentRestException:
+      type: object
+      properties:
+        cause:
+          type: object
+          properties:
+            stackTrace:
+              type: array
+              items:
+                type: object
+                properties:
+                  classLoaderName:
+                    type: string
+                  moduleName:
+                    type: string
+                  moduleVersion:
+                    type: string
+                  methodName:
+                    type: string
+                  fileName:
+                    type: string
+                  lineNumber:
+                    type: integer
+                    format: int32
+                  className:
+                    type: string
+                  nativeMethod:
+                    type: boolean
+            message:
+              type: string
+            suppressed:
+              type: array
+              items:
+                type: object
+                properties:
+                  stackTrace:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        classLoaderName:
+                          type: string
+                        moduleName:
+                          type: string
+                        moduleVersion:
+                          type: string
+                        methodName:
+                          type: string
+                        fileName:
+                          type: string
+                        lineNumber:
+                          type: integer
+                          format: int32
+                        className:
+                          type: string
+                        nativeMethod:
+                          type: boolean
+                  message:
+                    type: string
+                  localizedMessage:
+                    type: string
+            localizedMessage:
+              type: string
+        stackTrace:
+          type: array
+          items:
+            type: object
+            properties:
+              classLoaderName:
+                type: string
+              moduleName:
+                type: string
+              moduleVersion:
+                type: string
+              methodName:
+                type: string
+              fileName:
+                type: string
+              lineNumber:
+                type: integer
+                format: int32
+              className:
+                type: string
+              nativeMethod:
+                type: boolean
+        eb:
+          type: string
+          enum:
+            - NO_CREATED_ASSIGNMENTS
+            - ASSIGNMENT_CREATION_BAD_INPUT
+            - NO_MSP_ENTITLEMENTS
+            - MSP_ENTITLEMENTS_NOT_FOUND
+            - INSUFFICIENT_MSP_ENTITLEMENTS
+            - ASSIGNMENT_NOT_FOUND
+            - TENANT_NOT_MSP
+            - TENANT_NOT_FOUND
+            - ENTITLEMENT_ID_NOT_FOUND
+            - ASSIGNMENT_NOT_REVOCABLE
+            - ASSIGNMENT_NOT_REPLACEABLE
+            - ASSIGNMENT_ALREADY_REVOKED
+            - ASSIGNMENT_IS_EXPIRED
+            - INTERNAL_SERVER_ERROR
+            - K2A_MIGRATION_MISSING_EXPORT_DATA
+            - K2A_MIGRATION_NO_ASSIGNMENT
+            - K2A_MIGRATION_EXCEPTION
+            - K2A_MIGRATION_NO_MSP_ENTITLEMENTS
+            - K2A_MIGRATION_INSUFFICIENT_MSP_ENTITLEMENTS
+            - LOCK_ACQUISITION_TIMEOUT
+            - INVALID_INPUT_PARAMETER
+            - NOT_ACCEPTABLE
+            - TRIAL_ASSIGNMENT_NOT_ALLOW
+            - TRIAL_ASSIGNMENT_UPDATE_NOT_ALLOW
+            - TRIAL_ASSIGNMENT_REVOKE_NOT_ALLOW
+            - ASSIGNMENT_NOT_REPLACED
+        ve:
+          $ref: '#/components/schemas/ValidationErrors'
+        reason:
+          type: string
+        message:
+          type: string
+        suppressed:
+          type: array
+          items:
+            type: object
+            properties:
+              stackTrace:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    classLoaderName:
+                      type: string
+                    moduleName:
+                      type: string
+                    moduleVersion:
+                      type: string
+                    methodName:
+                      type: string
+                    fileName:
+                      type: string
+                    lineNumber:
+                      type: integer
+                      format: int32
+                    className:
+                      type: string
+                    nativeMethod:
+                      type: boolean
+              message:
+                type: string
+              localizedMessage:
+                type: string
+        localizedMessage:
+          type: string
+    ValidationErrors:
+      type: object
+      properties:
+        object:
+          type: string
+        objectName:
+          type: string
+        value:
+          type: string
+        expected:
+          type: string

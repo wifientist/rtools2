@@ -1,0 +1,794 @@
+openapi: 3.0.1
+info:
+  title: Entitlement Assignment Endpoints
+  description: Entitlement Assignment Endpoints
+  contact:
+    email: TBD@ruckuswireless.com
+  license:
+    name: TBD
+    url: http://licenseUrl/TBD
+  version: 0.2.0
+externalDocs:
+  description: Ruckus Network Technical Documents
+  url: https://support.ruckuswireless.com/documents
+servers:
+  - url: http://localhost
+    description: Generated server url
+tags:
+  - name: Manage Entitlements
+    description: Manage Entitlement Assignment Endpoints
+paths:
+  /assignments:
+    get:
+      tags:
+        - Manage Entitlements
+      summary: Retrieve Assignments
+      description: Retrieve all the assignments (created and revoked).
+      operationId: getAssignments
+      parameters:
+        - name: mspEcTenantId
+          in: query
+          description: >-
+            Use 'mspEcTenantId' optionally; if provided, assignments for the
+            specified MSP-EC will be returned.
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of entitlement assignments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Assignment'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+    post:
+      tags:
+        - Manage Entitlements
+      summary: Create multiple assignments
+      description: Create a list of entitlement assignments for MSP owned devices
+      operationId: ownAssignmentsCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssignmentRequest'
+        required: true
+      responses:
+        '201':
+          description: Bulk operation success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentOperationResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '409':
+          description: Conflicting in request payload, i.e. MSP entitlement is not present
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentOperationResponse'
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+    delete:
+      tags:
+        - Manage Entitlements
+      summary: Revoke multiple assignments
+      description: Revoke multiple assignments for MSP owned devices.
+      operationId: revokeOwnAssignment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              description: Id of the assignment to revoke.
+              items:
+                $ref: '#/components/schemas/RevocationACXRequest'
+        required: true
+      responses:
+        '204':
+          description: All entitlement assignments have been revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentOperationResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+    patch:
+      tags:
+        - Manage Entitlements
+      summary: Replace multiple assignments
+      description: Replace multiple assignments for MSP owned devices.
+      operationId: ownAssignmentUpdate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ReplacementACXRequest'
+        required: true
+      responses:
+        '200':
+          description: The entitlement assignment updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentOperationResponse'
+        '204':
+          description: No Content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentOperationResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /mspEntitlements:
+    get:
+      tags:
+        - Manage Entitlements
+      summary: MSP Entitlements
+      description: Retrieve all the MSP's (bulk) entitlements.
+      operationId: getMspEntitlements
+      responses:
+        '200':
+          description: List of MSP entitlement.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspEntitlement'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /mspEntitlements/summaries:
+    get:
+      tags:
+        - Manage Entitlements
+      summary: Refresh MSP Entitlements
+      description: Refresh MSP entitlements.
+      operationId: syncMspEntitlements
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: >-
+            Retrieve a list of MSP entitlements, summaries and banners (with
+            retrieval from License Service).
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /mspBanners:
+    get:
+      tags:
+        - Manage Entitlements
+      summary: Retrieve MSP Banner Data
+      description: >-
+        Retrieve banner data for the MSP's (bulk) entitlements. Banners provide
+        information about MSP (bulk) entitlements that are either near their
+        expiry or have expired.
+      operationId: getMspEntitlementBanners
+      responses:
+        '200':
+          description: List of MSP entitlement banners.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BannerInformation'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /licenseUsageReports:
+    get:
+      tags:
+        - Manage Entitlements
+      summary: Get Entitlement Usage Report
+      description: Get the entitlement usage report.
+      operationId: getUsageReport-Deprecated
+      parameters:
+        - name: licenseType
+          in: query
+          description: >-
+            Specific license type if the tenant is an ALM tenant, valid value:
+            MSP_APSW (default), MSP_URLF, MSP_EDGE_SECS, MSP_EDGE_SECL
+          required: false
+          schema:
+            type: string
+            enum:
+              - MSP_WIFI
+              - MSP_WIFI_TEMP
+              - MSP_ICX
+              - MSP_ICX71L
+              - MSP_ICX71
+              - MSP_ICX75
+              - MSP_ICX76
+              - MSP_ICX78
+              - MSP_ICX_ANY
+              - MSP_EDGE
+              - MSP_EDGE_TEMP
+              - MSP_APSW
+              - MSP_APSW_TEMP
+              - MSP_URLF
+              - MSP_EDGE_SECL
+              - MSP_EDGE_SELS
+              - MSP_SLTN_TOKEN
+              - MSP_SLTN_TOKEN_TEMP
+        - name: startDate
+          in: query
+          description: >-
+            The first date included in the usage report, for example,
+            startDate=yyyy-mm-dd; if omitted, the startDate is set to last
+            month's first date.
+          required: false
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          description: >-
+            The end date included in the usage report, for example,
+            endDate=yyyy-mm-dd; if omitted, the endDate is set to last month's
+            last date.
+          required: false
+          schema:
+            type: string
+        - name: month
+          in: query
+          description: month=mm
+          required: false
+          schema:
+            type: string
+        - name: year
+          in: query
+          description: year=yyyy
+          required: false
+          schema:
+            type: string
+        - name: mspEcTenantId
+          in: query
+          description: Specific MSP EC tenant ID
+          required: false
+          schema:
+            type: string
+        - name: deviceDetails
+          in: query
+          description: >-
+            True to include device detail in the report. False to exclude device
+            detail in the report.
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          description: >-
+            Page number for the daily reports. If missing or value 0 means no
+            pagination, all daily reports will be returned.
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: pageSize
+          in: query
+          description: >-
+            Page size for the daily reports, default is 5, valid only if page is
+            given
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 5
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: MSP usage report
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+  /assignments/summaries:
+    get:
+      tags:
+        - Manage Entitlements
+      summary: Retrieve Device Type Summary
+      description: >-
+        Retrieve a summary by device type of all an MSP's entitlement
+        assignments.
+      operationId: getAssignmentsSummary
+      responses:
+        '200':
+          description: Assignment Summaries by device type.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssignmentSummary'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '423':
+          description: Locked
+        '500':
+          description: Internal Server Error
+      deprecated: true
+components:
+  schemas:
+    AssignmentACXRequest:
+      required:
+        - deviceType
+        - quantity
+      type: object
+      properties:
+        deviceType:
+          type: string
+          description: MSP entitlement device type.
+          example: MSP_WIFI, MSP_SWITCH, MSP_APSW
+          enum:
+            - MSP_WIFI
+            - MSP_SWITCH
+            - MSP_EDGE
+            - MSP_APSW
+            - MSP_SLTN_TOKEN
+        quantity:
+          type: integer
+          description: Quantity of devices permitted by this assignment.
+          format: int64
+          example: 15
+        useTemporaryMspEntitlement:
+          type: boolean
+          description: >-
+            Trial MSP entitlement to be used for this assignment, if this
+            parameter is not supplied in the request, it defaults to false.
+          example: false
+        deviceSubType:
+          type: string
+      description: List of assignments
+    CreateAssignmentRequest:
+      required:
+        - assignments
+        - endDate
+        - startDate
+      type: object
+      properties:
+        assignments:
+          type: array
+          description: List of assignments
+          items:
+            $ref: '#/components/schemas/AssignmentACXRequest'
+        startDate:
+          type: string
+          description: The date when the assignments starts.
+          example: '2020-09-14 01:12:51Z'
+        endDate:
+          type: string
+          description: The date when the assignments ends.
+          example: '2020-09-14 01:12:51Z'
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        mspTenantId:
+          type: string
+        mspEcTenantId:
+          type: string
+        deviceType:
+          type: string
+          enum:
+            - MSP_WIFI
+            - MSP_SWITCH
+            - MSP_EDGE
+            - MSP_APSW
+            - MSP_SLTN_TOKEN
+        deviceSubType:
+          type: string
+        quantity:
+          type: integer
+          format: int64
+        dateEffective:
+          type: string
+          format: date-time
+        dateExpires:
+          type: string
+          format: date-time
+        trialAssignment:
+          type: boolean
+        dateAssignmentCreated:
+          type: string
+          format: date-time
+        dateAssignmentRevoked:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        revokedBy:
+          type: string
+        extendedTrial:
+          type: boolean
+        alm:
+          type: boolean
+        ownAssignment:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - FUTURE
+            - VALID
+            - EXPIRED
+            - REVOKED
+    AssignmentOperationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assignment'
+        errorBrief:
+          type: string
+          enum:
+            - NO_CREATED_ASSIGNMENTS
+            - ASSIGNMENT_CREATION_BAD_INPUT
+            - NO_MSP_ENTITLEMENTS
+            - MSP_ENTITLEMENTS_NOT_FOUND
+            - INSUFFICIENT_MSP_ENTITLEMENTS
+            - ASSIGNMENT_NOT_FOUND
+            - TENANT_NOT_MSP
+            - TENANT_NOT_FOUND
+            - ENTITLEMENT_ID_NOT_FOUND
+            - ASSIGNMENT_NOT_REVOCABLE
+            - ASSIGNMENT_NOT_REPLACEABLE
+            - ASSIGNMENT_ALREADY_REVOKED
+            - ASSIGNMENT_IS_EXPIRED
+            - INTERNAL_SERVER_ERROR
+            - K2A_MIGRATION_MISSING_EXPORT_DATA
+            - K2A_MIGRATION_NO_ASSIGNMENT
+            - K2A_MIGRATION_EXCEPTION
+            - K2A_MIGRATION_NO_MSP_ENTITLEMENTS
+            - K2A_MIGRATION_INSUFFICIENT_MSP_ENTITLEMENTS
+            - LOCK_ACQUISITION_TIMEOUT
+            - INVALID_INPUT_PARAMETER
+            - NOT_ACCEPTABLE
+            - TRIAL_ASSIGNMENT_NOT_ALLOW
+            - TRIAL_ASSIGNMENT_UPDATE_NOT_ALLOW
+            - TRIAL_ASSIGNMENT_REVOKE_NOT_ALLOW
+            - ASSIGNMENT_NOT_REPLACED
+        errorMessage:
+          type: string
+        ve:
+          $ref: '#/components/schemas/ValidationErrors'
+    ValidationErrors:
+      type: object
+      properties:
+        object:
+          type: string
+        objectName:
+          type: string
+        value:
+          type: string
+        expected:
+          type: string
+    ReplacementACXRequest:
+      required:
+        - assignmentId
+        - quantity
+      type: object
+      properties:
+        assignmentId:
+          type: integer
+          description: The ID of the assignment to be replaced.
+          format: int64
+          example: 231
+        quantity:
+          type: integer
+          description: >-
+            Quantity of devices permitted by this replacement assignment; the
+            replacement assignment will be for the same MSP-EC and have the same
+            device type, device sub type and is trial values as the assignment
+            being revoked.
+          format: int64
+          example: 10
+        startDate:
+          type: string
+          description: The date when the assignment starts.
+          example: '2019-09-14 01:12:51Z'
+        endDate:
+          type: string
+          description: The date when the assignment ends.
+          example: '2020-09-14 01:12:51Z'
+    MspEntitlement:
+      type: object
+      properties:
+        id:
+          type: string
+        deviceType:
+          type: string
+          enum:
+            - MSP_WIFI
+            - MSP_SWITCH
+            - MSP_EDGE
+            - MSP_APSW
+            - MSP_SLTN_TOKEN
+        deviceSubType:
+          type: string
+        sku:
+          type: string
+        quantity:
+          type: integer
+          format: int64
+        effectiveDate:
+          type: string
+          format: date-time
+        expirationDate:
+          type: string
+          format: date-time
+        lastNotificationDate:
+          type: string
+          format: date-time
+        alm:
+          type: boolean
+        almActivationId:
+          type: string
+        almSoEntQuantity:
+          type: integer
+          format: int64
+        isR1Sku:
+          type: string
+        status:
+          type: string
+          enum:
+            - FUTURE
+            - VALID
+            - EXPIRED
+        r1Sku:
+          type: boolean
+        isTrial:
+          type: boolean
+    AlmExtraEntitlementInfoDto:
+      type: object
+      properties:
+        licenseType:
+          type: string
+          enum:
+            - MSP_WIFI
+            - MSP_WIFI_TEMP
+            - MSP_ICX
+            - MSP_ICX71L
+            - MSP_ICX71
+            - MSP_ICX75
+            - MSP_ICX76
+            - MSP_ICX78
+            - MSP_ICX_ANY
+            - MSP_EDGE
+            - MSP_EDGE_TEMP
+            - MSP_APSW
+            - MSP_APSW_TEMP
+            - MSP_URLF
+            - MSP_EDGE_SECL
+            - MSP_EDGE_SELS
+            - MSP_SLTN_TOKEN
+            - MSP_SLTN_TOKEN_TEMP
+        remainingQuantity:
+          type: integer
+          format: int64
+        soEntQuantity:
+          type: integer
+          format: int64
+    BannerInformation:
+      type: object
+      properties:
+        type:
+          type: string
+        deviceType:
+          type: string
+          enum:
+            - MSP_WIFI
+            - MSP_SWITCH
+            - MSP_EDGE
+            - MSP_APSW
+            - MSP_SLTN_TOKEN
+        multipleLicense:
+          type: boolean
+        effectDate:
+          type: string
+          format: date-time
+        effectDays:
+          type: integer
+          format: int64
+        deviceCount:
+          type: integer
+          format: int64
+        affectedDeviceCount:
+          type: integer
+          format: int64
+        alm:
+          type: boolean
+        almExtraEntitlementInfoDto:
+          $ref: '#/components/schemas/AlmExtraEntitlementInfoDto'
+    AssignmentSummary:
+      type: object
+      properties:
+        deviceType:
+          type: string
+          enum:
+            - MSP_WIFI
+            - MSP_SWITCH
+            - MSP_EDGE
+            - MSP_APSW
+            - MSP_SLTN_TOKEN
+        deviceSubType:
+          type: string
+        quantity:
+          type: integer
+          format: int64
+        myAssignments:
+          type: integer
+          format: int64
+        courtesyMspEntitlementsUsed:
+          type: boolean
+        remainingDevices:
+          type: integer
+          format: int64
+        trial:
+          type: boolean
+        licenseType:
+          type: string
+          enum:
+            - MSP_WIFI
+            - MSP_WIFI_TEMP
+            - MSP_ICX
+            - MSP_ICX71L
+            - MSP_ICX71
+            - MSP_ICX75
+            - MSP_ICX76
+            - MSP_ICX78
+            - MSP_ICX_ANY
+            - MSP_EDGE
+            - MSP_EDGE_TEMP
+            - MSP_APSW
+            - MSP_APSW_TEMP
+            - MSP_URLF
+            - MSP_EDGE_SECL
+            - MSP_EDGE_SELS
+            - MSP_SLTN_TOKEN
+            - MSP_SLTN_TOKEN_TEMP
+    RevocationACXRequest:
+      required:
+        - assignmentId
+      type: object
+      properties:
+        assignmentId:
+          type: integer
+          description: The ID of the assignment to be revoked.
+          format: int64
+          example: 231

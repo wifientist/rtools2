@@ -1,0 +1,551 @@
+{
+  "name": "Certificate Template API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/certificate-template-api-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.676334",
+  "endpoint_count": 54,
+  "base_url": "https://api.asia.ruckus.cloud",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/certificateTemplates/{templateId}/policySets/{policySetId}",
+      "method": "PUT",
+      "summary": "Update Policy Set for a Template",
+      "description": null,
+      "operation_id": "certTempUpdatePolicySetId",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/policySets/{policySetId}",
+      "method": "DELETE",
+      "summary": "Remove Policy Set from a Template",
+      "description": null,
+      "operation_id": "certTempRemovePolicySetId",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificates/{certId}",
+      "method": "GET",
+      "summary": "Get Specific Certificate",
+      "description": null,
+      "operation_id": "downloadCertPem_1",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificates/{certId}",
+      "method": "POST",
+      "summary": "Download the Private KEY of Certificate",
+      "description": null,
+      "operation_id": "downloadServerCertP12_1",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificates/{certId}",
+      "method": "DELETE",
+      "summary": "Delete a Certificate",
+      "description": null,
+      "operation_id": "deleteCert",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificates/{certId}",
+      "method": "PATCH",
+      "summary": "Update the Certificate",
+      "description": null,
+      "operation_id": "patchCert",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificates/query",
+      "method": "POST",
+      "summary": "Search for Certificates Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryCerts",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificates",
+      "method": "POST",
+      "summary": "Upload the Certificate",
+      "description": null,
+      "operation_id": "uploadCert",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/scepKeys",
+      "method": "GET",
+      "summary": "Get Simple Certificate Enrollment Protocol of Template",
+      "description": null,
+      "operation_id": "getScepKeys",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/scepKeys",
+      "method": "POST",
+      "summary": "Create Simple Certificate Enrollment Protocol for Template",
+      "description": null,
+      "operation_id": "createScepKey",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/notifications",
+      "method": "GET",
+      "summary": "Get Notifications of Template",
+      "description": null,
+      "operation_id": "getNotifications",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/notifications",
+      "method": "POST",
+      "summary": "Create Notification for Template",
+      "description": null,
+      "operation_id": "createNotification",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/msiPackages",
+      "method": "GET",
+      "summary": "Get Microsoft Software Installer Packages of Template",
+      "description": null,
+      "operation_id": "getMsiPackages",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/msiPackages",
+      "method": "POST",
+      "summary": "Create Microsoft Software Installer Package for Template",
+      "description": null,
+      "operation_id": "createMsiPackage",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/identities/{identityId}/certificates",
+      "method": "POST",
+      "summary": "Generate Certificate to a Specific Identity",
+      "description": null,
+      "operation_id": "generateCertToIdentity",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/identities/{identityId}/certificates/query",
+      "method": "POST",
+      "summary": "Search for Certificates Associated with Identity in Paged Result",
+      "description": null,
+      "operation_id": "getCertsByIdentity",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/certificates",
+      "method": "POST",
+      "summary": "Generate Certificate",
+      "description": null,
+      "operation_id": "generateCert",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/certificates/{certId}",
+      "method": "GET",
+      "summary": "Get Specific Certificate",
+      "description": null,
+      "operation_id": "downloadCertDer_1_1_1",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/certificates/{certId}",
+      "method": "POST",
+      "summary": "Download the Private KEY of Certificate",
+      "description": null,
+      "operation_id": "downloadCertP12_1",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/certificates/{certId}",
+      "method": "PATCH",
+      "summary": "Update the Certificate",
+      "description": null,
+      "operation_id": "patchCert_1",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/certificates/query",
+      "method": "POST",
+      "summary": "Search for Certificates in Specific Template Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryCerts_1",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/query",
+      "method": "POST",
+      "summary": "Search for Certificate Templates Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryTemplates",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/certificates/query",
+      "method": "POST",
+      "summary": "Search for Certificates Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryAllCerts",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities",
+      "method": "POST",
+      "summary": "Create New Certificate Authority",
+      "description": null,
+      "operation_id": "uploadCa_1",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}",
+      "method": "GET",
+      "summary": "Get Specific Certificate Authority",
+      "description": null,
+      "operation_id": "downloadCaDer_1_1",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}",
+      "method": "POST",
+      "summary": "Download the Private KEY of Certificate Authority",
+      "description": null,
+      "operation_id": "downloadCaP12_1",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}",
+      "method": "DELETE",
+      "summary": "Delete the Certificate Authority",
+      "description": null,
+      "operation_id": "deleteCa",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}",
+      "method": "PATCH",
+      "summary": "Update the Certificate Authority",
+      "description": null,
+      "operation_id": "patchCa",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/templates",
+      "method": "POST",
+      "summary": "Create New Certificate Template Belonging to a Specific Certificate Authority",
+      "description": null,
+      "operation_id": "createTemplateWithOnboardCa",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/templates/query",
+      "method": "POST",
+      "summary": "Search for Templates Belonging to a Specific Certificate Authority That Match Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryTemplatesByCa",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/subCas",
+      "method": "POST",
+      "summary": "Create New Sub Certificate Authority",
+      "description": null,
+      "operation_id": "createSubCa",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/subCas/query",
+      "method": "POST",
+      "summary": "Search for Sub Certificate Authorities Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "querySubCas",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/certificates/query",
+      "method": "POST",
+      "summary": "Search for Certificates Issued by Specific Certificate Authority Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "getByCaId",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/certificates",
+      "method": "POST",
+      "summary": "Create Certificate",
+      "description": null,
+      "operation_id": "createCert",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/privateKeys",
+      "method": "POST",
+      "summary": "Upload the Certificate Authority Private KEY",
+      "description": null,
+      "operation_id": "uploadCaPrivateKey",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/privateKeys",
+      "method": "DELETE",
+      "summary": "Delete the Certificate Authority Private KEY",
+      "description": null,
+      "operation_id": "deleteCaPrivateKey",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/query",
+      "method": "POST",
+      "summary": "Search for Certificate Authorities Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryCas",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}",
+      "method": "GET",
+      "summary": "Get Specific Certificate Template",
+      "description": null,
+      "operation_id": "getTemplateById",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}",
+      "method": "DELETE",
+      "summary": "Delete the Certificate Template",
+      "description": null,
+      "operation_id": "deleteTemplate",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}",
+      "method": "PATCH",
+      "summary": "Update the Certificate Template",
+      "description": null,
+      "operation_id": "patchTemplate",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/scepKeys/{scepKeyId}",
+      "method": "GET",
+      "summary": "Get Specific Simple Certificate Enrollment Protocol of Template",
+      "description": null,
+      "operation_id": "getScepKeyById",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/scepKeys/{scepKeyId}",
+      "method": "DELETE",
+      "summary": "Delete the Simple Certificate Enrollment Protocol",
+      "description": null,
+      "operation_id": "deleteScepKey",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/scepKeys/{scepKeyId}",
+      "method": "PATCH",
+      "summary": "Update the Simple Certificate Enrollment Protocol of Template",
+      "description": null,
+      "operation_id": "patchScepKey",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/notifications/{notificationId}",
+      "method": "GET",
+      "summary": "Get Specific Notification",
+      "description": null,
+      "operation_id": "getNotificationById",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/notifications/{notificationId}",
+      "method": "DELETE",
+      "summary": "Delete the Notification",
+      "description": null,
+      "operation_id": "deleteNotification",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/notifications/{notificationId}",
+      "method": "PATCH",
+      "summary": "Update the Notification of Template",
+      "description": null,
+      "operation_id": "patchNotification",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/msiPackages/{msiPackageId}",
+      "method": "GET",
+      "summary": "Get Specific Microsoft Software Installer Package",
+      "description": null,
+      "operation_id": "getMsiPackageById",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/msiPackages/{msiPackageId}",
+      "method": "DELETE",
+      "summary": "Delete the Microsoft Software Installer Package",
+      "description": null,
+      "operation_id": "deleteMsiPackage",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/msiPackages/{msiPackageId}",
+      "method": "PATCH",
+      "summary": "Update the Microsoft Software Installer Package of Template",
+      "description": null,
+      "operation_id": "patchMsiPackage",
+      "tags": [
+        "Certificate Template"
+      ]
+    },
+    {
+      "path": "/certificates/{certId}/chains",
+      "method": "GET",
+      "summary": "Download Certificate Chain",
+      "description": null,
+      "operation_id": "downloadServerCertChainInPkcs7_1",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/radiusProfiles/{radiusProfileId}/certificates",
+      "method": "GET",
+      "summary": "Get Certificates Associated with RADIUS",
+      "description": null,
+      "operation_id": "getCertificatesByRadiusId",
+      "tags": [
+        "Server and Client Certificate"
+      ]
+    },
+    {
+      "path": "/radiusProfiles/{radiusProfileId}/certificateAuthorities",
+      "method": "GET",
+      "summary": "Get Certificate Authorities Associated with RADIUS",
+      "description": null,
+      "operation_id": "getCAsByRadiusId",
+      "tags": [
+        "Certificate Authority"
+      ]
+    },
+    {
+      "path": "/certificateTemplates/{templateId}/certificates/{certId}/chains",
+      "method": "GET",
+      "summary": "Download Issued Certificate Chain",
+      "description": null,
+      "operation_id": "downloadCertChainInPkcs7_1",
+      "tags": [
+        "Device Certificate"
+      ]
+    },
+    {
+      "path": "/certificateAuthorities/{caId}/chains",
+      "method": "GET",
+      "summary": "Download the Certificate Chain of Certificate Authority",
+      "description": null,
+      "operation_id": "downloadCaChainPKCS7_1",
+      "tags": [
+        "Certificate Authority"
+      ]
+    }
+  ]
+}

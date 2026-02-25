@@ -1,0 +1,221 @@
+{
+  "name": "Guest API",
+  "version": "1.7.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/guest-1.7.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.095413",
+  "endpoint_count": 21,
+  "base_url": "https://api.asia.ruckus.cloud",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "GET",
+      "summary": "Retrieve Portal Service Profile Template",
+      "description": "Retrieve a portal service profile template by id.",
+      "operation_id": "GetPortalServiceProfileTemplateByIdV1_1",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Template",
+      "description": "Update portal service profile template by id.",
+      "operation_id": "updatePortalServiceProfileTemplateV1_1",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Remove Portal Service Profile Template",
+      "description": "Remove a portal service profile template by id.",
+      "operation_id": "DeletePortalServiceProfileTemplateById",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}/poweredImages",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Template Powered Image",
+      "description": "Update portal service profile template powered image by id.",
+      "operation_id": "updatePortalServiceProfilePoweredImageTemplate",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}/photos",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Template Photo",
+      "description": "Update portal service profile template photo by id.",
+      "operation_id": "updatePortalServiceProfilePhotoTemplate",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}/logos",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Template Logo",
+      "description": "Update portal service profile template logo by id.",
+      "operation_id": "updatePortalServiceProfileLogoTemplate",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/{portalServiceProfileId}/backgroundImages",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Template Background Image",
+      "description": "Update portal service profile template background image by id.",
+      "operation_id": "updatePortalServiceProfileBackgroundImageTemplate",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "GET",
+      "summary": "Retrieve Portal Service Profile",
+      "description": "Retrieve a portal service profile.",
+      "operation_id": "GetPortalServiceProfileById_1_1",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile",
+      "description": "Update portal service profile by id.",
+      "operation_id": "UpdatePortalServiceProfileById_1_1",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Remove Portal Service Profile",
+      "description": "Remove portal service profile by id.",
+      "operation_id": "DeletePortalServiceProfileById",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}/poweredImages",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Powered Image",
+      "description": "Update portal service profile powered image by id.",
+      "operation_id": "UpdatePortalServiceProfilePoweredImage",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}/photos",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Photo",
+      "description": "Update portal service profile photo by id.",
+      "operation_id": "UpdatePortalServiceProfilePhoto",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}/logos",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Logo",
+      "description": "Update portal service profile logo by id.",
+      "operation_id": "UpdatePortalServiceProfileLogo",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/{portalServiceProfileId}/backgroundImages",
+      "method": "PUT",
+      "summary": "Update Portal Service Profile Background Image",
+      "description": "Update portal service profile background image by id.",
+      "operation_id": "UpdatePortalServiceProfileBackgroundImage",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/guestUsers",
+      "method": "POST",
+      "summary": "Add Guest User",
+      "description": "Create a new guest user.",
+      "operation_id": "AddGuestUser_1",
+      "tags": [
+        "Guest User"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/guestUsers",
+      "method": "PATCH",
+      "summary": "Guest User Action",
+      "description": "Guest user action for the guest user.",
+      "operation_id": "ActionByGuestUserIdAndWifiNetworkId",
+      "tags": [
+        "Guest User"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles",
+      "method": "POST",
+      "summary": "Add Portal Service Profile Template",
+      "description": "Add a portal service profile template.",
+      "operation_id": "AddPortalServiceProfileTemplate",
+      "tags": [
+        "Portal Service Template"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles",
+      "method": "POST",
+      "summary": "Add Portal Service Profile",
+      "description": "Provision one portal service profile as defined in the payload.",
+      "operation_id": "AddPortalServiceProfile_1_1",
+      "tags": [
+        "Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/guestUsers/{guestUserId}",
+      "method": "GET",
+      "summary": "Retrieve Guest User by ID",
+      "description": "Retrieve a guest user.",
+      "operation_id": "GetGuestUserByIdAndWifiNetworkId",
+      "tags": [
+        "Guest User"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/guestUsers/{guestUserId}",
+      "method": "DELETE",
+      "summary": "Remove Guest User by ID",
+      "description": "Remove a guest user.",
+      "operation_id": "DeleteGuestUserByIdAndWifiNetworkId",
+      "tags": [
+        "Guest User"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/guestUsers/{guestUserId}",
+      "method": "PATCH",
+      "summary": "Update Guest User",
+      "description": "Update guest user enable/disable status or create new password for the guest user.",
+      "operation_id": "UpdateByGuestUserIdAndWifiNetworkId",
+      "tags": [
+        "Guest User"
+      ]
+    }
+  ]
+}

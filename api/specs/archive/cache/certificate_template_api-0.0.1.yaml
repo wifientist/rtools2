@@ -1,0 +1,3314 @@
+openapi: 3.0.1
+info:
+  title: Certificate Template API
+  version: 0.0.1
+servers:
+  - url: https://api.asia.ruckus.cloud
+    description: Asia Server URL
+  - url: https://api.eu.ruckus.cloud
+    description: Europe Server URL
+  - url: https://api.ruckus.cloud
+    description: North America Server URL
+tags:
+  - name: Certificate Authority
+    description: APIs for Certificate Authority Management.
+  - name: Server and Client Certificate
+    description: APIs for Server and Client Certificate Management.
+  - name: Device Certificate
+    description: APIs for Device Certificate Management.
+  - name: Certificate Template
+    description: APIs for Certificate Template Management.
+paths:
+  /certificateTemplates/{templateId}/policySets/{policySetId}:
+    put:
+      tags:
+        - Certificate Template
+      summary: Update Policy Set for a Template
+      operationId: certTempUpdatePolicySetId
+      parameters:
+        - name: templateId
+          in: path
+          description: Template id
+          required: true
+          schema:
+            type: string
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    delete:
+      tags:
+        - Certificate Template
+      summary: Remove Policy Set from a Template
+      operationId: certTempRemovePolicySetId
+      parameters:
+        - name: templateId
+          in: path
+          description: Template id
+          required: true
+          schema:
+            type: string
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificates/{certId}:
+    get:
+      tags:
+        - Server and Client Certificate
+      summary: Get Specific Certificate
+      operationId: downloadCertPem_1
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Certificate
+          content:
+            application/x-pem-file: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertificateDto'
+        '404':
+          description: Certificate not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    post:
+      tags:
+        - Server and Client Certificate
+      summary: Download the Private KEY of Certificate
+      operationId: downloadServerCertP12_1
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertDownloadRequest'
+        required: true
+      responses:
+        '200':
+          description: Downloaded private key of CA
+          content:
+            application/x-pkcs12: {}
+    delete:
+      tags:
+        - Server and Client Certificate
+      summary: Delete a Certificate
+      operationId: deleteCert
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '404':
+          description: Certificate not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '409':
+          description: Certificate cannot be deleted because it is currently in use
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    patch:
+      tags:
+        - Server and Client Certificate
+      summary: Update the Certificate
+      operationId: patchCert
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServerCertificateDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateServerCertificateDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificates/query:
+    post:
+      tags:
+        - Server and Client Certificate
+      summary: Search for Certificates Matching Search String in Paged Result
+      operationId: queryCerts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CertQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertQueryResponse'
+  /certificates:
+    post:
+      tags:
+        - Server and Client Certificate
+      summary: Upload the Certificate
+      operationId: uploadCert
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+                - certificateFile
+                - name
+              type: object
+              properties:
+                certificateFile:
+                  type: string
+                  description: The certificate in P12, DER or PEM format be uploaded.
+                  format: binary
+                privateKeyFile:
+                  type: string
+                  description: The private key in PEM format be uploaded.
+                  format: binary
+                password:
+                  type: string
+                  description: >-
+                    If private key or key store is password-protected, specify
+                    the password. If not, leave the password blank.
+                name:
+                  type: string
+                  description: The name for the certificate.
+            encoding:
+              certificateFile:
+                contentType: >-
+                  application/x-pem-file, application/pkix-cert,
+                  application/x-pkcs12
+              privateKeyFile:
+                contentType: application/x-pem-file, application/pkcs8
+      responses:
+        '202':
+          description: The upload request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateTemplates/{templateId}/scepKeys:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Simple Certificate Enrollment Protocol of Template
+      operationId: getScepKeys
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: SCEP Keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+        - Certificate Template
+      summary: Create Simple Certificate Enrollment Protocol for Template
+      operationId: createScepKey
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScepKeyDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/ScepKeyDto'
+        required: true
+      responses:
+        '202':
+          description: SCEP Key created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid SCEP Key content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateTemplates/{templateId}/notifications:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Notifications of Template
+      operationId: getNotifications
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+        - Certificate Template
+      summary: Create Notification for Template
+      operationId: createNotification
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/NotificationDto'
+        required: true
+      responses:
+        '202':
+          description: Notification created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid Notification content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateTemplates/{templateId}/msiPackages:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Microsoft Software Installer Packages of Template
+      operationId: getMsiPackages
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: MSI Packages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+        - Certificate Template
+      summary: Create Microsoft Software Installer Package for Template
+      operationId: createMsiPackage
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MsiPackageDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MsiPackageDto'
+        required: true
+      responses:
+        '202':
+          description: MSI Package created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid MSI Package content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateTemplates/{templateId}/identities/{identityId}/certificates:
+    post:
+      tags:
+        - Device Certificate
+      summary: Generate Certificate to a Specific Identity
+      operationId: generateCertToIdentity
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: identityId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateCertDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/GenerateCertDto'
+        required: true
+      responses:
+        '202':
+          description: Certificate generated
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid certificate data
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateTemplates/{templateId}/identities/{identityId}/certificates/query:
+    post:
+      tags:
+        - Device Certificate
+      summary: Search for Certificates Associated with Identity in Paged Result
+      operationId: getCertsByIdentity
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: identityId
+          in: path
+          description: Identity id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCertQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DeviceCertQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertQueryResponse'
+  /certificateTemplates/{templateId}/certificates:
+    post:
+      tags:
+        - Device Certificate
+      summary: Generate Certificate
+      operationId: generateCert
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateCertDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/GenerateCertDto'
+        required: true
+      responses:
+        '202':
+          description: Certificate generated
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid certificate data
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateTemplates/{templateId}/certificates/{certId}:
+    get:
+      tags:
+        - Device Certificate
+      summary: Get Specific Certificate
+      operationId: downloadCertDer_1_1_1
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: password
+          in: query
+          description: >-
+            The password to use to encrypt the private key. To leave private key
+            unencrypted, leave blank
+          required: false
+          schema:
+            type: string
+            default: ''
+        - name: includeChain
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Certificate
+          content:
+            application/x-x509-ca-cert: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertificateDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertificateDto'
+        '404':
+          description: Certificate not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    post:
+      tags:
+        - Device Certificate
+      summary: Download the Private KEY of Certificate
+      operationId: downloadCertP12_1
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertDownloadRequest'
+        required: true
+      responses:
+        '200':
+          description: Downloaded private key of issued certificate.
+          content:
+            application/x-pkcs12: {}
+    patch:
+      tags:
+        - Device Certificate
+      summary: Update the Certificate
+      operationId: patchCert_1
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate Template id
+          required: true
+          schema:
+            type: string
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCertificateDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateCertificateDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateTemplates/{templateId}/certificates/query:
+    post:
+      tags:
+        - Device Certificate
+      summary: >-
+        Search for Certificates in Specific Template Matching Search String in
+        Paged Result
+      operationId: queryCerts_1
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCertQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DeviceCertQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertQueryResponse'
+  /certificateTemplates/query:
+    post:
+      tags:
+        - Certificate Template
+      summary: Search for Certificate Templates Matching Search String in Paged Result
+      operationId: queryTemplates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertTemplateQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CertTemplateQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificate Templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertTemplateQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertTemplateQueryResponse'
+  /certificateTemplates/certificates/query:
+    post:
+      tags:
+        - Device Certificate
+      summary: Search for Certificates Matching Search String in Paged Result
+      operationId: queryAllCerts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCertQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DeviceCertQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DeviceCertQueryResponse'
+  /certificateAuthorities:
+    post:
+      tags:
+        - Certificate Authority
+      summary: Create New Certificate Authority
+      operationId: uploadCa_1
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+                - publicKey
+              type: object
+              properties:
+                publicKey:
+                  type: string
+                  description: >-
+                    The public key of the certificate authority must be
+                    uploaded.
+                  format: binary
+                privateKey:
+                  type: string
+                  description: >-
+                    The private key is only necessary if you plan to issue
+                    certificate using this certificate authority.
+                  format: binary
+                password:
+                  type: string
+                  description: >-
+                    If upload private key is password-protected, specify the
+                    password. If not, leave the password blank.
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CaDto'
+        required: true
+      responses:
+        '202':
+          description: Certificate Authority created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid Certificate Authority content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateAuthorities/{caId}:
+    get:
+      tags:
+        - Certificate Authority
+      summary: Get Specific Certificate Authority
+      operationId: downloadCaDer_1_1
+      parameters:
+        - name: caId
+          in: path
+          description: CA id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Certificate Authority
+          content:
+            application/x-x509-ca-cert: {}
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CaDto'
+        '404':
+          description: Certificate Authority not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    post:
+      tags:
+        - Certificate Authority
+      summary: Download the Private KEY of Certificate Authority
+      operationId: downloadCaP12_1
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertDownloadRequest'
+        required: true
+      responses:
+        '200':
+          description: Downloaded private key of CA
+          content:
+            application/x-pkcs12: {}
+    delete:
+      tags:
+        - Certificate Authority
+      summary: Delete the Certificate Authority
+      operationId: deleteCa
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - Certificate Authority
+      summary: Update the Certificate Authority
+      operationId: patchCa
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCaDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateCaDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateAuthorities/{caId}/templates:
+    post:
+      tags:
+        - Certificate Authority
+      summary: >-
+        Create New Certificate Template Belonging to a Specific Certificate
+        Authority
+      operationId: createTemplateWithOnboardCa
+      parameters:
+        - name: caId
+          in: path
+          description: Onboard Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertificateTemplateDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CertificateTemplateDto'
+        required: true
+      responses:
+        '202':
+          description: Certificate Template created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid Certificate Template content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateAuthorities/{caId}/templates/query:
+    post:
+      tags:
+        - Certificate Authority
+      summary: >-
+        Search for Templates Belonging to a Specific Certificate Authority That
+        Match Search String in Paged Result
+      operationId: queryTemplatesByCa
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertTemplateQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CertTemplateQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificate Templates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertTemplateQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertTemplateQueryResponse'
+  /certificateAuthorities/{caId}/subCas:
+    post:
+      tags:
+        - Certificate Authority
+      summary: Create New Sub Certificate Authority
+      operationId: createSubCa
+      parameters:
+        - name: caId
+          in: path
+          description: Root Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CaDto'
+        required: true
+      responses:
+        '202':
+          description: Certificate Authority created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid Certificate Authority content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateAuthorities/{caId}/subCas/query:
+    post:
+      tags:
+        - Certificate Authority
+      summary: >-
+        Search for Sub Certificate Authorities Matching Search String in Paged
+        Result
+      operationId: querySubCas
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CaQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificate Authorities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CaQueryResponse'
+  /certificateAuthorities/{caId}/certificates/query:
+    post:
+      tags:
+        - Server and Client Certificate
+      summary: >-
+        Search for Certificates Issued by Specific Certificate Authority
+        Matching Search String in Paged Result
+      operationId: getByCaId
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Server or Client Certificate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertQueryResponse'
+  /certificateAuthorities/{caId}/certificates:
+    post:
+      tags:
+        - Server and Client Certificate
+      summary: Create Certificate
+      operationId: createCert
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertificateDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CertificateDto'
+        required: true
+      responses:
+        '202':
+          description: Certificate created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid Certificate content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /certificateAuthorities/{caId}/privateKeys:
+    post:
+      tags:
+        - Certificate Authority
+      summary: Upload the Certificate Authority Private KEY
+      operationId: uploadCaPrivateKey
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+                - privateKey
+              type: object
+              properties:
+                privateKey:
+                  type: string
+                  description: >-
+                    Upload the private key of the certificate authority in PEM
+                    format.
+                  format: binary
+                password:
+                  type: string
+                  description: >-
+                    If upload private key is password-protected, specify the
+                    password. If not, leave the password blank.
+      responses:
+        '202':
+          description: The upload request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    delete:
+      tags:
+        - Certificate Authority
+      summary: Delete the Certificate Authority Private KEY
+      operationId: deleteCaPrivateKey
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate Authority id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateAuthorities/query:
+    post:
+      tags:
+        - Certificate Authority
+      summary: >-
+        Search for Certificate Authorities Matching Search String in Paged
+        Result
+      operationId: queryCas
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CaQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Certificate Authorities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaQueryResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CaQueryResponse'
+  /certificateTemplates/{templateId}:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Specific Certificate Template
+      operationId: getTemplateById
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Certificate Template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateTemplateDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertificateTemplateDto'
+        '404':
+          description: Certificate Template not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - Certificate Template
+      summary: Delete the Certificate Template
+      operationId: deleteTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - Certificate Template
+      summary: Update the Certificate Template
+      operationId: patchTemplate
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCertificateTemplateDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateCertificateTemplateDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateTemplates/{templateId}/scepKeys/{scepKeyId}:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Specific Simple Certificate Enrollment Protocol of Template
+      operationId: getScepKeyById
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: scepKeyId
+          in: path
+          description: SCEP key id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SCEP Key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScepKeyDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ScepKeyDto'
+        '404':
+          description: SCEP Key not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - Certificate Template
+      summary: Delete the Simple Certificate Enrollment Protocol
+      operationId: deleteScepKey
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: scepKeyId
+          in: path
+          description: SCEP key id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - Certificate Template
+      summary: Update the Simple Certificate Enrollment Protocol of Template
+      operationId: patchScepKey
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: scepKeyId
+          in: path
+          description: ScepKey Id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScepKeyDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/ScepKeyDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateTemplates/{templateId}/notifications/{notificationId}:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Specific Notification
+      operationId: getNotificationById
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: notificationId
+          in: path
+          description: Notification id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/NotificationDto'
+        '404':
+          description: Notification not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - Certificate Template
+      summary: Delete the Notification
+      operationId: deleteNotification
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: notificationId
+          in: path
+          description: Notification id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - Certificate Template
+      summary: Update the Notification of Template
+      operationId: patchNotification
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: notificationId
+          in: path
+          description: Notification id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/NotificationDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificateTemplates/{templateId}/msiPackages/{msiPackageId}:
+    get:
+      tags:
+        - Certificate Template
+      summary: Get Specific Microsoft Software Installer Package
+      operationId: getMsiPackageById
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: msiPackageId
+          in: path
+          description: MSI package id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: MSI Package
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MsiPackageDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/MsiPackageDto'
+        '404':
+          description: MSI Package not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - Certificate Template
+      summary: Delete the Microsoft Software Installer Package
+      operationId: deleteMsiPackage
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: msiPackageId
+          in: path
+          description: MSI package id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - Certificate Template
+      summary: Update the Microsoft Software Installer Package of Template
+      operationId: patchMsiPackage
+      parameters:
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+        - name: msiPackageId
+          in: path
+          description: MSI Package id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MsiPackageDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MsiPackageDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /certificates/{certId}/chains:
+    get:
+      tags:
+        - Server and Client Certificate
+      summary: Download Certificate Chain
+      operationId: downloadServerCertChainInPkcs7_1
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Downloaded certificate in chain.
+          content:
+            application/x-pkcs7-certificates: {}
+  /radiusProfiles/{radiusProfileId}/certificates:
+    get:
+      tags:
+        - Server and Client Certificate
+      summary: Get Certificates Associated with RADIUS
+      operationId: getCertificatesByRadiusId
+      parameters:
+        - name: certType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - SERVER
+              - CLIENT
+        - name: radiusProfileId
+          in: path
+          description: Radius id
+          required: true
+          schema:
+            type: string
+        - name: pageable
+          in: query
+          description: parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Certificate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CertificateDto'
+  /radiusProfiles/{radiusProfileId}/certificateAuthorities:
+    get:
+      tags:
+        - Certificate Authority
+      summary: Get Certificate Authorities Associated with RADIUS
+      operationId: getCAsByRadiusId
+      parameters:
+        - name: radiusProfileId
+          in: path
+          description: Radius id
+          required: true
+          schema:
+            type: string
+        - name: pageable
+          in: query
+          description: parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Certificate Authority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/CaDto'
+  /certificateTemplates/{templateId}/certificates/{certId}/chains:
+    get:
+      tags:
+        - Device Certificate
+      summary: Download Issued Certificate Chain
+      operationId: downloadCertChainInPkcs7_1
+      parameters:
+        - name: certId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+        - name: templateId
+          in: path
+          description: Certificate template id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Downloaded certificate in chain.
+          content:
+            application/x-pkcs7-certificates: {}
+  /certificateAuthorities/{caId}/chains:
+    get:
+      tags:
+        - Certificate Authority
+      summary: Download the Certificate Chain of Certificate Authority
+      operationId: downloadCaChainPKCS7_1
+      parameters:
+        - name: caId
+          in: path
+          description: Certificate id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Downloaded chain
+          content:
+            application/x-pkcs7-certificates: {}
+components:
+  schemas:
+    CertDownloadRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          description: >-
+            The password to use to encrypt the private key. If encryption is not
+            required, please leave it blank.
+        includeChain:
+          type: boolean
+    CertFilters:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - INVALID
+            - VALID
+            - REVOKED
+            - EXPIRED
+        extendedKeyUsages:
+          type: array
+          items:
+            type: string
+            enum:
+              - SERVER_AUTH
+              - CLIENT_AUTH
+        keyUsages:
+          type: array
+          items:
+            type: string
+            enum:
+              - DIGITAL_SIGNATURE
+              - KEY_ENCIPHERMENT
+    CertQueryRequest:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          $ref: '#/components/schemas/CertFilters'
+    AlgorithmEnum:
+      type: string
+      description: >-
+        SHA-256 - The SHA-2 hash using 256 bits. SHA-384 - The SHA-2 hash using
+        384 bits. SHA-512 - The SHA-2 hash using 512 bits.
+      enum:
+        - SHA_1
+        - SHA_256
+        - SHA_384
+        - SHA_512
+    CertQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          description: Certificate in page.
+          items:
+            $ref: '#/components/schemas/CertificateDto'
+    CertificateDto:
+      required:
+        - algorithm
+        - keyLength
+        - name
+        - notAfterDate
+        - notBeforeDate
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique for this certificate.
+          readOnly: true
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of the certificate.
+        commonName:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The common name of the certificate.
+        createDate:
+          type: string
+          description: The date that creates the certificate.
+          format: date-time
+          readOnly: true
+        notBeforeDate:
+          type: string
+          description: The start date of the certificate.
+          format: date-time
+        notAfterDate:
+          type: string
+          description: The expires date of the certificate.
+          format: date-time
+        email:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$
+          type: string
+          description: The email of the certificate.
+        title:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The title for the certificate authority.
+        revocationDate:
+          type: string
+          description: The date after which the certificate be revoked.
+          format: date-time
+          readOnly: true
+        revocationReason:
+          type: string
+          description: Reason for revocation of certificate.
+        serialNumber:
+          type: string
+          description: The serial number of the certificate.
+          readOnly: true
+        shaThumbprint:
+          type: string
+          description: The thumbprint of the certificate.
+          readOnly: true
+        publicKeyBase64:
+          type: string
+          description: The public key of the certificate.
+          readOnly: true
+        organization:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The organization of the certificate.
+        keyLength:
+          maximum: 4096
+          minimum: 2048
+          type: integer
+          description: The length of the key.
+          format: int32
+        certificateAuthorityName:
+          type: string
+          description: The name of the certificate authority that issued this certificate.
+          readOnly: true
+        locality:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The locality included in the certificate.
+        state:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The state included in the certificate.
+        country:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The country included in the certificate.
+        organizationUnit:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The organization unit of the certificate.
+        keyUsages:
+          type: array
+          description: The key usages of the certificate.
+          items:
+            type: string
+            description: The key usages of the certificate.
+            enum:
+              - DIGITAL_SIGNATURE
+              - KEY_ENCIPHERMENT
+        privateKeyBase64:
+          type: string
+          description: The private key of the certificate.
+          readOnly: true
+        chain:
+          type: string
+          description: The chain of the certificate.
+          readOnly: true
+        details:
+          type: string
+          description: The details of the certificate.
+          readOnly: true
+        description:
+          type: string
+          description: The description of the certificate.
+        algorithm:
+          $ref: '#/components/schemas/AlgorithmEnum'
+        csrString:
+          type: string
+          description: The certificate signing request that should be signed by the CA.
+          writeOnly: true
+        status:
+          type: array
+          description: The status of the certificate.
+          readOnly: true
+          items:
+            type: string
+            description: The status of the certificate.
+            enum:
+              - INVALID
+              - VALID
+              - REVOKED
+              - EXPIRED
+        extendedKeyUsages:
+          type: array
+          description: The extended key usage of the certificate.
+          items:
+            type: string
+            description: The extended key usage of the certificate.
+            enum:
+              - SERVER_AUTH
+              - CLIENT_AUTH
+    ScepKeyDto:
+      required:
+        - challengePasswordType
+        - cnValue1
+        - cnValue2
+        - cnValue3
+        - expirationDate
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique for this simple certificate enrollment protocol key.
+          readOnly: true
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Description of the item for reference.
+        enabled:
+          type: boolean
+          description: Indicates whether this key should be used.
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The reference name of the item.
+        allowedSubnets:
+          type: string
+          description: >-
+            If populated, only the IPs or subnets specified will be allowed to
+            utilize the simple certificate enrollment protocol server using this
+            key.
+        blockedSubnets:
+          type: string
+          description: >-
+            If populated, the IPs or subnets specified will be blocked from
+            utilizing the simple certificate enrollment protocol server using
+            this key.
+        challengePassword:
+          maxLength: 255
+          minLength: 4
+          type: string
+          description: >-
+            If checked, the client will need to provide this password during the
+            exchange.
+        expirationDate:
+          type: string
+          description: The expire date for the key.
+          format: date-time
+        overrideDays:
+          maximum: 365
+          minimum: 0
+          type: integer
+          description: >-
+            If greater than 0, this overrides the expiration date in the
+            certificate template for certificates generated using this key.
+          format: int32
+        scepKey:
+          type: string
+          description: The shared secret used as the key within the URL.
+        cnValue1:
+          type: string
+          description: >-
+            The certificate signing requests created as part of the simple
+            certificate enrollment protocol interaction will contain one or more
+            common name values. The system will treat the first common name as
+            the type of value specified.
+          enum:
+            - IGNORE
+            - MAC_ADDRESS
+            - USERNAME
+            - DEVICE_NAME
+            - EMAIL
+            - LOCATION
+        cnValue2:
+          type: string
+          description: >-
+            The certificate signing requests created as part of the simple
+            certificate enrollment protocol interaction will contain one or more
+            common name values. The system will treat the second common name as
+            the type of value specified.
+          enum:
+            - IGNORE
+            - MAC_ADDRESS
+            - USERNAME
+            - DEVICE_NAME
+            - EMAIL
+            - LOCATION
+        cnValue3:
+          type: string
+          description: >-
+            The certificate signing requests created as part of the simple
+            certificate enrollment protocol interaction will contain one or more
+            common name values. The system will treat the third common name as
+            the type of value specified.
+          enum:
+            - IGNORE
+            - MAC_ADDRESS
+            - USERNAME
+            - DEVICE_NAME
+            - EMAIL
+            - LOCATION
+        challengePasswordType:
+          type: string
+          description: >-
+            Optionally specify a challenge password which must be provided by
+            the client during the simple certificate enrollment protocol key
+            exchange.
+          enum:
+            - NONE
+            - STATIC
+            - MICROSOFT_INTUNE
+        intuneTenantId:
+          type: string
+          description: The azure tenant ID from the azure configuration portal.
+        azureApplicationId:
+          type: string
+          description: The azure application client ID from the azure configuration portal.
+        azureApplicationKey:
+          type: string
+          description: >-
+            The azure application key and client secret configured in the azure
+            configuration portal.
+        enrollmentUrl:
+          type: string
+          description: The URL for device enrollment.
+          readOnly: true
+    NotificationDto:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique if the notification.
+          readOnly: true
+        dateValue:
+          type: string
+          description: >-
+            The number of hours/days/months/etc to be offset from the event date
+            when calculating when to send the notification.
+        emailSubject:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The subject of the email to be sent for this notification.
+        email:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$
+          type: string
+          description: Indicates whether this package should be used.
+        emailTemplate:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The message of the email to be sent for this notification.
+        notificationEvent:
+          type: string
+          description: The event upon which to base the sending of the notification.
+          enum:
+            - ON_ISSUANCE
+            - ON_REVOCATION
+            - ON_EXPIRATION
+            - ON_REVOKED_USE
+        notificationMethod:
+          type: string
+          description: The method(s) to use to notify the user.
+          enum:
+            - EMAIL_ELSE_SMS
+            - SMS_ELSE_EMAIL
+            - EMAIL_AND_SMS
+            - EMAIL_ONLY
+            - SMS_ONLY
+            - EMAIL_ADMINISTRATOR
+        notificationMethodData:
+          type: string
+          description: The data of to use to notify the user.
+        smsSubject:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The subject of the SMS to be sent for this notification.
+        smsTemplate:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The message of the email to be sent for this notification.
+        staticDerivedDateType:
+          type: string
+          description: The basis for calculating the date to send the notification.
+    MsiPackageDto:
+      required:
+        - expirationDate
+        - productName
+        - profileType
+        - usernameVariableSource
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this configuration.
+          readOnly: true
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Description of the package.
+        enabled:
+          type: boolean
+          description: Indicates whether this package should be used.
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The unique reference name of the package.
+        allowedSubnets:
+          type: string
+          description: >-
+            If populated, only the IP addresses or subnets specified are allowed
+            to use this package.
+        blockedSubnets:
+          type: string
+          description: >-
+            If populated, the IP addresses or subnets specified are blocked from
+            using this package. Blocked subnets override the allowed subnets.
+        expirationDate:
+          type: string
+          description: The expire date for this package.
+          format: date-time
+        passphrase:
+          type: string
+          description: The passphrase for the package.
+          readOnly: true
+        productId:
+          type: string
+          description: The product ID for the package.
+        productName:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The product name for the package.
+        profileType:
+          type: string
+          description: The profile type for the package.
+          enum:
+            - USER_TYPE
+            - MACHINE_TYPE
+        usernameVariableSource:
+          type: string
+          description: >-
+            Determines where the variable (usable in the certificate template)
+            is derived from.
+          enum:
+            - COMPUTER_NAME
+            - CURRENT_USER
+    GenerateCertDto:
+      type: object
+      properties:
+        csrString:
+          type: string
+          description: The certificate signing request that should be signed by the CA.
+        userName:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: >-
+            The certificate template contains the variable. The value specified
+            here will be used to replace the variable.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Description of the item for reference.
+        variableValues:
+          type: object
+          additionalProperties:
+            type: string
+            description: >-
+              The values in this map will be used to replace the variables in
+              the generated certificate.
+          description: >-
+            The values in this map will be used to replace the variables in the
+            generated certificate.
+      description: The certificate data to create
+    DeviceCertFilters:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - INVALID
+            - VALID
+            - REVOKED
+            - EXPIRED
+    DeviceCertQueryRequest:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          $ref: '#/components/schemas/DeviceCertFilters'
+    DeviceCertQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          description: Certificate in page.
+          items:
+            $ref: '#/components/schemas/DeviceCertificateDto'
+    DeviceCertificateDto:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique for this certificate.
+          readOnly: true
+        commonName:
+          type: string
+          description: The common name of the certificate.
+          readOnly: true
+        createDate:
+          type: string
+          description: The date that creates the certificate.
+          format: date-time
+          readOnly: true
+        notBeforeDate:
+          type: string
+          description: The date for which the certificate becomes valid.
+          format: date-time
+          readOnly: true
+        notAfterDate:
+          type: string
+          description: The date after which the certificate becomes invalid.
+          format: date-time
+          readOnly: true
+        email:
+          type: string
+          description: The email of the certificate.
+          readOnly: true
+        revocationDate:
+          type: string
+          description: The date after which the certificate be revoked.
+          format: date-time
+          readOnly: true
+        revocationReason:
+          type: string
+          description: Reason for revocation of certificate.
+        serialNumber:
+          type: string
+          description: The serial number of the certificate.
+          readOnly: true
+        shaThumbprint:
+          type: string
+          description: The thumbprint of the certificate.
+          readOnly: true
+        publicKeyBase64:
+          type: string
+          description: The public key of the certificate.
+          readOnly: true
+        organization:
+          type: string
+          description: The organization of the certificate.
+          readOnly: true
+        keyLength:
+          type: integer
+          description: The length of the key.
+          format: int32
+          readOnly: true
+        certificateTemplateName:
+          type: string
+          description: The name of the template that this certificate generates from.
+          readOnly: true
+        certificateAuthoritiesName:
+          type: string
+          description: The name of the template that this certificate generates from.
+          readOnly: true
+        locality:
+          type: string
+          description: The locality included in the certificate.
+          readOnly: true
+        state:
+          type: string
+          description: The state included in the certificate.
+          readOnly: true
+        country:
+          type: string
+          description: The country included in the certificate.
+          readOnly: true
+        organizationUnit:
+          type: string
+          description: The organization unit of the certificate.
+          readOnly: true
+        keyUsages:
+          type: array
+          description: The key usage of this certificate.
+          readOnly: true
+          items:
+            type: string
+            description: The key usage of this certificate.
+            enum:
+              - DIGITAL_SIGNATURE
+              - KEY_ENCIPHERMENT
+        privateKeyBase64:
+          type: string
+          description: The private key of the certificate.
+          readOnly: true
+        chain:
+          type: string
+          description: The chain of the certificate.
+          readOnly: true
+        details:
+          type: string
+          description: The details of the certificate.
+          readOnly: true
+        description:
+          type: string
+          description: The description of the certificate.
+        enrollmentType:
+          type: string
+          description: The enrollment type of the certificate.
+          readOnly: true
+          enum:
+            - CHROMEBOOK
+            - SCEP
+            - NONE
+    CertTemplateQueryRequest:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          $ref: '#/components/schemas/TemplateFilters'
+    TemplateFilters:
+      type: object
+      properties:
+        caId:
+          type: array
+          items:
+            type: string
+        networkId:
+          type: string
+    CertTemplateQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          description: Template in page.
+          items:
+            $ref: '#/components/schemas/CertificateTemplateDto'
+    CertificateTemplateDto:
+      required:
+        - algorithm
+        - caType
+        - identityGroupId
+        - keyLength
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this template.
+          readOnly: true
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description identifier for this template.
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name for the certificate template.
+        caType:
+          type: string
+          description: Which CA signs the certificates from the template.
+          enum:
+            - ONBOARD
+        defaultAccess:
+          type: boolean
+          description: Default RADIUS access response will either be accepted or rejected.
+        policySetId:
+          type: string
+          description: The policy set that is assigned to this template.
+        onboard:
+          $ref: '#/components/schemas/OnboardDto'
+        chromebook:
+          $ref: '#/components/schemas/ChromebookDto'
+        keyLength:
+          type: integer
+          description: The key length for certificates generated using this template.
+          format: int32
+          enum:
+            - 2048
+            - 3072
+            - 4096
+        algorithm:
+          $ref: '#/components/schemas/AlgorithmEnum'
+        certificateCount:
+          type: integer
+          description: The count of certificate generated from this template.
+          format: int32
+          readOnly: true
+        certificateNames:
+          type: array
+          description: The names of certificate generated from this template.
+          readOnly: true
+          items:
+            type: string
+            description: The names of certificate generated from this template.
+        variables:
+          type: array
+          description: >-
+            The variables for replacing the variables in the generated
+            certificate.
+          readOnly: true
+          items:
+            type: string
+            description: >-
+              The variables for replacing the variables in the generated
+              certificate.
+        networkCount:
+          type: integer
+          description: The count of network assigned to this template.
+          format: int32
+          readOnly: true
+        identityGroupId:
+          type: string
+          description: The identity group id associated with the template.
+    ChromebookDto:
+      required:
+        - enabled
+      type: object
+      properties:
+        apiKey:
+          type: string
+          description: The API Key for verified access operations.
+        certRemovalType:
+          type: string
+          description: >-
+            The extension may remove existing certificates from the certificate
+            manager.
+          enum:
+            - NONE
+            - SAME_CN
+            - SAME_CA
+            - SAME_CN_OR_SAME_CA
+            - ALL
+        enrollmentType:
+          type: string
+          description: >-
+            This selection changes the type of verified access and certificate
+            enrollment that is performed.
+          enum:
+            - USER
+            - DEVICE
+        notifyAppId:
+          type: string
+          description: >-
+            If specified, the app will be notified when the certificate
+            installation is complete.
+        accountCredential:
+          type: string
+          description: >-
+            When utilizing verified access, the credentials for a google service
+            account are required.
+        enabled:
+          type: boolean
+          description: >-
+            Enabling this will allow managed chrome book to auto-enroll and
+            install a client certificate using this certificate.
+        type:
+          type: string
+          description: The type of google service account.
+          readOnly: true
+        projectId:
+          type: string
+          description: The project ID of google service account.
+          readOnly: true
+        privateKeyId:
+          type: string
+          description: The private key ID of google service account.
+          readOnly: true
+        privateKey:
+          type: string
+          description: The private key of google service account.
+          readOnly: true
+        clientEmail:
+          type: string
+          description: The client email of google service account.
+          readOnly: true
+        clientId:
+          type: string
+          description: The client ID of google service account.
+          readOnly: true
+        authUri:
+          type: string
+          description: >-
+            The authentication uniform resource identifier of google service
+            account.
+          readOnly: true
+        tokenUri:
+          type: string
+          description: The token uniform resource identifier of google service account.
+          readOnly: true
+        enrollmentUrl:
+          type: string
+          description: The URL for device enrollment.
+          readOnly: true
+      description: The configuration of the Chromebook.
+    OnboardDto:
+      required:
+        - commonNamePattern
+        - notAfterType
+        - notBeforeType
+      type: object
+      properties:
+        commonNamePattern:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the common name for certificates
+            generated using this template.
+        emailPattern:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the email for certificates generated
+            using this template.
+        notAfterType:
+          type: string
+          description: >-
+            Indicates how the date offset is to be applied when defining the
+            expiration date for certificates that are granted.
+          enum:
+            - SPECIFIED_DATE
+            - MINUTES
+            - HOURS
+            - DAYS
+            - WEEKS
+            - MONTHS
+            - QUARTERS
+            - YEARS
+        notAfterValue:
+          type: integer
+          description: >-
+            The method used to calculate the expiration date for certificates
+            generated using this template.
+          format: int32
+        notBeforeType:
+          type: string
+          description: >-
+            Indicates how to apply the date offset when defining the start
+            period for certificates that are granted.
+          enum:
+            - SPECIFIED_DATE
+            - MINUTES
+            - HOURS
+            - DAYS
+            - WEEKS
+            - MONTHS
+            - QUARTERS
+            - YEARS
+        notBeforeValue:
+          type: integer
+          description: A number representing how to apply the not before type property.
+          format: int32
+        notAfterDate:
+          type: string
+          description: >-
+            The specific expire date when issuing certificates with this
+            template.
+          format: date-time
+        notBeforeDate:
+          type: string
+          description: >-
+            The specific start date when issuing certificates with this
+            template.
+          format: date-time
+        organizationPattern:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the organization for certificates
+            generated using this template.
+        organizationUnitPattern:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the organization unit for certificates
+            generated using this template.
+        localityPattern:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the locality for certificates
+            generated using this template.
+        statePattern:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the state for certificates generated
+            using this template.
+        countryPattern:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The pattern used to determine the country for certificates generated
+            using this template.
+        certificateType:
+          type: string
+          description: The use type for the certificate.
+          enum:
+            - CLIENT
+        certificateAuthorityName:
+          type: string
+          description: The name of the onboard CA.
+          readOnly: true
+      description: The configuration of the onboard CA.
+    CaDto:
+      required:
+        - algorithm
+        - commonName
+        - expireDate
+        - keyLength
+        - name
+        - startDate
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this authority.
+          readOnly: true
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of this authority.
+        commonName:
+          maxLength: 64
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,64}$
+          type: string
+          description: The common name of this authority.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of this authority.
+        organization:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The organization for the certificate authority.
+        organizationUnit:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: >-
+            The division of your organization responsible for the certificate
+            authority.
+        email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The email address for the party responsible for the certificate
+            authority.
+        startDate:
+          type: string
+          description: The expires date of the certificate authority.
+          format: date-time
+        expireDate:
+          type: string
+          description: The expires date of the certificate authority.
+          format: date-time
+        keyLength:
+          maximum: 4096
+          minimum: 2048
+          type: integer
+          description: The key length for the certificate authority.
+          format: int32
+        algorithm:
+          $ref: '#/components/schemas/AlgorithmEnum'
+        title:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The title for the certificate authority.
+        locality:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The city where your organization is located.
+        state:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The state or region where your organization is located.
+        country:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[.\p{Alnum}\p{Space}~&;:\\\/\'\?\,\$\{\}\.\(\)\-@_!\p{L}\p{M}]{0,255}$
+          type: string
+          description: The country where your organization is located.
+        publicKeyBase64:
+          type: string
+          description: Base64 string of the public key.
+          readOnly: true
+        privateKeyBase64:
+          type: string
+          description: Base64 string of the private key.
+          readOnly: true
+        publicKeyShaThumbprint:
+          type: string
+          description: Thumbprint of public key.
+          readOnly: true
+        serialNumber:
+          type: string
+          description: The serial number of public key of this authority.
+          readOnly: true
+        usages:
+          type: array
+          description: The extended key usage of this CA.
+          readOnly: true
+          items:
+            type: string
+            description: The extended key usage of this CA.
+            enum:
+              - SERVER_AUTH
+              - CLIENT_AUTH
+        templateCount:
+          type: integer
+          description: The count of template assign this CA.
+          format: int32
+          readOnly: true
+        templateNames:
+          type: array
+          description: The names of template assign this CA.
+          readOnly: true
+          items:
+            type: string
+            description: The names of template assign this CA.
+        ocspName:
+          type: string
+          description: The name hash of online certificate status protocol.
+          readOnly: true
+        ocspHash:
+          type: string
+          description: The hash of online certificate status protocol.
+          readOnly: true
+        keyUsages:
+          type: array
+          description: The key usage for the CA.
+          readOnly: true
+          items:
+            type: string
+            description: The key usage for the CA.
+            enum:
+              - DIGITAL_SIGNATURE
+              - KEY_ENCIPHERMENT
+        chain:
+          type: string
+          description: The chain of the certificate.
+          readOnly: true
+        details:
+          type: string
+          description: The details of the certificate.
+          readOnly: true
+        status:
+          type: array
+          description: The status of the certificate of the CA.
+          readOnly: true
+          items:
+            type: string
+            description: The status of the certificate of the CA.
+            enum:
+              - INVALID
+              - VALID
+              - REVOKED
+              - EXPIRED
+    CaFilters:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - INVALID
+            - VALID
+            - REVOKED
+            - EXPIRED
+    CaQueryRequest:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          $ref: '#/components/schemas/CaFilters'
+    CaQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          description: Certificate authorities in page.
+          items:
+            $ref: '#/components/schemas/CaDto'
+    UpdateServerCertificateDto:
+      type: object
+      properties:
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name for the certificate.
+        revocationReason:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The reason for revocation of passphrase. If not revoked, this field
+            should be null.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of this certificate.
+        notAfterDate:
+          type: string
+          description: >-
+            The expiration date for the renewed certificate. The start date for
+            the validity period will also be set to today.
+          format: date-time
+      description: A map contains the property and value to be updated
+    UpdateCertificateTemplateDto:
+      type: object
+      properties:
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description identifier for this template.
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name for the certificate template.
+        defaultAccess:
+          type: boolean
+          description: Default RADIUS access response will either be accepted or rejected.
+        onboard:
+          $ref: '#/components/schemas/OnboardDto'
+        chromebook:
+          $ref: '#/components/schemas/ChromebookDto'
+        keyLength:
+          maximum: 4096
+          minimum: 2048
+          type: integer
+          description: The key length for certificates generated using this template.
+          format: int32
+        algorithm:
+          $ref: '#/components/schemas/AlgorithmEnum'
+      description: A map contains the property and value to be updated
+    UpdateCertificateDto:
+      type: object
+      properties:
+        revocationReason:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The reason for revocation of certificate. If not revoked, this field
+            should be null.
+      description: A map contains the property and value to be updated
+    UpdateCaDto:
+      type: object
+      properties:
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of this authority.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of this authority.
+      description: A map contains the property and value to be updated
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    Page:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            type: object
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        paged:
+          type: boolean
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        unpaged:
+          type: boolean
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean

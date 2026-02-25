@@ -1,0 +1,521 @@
+{
+  "name": "RUCKUS Edge API",
+  "version": "1.0.3",
+  "url": "https://docs.ruckus.cloud/_bundle/api/edge-api-1.0.3.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.939569",
+  "endpoint_count": 51,
+  "base_url": "https://api.asia.ruckus.cloud",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}",
+      "method": "GET",
+      "summary": "Get Link Aggregation Group",
+      "description": "Get the link aggregation group by unique identifier.",
+      "operation_id": "getEdgeLinkAggregationGroup",
+      "tags": [
+        "Edge LAG Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}",
+      "method": "PUT",
+      "summary": "Update Link Aggregation Group",
+      "description": "Updates the link aggregation group by unique identifier.",
+      "operation_id": "updateEdgeLinkAggregationGroup",
+      "tags": [
+        "Edge LAG Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}",
+      "method": "DELETE",
+      "summary": "Delete Link Aggregation Group",
+      "description": "Delete the link aggregation group by unique identifier.",
+      "operation_id": "deleteEdgeLinkAggregationGroup",
+      "tags": [
+        "Edge LAG Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}",
+      "method": "PATCH",
+      "summary": "Partial Update Link Aggregation Group",
+      "description": "Partial update of the link aggregation group by unique identifier.",
+      "operation_id": "partialUpdateEdgeLinkAggregationGroup",
+      "tags": [
+        "Edge LAG Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/tunnelProfiles/{tunnelProfileId}",
+      "method": "PUT",
+      "summary": "Activate Edge Cluster in Tunnel Profile",
+      "description": "Activate Edge cluster in tunnel profile.",
+      "operation_id": "edgeClusterActivateTunnelProfile",
+      "tags": [
+        "Tunnel Profile Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/tunnelProfiles/{tunnelProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Edge Cluster in Tunnel Profile",
+      "description": "Deactivate Edge cluster in tunnel profile.",
+      "operation_id": "edgeClusterDeactivateTunnelProfile",
+      "tags": [
+        "Tunnel Profile Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/arpTerminationSettings",
+      "method": "GET",
+      "summary": "Get ARP Termination Settings",
+      "description": null,
+      "operation_id": "getArpTerminationSettings",
+      "tags": [
+        "ARP Termination Settings"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/arpTerminationSettings",
+      "method": "PUT",
+      "summary": "Update ARP Termination Settings",
+      "description": null,
+      "operation_id": "updateArpTerminationSettings",
+      "tags": [
+        "ARP Termination Settings"
+      ]
+    },
+    {
+      "path": "/edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "GET",
+      "summary": "Get Multicast DNS Profile",
+      "description": null,
+      "operation_id": "getMdnsProxyProfile",
+      "tags": [
+        "Edge Multicast DNS Profile"
+      ]
+    },
+    {
+      "path": "/edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "PUT",
+      "summary": "Update Multicast DNS Profile",
+      "description": null,
+      "operation_id": "updateMdnsProxyProfile",
+      "tags": [
+        "Edge Multicast DNS Profile"
+      ]
+    },
+    {
+      "path": "/edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Multicast DNS Profile",
+      "description": null,
+      "operation_id": "deleteMdnsProxyProfile",
+      "tags": [
+        "Edge Multicast DNS Profile"
+      ]
+    },
+    {
+      "path": "/edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}/venues/{venueId}/edgeClusters/{edgeClusterId}",
+      "method": "PUT",
+      "summary": "Activate Multicast DNS",
+      "description": null,
+      "operation_id": "ActivateMdnsProxy",
+      "tags": [
+        "Edge Multicast DNS Profile"
+      ]
+    },
+    {
+      "path": "/edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}/venues/{venueId}/edgeClusters/{edgeClusterId}",
+      "method": "DELETE",
+      "summary": "Deactivate Multicast DNS",
+      "description": null,
+      "operation_id": "DeactivateMdnsProxy",
+      "tags": [
+        "Edge Multicast DNS Profile"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/{dhcpId}",
+      "method": "GET",
+      "summary": "Get DHCP",
+      "description": null,
+      "operation_id": "getDhcpById",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/{dhcpId}",
+      "method": "PUT",
+      "summary": "Update DHCP",
+      "description": null,
+      "operation_id": "updateDhcp",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/{dhcpId}",
+      "method": "DELETE",
+      "summary": "Delete DHCP",
+      "description": null,
+      "operation_id": "deleteDhcpById",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/{dhcpId}",
+      "method": "PATCH",
+      "summary": "Patch DHCP",
+      "description": null,
+      "operation_id": "patchDhcp",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/{dhcpId}/venues/{venueId}/edgeClusters/{edgeClusterId}",
+      "method": "PUT",
+      "summary": "Activate DHCP",
+      "description": null,
+      "operation_id": "ActivateDhcp",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/{dhcpId}/venues/{venueId}/edgeClusters/{edgeClusterId}",
+      "method": "DELETE",
+      "summary": "Deactivate DHCP",
+      "description": null,
+      "operation_id": "DeactivateDhcp",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters",
+      "method": "GET",
+      "summary": "Get Edge Clusters",
+      "description": "Get a list of Edge clusters.",
+      "operation_id": "getEdgeClustersByPage",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters",
+      "method": "POST",
+      "summary": "Create Edge Cluster",
+      "description": "Create a Edge cluster.",
+      "operation_id": "createEdgeCluster",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags",
+      "method": "POST",
+      "summary": "Create Link Aggregation Group",
+      "description": "Create the link aggregation groups.",
+      "operation_id": "createEdgeLinkAggregationGroup",
+      "tags": [
+        "Edge LAG Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}/subInterfaces",
+      "method": "POST",
+      "summary": "Create Sub-Interface",
+      "description": "Create a sub-interfaces of a LAG.",
+      "operation_id": "createEdgeLagSubInterface",
+      "tags": [
+        "Edge LAG Sub-Interface"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges",
+      "method": "POST",
+      "summary": "Add Device",
+      "description": "Add a new device.",
+      "operation_id": "createEdgeDevice",
+      "tags": [
+        "Edge Device Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/ports/{portId}/subInterfaces",
+      "method": "GET",
+      "summary": "Get Sub-Interfaces",
+      "description": "Get sub-interfaces of a physical port.",
+      "operation_id": "getEdgeSubInterfaces",
+      "tags": [
+        "Edge Sub-Interface Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/ports/{portId}/subInterfaces",
+      "method": "POST",
+      "summary": "Create Multiple Sub-Interfaces",
+      "description": "Create multiple sub-interfaces of a physical port from CSV file.",
+      "operation_id": "createEdgeSubInterfaces_1",
+      "tags": [
+        "Edge Sub-Interface Configuration"
+      ]
+    },
+    {
+      "path": "/venues/edgeCompatibilities/query",
+      "method": "POST",
+      "summary": "Query the Edge Compatibility by Venues or Devices",
+      "description": "Query the compatibility info of Edge by venues or devices.",
+      "operation_id": "queryVenueEdgeCompatibilities",
+      "tags": [
+        "Edge Compatibility Checking"
+      ]
+    },
+    {
+      "path": "/edgeMulticastDnsProxyProfiles",
+      "method": "POST",
+      "summary": "Create Multicast DNS Profile",
+      "description": null,
+      "operation_id": "createMdnsProxyProfile",
+      "tags": [
+        "Edge Multicast DNS Profile"
+      ]
+    },
+    {
+      "path": "/edgeFeatureSets/query",
+      "method": "POST",
+      "summary": "Query the Requirement of Edge Features",
+      "description": "Query features' requirement info related to Edge.",
+      "operation_id": "queryEdgeFeaturesRequirement",
+      "tags": [
+        "Edge Compatibility Checking"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices",
+      "method": "POST",
+      "summary": "Create DHCP",
+      "description": null,
+      "operation_id": "createDhcp",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/edgeDhcpServices/edgeCompatibilities/query",
+      "method": "POST",
+      "summary": "Query the Edge Compatibility of DHCP Services",
+      "description": "Query the compatibility info of Edge by DHCP services.",
+      "operation_id": "queryEdgeDhcpServiceCompatibilities",
+      "tags": [
+        "Edge DHCP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}/subInterfaces/{subInterfaceId}",
+      "method": "GET",
+      "summary": "Get Sub-Interface",
+      "description": "Get the sub-interface of a LAG.",
+      "operation_id": "getEdgeLagSubInterface",
+      "tags": [
+        "Edge LAG Sub-Interface"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}/subInterfaces/{subInterfaceId}",
+      "method": "DELETE",
+      "summary": "Delete Sub-Interface",
+      "description": "Delete a sub-interfaces of a LAG.",
+      "operation_id": "deleteEdgeLagSubInterface",
+      "tags": [
+        "Edge LAG Sub-Interface"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}/subInterfaces/{subInterfaceId}",
+      "method": "PATCH",
+      "summary": "Partial Update Sub-Interface",
+      "description": "Partial update a sub-interface of a LAG.",
+      "operation_id": "patchEdgeLagSubInterface",
+      "tags": [
+        "Edge LAG Sub-Interface"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}",
+      "method": "GET",
+      "summary": "Get Edge Cluster",
+      "description": "Get the Edge cluster by unique identifier.",
+      "operation_id": "getEdgeCluster",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}",
+      "method": "DELETE",
+      "summary": "Delete a Edge Cluster",
+      "description": "Delete a Edge cluster.",
+      "operation_id": "deleteSingleEdgeCluster",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}",
+      "method": "PATCH",
+      "summary": "Update Edge Cluster",
+      "description": "Update Edge cluster.",
+      "operation_id": "updateEdgeCluster",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/networkSettings",
+      "method": "GET",
+      "summary": "Get Edge Cluster Network",
+      "description": "Get Edge cluster network settings.",
+      "operation_id": "getEdgeClusterNetworkSettings",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/networkSettings",
+      "method": "PATCH",
+      "summary": "Update Edge Cluster Network",
+      "description": "Update Edge cluster network settings.",
+      "operation_id": "updateEdgeClusterNetworkSettings",
+      "tags": [
+        "Edge Cluster Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}",
+      "method": "GET",
+      "summary": "Get Device",
+      "description": "Get device by the serial number.",
+      "operation_id": "getEdgeDevice",
+      "tags": [
+        "Edge Device Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}",
+      "method": "DELETE",
+      "summary": "Delete Device",
+      "description": "Delete the device by the serial number.",
+      "operation_id": "deleteEdgeDevice",
+      "tags": [
+        "Edge Device Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}",
+      "method": "PATCH",
+      "summary": "Update Device",
+      "description": "Patch the device configuration.",
+      "operation_id": "patchEdgeDevice",
+      "tags": [
+        "Edge Device Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/staticRouteConfigs",
+      "method": "GET",
+      "summary": "Get Static Route Configuration",
+      "description": "Get static routes configuration.",
+      "operation_id": "getEdgeStaticRouteConfig",
+      "tags": [
+        "Edge Static Route Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/staticRouteConfigs",
+      "method": "PATCH",
+      "summary": "Update Static Route Configuration",
+      "description": "Patch static route configuration.",
+      "operation_id": "patchEdgeStaticRouteConfig",
+      "tags": [
+        "Edge Static Route Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/ports/{portId}/subInterfaces/{subInterfaceId}",
+      "method": "DELETE",
+      "summary": "Delete Sub-Interface",
+      "description": "Delete a sub-interfaces of a physical port.",
+      "operation_id": "deleteEdgeSubInterface",
+      "tags": [
+        "Edge Sub-Interface Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/ports/{portId}/subInterfaces/{subInterfaceId}",
+      "method": "PATCH",
+      "summary": "Update Sub-Interface",
+      "description": "Update a sub-interface of a physical port.",
+      "operation_id": "patchEdgeSubInterface",
+      "tags": [
+        "Edge Sub-Interface Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/portConfigs",
+      "method": "GET",
+      "summary": "Get Physical Port Configuration",
+      "description": "Get the physical port configuration.",
+      "operation_id": "getEdgePortConfig",
+      "tags": [
+        "Edge Port Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/portConfigs",
+      "method": "PATCH",
+      "summary": "Update Physical Port Configuration",
+      "description": "Patch the physical port configuration.",
+      "operation_id": "patchEdgePortConfig",
+      "tags": [
+        "Edge Port Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/hostDetails",
+      "method": "PATCH",
+      "summary": "Trigger Edge Action",
+      "description": "Trigger Edge action.",
+      "operation_id": "TriggerEdgeAction",
+      "tags": [
+        "Edge Troubleshooting"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/dnsServers",
+      "method": "GET",
+      "summary": "Get DNS Configuration",
+      "description": "Get the DNS configuration.",
+      "operation_id": "getEdgeDnsServers",
+      "tags": [
+        "Edge DNS Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/dnsServers",
+      "method": "PATCH",
+      "summary": "Update DNS Configuration",
+      "description": "Patch the DNS configuration.",
+      "operation_id": "patchEdgeDnsServers",
+      "tags": [
+        "Edge DNS Configuration"
+      ]
+    }
+  ]
+}

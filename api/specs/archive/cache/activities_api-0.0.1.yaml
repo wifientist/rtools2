@@ -1,0 +1,399 @@
+openapi: 3.0.1
+info:
+  title: Activities API
+  version: v0.0.1
+servers:
+  - url: http://localhost
+    description: Generated server url
+tags:
+  - name: View Activities
+    description: >-
+      View platform information. Note: this group of endpoints is used to view
+      activities data. They don't provide the means to manage configuration.
+paths:
+  /activities/{activityId}/notifications:
+    put:
+      tags:
+        - View Activities
+      summary: Update Activity Notification Options
+      description: Update activity notification options.
+      operationId: updateActivityNotification
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationData'
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+        '400':
+          description: Invalid payload supplied
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+        '404':
+          description: Tenant ID not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+        '501':
+          description: Not implemented
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+  /activities/{activityId}/devices/query:
+    post:
+      tags:
+        - View Activities
+      summary: Get Activity Devices
+      description: Get the list of activity devices.
+      operationId: findActivityDevices
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseDeviceDto'
+        '400':
+          description: Invalid payload supplied
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseDeviceDto'
+        '404':
+          description: Tenant ID not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseDeviceDto'
+        '501':
+          description: Not implemented
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseDeviceDto'
+  /activities/query:
+    post:
+      tags:
+        - View Activities
+      summary: Get Activities
+      description: Get the list of activities.
+      operationId: findActivityList
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseActivityDto'
+        '400':
+          description: Invalid payload supplied
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseActivityDto'
+        '404':
+          description: Tenant ID not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseActivityDto'
+        '501':
+          description: Not implemented
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/QueryResponseActivityDto'
+  /activities/{activityId}:
+    get:
+      tags:
+        - View Activities
+      summary: Get Activity Details
+      description: Get activity details.
+      operationId: getDetails
+      parameters:
+        - name: activityId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+        '400':
+          description: Invalid payload supplied
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+        '404':
+          description: Tenant ID not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+        '501':
+          description: Not implemented
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ActivityDto'
+  /private/activities/async-cleanup:
+    delete:
+      tags:
+        - View Activities
+      operationId: deleteSchedule
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: object
+components:
+  schemas:
+    NotificationData:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        endpoint:
+          type: string
+        type:
+          type: string
+          enum:
+            - email
+            - sms
+            - push
+    ActivityDto:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+          enum:
+            - PENDING
+            - INPROGRESS
+            - SUCCESS
+            - FAIL
+        useCase:
+          type: string
+        notification:
+          $ref: '#/components/schemas/NotificationData'
+        admin:
+          $ref: '#/components/schemas/AdminDto'
+        error:
+          type: string
+        suggestion:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/StepDto'
+        product:
+          type: string
+        serialNumber:
+          type: string
+        startDatetime:
+          type: string
+          format: date-time
+        endDatetime:
+          type: string
+          format: date-time
+        eventId:
+          type: string
+        descriptionTemplate:
+          type: string
+        descriptionData:
+          type: array
+          items:
+            $ref: '#/components/schemas/NameValuePairDto'
+        severity:
+          type: string
+    AdminDto:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        ip:
+          type: string
+        id:
+          type: string
+        interface:
+          type: string
+    NameValuePairDto:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+    ProgressDetails:
+      type: object
+      properties:
+        pending:
+          type: integer
+          format: int32
+        inProgress:
+          type: integer
+          format: int32
+        success:
+          type: integer
+          format: int32
+        fail:
+          type: integer
+          format: int32
+        offline:
+          type: integer
+          format: int32
+        startDatetime:
+          type: string
+          format: date-time
+        endDatetime:
+          type: string
+          format: date-time
+    StepDto:
+      type: object
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        error:
+          type: string
+        status:
+          type: string
+          enum:
+            - PENDING
+            - INPROGRESS
+            - SUCCESS
+            - FAIL
+        suggestion:
+          type: string
+        progressType:
+          type: string
+        progressSummary:
+          $ref: '#/components/schemas/ProgressDetails'
+        startDatetime:
+          type: string
+          format: date-time
+        endDatetime:
+          type: string
+          format: date-time
+    QueryData:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        page:
+          minimum: 1
+          type: integer
+          format: int32
+        pageSize:
+          minimum: 1
+          type: integer
+          format: int32
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+    DeviceDto:
+      type: object
+      properties:
+        serialNumber:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+        suggestion:
+          type: string
+        deviceType:
+          type: string
+        description:
+          type: string
+    QueryResponseDeviceDto:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceDto'
+    QueryResponseActivityDto:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityDto'

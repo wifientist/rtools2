@@ -1,0 +1,2108 @@
+openapi: 3.0.1
+info:
+  title: Workflow Management API
+  description: >-
+    # Overview
+
+
+    The Workflow Management REST API's allow the creation of a workflow, and
+    steps within that workflow. Steps, and split step options must be assigned
+    actions that are already defined through the /enrollmentActions api.  Please
+    see that API for additional information. For split steps only the action
+    definition is to be provided, but the options require a matching action
+    type, and must be of type split.## Rate Limit
+
+    For the Workflow Management REST API the following will be true: 
+
+    - Limits are applied to each tenant.
+
+    - A maximum of 100 calls can be made per second.
+
+    - Each second 50 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 0.0.3
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: Workflow
+    description: Manages the workflows, including create, update and delete.
+  - name: Steps
+    description: Manages the steps for the workflow.
+  - name: Split Options
+    description: Manages the split options for split steps in a workflow.
+  - name: Enrollment UI Configuration
+    description: Manages the enrollment configuration for the workflow.
+  - name: Action Definition
+    description: Manages the action definitions that can be used in workflow steps.
+paths:
+  /workflows:
+    post:
+      tags:
+        - Workflow
+      summary: Create Workflow
+      description: >-
+        Initiates a request that will create a workflow with the requested
+        values and sets its status to work-in-progress, any other state change
+        request will be ignored. The start and end steps for the workflow are
+        also automatically created.
+      operationId: createWorkflow
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workflow_v1_0'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Workflow_v1_0'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/workflows:
+    post:
+      tags:
+        - Workflow
+      summary: Create a New Workflow from the Specified Workflow
+      description: >-
+        Initiates a request that will create a new workflow from the specified
+        workflow with the requested values and sets its status to
+        work-in-progress. All steps in the workflow will be cloned.
+      operationId: cloneWorkflow
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/versions/query:
+    post:
+      tags:
+        - Workflow
+      summary: Get All Workflows Including Versioned
+      description: Retrieves all of the workflow versions for requested workflow.
+      operationId: queryForVersionedWorkflows
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceWorkflow_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceWorkflow_v1_0'
+        '400':
+          description: Bad request, check query format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/uiConfigurations:
+    get:
+      tags:
+        - Enrollment UI Configuration
+      summary: Get Workflow's UI Configuration
+      description: Retrieves the UI configuration for the specified workflow.
+      operationId: getUiConfiguration
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiConfiguration_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/UiConfiguration_v1_0'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    post:
+      tags:
+        - Enrollment UI Configuration
+      summary: Update Workflows UI Configuration
+      description: Initiates a request that will update the workflows UI configuration.
+      operationId: createUiConfig
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          multipart/vnd.ruckus.v1+form-data:
+            schema:
+              required:
+                - uiConfiguration
+              type: object
+              properties:
+                uiConfiguration:
+                  $ref: '#/components/schemas/UiConfiguration_v1_0'
+                backgroundImage:
+                  type: string
+                  format: binary
+                logoImage:
+                  type: string
+                  format: binary
+                iconImage:
+                  type: string
+                  format: binary
+          multipart/form-data:
+            schema:
+              required:
+                - uiConfiguration
+              type: object
+              properties:
+                uiConfiguration:
+                  $ref: '#/components/schemas/UiConfiguration_v1_0'
+                backgroundImage:
+                  type: string
+                  format: binary
+                logoImage:
+                  type: string
+                  format: binary
+                iconImage:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Enrollment UI Configuration
+      summary: Delete UI Configuration
+      description: Deletes the custom settings on the UI configuration.
+      operationId: resetUiConfig
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '404':
+          description: ' Workflow not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}/splitOptions:
+    get:
+      tags:
+        - Split Options
+      summary: Get All Split Options
+      description: Retrieves all of the split options for the split step.
+      operationId: getAllSplitStepOptionsForStep
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceSplitStepOption_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceSplitStepOption_v1_0'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow, step, or split option is not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    post:
+      tags:
+        - Split Options
+      summary: Creates Split Option
+      description: >-
+        Creates a split option for the step at the end of the list of options
+        for the split step. All split options which are functional are processed
+        in order, which is defined as they are created.
+      operationId: createOption
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SplitStepOption_v1_0'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/SplitStepOption_v1_0'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow, step, or split option is not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}/splitOptions/{optionId}/nextSteps:
+    post:
+      tags:
+        - Split Options
+      summary: Creates Step Under Option
+      description: >-
+        Creates a step under the requested split option. When there is no step
+        already mapped, the step is just created and assigned to the option.
+        When a step is already assigned to the option, this will create this
+        step first, and move the existing step after this one.
+      operationId: createNextStepForOption
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: optionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbstractActionStepDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AbstractActionStepDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow, step, or split option is not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: >-
+            Conflict. When the action requested cannot be found, or the action
+            type does not match the type of step created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}/nextSteps:
+    post:
+      tags:
+        - Steps
+      summary: Create Step
+      description: Creates a step for the workflow under the specified step.
+      operationId: createChildStep
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbstractActionStepDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AbstractActionStepDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not Found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: >-
+            Conflict. If the action requested cannot be found, or if the action
+            type does not match the type of step created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}/nextSteps/workflows/{referencedWorkflowId}:
+    post:
+      tags:
+        - Workflow
+      summary: Import a Workflow Into the Existing Workflow
+      description: >-
+        Initiates a request to clone a workflow into the existing workflow after
+        the requested step.
+      operationId: nestedCloneWorkflow
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: referencedWorkflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow not found'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/query:
+    post:
+      tags:
+        - Steps
+      summary: Query All Step
+      description: >-
+        Retrieves all of the steps for the requested workflow based on the query
+        criteria.
+      operationId: queryForStepsAssignedToThisWorkflow
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceAbstractBaseStepDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceAbstractBaseStepDto'
+        '400':
+          description: Bad request, check query format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not Found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/query:
+    post:
+      tags:
+        - Workflow
+      summary: Get All Current Workflow
+      description: >-
+        Retrieves all of the work in progress workflows based on the query
+        criteria.
+      operationId: queryForWorkflows
+      parameters:
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceWorkflow_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceWorkflow_v1_0'
+        '400':
+          description: Bad request, check query format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflowActionDefinitions/query:
+    post:
+      tags:
+        - Action Definition
+      summary: Query Action Definitions
+      description: Returns the list of action definitions using the specified query.
+      operationId: queryForActionDefinitions
+      parameters:
+        - name: excludeContent
+          in: query
+          description: >-
+            Excludes all of the content and just returns the counts for this
+            query.
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: >-
+            List of action definitions in a paged format. Can exclude content
+            for just count information
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceActionDefinition_v1_0
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceActionDefinition_v1_0
+        '400':
+          description: Bad request, check query format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}:
+    get:
+      tags:
+        - Workflow
+      summary: Get Workflow
+      description: Retrieves the requested workflow by id.
+      operationId: getWorkflowById
+      parameters:
+        - name: workflowId
+          in: path
+          description: Workflow identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Workflow_v1_0'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Workflow
+      summary: Delete Workflow
+      description: >-
+        Initiates a request that will delete the workflow requested. If the
+        workflow id provided is for a workflow that is in a work in progress'
+        state then it will be deleted along with all dependent published and
+        retired workflows.
+      operationId: deleteWorkflow
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    patch:
+      tags:
+        - Workflow
+      summary: Update a Workflow
+      description: >-
+        Initiates a request that will update the workflow requested. Once it has
+        been published a workflow cannot be changed.
+      operationId: updateWorkflow
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workflow_v1_0'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Workflow_v1_0'
+        required: true
+      responses:
+        '200':
+          description: Ok - Returned if a validation request finds no errors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '404':
+          description: ' Workflow not found'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/uiConfigurations/{imageType}:
+    get:
+      tags:
+        - Enrollment UI Configuration
+      summary: Get UI Configuration's Image
+      description: Get UI configuration's image for the specified workflow and image type.
+      operationId: getImageFile
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: imageType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - backgroundImages
+              - logoImages
+              - IconImages
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UiConfigImage_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/UiConfigImage_v1_0'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow or images not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps:
+    get:
+      tags:
+        - Steps
+      summary: Get All Step
+      description: Retrieves the complete list of steps for the workflow with paging.
+      operationId: getAllStepsForWorkflow
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The action definitions in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceAbstractBaseStepDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourceAbstractBaseStepDto'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not Found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}:
+    get:
+      tags:
+        - Steps
+      summary: Get Step
+      description: Retrieves the step within the workflow by id.
+      operationId: getStepById
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/EndStep_v1_0'
+                  - $ref: '#/components/schemas/SplitStep_v1_0'
+                  - $ref: '#/components/schemas/StartStep_v1_0'
+                  - $ref: '#/components/schemas/Step_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/EndStep_v1_0'
+                  - $ref: '#/components/schemas/SplitStep_v1_0'
+                  - $ref: '#/components/schemas/StartStep_v1_0'
+                  - $ref: '#/components/schemas/Step_v1_0'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Steps
+      summary: Delete Step
+      description: >-
+        Deletes the requested step and reorders the remaining steps. If this is
+        a split, all options except the first will be removed. The step under
+        the first option will be moved to the current step flow. Start and end
+        steps can never be deleted.
+      operationId: deleteStep
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Workflow is not Found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}/splitOptions/{optionId}:
+    get:
+      tags:
+        - Split Options
+      summary: Get Split Option
+      description: Retrieves the split option by id.
+      operationId: getSplitStepOptionById
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: optionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SplitStepOption_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/SplitStepOption_v1_0'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow, step, or split option is not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Split Options
+      summary: Delete Split Option
+      description: Deletes the requested option and all of the steps under this option.
+      operationId: deleteSplitOption
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: optionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Workflow, step, or split option is not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflowActionDefinitions:
+    get:
+      tags:
+        - Action Definition
+      summary: Get All Action Definitions
+      description: Retrieves the complete list of action definitions with paging.
+      operationId: getAllActions
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+      responses:
+        '200':
+          description: The action definitions in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceActionDefinition_v1_0
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceActionDefinition_v1_0
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflowActionDefinitions/{definitionId}:
+    get:
+      tags:
+        - Action Definition
+      summary: Get Action Definition
+      description: Retrieves the requested action definition by id.
+      operationId: getByDefinitionId
+      parameters:
+        - name: definitionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionDefinition_v1_0'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ActionDefinition_v1_0'
+        '404':
+          description: ' Action definition not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflowActionDefinitions/{definitionId}/requiredPriorDefinitions:
+    get:
+      tags:
+        - Action Definition
+      summary: Get Prior Required Actions
+      description: Retrieves the list of required prior actions for this action.
+      operationId: getRequiredPriorDefinitions
+      parameters:
+        - name: definitionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceActionDefinition_v1_0
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceActionDefinition_v1_0
+        '404':
+          description: ' Action definition not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /workflows/{workflowId}/steps/{stepId}/descendantSteps:
+    delete:
+      tags:
+        - Steps
+      summary: Delete Descendant Step
+      description: >-
+        Deletes all of the steps that follow this step, leaving this step as the
+        last step and the end step as the remaining steps in the list of steps.
+      operationId: deleteDescendantSteps
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AsycRequestResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Workflow is not Found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+components:
+  schemas:
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    PublishedDetails_v1_0:
+      required:
+        - status
+      type: object
+      properties:
+        parentWorkflowId:
+          type: string
+          description: >-
+            The unique ID for the work in progress parent workflow of this
+            version of the workflow.
+          format: uuid
+          readOnly: true
+        version:
+          type: integer
+          description: The version number.
+          format: int32
+          readOnly: true
+        publishedDate:
+          type: string
+          description: >-
+            The date that this workflow was published. Not supported with
+            filtering.
+          format: date-time
+          readOnly: true
+        status:
+          type: string
+          description: The current publication status of the workflow.
+          enum:
+            - WORK_IN_PROGRESS
+            - PUBLISHED
+            - RETIRED
+            - VALIDATE
+      description: The publish details for the workflow.
+    Workflow_v1_0:
+      required:
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique ID for this workflow.
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          description: The name of the workflow.
+        description:
+          type: string
+          description: The description of a workflow.
+        allowedIps:
+          type: array
+          description: >-
+            The list of IP addresses that are permitted to access this workflow.
+            Only one allowed IP can be queried for using filter in the query
+            data.
+          items:
+            type: string
+            description: >-
+              The list of IP addresses that are permitted to access this
+              workflow. Only one allowed IP can be queried for using filter in
+              the query data.
+        disAllowedIps:
+          type: array
+          description: >-
+            The list of IP addresses that are not permitted to access this
+            workflow. Only one not allowed IP can be queried for using filter in
+            the query data.
+          items:
+            type: string
+            description: >-
+              The list of IP addresses that are not permitted to access this
+              workflow. Only one not allowed IP can be queried for using filter
+              in the query data.
+        publishedDetails:
+          $ref: '#/components/schemas/PublishedDetails_v1_0'
+        startStepId:
+          type: string
+          description: The start step for this workflow.
+          format: uuid
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: The definition of a workflow.
+    ErrorResource:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        debugMessage:
+          type: string
+        nestedErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestErrorDetails'
+    RestErrorDetails:
+      type: object
+    AsycRequestResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        id:
+          type: string
+    QueryData:
+      type: object
+      properties:
+        sortField:
+          type: string
+          description: The field to use to sort on.
+        sortOrder:
+          type: string
+          description: The sort order of the applied query.
+          enum:
+            - ASC
+            - DESC
+        page:
+          minimum: 0
+          type: integer
+          description: The page number to return, paging starts with 0.
+          format: int32
+        pageSize:
+          maximum: 2000
+          minimum: 1
+          type: integer
+          description: The number of items requested on the page.
+          format: int32
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+            description: The list of filters to apply.
+          description: The list of filters to apply.
+    PageDto:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          description: The total count of items.
+          format: int64
+        page:
+          type: integer
+          description: The page number requested, starting with 0.
+          format: int32
+        pageSize:
+          type: integer
+          description: The number of items on this page.
+          format: int32
+        pageCount:
+          type: integer
+          description: The total number of pages available.
+          format: int32
+      description: The paging information for this response.
+    PagedResponseResourceWorkflow_v1_0:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/PageDto'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Workflow_v1_0'
+    UiColorSchema_v1_0:
+      type: object
+      properties:
+        backgroundColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Color for the UI background.
+        lineColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Color for the UI lines.
+        fontColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Color for the UI fonts.
+        fontHeaderColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Color for the header fonts.
+        headerBarBackgroundColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Background color for the header bar.
+        startOverFontColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Font color for the start over button.
+        buttonColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Color for the UI buttons.
+        buttonFontColor:
+          pattern: ^#([a-fA-F0-9]{6}|[a-fA-F0-9]{3})$
+          type: string
+          description: Font color for the UI buttons.
+      description: The definition of the colors to be applied to the workflow ui.
+    UiConfiguration_v1_0:
+      required:
+        - welcomeTitle
+      type: object
+      properties:
+        welcomeTitle:
+          type: string
+          description: The welcome title for the workflow UI.
+        welcomeName:
+          type: string
+          description: The welcome name for the workflow UI.
+        uiColorSchema:
+          $ref: '#/components/schemas/UiColorSchema_v1_0'
+        uiStyleSchema:
+          $ref: '#/components/schemas/UiStyleSchema_v1_0'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: The definition of the UI configuration for this workflow.
+    UiStyleSchema_v1_0:
+      type: object
+      properties:
+        logoImageFileName:
+          type: string
+          description: The image ID of the logo file to use in the UI.
+        backgroundImageName:
+          type: string
+          description: The image ID of the background file to use in the UI.
+        iconImageName:
+          type: string
+          description: The image ID of the icon file to use in the UI.
+        fontName:
+          type: string
+          description: The name of the font to use in the UI.
+        logoSize:
+          type: string
+          description: The size of the logo to display.
+          enum:
+            - SMALL
+            - MEDIUM
+            - LARGE
+        wifi4EuNetworkId:
+          type: string
+          description: Europe Wi-Fi network id.
+        disablePoweredBy:
+          type: boolean
+          description: Indicates if the powered by RUCKUS note will show on the UI.
+        headerFontSize:
+          maximum: 18
+          minimum: 14
+          type: integer
+          description: The font size of the header to display.
+          format: int32
+      description: The definition of the style to be applied to the workflow UI.
+    SplitStepOption_v1_0:
+      required:
+        - enrollmentActionId
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique ID for this option on the workflow.
+          format: uuid
+          readOnly: true
+        optionName:
+          type: string
+        enrollmentActionId:
+          type: string
+          description: The ID of the enrollment action to be followed in this step.
+          format: uuid
+        actionDefinitionId:
+          type: string
+          description: >-
+            The action definition ID for this step. This is a read only
+            attribute, and will be determined by the provided enrollment action
+            on the create.
+          format: uuid
+          readOnly: true
+        actionType:
+          type: string
+          description: The action type assigned to this step.
+          readOnly: true
+        nextStepId:
+          type: string
+          description: The next step for this option. This is a read only attribute.
+          format: uuid
+          readOnly: true
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        A option assigned to the split step which defines the action to use when
+        evaluating this option, and the next step if the action evaluates true.
+        Creating one will always add it to the end of the list, and the options
+        will always be processed in order.
+    AbstractActionStepDto:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique ID for this step.
+          format: uuid
+          readOnly: true
+        actionDefinitionId:
+          type: string
+          description: >-
+            The action definition ID for this step. This is a read only
+            attribute for steps, and will be determined by the provided
+            enrollment action on the create. For split steps this will determine
+            the type of options that can be added to the step.
+          format: uuid
+        actionType:
+          type: string
+          description: The action type assigned to this step.
+          readOnly: true
+        priorStepId:
+          type: string
+          description: The prior step in the workflow. This is a read only attribute.
+          format: uuid
+          readOnly: true
+        splitOptionId:
+          type: string
+          description: >-
+            If this step is referenced by an option, rather then the step, this
+            is the ID. Either split option or  the prior step will be provided
+            but not both.
+          format: uuid
+          readOnly: true
+        _links:
+          $ref: '#/components/schemas/Links'
+    AbstractBaseStepDto:
+      required:
+        - type
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique ID for this step.
+          format: uuid
+          readOnly: true
+        _links:
+          $ref: '#/components/schemas/Links'
+        type:
+          type: string
+      description: The content list of the data.
+      discriminator:
+        propertyName: type
+    EndStep_v1_0:
+      type: object
+      description: >-
+        The very end step for any path on a workflow. All paths will have an end
+        step or option.
+      allOf:
+        - $ref: '#/components/schemas/AbstractBaseStepDto'
+        - type: object
+          properties:
+            type:
+              type: string
+              description: The type of step.
+            priorStepId:
+              type: string
+              description: The prior step in the workflow. This is a read only attribute.
+              format: uuid
+              readOnly: true
+            splitOptionId:
+              type: string
+              description: >-
+                If this step is referenced by an option, rather then the step,
+                this is the ID. Either split option or  the prior step will be
+                provided but not both.
+              format: uuid
+              readOnly: true
+    PagedResponseResourceAbstractBaseStepDto:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/PageDto'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/EndStep_v1_0'
+              - $ref: '#/components/schemas/SplitStep_v1_0'
+              - $ref: '#/components/schemas/StartStep_v1_0'
+              - $ref: '#/components/schemas/Step_v1_0'
+    SplitStep_v1_0:
+      type: object
+      description: A split step within the workflow.
+      allOf:
+        - $ref: '#/components/schemas/AbstractBaseStepDto'
+        - type: object
+          properties:
+            type:
+              type: string
+              description: The type of step.
+            priorStepId:
+              type: string
+              description: The prior step in the workflow. This is a read only attribute.
+              format: uuid
+              readOnly: true
+            splitOptionId:
+              type: string
+              description: >-
+                If this step is referenced by an option, rather then the step,
+                this is the ID. Either split option or  the prior step will be
+                provided but not both.
+              format: uuid
+              readOnly: true
+            actionDefinitionId:
+              type: string
+              description: >-
+                The action definition ID for this step. This is a read only
+                attribute for steps, and will be determined by the provided
+                enrollment action on the create. For split steps this will
+                determine the type of options that can be added to the step.
+              format: uuid
+            actionType:
+              type: string
+              description: The action type assigned to this step.
+              readOnly: true
+            splitOptionsList:
+              type: array
+              description: The split options that are assigned to this step.
+              readOnly: true
+              items:
+                $ref: '#/components/schemas/SplitStepOption_v1_0'
+            firstSplitOption:
+              $ref: '#/components/schemas/SplitStepOption_v1_0'
+    StartStep_v1_0:
+      type: object
+      description: The very first step within the workflow.
+      allOf:
+        - $ref: '#/components/schemas/AbstractBaseStepDto'
+        - type: object
+          properties:
+            type:
+              type: string
+              description: The type of step.
+            nextStepId:
+              type: string
+              description: The next step in the workflow. This is a read only attribute.
+              format: uuid
+              readOnly: true
+    Step_v1_0:
+      required:
+        - enrollmentActionId
+      type: object
+      description: A step within the workflow.
+      allOf:
+        - $ref: '#/components/schemas/AbstractBaseStepDto'
+        - type: object
+          properties:
+            type:
+              type: string
+              description: The type of step.
+            priorStepId:
+              type: string
+              description: The prior step in the workflow. This is a read only attribute.
+              format: uuid
+              readOnly: true
+            splitOptionId:
+              type: string
+              description: >-
+                If this step is referenced by an option, rather then the step,
+                this is the ID. Either split option or  the prior step will be
+                provided but not both.
+              format: uuid
+              readOnly: true
+            nextStepId:
+              type: string
+              description: The next step in the workflow. This is a read only attribute.
+              format: uuid
+              readOnly: true
+            enrollmentActionId:
+              type: string
+              description: The ID of the enrollment action to be followed in this step.
+              format: uuid
+            actionDefinitionId:
+              type: string
+              description: >-
+                The action definition ID for this step. This is a read only
+                attribute for steps, and will be determined by the provided
+                enrollment action on the create. For split steps this will
+                determine the type of options that can be added to the step.
+              format: uuid
+            actionType:
+              type: string
+              description: The action type assigned to this step.
+              readOnly: true
+    ActionDefinition_v1_0:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique ID for this action definition.
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          description: The name for this action definition.
+          readOnly: true
+        description:
+          type: string
+          description: The description for this action definition.
+          readOnly: true
+        localizationDescriptionId:
+          type: string
+          description: The ID for localization information for this action definition.
+          readOnly: true
+        isSplit:
+          type: boolean
+          description: Indicates if this action definition support split actions.
+          readOnly: true
+        actionType:
+          type: string
+          description: >-
+            The action type that is mapped into the step, when a step is
+            created.
+          readOnly: true
+        category:
+          type: string
+          description: The category for this action type.
+          readOnly: true
+        dependencyType:
+          type: string
+          description: The dependency requirement.
+          readOnly: true
+          enum:
+            - NONE
+            - ONE_OF
+            - ALL
+        hasEndActions:
+          type: boolean
+          description: Indicates if this action also has behavior as part of the end step.
+          readOnly: true
+        split:
+          type: boolean
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: The list of actions that are can be assigned to a step.
+    PagedResponseResourceActionDefinition_v1_0:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/PageDto'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/ActionDefinition_v1_0'
+    UiConfigImage_v1_0:
+      type: object
+      properties:
+        fileUrl:
+          type: string
+          description: The URL of the image file.
+      description: The definition of the image in the UI.
+    PagedResponseResourceSplitStepOption_v1_0:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/PageDto'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/SplitStepOption_v1_0'
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean

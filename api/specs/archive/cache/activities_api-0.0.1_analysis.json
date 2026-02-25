@@ -1,0 +1,61 @@
+{
+  "name": "Activities API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/activity-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.161996",
+  "endpoint_count": 5,
+  "base_url": "http://localhost",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/activities/{activityId}/notifications",
+      "method": "PUT",
+      "summary": "Update Activity Notification Options",
+      "description": "Update activity notification options.",
+      "operation_id": "updateActivityNotification",
+      "tags": [
+        "View Activities"
+      ]
+    },
+    {
+      "path": "/activities/{activityId}/devices/query",
+      "method": "POST",
+      "summary": "Get Activity Devices",
+      "description": "Get the list of activity devices.",
+      "operation_id": "findActivityDevices",
+      "tags": [
+        "View Activities"
+      ]
+    },
+    {
+      "path": "/activities/query",
+      "method": "POST",
+      "summary": "Get Activities",
+      "description": "Get the list of activities.",
+      "operation_id": "findActivityList",
+      "tags": [
+        "View Activities"
+      ]
+    },
+    {
+      "path": "/activities/{activityId}",
+      "method": "GET",
+      "summary": "Get Activity Details",
+      "description": "Get activity details.",
+      "operation_id": "getDetails",
+      "tags": [
+        "View Activities"
+      ]
+    },
+    {
+      "path": "/private/activities/async-cleanup",
+      "method": "DELETE",
+      "summary": null,
+      "description": null,
+      "operation_id": "deleteSchedule",
+      "tags": [
+        "View Activities"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,311 @@
+{
+  "name": "DPSK Service",
+  "version": "0.0.3",
+  "url": "https://docs.ruckus.cloud/_bundle/api/dpsk-api-0.0.3.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.142861",
+  "endpoint_count": 30,
+  "base_url": "http://localhost:8080",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/templates/dpskServices/{poolTemplateId}",
+      "method": "GET",
+      "summary": "Get Specific DPSK Pool Template",
+      "description": null,
+      "operation_id": "getDpskPoolTemplateById",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/templates/dpskServices/{poolTemplateId}",
+      "method": "PUT",
+      "summary": "Update the DPSK Pool Template",
+      "description": null,
+      "operation_id": "updateDpskPoolTemplate",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/templates/dpskServices/{poolTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete the DPSK Pool Template",
+      "description": null,
+      "operation_id": "deleteDpskPoolTemplate",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/templates/dpskServices/{poolTemplateId}",
+      "method": "PATCH",
+      "summary": "Update the DPSK Pool Template",
+      "description": null,
+      "operation_id": "patchDpskPoolTemplate",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}",
+      "method": "GET",
+      "summary": "Get Specific DPSK Pool",
+      "description": null,
+      "operation_id": "getDpskPoolById",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}",
+      "method": "PUT",
+      "summary": "Update the DPSK Pool",
+      "description": null,
+      "operation_id": "updateDpskPool",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}",
+      "method": "DELETE",
+      "summary": "Delete the DPSK Pool",
+      "description": null,
+      "operation_id": "deleteDpskPool",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}",
+      "method": "PATCH",
+      "summary": "Update the DPSK Pool",
+      "description": null,
+      "operation_id": "patchDpskPool",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/policySets/{policySetId}",
+      "method": "PUT",
+      "summary": "Update Policy Set for a DPSK Pool",
+      "description": null,
+      "operation_id": "updatePolicySetId",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/policySets/{policySetId}",
+      "method": "DELETE",
+      "summary": "Remove Policy Set from a DPSK Pool",
+      "description": null,
+      "operation_id": "removePolicySetId",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/{id}",
+      "method": "GET",
+      "summary": "Get Specific DPSK Passphrase",
+      "description": null,
+      "operation_id": "getPassphraseById",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/{id}",
+      "method": "PUT",
+      "summary": "Update Specific DPSK Passphrase",
+      "description": null,
+      "operation_id": "updatePassphrase",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/{id}",
+      "method": "PATCH",
+      "summary": "Update Specific DPSK Passphrase",
+      "description": "Update an entity partially with provided attributes. Only the attributes provided in the request body will be updated.",
+      "operation_id": "updatePassphrase_1",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/templates/identityGroups/{identityGroupId}/dpskServices",
+      "method": "POST",
+      "summary": "Create New DPSK Pool Template with Identity Group",
+      "description": null,
+      "operation_id": "createDpskPoolTemplate",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/templates/dpskServices",
+      "method": "POST",
+      "summary": "Create New DPSK Pool Template",
+      "description": null,
+      "operation_id": "createDpskPoolTemplate_1",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/templates/dpskServices/{poolTemplateId}/cloneSettings",
+      "method": "POST",
+      "summary": "Clone the DPSK Pool Template",
+      "description": null,
+      "operation_id": "cloneDpskPoolTemplate",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/templates/dpskServices/query",
+      "method": "POST",
+      "summary": "Search for DPSK Pool Templates Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryDpskPoolTemplates",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    },
+    {
+      "path": "/identityGroups/{identityGroupId}/dpskServices",
+      "method": "POST",
+      "summary": "Create New DPSK Pool",
+      "description": null,
+      "operation_id": "createDpskPool",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases",
+      "method": "GET",
+      "summary": "Get Passphrase",
+      "description": null,
+      "operation_id": "listAllPassphrases",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases",
+      "method": "POST",
+      "summary": "Create DPSK Passphrase",
+      "description": null,
+      "operation_id": "createPassphrase",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases",
+      "method": "DELETE",
+      "summary": "Delete Passphrase",
+      "description": null,
+      "operation_id": "deletePassphrases",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases",
+      "method": "PATCH",
+      "summary": "Update Specific DPSK Passphrases",
+      "description": "Update entities partially with provided attributes. Only the attributes provided in the request body will be updated.",
+      "operation_id": "updatePassphrases",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/{passphraseId}/devices",
+      "method": "GET",
+      "summary": "Get Devices for a Specific Passphrase",
+      "description": null,
+      "operation_id": "getPassphraseDevices",
+      "tags": [
+        "APIs for DPSK Passphrase Device Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/{passphraseId}/devices",
+      "method": "POST",
+      "summary": "Create Devices for a Specific Passphrase",
+      "description": null,
+      "operation_id": "createPassphraseDevice",
+      "tags": [
+        "APIs for DPSK Passphrase Device Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/{passphraseId}/devices",
+      "method": "DELETE",
+      "summary": "Delete Devices Associated with a Specific Passphrase",
+      "description": null,
+      "operation_id": "deletePassphraseDevices",
+      "tags": [
+        "APIs for DPSK Passphrase Device Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/query",
+      "method": "POST",
+      "summary": "Query Passphrases for Specified Pool",
+      "description": null,
+      "operation_id": "queryResponse",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/query/csvFiles",
+      "method": "POST",
+      "summary": "DPSK Passphrase to CSV",
+      "description": null,
+      "operation_id": "exportDpskPassphrase",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/{poolId}/passphrases/csvFiles",
+      "method": "POST",
+      "summary": "Import Passphrase from CSV",
+      "description": null,
+      "operation_id": "importDpskPassphrasesFromCsv",
+      "tags": [
+        "APIs for DPSK Passphrase Management"
+      ]
+    },
+    {
+      "path": "/dpskServices/query",
+      "method": "POST",
+      "summary": "Search for DPSK Pools Matching Search String in Paged Result",
+      "description": null,
+      "operation_id": "queryDpskPools",
+      "tags": [
+        "APIs for DPSK Service Management"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{networkTemplateId}/dpskServices",
+      "method": "GET",
+      "summary": "Get DPSK Pool Templates by Network Template",
+      "description": null,
+      "operation_id": "getDpskPoolsByNetworkId",
+      "tags": [
+        "APIs for DPSK Service Template Management"
+      ]
+    }
+  ]
+}

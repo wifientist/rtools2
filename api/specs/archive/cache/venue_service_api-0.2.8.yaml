@@ -1,0 +1,1272 @@
+openapi: 3.0.1
+info:
+  title: Venue Service API & Model Documentation
+  description: |
+    # Overview
+
+    ## Rate Limit
+    For the Venue REST API the following will be true: 
+    - Limits are applied to each tenant.
+    - A maximum of 200 calls can be made per second.
+    - Each second 100 calls will be returned to be used.
+  version: 0.2.8
+externalDocs:
+  description: Ruckus Network Technical Documents
+  url: https://support.ruckuswireless.com/documents
+servers:
+  - url: http://localhost
+    description: Generated server url
+tags:
+  - name: Venue Template
+    description: Manage venue template.
+  - name: Floor Plan
+    description: >-
+      Manage floor-plans and calibration-points (calibrations-points are used to
+      establish, for example, precise AP positioning).
+  - name: Venue
+    description: Manage venue.
+paths:
+  /venues/{venueId}:
+    get:
+      tags:
+        - Venue
+      summary: Access Venue by ID
+      description: Get venue.
+      operationId: GetVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/VenueView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - Venue
+      summary: Replace Venue
+      description: Update venue.
+      operationId: UpdateVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueView'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/VenueView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Venue
+      summary: Revoke Venue by ID
+      description: >-
+        Delete venues by ID.
+
+        WARNING: Note that all network devices under this venue will be removed
+        as well.
+      operationId: DeleteVenue
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /venues/{venueId}/floorplans/{floorPlanId}:
+    get:
+      tags:
+        - Floor Plan
+      summary: Access Floor Plan
+      description: Get floor plan by ID.
+      operationId: GetVenueFloorPlan
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: floorPlanId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorPlanView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/FloorPlanView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - Floor Plan
+      summary: Replace Floor Plan
+      description: Update floor plan.
+      operationId: UpdateVenueFloorPlan
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: floorPlanId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanView'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseFloorPlanView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseFloorPlanView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Floor Plan
+      summary: Revoke Floor Plan
+      description: Delete floor plan.
+      operationId: DeleteVenueFloorPlan
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: floorPlanId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/venues/{venueTemplateId}:
+    get:
+      tags:
+        - Venue Template
+      summary: Get Venue Template by ID
+      description: Get venue template.
+      operationId: getVenueTemplate
+      parameters:
+        - name: venueTemplateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueTemplateView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/VenueTemplateView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - Venue Template
+      summary: Update Venue Template
+      description: Update venue template.
+      operationId: updateVenueTemplate
+      parameters:
+        - name: venueTemplateId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueTemplateView'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/VenueTemplateView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Venue Template
+      summary: Delete Venue Template by ID
+      description: >-
+        Delete venue template by ID.
+
+        WARNING: Note that all network devices under this venue Template will be
+        removed as well.
+      operationId: deleteVenueTemplate
+      parameters:
+        - name: venueTemplateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /venues:
+    post:
+      tags:
+        - Venue
+      summary: Request Venue
+      description: Create venue.
+      operationId: CreateVenue
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueView'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/VenueView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /venues/{venueId}/signurls/uploadurls:
+    post:
+      tags:
+        - Floor Plan
+      summary: Access Image Upload URL
+      description: Get a URL where to upload a floor plan image.
+      operationId: GetFloorPlanImageUploadUrl
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /venues/{venueId}/floorplans:
+    get:
+      tags:
+        - Floor Plan
+      summary: Access Floor Plans
+      description: Get floor plans by a venue ID.
+      operationId: GetVenueFloorPlans
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FloorPlanView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FloorPlanView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+        - Floor Plan
+      summary: Request Floor Plan
+      description: Create floor plan.
+      operationId: createVenueFloorPlan
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanView'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseFloorPlanView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseFloorPlanView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /venues/{venueId}/floorplans/query:
+    post:
+      tags:
+        - Floor Plan
+      summary: Query Floor Plans
+      description: Get floor plans by query criteria.
+      operationId: QueryVenueFloorPlans
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanQuery'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/FloorPlanQuery'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageListFloorPlanView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageListFloorPlanView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/venues:
+    post:
+      tags:
+        - Venue Template
+      summary: Create Venue Template
+      description: Create venue template.
+      operationId: createVenueTemplate
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueTemplateView'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/VenueTemplateView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVenueView'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /venues/{venueId}/signurls/{fileId}/urls:
+    get:
+      tags:
+        - Floor Plan
+      summary: Access Image Download URL
+      description: Get the URL where to download a floor plan image.
+      operationId: GetFloorPlanImageDownloadUrl
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Returns with the signed url
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    AddressView:
+      required:
+        - city
+        - country
+      type: object
+      properties:
+        country:
+          type: string
+          description: Country
+        countryCode:
+          type: string
+          description: Country code
+        city:
+          type: string
+          description: City
+        addressLine:
+          type: string
+          description: Address line
+        latitude:
+          type: number
+          description: Latitude
+          format: double
+        longitude:
+          type: number
+          description: Longitude
+          format: double
+        timezone:
+          type: string
+          description: Timezone
+        notes:
+          type: string
+          description: Notes
+    FloorPlanView:
+      required:
+        - floorNumber
+        - imageId
+        - imageName
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: Floor plan identifier
+        venueId:
+          type: string
+          description: Venue identifier
+        name:
+          type: string
+          description: Floor plan name
+        floorNumber:
+          type: integer
+          description: Floor number
+          format: int32
+        imageId:
+          type: string
+          description: Image identifier
+        imageName:
+          type: string
+          description: Image name
+    VenueView:
+      required:
+        - address
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: Venue identifier
+        name:
+          maxLength: 32
+          minLength: 2
+          pattern: \s*\S+\s*\S+.*
+          type: string
+          description: Venue name
+        description:
+          type: string
+          description: Venue description
+        address:
+          $ref: '#/components/schemas/AddressView'
+        tags:
+          type: array
+          items:
+            type: string
+        isTemplate:
+          type: boolean
+    OperationResponseVenueView:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/VenueView'
+    OperationResponseFloorPlanView:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/FloorPlanView'
+    VenueTemplateView:
+      required:
+        - address
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: Venue identifier
+        name:
+          maxLength: 32
+          minLength: 2
+          pattern: \s*\S+\s*\S+.*
+          type: string
+          description: Venue name
+        description:
+          type: string
+          description: Venue description
+        address:
+          $ref: '#/components/schemas/AddressView'
+        tags:
+          type: array
+          items:
+            type: string
+        isTemplate:
+          type: boolean
+        templateVersion:
+          type: integer
+          format: int64
+    UploadUrlRequest:
+      type: object
+      properties:
+        fileExtension:
+          type: string
+    SignedUrlResponse:
+      type: object
+      properties:
+        fileId:
+          type: string
+        signedUrl:
+          type: string
+          description: >-
+            A signed URL is a URL that provides limited permission and time to
+            make a request.
+    FloorPlanQuery:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortBy:
+          type: string
+          enum:
+            - FloorPlanName
+            - VenueName
+    PageListFloorPlanView:
+      type: object
+      properties:
+        totalSizes:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FloorPlanView'
+    VenueQuery:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortBy:
+          type: string
+          enum:
+            - VenueName
+            - VenueAddressCity
+    PageListVenueView:
+      type: object
+      properties:
+        totalSizes:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueView'
+    OperationResponseVoid:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          type: object
+    ErrorResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        errors:
+          items:
+            type: string

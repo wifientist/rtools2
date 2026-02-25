@@ -1,0 +1,101 @@
+{
+  "name": "External Auth API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/external-auth-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.976845",
+  "endpoint_count": 9,
+  "base_url": "https://api.asia.ruckus.cloud",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}",
+      "method": "GET",
+      "summary": "Get SAML Identity Provider Profile",
+      "description": "Retrieve the specified SAML identity provider profile.",
+      "operation_id": "getSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}",
+      "method": "PUT",
+      "summary": "Update Entire SAML Identity Provider Profile",
+      "description": "Update the specified entire SAML identity provider profile.",
+      "operation_id": "updateSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}",
+      "method": "DELETE",
+      "summary": "Delete SAML Identity Provider  Profile",
+      "description": "Delete the specified SAML identity provider profile.",
+      "operation_id": "deleteSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}",
+      "method": "PATCH",
+      "summary": "Update Partial SAML Identity Provider Profile",
+      "description": "Update the specified partial SAML identity provider profile.",
+      "operation_id": "samlIdpProfileAction",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}/signingCertificates/{certificateId}",
+      "method": "PUT",
+      "summary": "Activate Signing Certificate",
+      "description": "Activates the specified signing certificate for the SAML identity provider profile.",
+      "operation_id": "activateSigningCertificateOnSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}/signingCertificates/{certificateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Signing Certificate",
+      "description": "Deactivates the specified signing certificate for the SAML identity provider profile.",
+      "operation_id": "deactivateSigningCertificateOnSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}/encryptionCertificates/{certificateId}",
+      "method": "PUT",
+      "summary": "Activate Encryption Certificate",
+      "description": "Activates the specified encryption certificate for the SAML identity provider profile.",
+      "operation_id": "activateEncryptionCertificateOnSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles/{samlIdpProfileId}/encryptionCertificates/{certificateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Encryption Certificate",
+      "description": "Deactivates the specified encryption certificate for the SAML identity provider profile.",
+      "operation_id": "deactivateEncryptionCertificateOnSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    },
+    {
+      "path": "/samlIdpProfiles",
+      "method": "POST",
+      "summary": "Create SAML Identity Provider Profile",
+      "description": "Create a SAML identity provider profile.",
+      "operation_id": "createSamlIdpProfile",
+      "tags": [
+        "SAML Identity Provider"
+      ]
+    }
+  ]
+}

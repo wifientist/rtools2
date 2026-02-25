@@ -1,0 +1,1341 @@
+{
+  "name": "Switch Service API",
+  "version": "0.4.0",
+  "url": "https://docs.ruckus.cloud/_bundle/api/switch-0.4.0.yaml",
+  "downloaded_at": "2025-12-02T18:45:28.639399",
+  "endpoint_count": 133,
+  "base_url": "https://api.ruckus.cloud",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/webAuthPageTemplates/{templateId}",
+      "method": "GET",
+      "summary": "Get Web Authentication Template",
+      "description": "Get a web authentication page template by id.",
+      "operation_id": "GetWebAuthPageTemplate_1_1",
+      "tags": [
+        "Web Authentication Page Template"
+      ]
+    },
+    {
+      "path": "/webAuthPageTemplates/{templateId}",
+      "method": "PUT",
+      "summary": "Update Web Authentication Template",
+      "description": "Update web authentication page template by id.",
+      "operation_id": "PutWebAuthPageTemplate_1_1",
+      "tags": [
+        "Web Authentication Page Template"
+      ]
+    },
+    {
+      "path": "/webAuthPageTemplates/{templateId}",
+      "method": "DELETE",
+      "summary": "Delete Web Authentication Template",
+      "description": "Delete web authentication page template by id.",
+      "operation_id": "DeleteWebAuthPageTemplate_1_1",
+      "tags": [
+        "Web Authentication Page Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}",
+      "method": "GET",
+      "summary": "Get ICX Switch",
+      "description": "Get ICX switch by id.",
+      "operation_id": "GetSwitchById",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}",
+      "method": "PUT",
+      "summary": "Update ICX Switch",
+      "description": "Update ICX switch. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateSwitchById",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}",
+      "method": "POST",
+      "summary": "Add ICX Switch",
+      "description": "Add an ICX switch. Use activity API with request id to get the status update.",
+      "operation_id": "AddSwitch",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}",
+      "method": "DELETE",
+      "summary": "Delete ICX Switch",
+      "description": "Delete ICX switch by id.",
+      "operation_id": "DeleteSwitchById",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans/{vlanId}",
+      "method": "GET",
+      "summary": "Get Switch VLAN",
+      "description": "Get the specified switch-level VLAN by id.",
+      "operation_id": "GetSwitchVlan",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans/{vlanId}",
+      "method": "PUT",
+      "summary": "Update Switch VLAN",
+      "description": "Update a VLAN of the switch.",
+      "operation_id": "UpdateSwitchVlan",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans/{vlanId}",
+      "method": "DELETE",
+      "summary": "Delete Switch VLAN",
+      "description": "Delete a VLAN of the switch.",
+      "operation_id": "DeleteSwitchVlan",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts/{vePortId}",
+      "method": "GET",
+      "summary": "Get Virtual Ethernet Setting",
+      "description": "Get a specified virtual ethernet port.",
+      "operation_id": "GetVePort",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts/{vePortId}",
+      "method": "PUT",
+      "summary": "Update Virtual Ethernet Setting",
+      "description": "Update virtual ethernet port.",
+      "operation_id": "UpdateVePort",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts/{vePortId}",
+      "method": "DELETE",
+      "summary": "Delete Virtual Ethernet Setting",
+      "description": "Delete virtual ethernet port.",
+      "operation_id": "DeleteVePort",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/staticRoutes/{staticRouteId}",
+      "method": "GET",
+      "summary": "Get Static Route",
+      "description": "Get the specified static route.",
+      "operation_id": "GetStaticRouteById",
+      "tags": [
+        "Switch Static Routes"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/staticRoutes/{staticRouteId}",
+      "method": "PUT",
+      "summary": "Update Static Route",
+      "description": "Update the specified static route.",
+      "operation_id": "UpdateStaticRoute",
+      "tags": [
+        "Switch Static Routes"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/staticRoutes/{staticRouteId}",
+      "method": "DELETE",
+      "summary": "Delete Static Route",
+      "description": "Delete the specified static route.",
+      "operation_id": "DeleteStaticRoute",
+      "tags": [
+        "Switch Static Routes"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/positions",
+      "method": "PUT",
+      "summary": "Update Switch Position",
+      "description": "Update ICX switch position in the floor plan.",
+      "operation_id": "UpdateSwitchPosition",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/portSettings",
+      "method": "GET",
+      "summary": "Get Ports",
+      "description": "Get switch's port settings by switch id.",
+      "operation_id": "GetSwitchPortsBySwitchId",
+      "tags": [
+        "Switch Ports"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/portSettings",
+      "method": "PUT",
+      "summary": "Update Port",
+      "description": "Update switch's port setting. Use activity API with request id to get the status update.",
+      "operation_id": "UpdatePortSettings",
+      "tags": [
+        "Switch Ports"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/portSettings",
+      "method": "POST",
+      "summary": "Get Ports",
+      "description": "Get switch's port settings with port ids.",
+      "operation_id": "GetSwitchPortsByPortIds",
+      "tags": [
+        "Switch Ports"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/lags/{lagId}",
+      "method": "GET",
+      "summary": "Get LAG",
+      "description": "Get LAG setting by id.",
+      "operation_id": "GetLag",
+      "tags": [
+        "LAG"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/lags/{lagId}",
+      "method": "PUT",
+      "summary": "Update LAG",
+      "description": "Update switch's LAG setting.",
+      "operation_id": "UpdateLag",
+      "tags": [
+        "LAG"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/lags/{lagId}",
+      "method": "DELETE",
+      "summary": "Delete LAG",
+      "description": "Delete switch's LAG setting.",
+      "operation_id": "DeleteLag",
+      "tags": [
+        "LAG"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServers/{dhcpServerId}",
+      "method": "GET",
+      "summary": "Get DHCP Server-Setting",
+      "description": "Get switch's DHCP server setting.",
+      "operation_id": "GetSwitchDhcpServerSetting",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServers/{dhcpServerId}",
+      "method": "PUT",
+      "summary": "Update DHCP Server-Setting",
+      "description": "Update switch's DHCP server setting.",
+      "operation_id": "UpdateSwitchDhcpServerSettings",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServers/{dhcpServerId}",
+      "method": "DELETE",
+      "summary": "Delete DHCP Server-Setting",
+      "description": "Delete switch's DHCP server setting.",
+      "operation_id": "DeleteSwitchDhcpServerSetting",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/portSettings",
+      "method": "PUT",
+      "summary": "Update Ports",
+      "description": "Update ports of different switches. Use activity API with request id to get the status update.",
+      "operation_id": "UpdatePortsAmongSwitches",
+      "tags": [
+        "Switch Ports"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/portSettings",
+      "method": "POST",
+      "summary": "Get Ports",
+      "description": "Get port settings of different switches.",
+      "operation_id": "GetPortsAmongSwitches",
+      "tags": [
+        "Switch Ports"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchSettings",
+      "method": "GET",
+      "summary": "Get Venue Switch Setting",
+      "description": "Get the switch settings of the venue.",
+      "operation_id": "GetVenueSetting_1_1",
+      "tags": [
+        "Venue Switch Setting"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchSettings",
+      "method": "PUT",
+      "summary": "Update Venue Switch Setting",
+      "description": "Update the switch settings of the venue. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateVenueSetting_1_1",
+      "tags": [
+        "Venue Switch Setting"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchProfiles/{switchProfileId}",
+      "method": "PUT",
+      "summary": "Associate Switch Profile to Venue",
+      "description": "Associate a switch profile to a venue.",
+      "operation_id": "AssociateProfile",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchProfiles/{switchProfileId}",
+      "method": "DELETE",
+      "summary": "Disassociate Switch Profile to Venue",
+      "description": "Disassociate a switch profile to a venue.",
+      "operation_id": "DisassociateProfile",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchFirmwares/schedules",
+      "method": "PUT",
+      "summary": "Change Upgrade Schedule",
+      "description": "Schedule the firmware upgrade for venues. Use activity API with request id to get the status update.",
+      "operation_id": "ChangeUpdateScheduleV1001",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchFirmwares/schedules",
+      "method": "POST",
+      "summary": "Create Upgrade Schedule",
+      "description": "Schedule the firmware upgrade for venues. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateSchedule_1",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchFirmwares/schedules",
+      "method": "DELETE",
+      "summary": "Delete Upgrade Schedule",
+      "description": "Cancel the schedule for firmware upgrade.",
+      "operation_id": "SkipUpgradeSchedule",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/cliTemplates/{cliTemplateId}",
+      "method": "PUT",
+      "summary": "Associate Command-Line Interface Templates",
+      "description": "Associate command-line interface templates to switches.",
+      "operation_id": "AssociateCliTemplate",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/cliTemplates/{cliTemplateId}",
+      "method": "DELETE",
+      "summary": "Disassociate Command-Line Interface Templates",
+      "description": "Disassociate command-line interface templates to switches.",
+      "operation_id": "DisassociateCliTemplate",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaSettings",
+      "method": "GET",
+      "summary": "Retrieve AAA Setting",
+      "description": "Retrieve venue's authentication, authorization, and accounting setting.",
+      "operation_id": "GetAaaSettings_1_1",
+      "tags": [
+        "AAA Setting"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaSettings",
+      "method": "PUT",
+      "summary": "Update AAA Setting",
+      "description": "Update authentication, authorization, and accounting setting by id. Use activity API with request id to get the status update.",
+      "operation_id": "PutAaaSetting",
+      "tags": [
+        "AAA Setting"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaServers/{aaaServerId}",
+      "method": "GET",
+      "summary": "Get AAA Server-Setting",
+      "description": "Get a switch's authentication, authorization, and accounting server setting.",
+      "operation_id": "GetAaaServer",
+      "tags": [
+        "AAA Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaServers/{aaaServerId}",
+      "method": "PUT",
+      "summary": "Update AAA Server",
+      "description": "Update authentication, authorization, and accounting server by id. Use activity API with request id to get the status update.",
+      "operation_id": "PutAaaServer_1_1",
+      "tags": [
+        "AAA Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaServers/{aaaServerId}",
+      "method": "DELETE",
+      "summary": "Delete AAA Server",
+      "description": "Delete authentication, authorization, and accounting server by id.",
+      "operation_id": "DeleteAaaServer",
+      "tags": [
+        "AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/switchSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Switch Setting",
+      "description": "Get the switch settings of the venue template.",
+      "operation_id": "GetVenueTemplateSetting_1_1",
+      "tags": [
+        "Venue Template Switch Setting"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/switchSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Switch Setting",
+      "description": "Update the switch settings of the venue template. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateVenueTemplateSetting_1_1",
+      "tags": [
+        "Venue Template Switch Setting"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/switchProfiles/{switchProfileId}",
+      "method": "PUT",
+      "summary": "Associate Switch Profile Template",
+      "description": "Associate a regular switch profile template or command-line interface profile template to venue template.",
+      "operation_id": "AssociateProfileTemplate",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/switchProfiles/{switchProfileId}",
+      "method": "DELETE",
+      "summary": "Disassociate Switch Profile Template",
+      "description": "Disassociate a regular switch profile template or command-line interface profile template to venue template.",
+      "operation_id": "DisassociateProfileTemplate",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaSettings",
+      "method": "GET",
+      "summary": "Retrieve Venue Template AAA Setting",
+      "description": "Retrieve venue template's authentication, authorization, and accounting setting.",
+      "operation_id": "GetVenueTemplateAaaSettings_1_1",
+      "tags": [
+        "Venue Template AAA Setting"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template AAA Setting",
+      "description": "Update venue template's authentication, authorization, and accounting setting by id. Use activity API with request id to get the status update. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "UpdateVenueTemplateAaaSetting",
+      "tags": [
+        "Venue Template AAA Setting"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaServers/{aaaServerId}",
+      "method": "GET",
+      "summary": "Get Venue Template AAA Server",
+      "description": "Get venue template's authentication, authorization, and accounting server. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "GetVenueTemplateAaaServer",
+      "tags": [
+        "Venue Template AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaServers/{aaaServerId}",
+      "method": "PUT",
+      "summary": "Update Venue Template AAA Server",
+      "description": "Update venue template's authentication, authorization, and accounting server by id. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateVenueTemplateAaaServer_1_1",
+      "tags": [
+        "Venue Template AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaServers/{aaaServerId}",
+      "method": "DELETE",
+      "summary": "Delete Venue Template AAA Server",
+      "description": "Delete venue template's authentication, authorization, and accounting server by id. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "DeleteVenueTemplateAaaServer",
+      "tags": [
+        "Venue Template AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/switchProfiles/{switchProfileId}",
+      "method": "GET",
+      "summary": "Get Switch Profile Template",
+      "description": "Get a regular switch profile template or command-line interface profile template.",
+      "operation_id": "GetProfileTemplateById_1_1",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/switchProfiles/{switchProfileId}",
+      "method": "PUT",
+      "summary": "Update Switch Profile Template",
+      "description": "Update a regular switch profile template or command-line interface profile template. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateProfileTemplate_1_1",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/switchProfiles/{switchProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Switch Profile Template",
+      "description": "Delete a regular switch profile template or command-line interface profile template.",
+      "operation_id": "DeleteProfileTemplateById_1_1",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/switchProfiles/{switchProfileId}",
+      "method": "GET",
+      "summary": "Get Switch Profile",
+      "description": "Get a regular switch profile or command-line interface profile.",
+      "operation_id": "GetProfileById_1",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/switchProfiles/{switchProfileId}",
+      "method": "PUT",
+      "summary": "Update Switch Profile",
+      "description": "Update a regular switch profile or command-line interface profile. Use activity API with request id to get the status update.",
+      "operation_id": "UpdateProfile_1",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/switchProfiles/{switchProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Switch Profile",
+      "description": "Delete a regular switch profile or command-line interface profile.",
+      "operation_id": "DeleteProfileById_1_1",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/cliTemplates/{cliTemplateId}",
+      "method": "GET",
+      "summary": "Get Command-Line Interface Template",
+      "description": "Get a command-line interface template by id.",
+      "operation_id": "GetCliTemplate_1_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/cliTemplates/{cliTemplateId}",
+      "method": "PUT",
+      "summary": "Update Command-Line Interface Template",
+      "description": "Update a command-line interface template for switches by id.",
+      "operation_id": "UpdateCliTemplate_1_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/cliTemplates/{cliTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Command-Line Interface Template",
+      "description": "Delete a command-line interface template by id.",
+      "operation_id": "DeleteCliTemplate_1_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/webAuthPageTemplates",
+      "method": "POST",
+      "summary": "Add Web Authentication Template",
+      "description": "Add web authentication page template.",
+      "operation_id": "AddWebAuthPageTemplate_1_1",
+      "tags": [
+        "Web Authentication Page Template"
+      ]
+    },
+    {
+      "path": "/webAuthPageTemplates/query",
+      "method": "POST",
+      "summary": "Query Web Authentication Templates",
+      "description": "List of tenant's web authentication page templates.",
+      "operation_id": "QueryWebAuthPageTemplates_1_1",
+      "tags": [
+        "Web Authentication Page Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/vlans",
+      "method": "POST",
+      "summary": "Add Switch VLANs",
+      "description": "Create multiple VLANs under the specified switches.",
+      "operation_id": "AddSwitchVlans",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/vlans/query",
+      "method": "POST",
+      "summary": "Retrieve Switch VLANs",
+      "description": "Retrieve all usable VLANs under the specified switches.",
+      "operation_id": "GetSwitchVlanBySwitchIds",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/vePorts/query",
+      "method": "POST",
+      "summary": "Retrieve Virtual Ethernet Settings",
+      "description": "Retrieve virtual ethernet ports of venue by query.",
+      "operation_id": "GetVePortsByVenueQuery_1_1",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/transactions/{transactionId}/configHistDetails",
+      "method": "POST",
+      "summary": "Get Configuration History",
+      "description": "Get the configuration history details for this transaction relative to the switches in this venue.",
+      "operation_id": "GetVenueConfigurationHistoryDetailByTransaction_1_1",
+      "tags": [
+        "Configuration History"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches",
+      "method": "GET",
+      "summary": "Retrieve ICX Switches",
+      "description": "Retrieve list of venues' ICX switches.",
+      "operation_id": "GetSwitchesByVenue_1_1",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches",
+      "method": "POST",
+      "summary": "Add ICX Switches",
+      "description": "Add multiple ICX switches. Use activity API with request id to get the status update.",
+      "operation_id": "AddMultipleSwitches",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches",
+      "method": "DELETE",
+      "summary": "Delete ICX Switches",
+      "description": "Delete multiple ICX switches.",
+      "operation_id": "DeleteMultipleSwitches",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans",
+      "method": "GET",
+      "summary": "Get VLAN-VE-Ports",
+      "description": "List all usable VLANs that are available for the VE setting.",
+      "operation_id": "GetVlanByVenueWithVePortsInfoBySwitchId_1",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans",
+      "method": "POST",
+      "summary": "Add Switch VLAN",
+      "description": "Create a VLAN of the switch.",
+      "operation_id": "AddSwitchVlan",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans",
+      "method": "DELETE",
+      "summary": "Delete Switch VLANs",
+      "description": "Delete multiple VLANs of the switch.",
+      "operation_id": "DeleteSwitchVlans",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlans/query",
+      "method": "POST",
+      "summary": "Query Switch VLANs",
+      "description": "Query the switch's switch-level VLANs.",
+      "operation_id": "QuerySwitchVlans",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts",
+      "method": "GET",
+      "summary": "Retrieve Virtual Ethernet Settings",
+      "description": "Retrieve virtual ethernet ports of the specified switch.",
+      "operation_id": "GetVePortsBySwitch",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts",
+      "method": "POST",
+      "summary": "Add Virtual Ethernet Settings",
+      "description": "Add virtual ethernet ports of the switch.",
+      "operation_id": "AddVePorts",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts",
+      "method": "DELETE",
+      "summary": "Delete Virtual Ethernet Settings",
+      "description": "Delete multiple virtual ethernet ports.",
+      "operation_id": "DeleteVePorts",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vePorts/query",
+      "method": "POST",
+      "summary": "Retrieve Virtual Ethernet Settings",
+      "description": "Retrieve virtual ethernet ports of switch by query.",
+      "operation_id": "GetVePortsByQuery",
+      "tags": [
+        "Switch Virtual Ethernet"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/staticRoutes",
+      "method": "GET",
+      "summary": "Get Static Routes",
+      "description": "Get multiple static routes of the switch.",
+      "operation_id": "GetStaticRoutesBySwitchId",
+      "tags": [
+        "Switch Static Routes"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/staticRoutes",
+      "method": "POST",
+      "summary": "Add Static Route",
+      "description": "Add multiple static routes of the switch.",
+      "operation_id": "AddStaticRoutes",
+      "tags": [
+        "Switch Static Routes"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/staticRoutes",
+      "method": "DELETE",
+      "summary": "Delete Static Routes",
+      "description": "Delete multiple static routes.",
+      "operation_id": "DeleteStaticRoutes",
+      "tags": [
+        "Switch Static Routes"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/lags",
+      "method": "GET",
+      "summary": "Get LAGs",
+      "description": "List of switch's LAG settings.",
+      "operation_id": "GetLags",
+      "tags": [
+        "LAG"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/lags",
+      "method": "POST",
+      "summary": "Add LAGs",
+      "description": "Add switch's multiple LAG settings.",
+      "operation_id": "AddLags",
+      "tags": [
+        "LAG"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/lags",
+      "method": "DELETE",
+      "summary": "Delete LAGs",
+      "description": "Delete switch's multiple LAG settings.",
+      "operation_id": "DeleteLags",
+      "tags": [
+        "LAG"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServers",
+      "method": "POST",
+      "summary": "Add DHCP Server",
+      "description": "Add switch's DHCP server settings. Use activity API with request id to get the status update.",
+      "operation_id": "AddSwitchDhcpServerSettings",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServers",
+      "method": "DELETE",
+      "summary": "Delete DHCP Servers",
+      "description": "Delete switch's DHCP servers.",
+      "operation_id": "DeleteSwitchDhcpServerSettings",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServers/query",
+      "method": "POST",
+      "summary": "Query DHCP Servers",
+      "description": "List of ICX's DHCP servers.",
+      "operation_id": "ListOfIcxDhcpServers",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/deviceRequests",
+      "method": "POST",
+      "summary": "Sync/Reboot ICX Device",
+      "description": "Execute sync or reboot command on the specified switch device, no need to provide switch id list on the request body.",
+      "operation_id": "DeviceRequests",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configHistDetails/query",
+      "method": "POST",
+      "summary": "Get Configuration History",
+      "description": "Query for configuration history details on this switch.",
+      "operation_id": "GetAllConfigurationHistDetailsBySwitch",
+      "tags": [
+        "Configuration History"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups",
+      "method": "GET",
+      "summary": "Get Switch Configuration Backups",
+      "description": "List of switch's configuration backup.",
+      "operation_id": "GetConfigBackupsBySwitch",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups",
+      "method": "POST",
+      "summary": "Add Switch Configuration Backup",
+      "description": "Create a switch's configuration backup.",
+      "operation_id": "AddSwitchConfigBackup",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups",
+      "method": "DELETE",
+      "summary": "Delete Switch Configuration Backups",
+      "description": "Delete switch's configuration backups.",
+      "operation_id": "DeleteSwitchConfigBackups",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups/query",
+      "method": "POST",
+      "summary": "Retrieve Switch Configuration Backups",
+      "description": "Query the switch's configuration backups.",
+      "operation_id": "GetSwitchConfigBackupsByQuery",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups/comparisons",
+      "method": "POST",
+      "summary": "Compare Switch Configuration Backups",
+      "description": "Compare switch's configuration backups.",
+      "operation_id": "CompareSwitchConfigBackups",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/acls/query",
+      "method": "POST",
+      "summary": "Query Switch ACLs",
+      "description": "Get switch ACLs by query criteria.",
+      "operation_id": "GetSwitchAclsByQuery",
+      "tags": [
+        "Switch Access Control List"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/powerCycleRequests",
+      "method": "POST",
+      "summary": "Power Cycle Port",
+      "description": "Power cycle switch's port. Use activity API with request id to get the status update.",
+      "operation_id": "PowerCyclePort",
+      "tags": [
+        "Switch Ports"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/importRequests",
+      "method": "POST",
+      "summary": "Add Switches",
+      "description": "Add switches by CSV file. Use activity API with request id to get the status update.",
+      "operation_id": "ImportSwitches",
+      "tags": [
+        "Import Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/deviceRequests",
+      "method": "POST",
+      "summary": "Create Multiple Device Requests",
+      "description": "Execute sync venues admin password on multiple switch devices, switch id list should be provided on the request body.",
+      "operation_id": "SyncVenueAdminPasswordMultipleDeviceRequests",
+      "tags": [
+        "ICX Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/configHistories/query",
+      "method": "POST",
+      "summary": "Get Configuration History",
+      "description": "Query for configuration history details for switches in this venue.",
+      "operation_id": "GetConfigurationHistoryByVenue_1_1",
+      "tags": [
+        "Configuration History"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaServers",
+      "method": "POST",
+      "summary": "Add AAA Server",
+      "description": "Add authentication, authorization, and accounting server. Use activity API with request id to get the status update.",
+      "operation_id": "AddAaaServer_1_1",
+      "tags": [
+        "AAA Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaServers",
+      "method": "DELETE",
+      "summary": "Delete AAA Servers",
+      "description": "Delete multiple authentication, authorization, and accounting servers.",
+      "operation_id": "DeleteAaaServers",
+      "tags": [
+        "AAA Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aaaServers/query",
+      "method": "POST",
+      "summary": "Query AAA Servers",
+      "description": "List of venue's authentication, authorization, and accounting servers.",
+      "operation_id": "QueryAaaServers",
+      "tags": [
+        "AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaServers",
+      "method": "POST",
+      "summary": "Add Venue Template AAA Server",
+      "description": "Add venue template's authentication, authorization, and accounting server. Use activity API with request id to get the status update.",
+      "operation_id": "AddVenueTemplateAaaServer_1_1",
+      "tags": [
+        "Venue Template AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaServers",
+      "method": "DELETE",
+      "summary": "Delete Venue Template AAA Servers",
+      "description": "Delete venue template's multiple authentication, authorization, and accounting servers. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "DeleteVenueTemplateAaaServers",
+      "tags": [
+        "Venue Template AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/aaaServers/query",
+      "method": "POST",
+      "summary": "Query Venue Template AAA Servers",
+      "description": "List of venue template's authentication, authorization, and accounting servers. Add Prefix '/rec' for REC Templates.",
+      "operation_id": "QueryVenueTemplateAaaServers",
+      "tags": [
+        "Venue Template AAA Server"
+      ]
+    },
+    {
+      "path": "/templates/switchProfiles",
+      "method": "POST",
+      "summary": "Add Switch Profile Template",
+      "description": "Add a regular switch profile template or command-line interface profile template. Use activity API with request id to get the status update.",
+      "operation_id": "AddProfileTemplate_1_1",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/switchProfiles/query",
+      "method": "POST",
+      "summary": "Query Switch Profile Templates",
+      "description": "List the regular switch profile templates or command-line interface profile templates.",
+      "operation_id": "QueryProfileTemplates_1_1",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/switchProfiles",
+      "method": "POST",
+      "summary": "Add Switch Profile",
+      "description": "Add a regular switch profile or command-line interface profile. Use activity API with request id to get the status update.",
+      "operation_id": "AddProfile_1",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/switchProfiles/{switchProfileId}/vlans",
+      "method": "POST",
+      "summary": "Add VLAN",
+      "description": "Create a VLAN of the switch profile.",
+      "operation_id": "AddVlan_1_1",
+      "tags": [
+        "Profile VLAN"
+      ]
+    },
+    {
+      "path": "/switchProfiles/query",
+      "method": "POST",
+      "summary": "Query Switch Profiles",
+      "description": "List the regular switch profiles or command-line interface profiles.",
+      "operation_id": "QueryProfiles_1_1",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/switchFirmwares/schedules/switches/query",
+      "method": "POST",
+      "summary": "Get Switches",
+      "description": "Get all switches by tenant id for upgrading.",
+      "operation_id": "GetUpgradeSwitches_1_1",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/switchFirmwares/schedules/query",
+      "method": "POST",
+      "summary": "Get Venues",
+      "description": "Get all venues by tenant id for upgrading.",
+      "operation_id": "GetUpgradeVenues_1_1",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/cliTemplates",
+      "method": "POST",
+      "summary": "Add Command-Line Interface Template",
+      "description": "Create a command-line interface template for switches.",
+      "operation_id": "AddCliTemplate_1_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/cliTemplates",
+      "method": "DELETE",
+      "summary": "Delete Command-Line Interface Templates",
+      "description": "Delete command-line interface templates.",
+      "operation_id": "DeleteCliTemplates_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/cliTemplates/query",
+      "method": "POST",
+      "summary": "Query Command-Line Interface Templates",
+      "description": "Get a list of command-line interface templates by query.",
+      "operation_id": "QueryCliTemplates_1_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/dhcpServerStates",
+      "method": "PATCH",
+      "summary": "Change Switch DHCP Server State",
+      "description": "Change switch's DHCP server state. Use activity API with request id to get the status update.",
+      "operation_id": "ChangeSwitchDhcpServerState_1",
+      "tags": [
+        "DHCP Server"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups/{configBackupId}",
+      "method": "GET",
+      "summary": "Get Switch Configuration Backup",
+      "description": "Get a switch's configuration backup.",
+      "operation_id": "GetSwitchConfigBackupById",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups/{configBackupId}",
+      "method": "DELETE",
+      "summary": "Delete Switch Configuration Backup",
+      "description": "Delete switch's configuration backup by id.",
+      "operation_id": "DeleteSwitchConfigBackupById",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups/{configBackupId}",
+      "method": "PATCH",
+      "summary": "Restore Switch Configuration Backup",
+      "description": "Restore switch's configuration backup.",
+      "operation_id": "RestoreSwitchByConfigBackup_1",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/webAuthPageTemplates/{templateId}/switches",
+      "method": "GET",
+      "summary": "Get Web Authentication Template's Switch Info",
+      "description": "Get a web authentication page template's switch info by id.",
+      "operation_id": "GetWebAuthPageTemplateSwitchInfo_1_1",
+      "tags": [
+        "Web Authentication Page Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/vlanUnions",
+      "method": "GET",
+      "summary": "Get VLANs",
+      "description": "List all usable VLANs under this venue.",
+      "operation_id": "GetVlanUnionByVenue_1_1",
+      "tags": [
+        "Switch VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/vlanUnions",
+      "method": "GET",
+      "summary": "Retrieve VLANs",
+      "description": "List all usable VLANs for multiple ports of the same switch.",
+      "operation_id": "GetVlanUnion",
+      "tags": [
+        "Profile VLAN"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/transactions/{transactionId}/configHistDetails",
+      "method": "GET",
+      "summary": "Get Configuration History",
+      "description": "Get the configuration history details of this transaction on this switch.",
+      "operation_id": "RetrieveSwitchConfigurationHistDetailByTransaction",
+      "tags": [
+        "Configuration History"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/configBackups/{configBackupId}/formattedConfigs",
+      "method": "GET",
+      "summary": "Retrieve Formatted Configuration Backup",
+      "description": "Retrieve formatted string representation of switch's configuration backup for convert to template.",
+      "operation_id": "GetFormattedConfigBackup",
+      "tags": [
+        "Switch Configuration Backup"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/acls",
+      "method": "GET",
+      "summary": "Get Switch ACLs",
+      "description": "Get all ACLs of the switch.",
+      "operation_id": "GetAclsBySwitch",
+      "tags": [
+        "Switch Access Control List"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/{switchId}/aclUnions",
+      "method": "GET",
+      "summary": "Get ACL Unions",
+      "description": "List all usable ACLs for this switch (the union of venue and device levels).",
+      "operation_id": "GetAclUnion",
+      "tags": [
+        "Switch Access Control List"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switches/importResults",
+      "method": "GET",
+      "summary": "Get DownloadUrl And Import Result",
+      "description": "Get download url and import result.",
+      "operation_id": "GetSwitchesImportResult",
+      "tags": [
+        "Import Switch"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchProfiles",
+      "method": "GET",
+      "summary": "Get Switch Profiles",
+      "description": "Get regular switch profiles or command-line interface profiles of the venue.",
+      "operation_id": "GetProfilesByVenueId_1",
+      "tags": [
+        "Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/switchProfiles/vlans",
+      "method": "GET",
+      "summary": "Get VLANs",
+      "description": "Get a list of VLANs in profiles with the specified venue.",
+      "operation_id": "GetVlansByVenue_1_1",
+      "tags": [
+        "Profile VLAN"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/switchProfiles",
+      "method": "GET",
+      "summary": "Get Switch Profile Templates",
+      "description": "Get regular switch profile templates or command-line interface profile templates of the venue.",
+      "operation_id": "GetProfileTemplatesByVenueId_1_1",
+      "tags": [
+        "Profile Template"
+      ]
+    },
+    {
+      "path": "/switchFirmwares/versions/{versionType}",
+      "method": "GET",
+      "summary": "Get Versions",
+      "description": "Get different version type of firmware.",
+      "operation_id": "GetVersions_1_1",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/switchFirmwares/currentVersions",
+      "method": "GET",
+      "summary": "Get Current Versions",
+      "description": "Get current versions of the venues.",
+      "operation_id": "GetCurrentVersionsByVenues_1_1",
+      "tags": [
+        "Switch Firmware Upgrade"
+      ]
+    },
+    {
+      "path": "/cliTemplates/examples",
+      "method": "GET",
+      "summary": "Get Command-Line Interface Template-Examples",
+      "description": "Get a list of command-line interface template examples.",
+      "operation_id": "GetCliTemplates_2_1",
+      "tags": [
+        "Command-Line Interface Template"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/stacks/{stackSwitchSerialNumber}",
+      "method": "DELETE",
+      "summary": "Delete Stack Member",
+      "description": "Delete stack member.",
+      "operation_id": "DeleteStackMember",
+      "tags": [
+        "ICX Switch"
+      ]
+    }
+  ]
+}

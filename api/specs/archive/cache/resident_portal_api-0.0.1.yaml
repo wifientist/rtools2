@@ -1,0 +1,1302 @@
+openapi: 3.0.1
+info:
+  title: Resident Portal REST API
+  description: >-
+    # Overview
+
+
+    Resident portals are provided to the unit owners to view and update unit
+    details and secrets. The Resident portal APIs support these functions. These
+    provide details on the property, units and dpsk passphrases associated. The
+    APIs also supports updates of contact details and dpsk passphrases. APIs are
+    authenticated using a specific token associated to the unit. These tokens
+    are generated as the unit is created. 
+
+    # RateLimit
+
+    For the Resident portal REST APIs the following will be true: 
+
+    - Limits are applied to each property. 
+
+    - A maximum of 100 calls can be made per second. 
+
+    - Each second 80 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: v0
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: Resident Portal Unit Users API
+    description: Manages users of unit associated to the resident portal
+  - name: Resident Portal Configuration
+    description: Manages Resident Portal configuration.
+  - name: Resident Portal Login API
+    description: Manages Resident Portal access
+  - name: Resident Portal Unit API
+    description: Manages units associated to the resident portal
+  - name: Resident Portal UI Configuration
+    description: Provides resident portal UI configuration
+paths:
+  /residents/properties/{propertyId}/units:
+    get:
+      tags:
+        - Resident Portal Unit API
+      summary: Gets Unit Details
+      description: Gets unit details for the authenticated unit.
+      operationId: residentFetchUnit
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelUnitDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    put:
+      tags:
+        - Resident Portal Unit API
+      summary: Selectively Updates Unit Configurations
+      description: >-
+        Allows the user to selectively update unit configurations such as
+        passphrase, contact details.
+      operationId: residentEditUnit
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: Unit to edit
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitDto'
+        required: true
+      responses:
+        '200':
+          description: Unit configuration updated
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelUnitDto'
+        '202':
+          description: Accepted
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelUnitDto'
+        '400':
+          description: Missing or invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Unit configuration not found for the given unit id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/users/{userId}:
+    get:
+      tags:
+        - Resident Portal Unit Users API
+      summary: Get Unit User Details for Specific User
+      description: Gets unit user details for the requested user.
+      operationId: getUnitUser
+      parameters:
+        - name: userId
+          in: path
+          description: User Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: propertyId
+          in: path
+          description: Property Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelUnitUserDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelUnitUserDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    put:
+      tags:
+        - Resident Portal Unit Users API
+      summary: Updates Unit User
+      description: Enables update of unit user.
+      operationId: updateUnitUser
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          description: User Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitUserDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UnitUserDto'
+        required: true
+      responses:
+        '200':
+          description: ok
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/MultiRequestResponse'
+        '202':
+          description: Accepted
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/MultiRequestResponse'
+        '400':
+          description: Bad request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/users/query:
+    post:
+      tags:
+        - Resident Portal Unit Users API
+      summary: Query Unit Users
+      description: Gets the list of unit users using the specified query.
+      operationId: queryUnitUsers
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: Search criteria and pagination details
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitUsersQueryCriteria'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UnitUsersQueryCriteria'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageEntityModelUnitUserDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageEntityModelUnitUserDto'
+        '400':
+          description: Invalid query data supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/logins:
+    post:
+      tags:
+        - Resident Portal Login API
+      summary: Access Resident Portal
+      description: Enables user authentication and authorization.
+      operationId: residentLogin
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: HashedSecret
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginResource'
+        required: true
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/PortalTokenResource'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}:
+    get:
+      tags:
+        - Resident Portal Configuration
+      summary: Gets Property Details
+      description: Gets details of the property.
+      operationId: residentFetchProperty
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelPropertyDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Property requested is not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/users/{userId}/devices:
+    get:
+      tags:
+        - Resident Portal Unit Users API
+      summary: Get Unit User Devices for Specific User
+      description: Gets unit user devices for the requested user.
+      operationId: getUnitUserDevices
+      parameters:
+        - name: userId
+          in: path
+          description: User Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: propertyId
+          in: path
+          description: Property Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelDevicesListResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelDevicesListResource'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/devices:
+    get:
+      tags:
+        - Resident Portal Unit API
+      summary: Gets Unit Devices
+      description: >-
+        Allows the user to get all unit and guest devices with the given unit
+        id.
+      operationId: residentFetchUnitDevices
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          description: Type of device.UNIT and GUEST are the possible values
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelDevicesListResource'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/uiConfigurations:
+    get:
+      tags:
+        - Resident Portal Configuration
+      summary: Gets User Interface Configurations
+      description: Gets user interface configurations for the portal.
+      operationId: residentFetchUiConfiguration
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/hal+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelPortalUiConfiguration'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/styles:
+    get:
+      tags:
+        - Resident Portal UI Configuration
+      summary: Gets Resident Portal Styles
+      description: Gets resident portal page details.
+      operationId: getPropertyStyles
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            text/css:
+              schema:
+                type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/files/{type}:
+    get:
+      tags:
+        - Resident Portal Configuration
+      summary: Gets Resident Portal File
+      description: Allows the user to download resident portal file with the given type.
+      operationId: residentDownloadPortalFile
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: path
+          description: Resident Portal file type.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            image/png:
+              schema:
+                type: array
+                items:
+                  type: string
+                  format: byte
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/files/favicons:
+    get:
+      tags:
+        - Resident Portal UI Configuration
+      summary: Gets Resident Portal Icon File
+      description: Enables the user to get a resident portal icon file for the property.
+      operationId: downloadFavicons
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            image/png:
+              schema:
+                type: array
+                items:
+                  type: string
+                  format: byte
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/access:
+    get:
+      tags:
+        - Resident Portal UI Configuration
+      summary: Gets Portal Access Details
+      description: Fetches resident portal access details.
+      operationId: getTenantPortalAccess
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResidentPortalAccessDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/users/{userId}/devices/{deviceId}:
+    delete:
+      tags:
+        - Resident Portal Unit Users API
+      summary: Delete Unit User Device
+      description: Allows the user to selectively remove a device.
+      operationId: removeUnitUserDevice
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: deviceId
+          in: path
+          description: Device Identification
+          required: true
+          schema:
+            type: string
+        - name: userId
+          in: path
+          description: User Id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Device removed
+        '400':
+          description: Missing or invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Device not found for the given unit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /residents/properties/{propertyId}/units/devices/{deviceId}:
+    delete:
+      tags:
+        - Resident Portal Unit API
+      summary: Delete Device
+      description: >-
+        Allows the user to selectively remove unit device on the specified unit
+        and device MAC address.
+      operationId: residentRemoveDevice
+      parameters:
+        - name: propertyId
+          in: path
+          description: Property identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: deviceId
+          in: path
+          description: Device Identification
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unit device removed
+        '400':
+          description: Missing or invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Unit device not found for the given unit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+components:
+  schemas:
+    UnitContactDto:
+      required:
+        - contactName
+      type: object
+      properties:
+        contactName:
+          type: string
+        email:
+          maxLength: 255
+          minLength: 0
+          type: string
+        phoneNumber:
+          maxLength: 16
+          minLength: 0
+          type: string
+      description: Resident contact details.
+    UnitDto:
+      required:
+        - number
+      type: object
+      properties:
+        guid:
+          type: string
+          description: Unit identifier.
+        number:
+          type: string
+          description: Unit name.
+        description:
+          type: string
+        contact:
+          $ref: '#/components/schemas/UnitContactDto'
+        status:
+          type: string
+          description: Unit status.
+          enum:
+            - DISABLED
+            - ENABLED
+        secret:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: Unit owner passphrase.
+        guestSecret:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: Unit guest passphrase.
+      description: Unit Details.
+    ErrorResource:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        detailedMessage:
+          type: string
+        validationErrors:
+          type: array
+          items:
+            type: string
+    EntityModelUnitDto:
+      required:
+        - number
+      type: object
+      properties:
+        guid:
+          type: string
+          description: Unit identifier.
+        number:
+          type: string
+          description: Unit name.
+        description:
+          type: string
+        contact:
+          $ref: '#/components/schemas/UnitContactDto'
+        status:
+          type: string
+          description: Unit status.
+          enum:
+            - DISABLED
+            - ENABLED
+        secret:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: Unit owner passphrase.
+        guestSecret:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: Unit guest passphrase.
+        _links:
+          $ref: '#/components/schemas/Links'
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    UnitUserDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unit user identifier.
+          format: uuid
+        userName:
+          type: string
+          description: Unit user name.
+        email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Unit user email.
+        phoneNumber:
+          maxLength: 16
+          minLength: 0
+          type: string
+          description: Unit user phone number.
+        passphrase:
+          type: string
+          description: >-
+            Unit user passphrase. For resetting passphrase please provide empty
+            string in request.
+        status:
+          type: string
+          description: Unit user status.
+          enum:
+            - BLOCKED
+            - ACTIVE
+        type:
+          type: string
+          description: Unit user type.
+          enum:
+            - UNIT
+            - GUEST
+            - LINKED
+      description: Unit User Details.
+    MultiRequestResponse:
+      type: object
+      properties:
+        personaUpdateId:
+          type: string
+        dpskUpdateId:
+          type: string
+    UnitUsersQueryCriteria:
+      type: object
+      properties:
+        sortDirection:
+          type: string
+          description: Sort direction.
+          enum:
+            - ASC
+            - DESC
+        page:
+          type: integer
+          description: Page number. If not specified the first page will be returned.
+          format: int32
+        pageSize:
+          type: integer
+          description: >-
+            Number of records in a page.If not specified default page size of 20
+            will be applied.
+          format: int32
+        userId:
+          type: string
+          description: Unit user identifier.
+          format: uuid
+        sortFields:
+          type: array
+          description: Sort by
+          items:
+            type: string
+            description: Sort by
+            enum:
+              - userId
+          enum:
+            - userId
+    EntityModelUnitUserDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Unit user identifier.
+          format: uuid
+        userName:
+          type: string
+          description: Unit user name.
+        email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Unit user email.
+        phoneNumber:
+          maxLength: 16
+          minLength: 0
+          type: string
+          description: Unit user phone number.
+        passphrase:
+          type: string
+          description: >-
+            Unit user passphrase. For resetting passphrase please provide empty
+            string in request.
+        status:
+          type: string
+          description: Unit user status.
+          enum:
+            - BLOCKED
+            - ACTIVE
+        type:
+          type: string
+          description: Unit user type.
+          enum:
+            - UNIT
+            - GUEST
+            - LINKED
+        _links:
+          $ref: '#/components/schemas/Links'
+    PageEntityModelUnitUserDto:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        first:
+          type: boolean
+        last:
+          type: boolean
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityModelUnitUserDto'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        paged:
+          type: boolean
+        unpaged:
+          type: boolean
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean
+    LoginResource:
+      type: object
+      properties:
+        hashedSecret:
+          type: string
+          description: Hash secret for login.
+    PortalTokenResource:
+      required:
+        - unitGuid
+      type: object
+      properties:
+        unitGuid:
+          type: string
+          description: Unit identifier.
+        token:
+          type: string
+          description: Unit token.
+        serverVersion:
+          type: string
+          description: Server version.
+        expireDateTime:
+          type: string
+          description: Token expiration date.
+          format: date-time
+    EntityModelPropertyDto:
+      type: object
+      properties:
+        guid:
+          type: string
+          description: Property identifier.
+        name:
+          type: string
+          description: Property name.
+        address:
+          type: string
+          description: Property address.
+        description:
+          type: string
+          description: Description of property.
+        managementName:
+          type: string
+          description: Property management name.
+        managementPhone:
+          type: string
+          description: Property management phone.
+        managementEmail:
+          type: string
+          description: Property management email.
+        tenantPortalHelpText:
+          type: string
+          description: Help text defined for the property.
+        tenantPortalAnnouncements:
+          type: string
+          description: Announcement defined for the property.
+        allowSeparateGuestSecret:
+          type: boolean
+          description: Allow separate secret for guest users.
+        enforceMaxUnits:
+          type: boolean
+          description: Restrict number of units.
+        maxUnits:
+          type: integer
+          description: Maximum units allowed.
+          format: int64
+        sendEmail:
+          type: boolean
+          description: Send email notification.
+        sendSms:
+          type: boolean
+          description: Send SMS notification.
+        ssids:
+          type: array
+          description: List of networks.
+          items:
+            type: string
+            description: List of networks.
+        _links:
+          $ref: '#/components/schemas/Links'
+    EntityModelDevicesListResource:
+      type: object
+      properties:
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnitDeviceDto'
+        _links:
+          $ref: '#/components/schemas/Links'
+    UnitDeviceDto:
+      type: object
+      properties:
+        guid:
+          type: string
+          description: Device identifier.
+        type:
+          type: string
+          description: Type of device.
+        macAddress:
+          type: string
+          description: Device MAC address
+        lastConnectedDate:
+          type: string
+          format: date-time
+        authType:
+          type: string
+          description: Device authentication type
+          enum:
+            - DPSK
+            - MACREG
+    EntityModelPortalUiConfiguration:
+      type: object
+      properties:
+        apiAllowed:
+          type: boolean
+          description: Allow access to resident portal interfaces.
+        tenantSetDpsk:
+          type: boolean
+          description: Allow resident to set secrets.
+        logoFileName:
+          type: string
+          description: Name of logo file.
+        tenantTitle:
+          type: string
+          description: Title displayed on resident portal.
+        tenantSubtitle:
+          type: string
+          description: Sub-title displayed on resident portal.
+        announcements:
+          type: string
+          description: Announcements displayed on resident portal.
+        helpText:
+          type: string
+          description: Help text displayed on resident portal.
+        portalAllowed:
+          type: boolean
+          description: Allow resident portal for the unit.
+        mainColor:
+          type: string
+          description: Main color of resident portal.
+        accentColor:
+          type: string
+          description: Accent color of resident portal.
+        separatorColor:
+          type: string
+          description: Separator color of resident portal.
+        textColor:
+          type: string
+          description: Text color of resident portal.
+        iconFileName:
+          type: string
+          description: Icon file name.
+        loginText:
+          type: string
+          description: Login text displayed on resident portal.
+        _links:
+          $ref: '#/components/schemas/Links'
+    ResidentPortalAccessDto:
+      type: object
+      properties:
+        loginText:
+          type: string
+        portalAllowed:
+          type: boolean
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean

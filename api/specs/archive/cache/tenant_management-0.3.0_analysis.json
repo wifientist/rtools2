@@ -1,0 +1,321 @@
+{
+  "name": "Tenant Management",
+  "version": "0.3.0",
+  "url": "https://docs.ruckus.cloud/_bundle/api/ptenant-0.3.0.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.710056",
+  "endpoint_count": 31,
+  "base_url": "https://api.ruckus.cloud",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/tenants/userProfiles",
+      "method": "GET",
+      "summary": "Get User Profile",
+      "description": "Get user profile.",
+      "operation_id": "getUserProfile",
+      "tags": [
+        "User Profile"
+      ]
+    },
+    {
+      "path": "/tenants/userProfiles",
+      "method": "PUT",
+      "summary": "Update User Profile",
+      "description": "Update user profile.",
+      "operation_id": "updateUser",
+      "tags": [
+        "User Profile"
+      ]
+    },
+    {
+      "path": "/tenants/self",
+      "method": "GET",
+      "summary": "Get Tenant",
+      "description": "Get tenant by identifier.",
+      "operation_id": "get",
+      "tags": [
+        "Tenant"
+      ]
+    },
+    {
+      "path": "/tenants/self",
+      "method": "PUT",
+      "summary": "Update a Tenant",
+      "description": "Update tenant information are tenant name, tenant type,external id by passing the alto tenant id. ",
+      "operation_id": "updateTenant",
+      "tags": [
+        "Tenant"
+      ]
+    },
+    {
+      "path": "/tenants/delegations/{delegationId}",
+      "method": "GET",
+      "summary": "Get Delegation",
+      "description": "Get delegation by ID.",
+      "operation_id": "getDelegation",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/delegations/{delegationId}",
+      "method": "PUT",
+      "summary": "Respond to Delegation",
+      "description": "A VAR uses this endpoint to respond to a delegation invitation; the response is either accept or reject.",
+      "operation_id": "acceptOrRejectDelegation",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/delegations/{delegationId}",
+      "method": "DELETE",
+      "summary": "Revoke VAR Delegation",
+      "description": "Revoke VAR delegation by ID.",
+      "operation_id": "deleteDelegation",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/betaFeatures",
+      "method": "GET",
+      "summary": "Get Beta Feature Identifiers",
+      "description": "Get list of beta features.",
+      "operation_id": "getFeatureIds",
+      "tags": [
+        "Tenant"
+      ]
+    },
+    {
+      "path": "/tenants/betaFeatures",
+      "method": "PUT",
+      "summary": "Update Beta Feature Identifiers",
+      "description": "Update beta feature identifiers.",
+      "operation_id": "updateFeatureIds",
+      "tags": [
+        "Tenant"
+      ]
+    },
+    {
+      "path": "/admins",
+      "method": "GET",
+      "summary": "Get Administrator",
+      "description": "Get list of administrators.",
+      "operation_id": "getAdminList",
+      "tags": [
+        "Administrator"
+      ]
+    },
+    {
+      "path": "/admins",
+      "method": "PUT",
+      "summary": "Update Administrator",
+      "description": "Update administrator.",
+      "operation_id": "updateAdminRole",
+      "tags": [
+        "Administrator"
+      ]
+    },
+    {
+      "path": "/admins",
+      "method": "POST",
+      "summary": "Add Administrator",
+      "description": "Add administrator.",
+      "operation_id": "addAdmin",
+      "tags": [
+        "Administrator"
+      ]
+    },
+    {
+      "path": "/admins",
+      "method": "DELETE",
+      "summary": "Delete Administrators",
+      "description": "Delete administrators in bulk.",
+      "operation_id": "deleteBulkAdmin",
+      "tags": [
+        "Administrator"
+      ]
+    },
+    {
+      "path": "/tenants/supportDelegations",
+      "method": "POST",
+      "summary": "Grant Access",
+      "description": "Grant Ruckus customer support access to my account.",
+      "operation_id": "inviteSupport",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/supportDelegations",
+      "method": "DELETE",
+      "summary": "Revoke Access",
+      "description": "Revoke Ruckus customer support's access to my account.",
+      "operation_id": "deleteSupportDelegation",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/privacySettings",
+      "method": "GET",
+      "summary": "Get Configured Privacy Settings",
+      "description": "Get configured privacy settings.",
+      "operation_id": "getPrivacySettings",
+      "tags": [
+        "Privacy Features"
+      ]
+    },
+    {
+      "path": "/tenants/privacySettings",
+      "method": "POST",
+      "summary": "Clear and Save Privacy Settings",
+      "description": "Clear and save privacy settings.",
+      "operation_id": "postPrivacySettings",
+      "tags": [
+        "Privacy Features"
+      ]
+    },
+    {
+      "path": "/tenants/privacySettings",
+      "method": "PATCH",
+      "summary": "Add or Update Privacy Settings",
+      "description": "Configure, add, or update tenant-specific privacy settings such as arc, visibility controls, and related features.",
+      "operation_id": "patchPrivacySettings",
+      "tags": [
+        "Privacy Features"
+      ]
+    },
+    {
+      "path": "/tenants/notifications/recipients/query",
+      "method": "POST",
+      "summary": "Query Notification Recipients",
+      "description": "Query notification recipient list.",
+      "operation_id": "queryNotificationRecipients",
+      "tags": [
+        "Notification Recipient"
+      ]
+    },
+    {
+      "path": "/tenants/notificationRecipients",
+      "method": "GET",
+      "summary": "Get Notification Recipients",
+      "description": "Get notification recipient list.",
+      "operation_id": "getNotificationRecipients",
+      "tags": [
+        "Notification Recipient"
+      ]
+    },
+    {
+      "path": "/tenants/notificationRecipients",
+      "method": "POST",
+      "summary": "Add Notification Recipient",
+      "description": "Add notification recipient.",
+      "operation_id": "addNotificationRecipient",
+      "tags": [
+        "Notification Recipient"
+      ]
+    },
+    {
+      "path": "/tenants/notificationRecipients",
+      "method": "DELETE",
+      "summary": "Delete Notification Recipient",
+      "description": "Delete notification recipient list.",
+      "operation_id": "deleteNotificationRecipients",
+      "tags": [
+        "Notification Recipient"
+      ]
+    },
+    {
+      "path": "/tenants/mobilePushNotifications",
+      "method": "POST",
+      "summary": "Add Mobile Push Notification",
+      "description": "Add mobile push notification.",
+      "operation_id": "addMobilePushNotifications",
+      "tags": [
+        "acx-mobile-push-notification-endpoint-controller"
+      ]
+    },
+    {
+      "path": "/tenants/delegations",
+      "method": "GET",
+      "summary": "Get Delegations",
+      "description": "Get delegation list.",
+      "operation_id": "getDelegations",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/delegations",
+      "method": "POST",
+      "summary": "Invite VAR",
+      "description": "Send invitation to VAR (aka delegate) to manage my account.This operation is not supported using client credentials.",
+      "operation_id": "inviteVAR",
+      "tags": [
+        "Delegation"
+      ]
+    },
+    {
+      "path": "/tenants/authentications",
+      "method": "GET",
+      "summary": "Get Authentications",
+      "description": "Get all authentications.",
+      "operation_id": "getAuthentications",
+      "tags": [
+        "authentication-controller"
+      ]
+    },
+    {
+      "path": "/tenants/authentications",
+      "method": "POST",
+      "summary": "Add Authentication",
+      "description": "Add authentication.",
+      "operation_id": "addAuthentication",
+      "tags": [
+        "authentication-controller"
+      ]
+    },
+    {
+      "path": "/admins/query",
+      "method": "POST",
+      "summary": "Get Administrator",
+      "description": "Get list of administrators.",
+      "operation_id": "queryAdminList",
+      "tags": [
+        "Administrator"
+      ]
+    },
+    {
+      "path": "/tenants/accounts",
+      "method": "GET",
+      "summary": "Get Account",
+      "description": "Get account details.",
+      "operation_id": "getAccountDetails",
+      "tags": [
+        "User Profile"
+      ]
+    },
+    {
+      "path": "/admins/{adminId}",
+      "method": "GET",
+      "summary": "Get Administrator",
+      "description": "Get administrator by identifier.",
+      "operation_id": "getAdminById",
+      "tags": [
+        "Administrator"
+      ]
+    },
+    {
+      "path": "/admins/{adminId}",
+      "method": "DELETE",
+      "summary": "Delete Administrator",
+      "description": "Delete administrator by identifier.",
+      "operation_id": "deleteAdmin",
+      "tags": [
+        "Administrator"
+      ]
+    }
+  ]
+}

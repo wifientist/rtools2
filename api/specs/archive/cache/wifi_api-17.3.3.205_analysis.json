@@ -1,0 +1,4331 @@
+{
+  "name": "WiFi API",
+  "version": "17.3.3.205",
+  "url": "https://docs.ruckus.cloud/_bundle/api/wifi-17.3.3.205.yaml",
+  "downloaded_at": "2025-12-02T18:45:31.475544",
+  "endpoint_count": 432,
+  "base_url": "https://api.asia.ruckus.cloud",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/accessControlProfiles",
+      "method": "POST",
+      "summary": "Add Access Control Profile",
+      "description": "Add an access control profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/9/1.",
+      "operation_id": "addAccessControlProfile",
+      "tags": [
+        "Access Control Profile"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Access Control Profile",
+      "description": "Delete the specified access control profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/9/1.",
+      "operation_id": "deleteAccessControlProfile",
+      "tags": [
+        "Access Control Profile"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}",
+      "method": "GET",
+      "summary": "Get Access Control Profile",
+      "description": "Get an access control profile by profile identity. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/9/1.",
+      "operation_id": "getAccessControlProfile",
+      "tags": [
+        "Access Control Profile"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}",
+      "method": "PUT",
+      "summary": "Update Access Control Profile",
+      "description": "Update the specified access control profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/9/1.",
+      "operation_id": "updateAccessControlProfile",
+      "tags": [
+        "Access Control Profile"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/applicationPolicies/{applicationPolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Application Policy On Access Control Profile",
+      "description": "Use this API command to deactivate an application policy on an access control profile.",
+      "operation_id": "deactivateApplicationPolicyOnAccessControlProfile",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/applicationPolicies/{applicationPolicyId}",
+      "method": "PUT",
+      "summary": "Activate Application Policy On Access Control Profile",
+      "description": "Use this API command to activate an application policy on an access control profile.",
+      "operation_id": "activateApplicationPolicyOnAccessControlProfile",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/devicePolicies/{devicePolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Device Policy On Access Control Profile",
+      "description": "Use this API command to delete a relationship between device policy and access control profile.",
+      "operation_id": "deactivateDevicePolicyOnAccessControlProfile",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/devicePolicies/{devicePolicyId}",
+      "method": "PUT",
+      "summary": "Activate Device Policy On Access Control Profile",
+      "description": "Use this API command to build a relationship between device policy and access control profile.",
+      "operation_id": "activateDevicePolicyOnAccessControlProfile",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/l2AclPolicies/{l2AclPolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Layer-2 ACL Policy On Access Control Profile",
+      "description": "Deactivate layer-2 ACL policy on access control profile.",
+      "operation_id": "deactivateL2AclPolicyOnAccessControlProfile",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/l2AclPolicies/{l2AclPolicyId}",
+      "method": "PUT",
+      "summary": "Activate Layer-2 ACL Policy On Access Control Profile",
+      "description": "Activate layer-2 ACL policy on access control profile.",
+      "operation_id": "activateL2AclPolicyOnAccessControlProfile",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/l3AclPolicies/{l3AclPolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Layer-3 ACL Policy On Access Control Profile",
+      "description": "Deactivate layer-3 ACL policy on access control profile.",
+      "operation_id": "deactivateL3AclPolicyOnAccessControlProfile",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/{accessControlProfileId}/l3AclPolicies/{l3AclPolicyId}",
+      "method": "PUT",
+      "summary": "Activate Layer-3 ACL Policy On Access Control Profile",
+      "description": "Activate layer-3 ACL policy on access control profile.",
+      "operation_id": "activateL3AclPolicyOnAccessControlProfile",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/applicationLibraries/{applicationLibraryId}/categories",
+      "method": "GET",
+      "summary": "Get Application Library Categories",
+      "description": null,
+      "operation_id": "getApplicationLibraryCategories",
+      "tags": [
+        "Application Library"
+      ]
+    },
+    {
+      "path": "/applicationLibraries/{applicationLibraryId}/categories/{categoryId}/applications",
+      "method": "GET",
+      "summary": "Get Application Library Applications",
+      "description": null,
+      "operation_id": "getApplicationLibraryApplications",
+      "tags": [
+        "Application Library"
+      ]
+    },
+    {
+      "path": "/applicationLibrarySettings",
+      "method": "GET",
+      "summary": "Get Application Library Settings",
+      "description": "Use this API to get the current application library settings.",
+      "operation_id": "getApplicationLibrarySettingsCsv",
+      "tags": [
+        "Application Library"
+      ]
+    },
+    {
+      "path": "/applicationLibrarySettings",
+      "method": "PATCH",
+      "summary": "Patch Application Library Settings",
+      "description": "Patch application library settings.",
+      "operation_id": "patchApplicationLibrarySettings",
+      "tags": [
+        "Application Library"
+      ]
+    },
+    {
+      "path": "/applicationPolicies",
+      "method": "POST",
+      "summary": "Add Application Policy",
+      "description": "Use this API command to create a new application policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "addApplicationPolicy",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/applicationPolicies/{applicationPolicyId}",
+      "method": "DELETE",
+      "summary": "Delete Application Policy",
+      "description": "Use this API command to delete application policy.",
+      "operation_id": "deleteApplicationPolicy",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/applicationPolicies/{applicationPolicyId}",
+      "method": "GET",
+      "summary": "Get Application Policy",
+      "description": "Use this API command to get the application policy details. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "getApplicationPolicy",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/applicationPolicies/{applicationPolicyId}",
+      "method": "PUT",
+      "summary": "Update Application Policy",
+      "description": "Use this API command to update application policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateApplicationPolicy",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/clientIsolationProfiles",
+      "method": "POST",
+      "summary": "Create Client Isolation Profile",
+      "description": "Create a new client isolation profile.",
+      "operation_id": "createClientIsolationProfile",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Client Isolation Profile",
+      "description": "Delete this client isolation profile.",
+      "operation_id": "deleteClientIsolationProfile",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "GET",
+      "summary": "Get Client Isolation Profile",
+      "description": "Get the details for this client isolation profile.",
+      "operation_id": "getClientIsolationProfile",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "PUT",
+      "summary": "Update Client Isolation Profile",
+      "description": "Update this client isolation profile.",
+      "operation_id": "updateClientIsolationProfile",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/devicePolicies",
+      "method": "POST",
+      "summary": "Create Device-Policy",
+      "description": "Create a new device-policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "addDevicePolicy",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/devicePolicies/{devicePolicyId}",
+      "method": "DELETE",
+      "summary": "Delete Device-Policy",
+      "description": "Delete a device-policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteDevicePolicy",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/devicePolicies/{devicePolicyId}",
+      "method": "GET",
+      "summary": "Get Device-Policy",
+      "description": "Get the device-policy details.",
+      "operation_id": "getDevicePolicy",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/devicePolicies/{devicePolicyId}",
+      "method": "PUT",
+      "summary": "Update Device-Policy",
+      "description": "Update a device-policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateDevicePolicy",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/dhcpConfigServiceProfiles",
+      "method": "POST",
+      "summary": "Create DHCP Configuration Service Profile",
+      "description": "Create a new DHCP configuration service profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "createDhcpConfigServiceProfile",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Delete DHCP Configuration Service Profile",
+      "description": "Delete a DHCP configuration service profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteDhcpConfigServiceProfile",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "GET",
+      "summary": "Get DHCP Configuration Service Profile",
+      "description": "Get the DHCP configuration service profile details. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "getDhcpConfigServiceProfile",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update DHCP Configuration Service Profile",
+      "description": "Update a DHCP configuration service profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateDhcpConfigServiceProfile",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles",
+      "method": "POST",
+      "summary": "Create Ethernet Port Profile",
+      "description": "Create a new ethernet port profile.",
+      "operation_id": "createEthernetPortProfile",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Ethernet Port Profile",
+      "description": "Delete an ethernet port profile.",
+      "operation_id": "deleteEthernetPortProfile",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "GET",
+      "summary": "Get Ethernet Port Profile",
+      "description": "Get the ethernet port profile details.",
+      "operation_id": "getEthernetPortProfile",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "PUT",
+      "summary": "Update Ethernet Port Profile",
+      "description": "Update an ethernet port profile.",
+      "operation_id": "updateEthernetPortProfile",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles/{ethernetPortProfileId}/radiusServerProfiles/{radiusServerProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate RADIUS Server Profile On Ethernet Port Profile",
+      "description": "Deactivate RADIUS server profile on ethernet port profile for 802.1X authentication. Should be called after creating a 802.1X ethernet port profile.",
+      "operation_id": "deactivateRadiusToEthernetPortProfile",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles/{ethernetPortProfileId}/radiusServerProfiles/{radiusServerProfileId}",
+      "method": "PUT",
+      "summary": "Activate RADIUS Server Profile On Ethernet Port Profile",
+      "description": "Activate RADIUS server profile on ethernet port profile for 802.1X authentication. Should be called after creating a 802.1X ethernet port profile.",
+      "operation_id": "activateRadiusToEthernetPortProfile",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders",
+      "method": "POST",
+      "summary": "Add Hotspot 2.0 Identity Provider",
+      "description": "Add a Hotspot 2.0 identity provider.",
+      "operation_id": "addHotspot20IdentityProvider",
+      "tags": [
+        "Hotspot 2.0 Identity Provider"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders/{hotspot20IdentityProviderId}",
+      "method": "DELETE",
+      "summary": "Delete Hotspot 2.0 Identity Provider",
+      "description": "Delete a Hotspot 2.0 identity provider.",
+      "operation_id": "deleteHotspot20IdentityProvider",
+      "tags": [
+        "Hotspot 2.0 Identity Provider"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders/{hotspot20IdentityProviderId}",
+      "method": "GET",
+      "summary": "Get Hotspot 2.0 Identity Provider",
+      "description": "Get a Hotspot 2.0 identity provider.",
+      "operation_id": "getHotspot20IdentityProvider",
+      "tags": [
+        "Hotspot 2.0 Identity Provider"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders/{hotspot20IdentityProviderId}",
+      "method": "PUT",
+      "summary": "Update Hotspot 2.0 Identity Provider",
+      "description": "Update a Hotspot 2.0 identity provider.",
+      "operation_id": "updateHotspot20IdentityProvider",
+      "tags": [
+        "Hotspot 2.0 Identity Provider"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders/{hotspot20IdentityProviderId}/radiusServerProfiles/{radiusId}",
+      "method": "DELETE",
+      "summary": "Deactivate RADIUS Server Profile On Hotspot 2.0 Identity Provider",
+      "description": "Use this API command to delete a relationship between RADIUS server profile and Hotspot 2.0 identity provider.",
+      "operation_id": "deactivateRadiusServerProfileOnHotspot20IdentityProvider",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders/{hotspot20IdentityProviderId}/radiusServerProfiles/{radiusId}",
+      "method": "PUT",
+      "summary": "Activate RADIUS Server Profile On Hotspot 2.0 Identity Provider",
+      "description": "Use this API command to build a relationship between RADIUS server profile and Hotspot 2.0 identity provider.",
+      "operation_id": "activateRadiusServerProfileOnHotspot20IdentityProvider",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/hotspot20Operators",
+      "method": "POST",
+      "summary": "Create Hotspot 2.0 Operator",
+      "description": "Create a new Hotspot 2.0 operator.",
+      "operation_id": "createHotspot20Operator",
+      "tags": [
+        "Hotspot 2.0 Operator"
+      ]
+    },
+    {
+      "path": "/hotspot20Operators/{hotspot20OperatorId}",
+      "method": "DELETE",
+      "summary": "Delete Hotspot 2.0 Operator",
+      "description": "Delete a Hotspot 2.0 operator.",
+      "operation_id": "deleteHotspot20Operator",
+      "tags": [
+        "Hotspot 2.0 Operator"
+      ]
+    },
+    {
+      "path": "/hotspot20Operators/{hotspot20OperatorId}",
+      "method": "GET",
+      "summary": "Get Hotspot 2.0 Operator",
+      "description": "Get the Hotspot 2.0 operator details.",
+      "operation_id": "getHotspot20Operator",
+      "tags": [
+        "Hotspot 2.0 Operator"
+      ]
+    },
+    {
+      "path": "/hotspot20Operators/{hotspot20OperatorId}",
+      "method": "PUT",
+      "summary": "Update Hotspot 2.0 Operator",
+      "description": "Update a Hotspot 2.0 operator.",
+      "operation_id": "updateHotspot20Operator",
+      "tags": [
+        "Hotspot 2.0 Operator"
+      ]
+    },
+    {
+      "path": "/l2AclPolicies",
+      "method": "POST",
+      "summary": "Add Layer-2 ACL",
+      "description": "Add layer-2 ACL by policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "addL2AclPolicy",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/l2AclPolicies/{l2AclPolicyId}",
+      "method": "DELETE",
+      "summary": "Delete Layer-2 ACL",
+      "description": "Delete layer-2 ACL by policy id. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteL2AclPolicy",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/l2AclPolicies/{l2AclPolicyId}",
+      "method": "GET",
+      "summary": "Get Layer-2 ACL",
+      "description": "Get layer-2 ACL by policy id.",
+      "operation_id": "getL2AclPolicy",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/l2AclPolicies/{l2AclPolicyId}",
+      "method": "PUT",
+      "summary": "Update Layer-2 ACL",
+      "description": "Update layer-2 ACL by policy id. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateL2AclPolicy",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/l3AclPolicies",
+      "method": "POST",
+      "summary": "Add Layer-3 ACL",
+      "description": "Add layer-3 ACL by policy. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "addL3AclPolicy",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/l3AclPolicies/{l3AclPolicyId}",
+      "method": "DELETE",
+      "summary": "Delete Layer-3 ACL",
+      "description": "Delete layer-3 ACL by policy id. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteL3AclPolicy",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/l3AclPolicies/{l3AclPolicyId}",
+      "method": "GET",
+      "summary": "Get Layer-3 ACL",
+      "description": "Get layer-3 ACL by policy id.",
+      "operation_id": "getL3AclPolicy",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/l3AclPolicies/{l3AclPolicyId}",
+      "method": "PUT",
+      "summary": "Update Layer-3 ACL",
+      "description": "Update layer-3 ACL by policy id. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateL3AclPolicy",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/lbsServerProfiles",
+      "method": "POST",
+      "summary": "Create Location Based Service Server Profile",
+      "description": "Create a new location based service server profile.",
+      "operation_id": "createLbsServerProfile",
+      "tags": [
+        "LBS Server Profile"
+      ]
+    },
+    {
+      "path": "/lbsServerProfiles/{lbsServerProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Location Based Service Server Profile",
+      "description": "Delete a location based service server profile.",
+      "operation_id": "deleteLbsServerProfile",
+      "tags": [
+        "LBS Server Profile"
+      ]
+    },
+    {
+      "path": "/lbsServerProfiles/{lbsServerProfileId}",
+      "method": "GET",
+      "summary": "Get Location Based Service Server Profile",
+      "description": "Get the location based service server profile details.",
+      "operation_id": "getLbsServerProfile",
+      "tags": [
+        "LBS Server Profile"
+      ]
+    },
+    {
+      "path": "/lbsServerProfiles/{lbsServerProfileId}",
+      "method": "PUT",
+      "summary": "Update Location Based Service Server Profile",
+      "description": "Update a location based service server profile.",
+      "operation_id": "updateLbsServerProfile",
+      "tags": [
+        "LBS Server Profile"
+      ]
+    },
+    {
+      "path": "/multicastDnsProxyProfiles",
+      "method": "POST",
+      "summary": "Create Multicast DNS Proxy Service Profile",
+      "description": "Create a new multicast DNS proxy service profile.",
+      "operation_id": "createMulticastDnsProxyProfile",
+      "tags": [
+        "MDNS Proxy Service Profile"
+      ]
+    },
+    {
+      "path": "/multicastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Multicast DNS Proxy Service Profile",
+      "description": "Delete a multicast DNS proxy service profile.",
+      "operation_id": "deleteMulticastDnsProxyProfile",
+      "tags": [
+        "MDNS Proxy Service Profile"
+      ]
+    },
+    {
+      "path": "/multicastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "GET",
+      "summary": "Get Multicast DNS Proxy Service Profile",
+      "description": "Get the multicast DNS proxy service profile details.",
+      "operation_id": "getMulticastDnsProxyProfile",
+      "tags": [
+        "MDNS Proxy Service Profile"
+      ]
+    },
+    {
+      "path": "/multicastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "PUT",
+      "summary": "Update Multicast DNS Proxy Service Profile",
+      "description": "Update a multicast DNS proxy service profile.",
+      "operation_id": "updateMulticastDnsProxyProfile",
+      "tags": [
+        "MDNS Proxy Service Profile"
+      ]
+    },
+    {
+      "path": "/radiusServerProfiles",
+      "method": "POST",
+      "summary": "Add RADIUS Profile",
+      "description": "Add a RADIUS profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "addRadius",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/radiusServerProfiles/{radiusId}",
+      "method": "DELETE",
+      "summary": "Delete RADIUS Profile",
+      "description": "Delete a specific RADIUS profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteRadius",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/radiusServerProfiles/{radiusId}",
+      "method": "GET",
+      "summary": "Get RADIUS Profile",
+      "description": "Get a specific RADIUS profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "getRadius",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/radiusServerProfiles/{radiusId}",
+      "method": "PUT",
+      "summary": "Update RADIUS Profile",
+      "description": "Update a specific RADIUS profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateRadius",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/roguePolicies",
+      "method": "POST",
+      "summary": "Create Rogue AP Detection Policy",
+      "description": "Create a rogue AP detection policy.",
+      "operation_id": "addRoguePolicy",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/roguePolicies/{roguePolicyId}",
+      "method": "DELETE",
+      "summary": "Delete Rogue AP Detection Policy",
+      "description": "Delete this rogue AP detection policy.",
+      "operation_id": "deleteRoguePolicy",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/roguePolicies/{roguePolicyId}",
+      "method": "GET",
+      "summary": "Get Rogue AP Detection Policy",
+      "description": "Get this rogue AP detection policy.",
+      "operation_id": "getRoguePolicy",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/roguePolicies/{roguePolicyId}",
+      "method": "PUT",
+      "summary": "Update Rogue AP Detection Policy",
+      "description": "Update this rogue AP detection policy.",
+      "operation_id": "updateRoguePolicy",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/snmpAgentProfiles",
+      "method": "POST",
+      "summary": "Create SNMP Agent Profile",
+      "description": "Create a new SNMP agent profile.",
+      "operation_id": "createSnmpAgentProfile",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "DELETE",
+      "summary": "Delete SNMP Agent Profile",
+      "description": "Delete a SNMP agent profile.",
+      "operation_id": "deleteSnmpAgentProfile",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "GET",
+      "summary": "Get SNMP Agent Profile",
+      "description": "Get the details for this SNMP agent profile.",
+      "operation_id": "getSnmpAgentProfile",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "PUT",
+      "summary": "Update SNMP Agent Profile",
+      "description": "Update a SNMP agent profile.",
+      "operation_id": "updateSnmpAgentProfile",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/softGreProfiles",
+      "method": "POST",
+      "summary": "Add SoftGRE Profile",
+      "description": "Add a SoftGRE profile.",
+      "operation_id": "addSoftGreProfile",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/softGreProfiles/{softGreProfileId}",
+      "method": "DELETE",
+      "summary": "Delete SoftGRE Profile",
+      "description": "Delete the specified SoftGRE profile.",
+      "operation_id": "deleteSoftGreProfile",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/softGreProfiles/{softGreProfileId}",
+      "method": "GET",
+      "summary": "Get SoftGRE Profile",
+      "description": "Get a SoftGRE profile by profile identity.",
+      "operation_id": "getSoftGreProfile",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/softGreProfiles/{softGreProfileId}",
+      "method": "PUT",
+      "summary": "Update SoftGRE Profile",
+      "description": "Update the specified SoftGRE profile.",
+      "operation_id": "updateSoftGreProfile",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/syslogServerProfiles",
+      "method": "POST",
+      "summary": "Create Syslog Server Profile",
+      "description": "Create a new syslog server profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "createSyslogServerProfile",
+      "tags": [
+        "Syslog Server Profile"
+      ]
+    },
+    {
+      "path": "/syslogServerProfiles/{syslogServerProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Syslog Server Profile",
+      "description": "Delete a syslog server profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteSyslogServerProfile",
+      "tags": [
+        "Syslog Server Profile"
+      ]
+    },
+    {
+      "path": "/syslogServerProfiles/{syslogServerProfileId}",
+      "method": "GET",
+      "summary": "Get Syslog Server Profile",
+      "description": "Get syslog server profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "getSyslogServerProfile",
+      "tags": [
+        "Syslog Server Profile"
+      ]
+    },
+    {
+      "path": "/syslogServerProfiles/{syslogServerProfileId}",
+      "method": "PUT",
+      "summary": "Update Syslog Server Profile",
+      "description": "Update a syslog server profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateSyslogServerProfile",
+      "tags": [
+        "Syslog Server Profile"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles",
+      "method": "POST",
+      "summary": "Add Access Control Profile Template",
+      "description": "Add an access control profile template.",
+      "operation_id": "addAccessControlProfileTemplate",
+      "tags": [
+        "Access Control Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Access Control Profile Template",
+      "description": "Delete the specified access control profile template.",
+      "operation_id": "deleteAccessControlProfileTemplate",
+      "tags": [
+        "Access Control Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}",
+      "method": "GET",
+      "summary": "Get Access Control Profile Template",
+      "description": "Get an access control profile by profile template identity.",
+      "operation_id": "getAccessControlProfileTemplate",
+      "tags": [
+        "Access Control Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Update Access Control Profile Template",
+      "description": "Update the specified access control profile template.",
+      "operation_id": "updateAccessControlProfileTemplate",
+      "tags": [
+        "Access Control Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/applicationPolicies/{applicationPolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Application Policy Template On Access Control Profile Template",
+      "description": "Use this API command to deactivate an application policy template on an access control profile template.",
+      "operation_id": "deactivateApplicationPolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "Application Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/applicationPolicies/{applicationPolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Application Policy Template On Access Control Profile Template",
+      "description": "Use this API command to activate an application policy template on an access control profile template.",
+      "operation_id": "activateApplicationPolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "Application Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/devicePolicies/{devicePolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Device Policy Template On Access Control Profile Template",
+      "description": "Use this API command to delete a relationship between device policy template and access control profile template.",
+      "operation_id": "deactivateDevicePolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "Device Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/devicePolicies/{devicePolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Device Policy Template On Access Control Profile Template",
+      "description": "Use this API command to build a relationship between device policy template and access control profile template.",
+      "operation_id": "activateDevicePolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "Device Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/l2AclPolicies/{l2AclPolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Layer-2 ACL Policy Template On Access Control Profile Template",
+      "description": "Deactivate layer-2 ACL policy template on access control profile template.",
+      "operation_id": "deactivateL2AclPolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/l2AclPolicies/{l2AclPolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Layer-2 ACL Policy Template On Access Control Profile Template",
+      "description": "Activate layer-2 ACL policy template on access control profile template.",
+      "operation_id": "activateL2AclPolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/l3AclPolicies/{l3AclPolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Layer-3 ACL Policy Template On Access Control Profile Template",
+      "description": "Deactivate layer-3 ACL policy template on access control profile template.",
+      "operation_id": "deactivateL3AclPolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "L3ACL Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/{accessControlProfileTemplateId}/l3AclPolicies/{l3AclPolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Layer-3 ACL Policy Template On Access Control Profile Template",
+      "description": "Activate layer-3 ACL policy template on access control profile template.",
+      "operation_id": "activateL3AclPolicyTemplateOnAccessControlProfile",
+      "tags": [
+        "L3ACL Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/applicationPolicies",
+      "method": "POST",
+      "summary": "Add Application Policy Template",
+      "description": "Use this API command to create a new application policy template.",
+      "operation_id": "addApplicationPolicyTemplate",
+      "tags": [
+        "Application Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/applicationPolicies/{applicationPolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Application Policy Template",
+      "description": "Use this API command to delete application policy template.",
+      "operation_id": "deleteApplicationPolicyTemplate",
+      "tags": [
+        "Application Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/applicationPolicies/{applicationPolicyTemplateId}",
+      "method": "GET",
+      "summary": "Get Application Policy Template",
+      "description": "Use this API command to get the application policy template details.",
+      "operation_id": "getApplicationPolicyTemplate",
+      "tags": [
+        "Application Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/applicationPolicies/{applicationPolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Update Application Policy Template",
+      "description": "Use this API command to update application policy template.",
+      "operation_id": "updateApplicationPolicyTemplate",
+      "tags": [
+        "Application Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/devicePolicies",
+      "method": "POST",
+      "summary": "Create Device-Policy Template",
+      "description": "Create a new device-policy template.",
+      "operation_id": "addDevicePolicyTemplate",
+      "tags": [
+        "Device Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/devicePolicies/{devicePolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Device-Policy Template",
+      "description": "Delete a device-policy template.",
+      "operation_id": "deleteDevicePolicyTemplate",
+      "tags": [
+        "Device Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/devicePolicies/{devicePolicyTemplateId}",
+      "method": "GET",
+      "summary": "Get Device-Policy Template",
+      "description": "Get the device-policy template details.",
+      "operation_id": "getDevicePolicyTemplate",
+      "tags": [
+        "Device Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/devicePolicies/{devicePolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Update Device-Policy Template",
+      "description": "Update a device-policy template.",
+      "operation_id": "updateDevicePolicyTemplate",
+      "tags": [
+        "Device Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/dhcpConfigServiceProfiles",
+      "method": "POST",
+      "summary": "Create DHCP Configuration Service Profile Template",
+      "description": "Create a new DHCP configuration service profile template.",
+      "operation_id": "createDhcpConfigServiceProfileTemplate",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Delete DHCP Configuration Service Profile Template",
+      "description": "Delete a DHCP configuration service profile template.",
+      "operation_id": "deleteDhcpConfigServiceProfileTemplate",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "GET",
+      "summary": "Get DHCP Configuration Service Profile Template",
+      "description": "Get the DHCP configuration service profile template.",
+      "operation_id": "getDhcpConfigServiceProfileTemplate",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update DHCP Configuration Service Profile Template",
+      "description": "Update a DHCP configuration service profile template.",
+      "operation_id": "updateDhcpConfigServiceProfileTemplate",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/l2AclPolicies",
+      "method": "POST",
+      "summary": "Add Layer-2 ACL Policy Template",
+      "description": "Add layer-2 ACL policy template.",
+      "operation_id": "addL2AclPolicyTemplate",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/templates/l2AclPolicies/{l2AclPolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Layer-2 ACL Policy Template",
+      "description": "Delete layer-2 ACL template by policy id.",
+      "operation_id": "deleteL2AclPolicyTemplate",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/templates/l2AclPolicies/{l2AclPolicyTemplateId}",
+      "method": "GET",
+      "summary": "Get Layer-2 ACL Template",
+      "description": "Get layer-2 ACL by policy id.",
+      "operation_id": "getL2AclPolicyTemplate",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/templates/l2AclPolicies/{l2AclPolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Update Layer-2 ACL Policy Template",
+      "description": "Update layer-2 ACL template by policy id.",
+      "operation_id": "updateL2AclPolicyTemplate",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/templates/l3AclPolicies",
+      "method": "POST",
+      "summary": "Add Layer-3 ACL Policy Template",
+      "description": "Add layer-3 ACL policy template.",
+      "operation_id": "addL3AclPolicyTemplate",
+      "tags": [
+        "L3ACL Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/l3AclPolicies/{l3AclPolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Layer-3 ACL Policy Template",
+      "description": "Delete layer-3 ACL template by policy id.",
+      "operation_id": "deleteL3AclPolicyTemplate",
+      "tags": [
+        "L3ACL Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/l3AclPolicies/{l3AclPolicyTemplateId}",
+      "method": "GET",
+      "summary": "Get Layer-3 ACL Template",
+      "description": "Get layer-3 ACL template by policy template id.",
+      "operation_id": "getL3AclPolicyTemplate",
+      "tags": [
+        "L3ACL Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/l3AclPolicies/{l3AclPolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Update Layer-3 ACL Policy Template",
+      "description": "Update layer-3 ACL template by policy id.",
+      "operation_id": "updateL3AclPolicyTemplate",
+      "tags": [
+        "L3ACL Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/radiusServerProfiles",
+      "method": "POST",
+      "summary": "Add RADIUS Server Profile Template",
+      "description": "Add a RADIUS server profile template.",
+      "operation_id": "addRadiusServerProfileTemplateV1",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete RADIUS Server Profile Template",
+      "description": "Delete a specific RADIUS server profile template.",
+      "operation_id": "deleteRadiusServerProfileTemplateV1",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "GET",
+      "summary": "Get RADIUS Server Profile Template",
+      "description": "Get a specific RADIUS server profile template.",
+      "operation_id": "getRadiusServerProfileTemplateV1",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Update RADIUS Server Profile Template",
+      "description": "Update a specific RADIUS server profile template.",
+      "operation_id": "updateRadiusServerProfileTemplateV1",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/roguePolicies",
+      "method": "POST",
+      "summary": "Create Rogue AP Detection Policy Template",
+      "description": "Create a rogue AP detection policy template.",
+      "operation_id": "addRoguePolicyTemplate",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/roguePolicies/{roguePolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Rogue AP Detection Policy Template",
+      "description": "Delete this rogue AP detection policy template.",
+      "operation_id": "deleteRoguePolicyTemplate",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/roguePolicies/{roguePolicyTemplateId}",
+      "method": "GET",
+      "summary": "Get Rogue AP Detection Policy Template",
+      "description": "Get this rogue AP detection policy template.",
+      "operation_id": "getRoguePolicyTemplate",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/roguePolicies/{roguePolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Update Rogue AP Detection Policy Template",
+      "description": "Update this rogue AP detection policy template.",
+      "operation_id": "updateRoguePolicyTemplate",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/syslogServerProfiles",
+      "method": "POST",
+      "summary": "Create Syslog Server Profile Template",
+      "description": "Create a new syslog server profile template.",
+      "operation_id": "createSyslogServerProfileTemplate",
+      "tags": [
+        "Syslog Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/syslogServerProfiles/{syslogServerProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Syslog Server Profile Template",
+      "description": "Delete a syslog server profile template.",
+      "operation_id": "deleteSyslogServerProfileTemplate",
+      "tags": [
+        "Syslog Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/syslogServerProfiles/{syslogServerProfileTemplateId}",
+      "method": "GET",
+      "summary": "Get Syslog Server Profile Template",
+      "description": "Get a syslog server profile template.",
+      "operation_id": "getSyslogServerProfileTemplate",
+      "tags": [
+        "Syslog Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/syslogServerProfiles/{syslogServerProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Update Syslog Server Profile Template",
+      "description": "Update a syslog server profile template.",
+      "operation_id": "updateSyslogServerProfileTemplate",
+      "tags": [
+        "Syslog Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/tunnelServiceProfiles",
+      "method": "POST",
+      "summary": "Add Tunnel Service Profile Template",
+      "description": "Use this API command to create a new tunnel service profile template.",
+      "operation_id": "createTunnelServiceProfileTemplate",
+      "tags": [
+        "Tunnel Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/tunnelServiceProfiles/{tunnelServiceProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Tunnel Service Profile Template",
+      "description": "Use this API command to delete a tunnel service profile template.",
+      "operation_id": "deleteTunnelServiceProfileTemplate",
+      "tags": [
+        "Tunnel Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/tunnelServiceProfiles/{tunnelServiceProfileTemplateId}",
+      "method": "GET",
+      "summary": "Get Tunnel Service Profile Template",
+      "description": "Use this API command to get the tunnel service profile template details.",
+      "operation_id": "getTunnelServiceProfileTemplate",
+      "tags": [
+        "Tunnel Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/tunnelServiceProfiles/{tunnelServiceProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Update Tunnel Service Profile Template",
+      "description": "Use this API command to update a tunnel service profile template.",
+      "operation_id": "updateTunnelServiceProfileTemplate",
+      "tags": [
+        "Tunnel Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apBssColoringSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Basic Service Set Coloring Settings",
+      "description": "Get AP basic service set coloring settings for this venue template.",
+      "operation_id": "getVenueTemplateApBssColoringSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apBssColoringSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Basic Service Set Coloring Settings",
+      "description": "Update AP basic service set coloring settings for this venue template.",
+      "operation_id": "updateVenueTemplateApBssColoringSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apCellularSettings",
+      "method": "GET",
+      "summary": "Get Venue Template AP-Model Cellular",
+      "description": "Get AP model cellular settings and LTE band lock channels for the venue template.",
+      "operation_id": "getVenueTemplateApCellularSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apCellularSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template AP-Model Cellular",
+      "description": "Update AP model cellular settings and LTE band lock channels for the venue template.",
+      "operation_id": "updateVenueTemplateApCellularSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apClientAdmissionControlSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Client Admission Control Settings",
+      "description": "Get AP client admission control settings for this venue template.",
+      "operation_id": "getVenueTemplateApClientAdmissionControlSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apClientAdmissionControlSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Client Admission Control Settings",
+      "description": "Update AP client admission control settings for this venue template.",
+      "operation_id": "updateVenueTemplateApClientAdmissionControlSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apDirectedMulticastSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Directed Multicast Settings",
+      "description": "Get AP directed multicast settings for this venue template.",
+      "operation_id": "getVenueTemplateApDirectedMulticastSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apDirectedMulticastSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Directed Multicast Settings",
+      "description": "Update AP directed multicast settings for this venue template.",
+      "operation_id": "updateVenueTemplateApDirectedMulticastSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apDosProtectionSettings",
+      "method": "GET",
+      "summary": "Get Venue Template DoS Protection",
+      "description": "Get AP DoS protection settings for this venue template.",
+      "operation_id": "getVenueTemplateApDosProtectionSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apDosProtectionSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template DoS Protection",
+      "description": "Update AP DoS protection settings for this venue template.",
+      "operation_id": "updateVenueTemplateApDosProtectionSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apGroups",
+      "method": "POST",
+      "summary": "Create AP Group Template",
+      "description": "Create a new AP group template.",
+      "operation_id": "addVenueApGroupTemplate",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apGroups/{apGroupId}",
+      "method": "DELETE",
+      "summary": "Delete AP Group Template",
+      "description": "Delete an AP group template.",
+      "operation_id": "deleteVenueApGroupTemplate",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apGroups/{apGroupId}",
+      "method": "GET",
+      "summary": "Get AP Group Template",
+      "description": "Get the AP group template details.",
+      "operation_id": "getVenueApGroupTemplate",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apGroups/{apGroupId}",
+      "method": "PUT",
+      "summary": "Update AP Group Template",
+      "description": "Update an AP group template.",
+      "operation_id": "updateVenueApGroupTemplate",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apGroups/{apGroupId}/cloneSettings",
+      "method": "POST",
+      "summary": "Clone AP Group Template",
+      "description": "Clone an AP group template.",
+      "operation_id": "cloneVenueApGroupTemplate",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apLoadBalancingSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Load Balancing Settings",
+      "description": "Get load balancing settings for this venue template.",
+      "operation_id": "getVenueTemplateApLoadBalancingSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apLoadBalancingSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Load Balancing Settings",
+      "description": "Update AP load balancing settings for this venue template.",
+      "operation_id": "updateVenueTemplateApLoadBalancingSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apMeshSettings",
+      "method": "GET",
+      "summary": "Get Mesh Settings",
+      "description": "Get AP mesh settings for this venue.",
+      "operation_id": "getVenueTemplateApMeshSettingsV1",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apMeshSettings",
+      "method": "PUT",
+      "summary": "Update Mesh",
+      "description": "Enable or disable AP mesh settings for this venue template.",
+      "operation_id": "updateVenueTemplateApMeshSettingsV1",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelBandModeSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Band Mode Settings",
+      "description": "Get venue template band mode settings. The settings are defined per AP model.",
+      "operation_id": "getVenueTemplateBandModeSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelBandModeSettings",
+      "method": "PUT",
+      "summary": "Update Template Venue Band Mode Settings",
+      "description": "Update venue template band mode settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueTemplateBandModeSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelCapabilities",
+      "method": "GET",
+      "summary": "Get Venue Template AP-Model Capabilities",
+      "description": "Get AP model capabilities for the venue template.",
+      "operation_id": "getVenueTemplateApModelCapabilities",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelExternalAntennaSettings",
+      "method": "GET",
+      "summary": "Get Venue Template AP Model External Antenna Settings",
+      "description": "List venue template external antenna settings. The settings are defined per AP model.",
+      "operation_id": "getVenueTemplateApModelExternalAntennaSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelExternalAntennaSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template AP Model External Antenna Settings",
+      "description": "Update a venue template external antenna settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueTemplateApModelExternalAntennaSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelLanPortSettings",
+      "method": "GET",
+      "summary": "Get Venue Template LAN-Ports",
+      "description": "List AP model LAN-port settings for this venue template.",
+      "operation_id": "getVenueTemplateApModelLanPortSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelLedSettings",
+      "method": "GET",
+      "summary": "Get Venue Template LED",
+      "description": "Get AP model LED settings for this venue template.",
+      "operation_id": "getVenueTemplateApModelLedSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apModelLedSettings",
+      "method": "PUT",
+      "summary": "Update Venue LED",
+      "description": "Update AP model LED settings for this venue template.",
+      "operation_id": "updateVenueTemplateApModelLedSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apMulticastDnsFencingSettings",
+      "method": "GET",
+      "summary": "Get Venue Template Multicast DNS Fencing Settings",
+      "description": "Get multicast DNS fencing settings for the APs in this venue template.",
+      "operation_id": "getVenueTemplateApMulticastDnsFencingSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apMulticastDnsFencingSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Multicast DNS Fencing Settings",
+      "description": "Update multicast DNS fencing settings for the APs in this venue template.",
+      "operation_id": "updateVenueTemplateApMulticastDnsFencingSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apRadioSettings",
+      "method": "GET",
+      "summary": "Get Venue Template AP Radio Settings",
+      "description": "Get AP radio settings for the venue template.",
+      "operation_id": "getVenueTemplateApRadioSettingsV1",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apRadioSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Radio Settings",
+      "description": "Update AP radio settings for the venue template.",
+      "operation_id": "updateVenueTemplateApRadioSettingsV1",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apRadiusOptions",
+      "method": "GET",
+      "summary": "Get Venue Template RADIUS Options Settings",
+      "description": "Get AP RADIUS option settings for this venue template.",
+      "operation_id": "getVenueTemplateApRadiusOptions",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apRadiusOptions",
+      "method": "PUT",
+      "summary": "Update Venue Template RADIUS Options Settings",
+      "description": "Update AP RADIUS option settings for this venue template.",
+      "operation_id": "updateVenueTemplateApRadiusOptions",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apRebootTimeoutSettings",
+      "method": "GET",
+      "summary": "Get Venue Template AP Reboot Timeout",
+      "description": "Get AP reboot timeout settings for this venue template.",
+      "operation_id": "getVenueTemplateApRebootTimeoutSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apRebootTimeoutSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template AP Reboot Timeout",
+      "description": "Update AP reboot timeout settings for this venue template.",
+      "operation_id": "updateVenueTemplateApRebootTimeoutSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apSmartMonitorSettings",
+      "method": "GET",
+      "summary": "Get Venue Template AP Smart Monitor",
+      "description": "Get AP smart monitor settings for this venue template.",
+      "operation_id": "getVenueTemplateApSmartMonitorSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/apSmartMonitorSettings",
+      "method": "PUT",
+      "summary": "Update Venue Template AP Smart Monitor",
+      "description": "Update AP smart monitor settings for this venue template.",
+      "operation_id": "updateVenueTemplateApSmartMonitorSettings",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiAvailableChannels",
+      "method": "GET",
+      "summary": "Get Venue Template Available Channels",
+      "description": "Get available channels for the venue template.",
+      "operation_id": "getWifiAvailableChannelsOfVenueTemplateV1",
+      "tags": [
+        "AP Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}",
+      "method": "DELETE",
+      "summary": "Deactivate Wi-Fi Network Template On Venue Template",
+      "description": "Use this API to delete a relationship between Wi-Fi network template and venue template.",
+      "operation_id": "deactivateWifiNetworkTemplateOnVenue",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}",
+      "method": "PUT",
+      "summary": "Activate Wi-Fi Network Template On Venue Template",
+      "description": "Use this API to build a relationship between Wi-Fi network template and venue template.",
+      "operation_id": "activateWifiNetworkTemplateOnVenue",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}",
+      "method": "DELETE",
+      "summary": "Deactivate AP Group Template On Wi-Fi Network Template",
+      "description": "Deactivate the AP group template and remove the settings on the Wi-Fi network template with the venue template.",
+      "operation_id": "deactivateApGroupTemplateOnWifiNetwork",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}",
+      "method": "PUT",
+      "summary": "Activate AP Group Template On Wi-Fi Network Template",
+      "description": "Activate the AP group template on the Wi-Fi network template with the venue template.",
+      "operation_id": "activateApGroupTemplateOnWifiNetwork",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/settings",
+      "method": "GET",
+      "summary": "Get AP Group Settings Template On Wi-Fi Network Template",
+      "description": "Get the activated AP group template settings on the Wi-Fi network template with the venue template.",
+      "operation_id": "getApGroupTemplateSettingsOnWifiNetwork",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/settings",
+      "method": "PUT",
+      "summary": "Update AP Group Settings Template On Wi-Fi Network Template",
+      "description": "Update the activated AP group template settings on the Wi-Fi network template with the venue template.",
+      "operation_id": "updateApGroupTemplateSettingsOnWifiNetwork",
+      "tags": [
+        "AP Group Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}/settings",
+      "method": "GET",
+      "summary": "Get Venue Wi-Fi Network Template Settings",
+      "description": "Get Wi-Fi network template settings on this venue template.",
+      "operation_id": "getVenueWifiNetworkTemplateSettings",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueId}/wifiNetworks/{wifiNetworkId}/settings",
+      "method": "PUT",
+      "summary": "Update Venue Wi-Fi Network Template Settings",
+      "description": "Update Wi-Fi network template settings on this venue template.",
+      "operation_id": "updateVenueWifiNetworkTemplateSettings",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate DHCP Configuration Service Profile On Venue Template",
+      "description": "Deactivate DHCP configuration service profile on venue template.",
+      "operation_id": "deactivateDhcpConfigServiceProfileOnVenueTemplate",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "GET",
+      "summary": "Get DHCP Service Profile Settings of Venue Template",
+      "description": "Get DHCP service profile settings of venue template.",
+      "operation_id": "getVenueTemplateDhcpConfigServiceProfileSettings",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "PUT",
+      "summary": "Activate DHCP Configuration Service Profile On Venue Template and Update Settings",
+      "description": "Activate DHCP configuration service profile on venue template and update settings.",
+      "operation_id": "activateDhcpConfigServiceProfileOnVenueTemplateAndUpdateSettings",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate RADIUS Server Profile On Venue",
+      "description": "Use this API command to delete a relationship between RADIUS server profile template and venue template.",
+      "operation_id": "deactivateRadiusServerProfileTemplateOnVenueTemplate",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate RADIUS Server Profile Template On Venue Template",
+      "description": "Use this API command to build a relationship between RADIUS server profile template and venue template.",
+      "operation_id": "activateRadiusServerProfileTemplateOnVenueTemplate",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/roguePolicies/{roguePolicyTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Rogue AP Detection Policy On Venue Template",
+      "description": "Deactivate a rogue AP detection policy on a venue template and apply the default policy to that venue instead. Note that deactivate a policy from a venue template does not disable rogue AP detection in that venue template.",
+      "operation_id": "deactivateRoguePolicyOnVenueTemplate",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/roguePolicies/{roguePolicyTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Rogue AP Detection Policy On Venue Template",
+      "description": "Activate a rogue AP detection policy on a venue template.",
+      "operation_id": "activateRoguePolicyOnVenueTemplate",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/roguePolicySettings",
+      "method": "GET",
+      "summary": "Get Venue Template Rogue Policy Settings",
+      "description": "Get the venue template rogue policy settings.",
+      "operation_id": "getVenueTemplateRoguePolicySettings",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/roguePolicySettings",
+      "method": "PUT",
+      "summary": "Update Venue Template Rogue Policy Settings",
+      "description": "Update the venue template rogue policy settings.",
+      "operation_id": "updateVenueTemplateRoguePolicySettings",
+      "tags": [
+        "Rogue AP Detection Policy Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/syslogServerProfiles/{syslogServerProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Syslog Server Profile Template On Venue Template",
+      "description": "Use this API command to delete a relationship between syslog server profile template and venue template.",
+      "operation_id": "deactivateSyslogServerProfileTemplateOnVenue",
+      "tags": [
+        "Syslog Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/syslogServerProfiles/{syslogServerProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Syslog Server Profile Template On Venue Template",
+      "description": "Use this API command to build a relationship between syslog server profile template and venue template.",
+      "operation_id": "activateSyslogServerProfileTemplateOnVenue",
+      "tags": [
+        "Syslog Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/wifiDhcpPoolUsages",
+      "method": "GET",
+      "summary": "Get DHCP Pools Usage in Venue Template",
+      "description": "Get DHCP pools usage in this venue template.",
+      "operation_id": "getVenueTemplateWifiDhcpPoolUsages",
+      "tags": [
+        "DHCP Configuration Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/wifiNetworks/{wifiNetworkTemplateId}/apGroups/{apGroupTemplateId}/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate VLAN Pool Profile Template On AP Group Template",
+      "description": "Use this API command to deactivate a VLAN pool profile template on an AP group template.",
+      "operation_id": "deactivateVlanPoolProfileTemplateOnVenueWifiNetworkApGroupTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/{venueTemplateId}/wifiNetworks/{wifiNetworkTemplateId}/apGroups/{apGroupTemplateId}/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate VLAN Pool Profile Template On AP Group Template",
+      "description": "Use this API command to activate a VLAN pool profile template on an AP group template.",
+      "operation_id": "activateVlanPoolProfileTemplateOnVenueWifiNetworkApGroupTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/vlanPoolProfiles",
+      "method": "POST",
+      "summary": "Add VLAN Pool Profile Template",
+      "description": "Use this API command to create a new VLAN pool profile template.",
+      "operation_id": "addVlanPoolProfileTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete VLAN Pool Profile Template",
+      "description": "Use this API command to delete a VLAN pool profile template.",
+      "operation_id": "deleteVlanPoolProfileTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "GET",
+      "summary": "Get VLAN Pool Profile Template",
+      "description": "Use this API command to get the VLAN pool profile template details.",
+      "operation_id": "getVlanPoolProfileTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Update VLAN Pool Profile Template",
+      "description": "Use this API command to update a VLAN pool profile template.",
+      "operation_id": "updateVlanPoolProfileTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiCallingServiceProfiles",
+      "method": "POST",
+      "summary": "Create Wi-Fi Calling Service Profile Template",
+      "description": "Create a new Wi-Fi calling service profile template.",
+      "operation_id": "createWifiCallingServiceProfileTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Wi-Fi Calling Service Profile Template",
+      "description": "Delete a Wi-Fi calling service profile template.",
+      "operation_id": "deleteWifiCallingServiceProfileTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "GET",
+      "summary": "Get Wi-Fi Calling Service Profile Template",
+      "description": "Get the Wi-Fi calling service profile template details.",
+      "operation_id": "getWiFiCallingServiceProfileTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update Wi-Fi Calling Service Profile Template",
+      "description": "Update a Wi-Fi calling service profile template.",
+      "operation_id": "updateWifiCallingServiceProfileTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}/cloneSettings",
+      "method": "POST",
+      "summary": "Clone Wi-Fi Calling Service Profile Template",
+      "description": "Clone an existing Wi-Fi calling service profile template.",
+      "operation_id": "cloneWifiCallingServiceProfileTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks",
+      "method": "POST",
+      "summary": "Create Wi-Fi Network Template",
+      "description": "Create a new Wi-Fi network template.",
+      "operation_id": "createWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}",
+      "method": "DELETE",
+      "summary": "Delete Wi-Fi Network Template",
+      "description": "Delete a Wi-Fi network template.",
+      "operation_id": "deleteWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}",
+      "method": "GET",
+      "summary": "Get Wi-Fi Network Template",
+      "description": "Get the Wi-Fi network template details.",
+      "operation_id": "getWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}",
+      "method": "PUT",
+      "summary": "Update Wi-Fi Network Template",
+      "description": "Update this Wi-Fi network template, including nested details.",
+      "operation_id": "updateWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/accessControlProfiles/{accessControlProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Access Control Profile Template On Wi-Fi Network Template",
+      "description": "Use this API command to delete a relationship between access control profile template and Wi-Fi network template.",
+      "operation_id": "deactivateAccessControlProfileTemplateOnWifiNetwork",
+      "tags": [
+        "Access Control Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/accessControlProfiles/{accessControlProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Access Control Profile Template On Wi-Fi Network Template",
+      "description": "Use this API command to build a relationship between access control profile template and Wi-Fi network template.",
+      "operation_id": "activateAccessControlProfileTemplateOnWifiNetwork",
+      "tags": [
+        "Access Control Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/cloneSettings",
+      "method": "POST",
+      "summary": "Clone Wi-Fi Network Template",
+      "description": "Clone a existing Wi-Fi network template.",
+      "operation_id": "cloneWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Network Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/dpskServices/{dpskServiceTemplateId}",
+      "method": "PUT",
+      "summary": "Activate DPSK Service Template On Wi-Fi Network Template",
+      "description": "Use this API command to build the relationship between DPSK service template and Wi-Fi network template.",
+      "operation_id": "activateDpskServiceOnWifiNetworkTemplate",
+      "tags": [
+        "DPSK Service Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/portalServiceProfiles/{portalServiceProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Portal Service Profile Template On Wi-Fi Network Template",
+      "description": "Activate a portal service profile template on a Wi-Fi network template.",
+      "operation_id": "activatePortalServiceProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "Portal Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/radiusServerProfileSettings",
+      "method": "GET",
+      "summary": "Get RADIUS Server Profile Template Settings On Wi-Fi Network Template",
+      "description": "Get RADIUS server profile template settings on Wi-Fi network template.",
+      "operation_id": "getWifiNetworkTemplateRadiusServerProfileTemplateSettings",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/radiusServerProfileSettings",
+      "method": "PUT",
+      "summary": "Update RADIUS Server Profile Template Settings On Wi-Fi Network Template",
+      "description": "Update RADIUS server profile template settings on Wi-Fi network template.",
+      "operation_id": "updateWifiNetworkTemplateRadiusServerProfileTemplateSettings",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate RADIUS Server Profile Template On Wi-Fi Network Template",
+      "description": "Use this API command to delete a relationship between RADIUS server profile template and Wi-Fi network template.",
+      "operation_id": "deactivateRadiusServerProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/radiusServerProfiles/{radiusServerProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate RADIUS Server Profile Template On Wi-Fi Network Template",
+      "description": "Use this API command to build a relationship between RADIUS server profile template and Wi-Fi network template.",
+      "operation_id": "activateRadiusServerProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "RADIUS Server Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate VLAN Pool Profile Template On Wi-Fi Network Template",
+      "description": "Use this API command to deactivate a VLAN pool profile template on a Wi-Fi network template.",
+      "operation_id": "deactivateVlanPoolProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/vlanPoolProfiles/{vlanPoolProfileTemplateId}",
+      "method": "PUT",
+      "summary": "Activate VLAN Pool Profile Template On Wi-Fi Network Template",
+      "description": "Use this API command to activate a VLAN pool profile template on a Wi-Fi network template.",
+      "operation_id": "activateVlanPoolProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "VLAN Pool Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Wi-Fi Calling Service Profile Template On Wi-Fi Network Template",
+      "description": "Deactivate a Wi-Fi calling service profile template on a Wi-Fi network template.",
+      "operation_id": "deactivateWifiCallingServiceProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/{wifiNetworkTemplateId}/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "PUT",
+      "summary": "Activate Wi-Fi Calling Service Profile Template On Wi-Fi Network Template",
+      "description": "Activate a Wi-Fi calling service profile template on a Wi-Fi network template.",
+      "operation_id": "activateWifiCallingServiceProfileTemplateOnWifiNetworkTemplate",
+      "tags": [
+        "Wi-Fi Calling Service Profile Template"
+      ]
+    },
+    {
+      "path": "/tunnelServiceProfiles",
+      "method": "POST",
+      "summary": "Add Tunnel Service Profile",
+      "description": "Use this API command to create a new tunnel service profile.",
+      "operation_id": "createTunnelServiceProfile",
+      "tags": [
+        "Tunnel Service Profile"
+      ]
+    },
+    {
+      "path": "/tunnelServiceProfiles/{tunnelServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Tunnel Service Profile",
+      "description": "Use this API command to delete a tunnel service profile.",
+      "operation_id": "deleteTunnelServiceProfile",
+      "tags": [
+        "Tunnel Service Profile"
+      ]
+    },
+    {
+      "path": "/tunnelServiceProfiles/{tunnelServiceProfileId}",
+      "method": "GET",
+      "summary": "Get Tunnel Service Profile",
+      "description": "Use this API command to get the tunnel service profile details.",
+      "operation_id": "getTunnelServiceProfile",
+      "tags": [
+        "Tunnel Service Profile"
+      ]
+    },
+    {
+      "path": "/tunnelServiceProfiles/{tunnelServiceProfileId}",
+      "method": "PATCH",
+      "summary": "Partial Update Tunnel Service Profile",
+      "description": "Use this API command to partial update a tunnel service profile.",
+      "operation_id": "patchTunnelServiceProfile",
+      "tags": [
+        "Tunnel Service Profile"
+      ]
+    },
+    {
+      "path": "/tunnelServiceProfiles/{tunnelServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update Tunnel Service Profile",
+      "description": "Use this API command to update a tunnel service profile.",
+      "operation_id": "updateTunnelServiceProfile",
+      "tags": [
+        "Tunnel Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/apAvailableLteBands",
+      "method": "GET",
+      "summary": "Get Available LTE Bands",
+      "description": "Get available LTE bands for each region.",
+      "operation_id": "getVenueApAvailableLteBands",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/apCompatibilities/query",
+      "method": "POST",
+      "summary": "Venue Compatibility Query",
+      "description": "Details of the feature requirements, including the supported AP firmware and models, as well as the count of compatible and incompatible APs based on the targeted venues.",
+      "operation_id": "venueCompatibilitiesQuery",
+      "tags": [
+        "AP Compatibility"
+      ]
+    },
+    {
+      "path": "/venues/apModelCapabilities",
+      "method": "GET",
+      "summary": "Get Venue All AP-Model Capabilities",
+      "description": "Get all AP model capabilities of the venue.",
+      "operation_id": "getApModelCapabilities",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/aps/apCompatibilities/query",
+      "method": "POST",
+      "summary": "AP Compatibility Query",
+      "description": "Details of the feature requirements, including the supported AP firmware and models based on the targeted APs.",
+      "operation_id": "apCompatibilitiesQuery",
+      "tags": [
+        "AP Compatibility"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apBssColoringSettings",
+      "method": "GET",
+      "summary": "Get Venue Basic Service Set Coloring Settings",
+      "description": "Get basic service set coloring settings of this venue.",
+      "operation_id": "getVenueApBssColoringSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apBssColoringSettings",
+      "method": "PUT",
+      "summary": "Update Venue Basic Service Set Coloring Settings",
+      "description": "Update basic service set coloring settings of this venue.",
+      "operation_id": "updateVenueApBssColoringSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apCellularSettings",
+      "method": "GET",
+      "summary": "Get Venue AP-Model Cellular",
+      "description": "Get AP model cellular settings and LTE band lock channels of the venue.",
+      "operation_id": "getVenueApCellularSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apCellularSettings",
+      "method": "PUT",
+      "summary": "Update Venue AP-Model Cellular",
+      "description": "Update AP model cellular settings and LTE band lock channels of the venue.",
+      "operation_id": "updateVenueApCellularSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apClientAdmissionControlSettings",
+      "method": "GET",
+      "summary": "Get Venue Client Admission Control Settings",
+      "description": "Get this venue's client admission control settings.",
+      "operation_id": "getVenueApClientAdmissionControlSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apClientAdmissionControlSettings",
+      "method": "PUT",
+      "summary": "Update Venue Client Admission Control Settings",
+      "description": "Update this venue's client admission control settings.",
+      "operation_id": "updateVenueApClientAdmissionControlSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apDirectedMulticastSettings",
+      "method": "GET",
+      "summary": "Get Venue Directed Multicast Settings",
+      "description": "Get directed multicast settings for this venue.",
+      "operation_id": "getVenueApDirectedMulticastSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apDirectedMulticastSettings",
+      "method": "PUT",
+      "summary": "Update Venue Directed Multicast Settings",
+      "description": "Venue directed multicast settings of this venue.",
+      "operation_id": "updateVenueApDirectedMulticastSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apDosProtectionSettings",
+      "method": "GET",
+      "summary": "Get Venue DoS Protection",
+      "description": "Get DoS protection of this venue.",
+      "operation_id": "getVenueApDosProtectionSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apDosProtectionSettings",
+      "method": "PUT",
+      "summary": "Update Venue DoS Protection",
+      "description": "Update DoS protection of this venue.",
+      "operation_id": "updateVenueApDosProtectionSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apGroups",
+      "method": "POST",
+      "summary": "Create AP-Group",
+      "description": "Create a new AP-group. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "createAPGroup",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apGroups/{apGroupId}",
+      "method": "DELETE",
+      "summary": "Delete AP Group",
+      "description": "Delete an AP group.",
+      "operation_id": "deleteVenueApGroup",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apGroups/{apGroupId}",
+      "method": "GET",
+      "summary": "Get AP Group",
+      "description": "Get the AP group details.",
+      "operation_id": "getVenueApGroup",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apGroups/{apGroupId}",
+      "method": "PUT",
+      "summary": "Update AP Group",
+      "description": "Update an AP group.",
+      "operation_id": "updateVenueApGroup",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apGroups/{apGroupId}/aps",
+      "method": "POST",
+      "summary": "Add AP with AP Group",
+      "description": "Add a new AP with AP group.",
+      "operation_id": "addApWithApGroup",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apGroups/{apGroupId}/aps/{serialNumber}",
+      "method": "PUT",
+      "summary": "Move AP Into AP Group",
+      "description": "Use this API to move AP into the AP group.",
+      "operation_id": "activateApOnApGroup",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apLoadBalancingSettings",
+      "method": "GET",
+      "summary": "Get Venue Load Balancing Settings",
+      "description": "Get load balancing settings for this venue.",
+      "operation_id": "getVenueApLoadBalancingSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apLoadBalancingSettings",
+      "method": "PUT",
+      "summary": "Update Venue Load Balancing Settings",
+      "description": "Update venue load balancing settings of this venue.",
+      "operation_id": "updateVenueApLoadBalancingSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apManagementTrafficVlanSettings",
+      "method": "GET",
+      "summary": "Get Venue AP Management VLAN Settings",
+      "description": "Get AP management traffic VLAN settings of this venue.",
+      "operation_id": "getVenueApManagementVlanSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apManagementTrafficVlanSettings",
+      "method": "PUT",
+      "summary": "Update Venue AP Management VLAN Settings",
+      "description": "Update AP management traffic VLAN settings of this venue.",
+      "operation_id": "updateVenueApManagementVlanSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apMeshSettings",
+      "method": "GET",
+      "summary": "Get Mesh Settings",
+      "description": "Get the venue mesh settings.",
+      "operation_id": "getVenueApMeshSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apMeshSettings",
+      "method": "PUT",
+      "summary": "Update Mesh",
+      "description": "Enable/disable the venue mesh.",
+      "operation_id": "updateVenueApMeshSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelAntennaTypeSettings",
+      "method": "GET",
+      "summary": "Get Venue Antenna Type",
+      "description": "Get venue antenna type settings. The settings are defined per AP model.",
+      "operation_id": "getVenueAntennaType",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelAntennaTypeSettings",
+      "method": "PUT",
+      "summary": "Update Venue Antenna Type",
+      "description": "Update venue antenna type settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueAntennaType",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelBandModeSettings",
+      "method": "GET",
+      "summary": "Get Venue Band Mode",
+      "description": "Get venue band mode settings. The settings are defined per AP model.",
+      "operation_id": "getVenueBandMode",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelBandModeSettings",
+      "method": "PUT",
+      "summary": "Update Venue Band Mode",
+      "description": "Update venue band mode settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueBandMode",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelCapabilities",
+      "method": "GET",
+      "summary": "Get Venue AP-Model Capabilities",
+      "description": "Get AP model capabilities of the venue.",
+      "operation_id": "getVenueAPModelCapabilities",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelExternalAntennaSettings",
+      "method": "GET",
+      "summary": "Get Venue AP Model External Antenna Settings",
+      "description": "List venue external antenna settings. The settings are defined per AP model.",
+      "operation_id": "getVenueApModelExternalAntennaSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelExternalAntennaSettings",
+      "method": "PUT",
+      "summary": "Update Venue AP Model External Antenna Settings",
+      "description": "Update a venue external antenna settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueApModelExternalAntennaSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelLedSettings",
+      "method": "GET",
+      "summary": "Get Venue LED",
+      "description": "Get venue LED settings. The settings are defined per AP model.",
+      "operation_id": "getVenueApModelLedSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelLedSettings",
+      "method": "PUT",
+      "summary": "Update Venue LED",
+      "description": "Update venue LED settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueApModelLedSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelUsbPortSettings",
+      "method": "GET",
+      "summary": "Get Venue USB Port",
+      "description": "Get venue USB port settings. The settings are defined per AP model.",
+      "operation_id": "getVenueApModelUsbPortSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModelUsbPortSettings",
+      "method": "PUT",
+      "summary": "Update Venue USB Port",
+      "description": "Update venue USB port settings. The settings are defined per AP model.",
+      "operation_id": "updateVenueApModelUsbPortSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPortSpecificSettings",
+      "method": "GET",
+      "summary": "Get Venue AP Model LAN Port Specific Settings",
+      "description": "Get venue AP model LAN port specific settings.",
+      "operation_id": "getVenueApModelLanPortSpecificSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPortSpecificSettings",
+      "method": "PUT",
+      "summary": "Update Venue AP Model LAN Port Specific Settings",
+      "description": "Update venue AP model LAN port specific settings.",
+      "operation_id": "updateVenueApModelLanPortSpecificSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Client Isolation Profile On Venue AP Model LAN Port",
+      "description": "Deactivate the client isolation profile for the LAN port, specifying the AP model and the venue.",
+      "operation_id": "deactivateClientIsolationProfileOnVenueApModelLanPort",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "PUT",
+      "summary": "Activate Client Isolation Profile On Venue AP Model LAN Port",
+      "description": "Activate the client isolation profile for the LAN port, specifying the AP model and the venue.",
+      "operation_id": "activateClientIsolationProfileOnVenueApModelLanPort",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Ethernet Port Profile On Venue AP Model LAN Port",
+      "description": "Deactivate ethernet port profile on venue, specific to AP model and LAN ports.",
+      "operation_id": "deactivateEthernetPortProfileToVenueApModelLanPort",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "PUT",
+      "summary": "Activate Ethernet Port Profile On Venue AP Model LAN Port",
+      "description": "Activate ethernet port profile on venue, specific to AP model and LAN ports.",
+      "operation_id": "activateEthernetPortProfileToVenueApModelLanPort",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/settings",
+      "method": "GET",
+      "summary": "Get Venue AP Model LAN Port Settings",
+      "description": "Get venue AP model LAN port settings.",
+      "operation_id": "getVenueApModelLanPortOverwriteSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/settings",
+      "method": "PUT",
+      "summary": "Update Venue AP Model LAN Port Settings",
+      "description": "Update venue AP model LAN port settings.",
+      "operation_id": "updateVenueApModelLanPortOverwriteSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/softGreProfiles/{softGreProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate SoftGRE Profile On Venue AP Model LAN Port",
+      "description": "Deactivate the SoftGRE profile for the LAN port, specifying the AP model and the venue.",
+      "operation_id": "deactivateSoftGreProfileOnVenueApModelLanPort",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apModels/{apModel}/lanPorts/{portId}/softGreProfiles/{softGreProfileId}",
+      "method": "PUT",
+      "summary": "Activate SoftGRE Profile On Venue AP Model LAN Port",
+      "description": "Activate the SoftGRE profile for the LAN port, specifying the AP model and the venue.",
+      "operation_id": "activateSoftGreProfileOnVenueApModelLanPort",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apMulticastDnsFencingSettings",
+      "method": "GET",
+      "summary": "Get Venue Multicast DNS Fencing Settings",
+      "description": "Get multicast DNS fencing settings of the APs in this venue.",
+      "operation_id": "getVenueApMulticastDnsFencingSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apMulticastDnsFencingSettings",
+      "method": "PUT",
+      "summary": "Update Venue Multicast DNS Fencing Settings",
+      "description": "Update multicast DNS fencing settings of the APs in this venue.",
+      "operation_id": "updateVenueApMulticastDnsFencingSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apRadioSettings",
+      "method": "GET",
+      "summary": "Get Venue Radio",
+      "description": "Get the venue radio.",
+      "operation_id": "getVenueApRadioSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apRadioSettings",
+      "method": "PUT",
+      "summary": "Update Venue Radio",
+      "description": "Update the venue radio.",
+      "operation_id": "updateVenueApRadioSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apRadiusOptions",
+      "method": "GET",
+      "summary": "Get Venue RADIUS Options Settings",
+      "description": "Get this venue's RADIUS options settings.",
+      "operation_id": "getVenueApRadiusOptions",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apRadiusOptions",
+      "method": "PUT",
+      "summary": "Update Venue RADIUS Options Settings",
+      "description": "Update this venue's RADIUS options settings.",
+      "operation_id": "updateVenueApRadiusOptions",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apRebootTimeoutSettings",
+      "method": "GET",
+      "summary": "Get Venue Reboot Timeout Settings",
+      "description": "Get this venue's reboot timeout settings.",
+      "operation_id": "getVenueApRebootTimeoutSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apRebootTimeoutSettings",
+      "method": "PUT",
+      "summary": "Update Venue Reboot Timeout Settings",
+      "description": "Update this venue's reboot timeout settings.",
+      "operation_id": "updateVenueRebootTimeoutSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apSmartMonitorSettings",
+      "method": "GET",
+      "summary": "Get Venue Smart Monitor Settings",
+      "description": "Get this venue's smart monitor settings.",
+      "operation_id": "getVenueApSmartMonitorSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apSmartMonitorSettings",
+      "method": "PUT",
+      "summary": "Update Venue Smart Monitor Settings",
+      "description": "Update this venue's smart monitor settings.",
+      "operation_id": "updateVenueSmartMonitorSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apTlsKeyEnhancedSettings",
+      "method": "GET",
+      "summary": "Get Venue Transport Layer Security KEY Enhanced Mode Settings for APs",
+      "description": "Get transport layer security key enhanced mode settings of the APs in this venue.",
+      "operation_id": "getVenueApTlsKeyEnhancedModeSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/apTlsKeyEnhancedSettings",
+      "method": "PUT",
+      "summary": "Update Venue Transport Layer Security KEY Enhanced Mode Settings for APs",
+      "description": "Update transport layer security key enhanced mode settings of the APs in this venue.",
+      "operation_id": "updateVenueApTlsKeyEnhancedModeSettings",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps",
+      "method": "POST",
+      "summary": "Add AP or Import APs",
+      "description": "Add a new AP or import a bunch of APs by a CSV file.",
+      "operation_id": "addAp",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/importResults",
+      "method": "GET",
+      "summary": "Get Import Venue APs Results",
+      "description": "Get result for import venue APs from CSV file.",
+      "operation_id": "getImportVenueApsResults",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{apSerialNumber}/multicastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Multicast DNS Proxy Service Profile On the AP",
+      "description": "Deactivate multicast DNS proxy service profile on the AP.",
+      "operation_id": "deactivateMulticastDnsProxyProfile",
+      "tags": [
+        "MDNS Proxy Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{apSerialNumber}/multicastDnsProxyProfiles/{multicastDnsProxyProfileId}",
+      "method": "PUT",
+      "summary": "Activate Multicast DNS Proxy Service Profile On the AP",
+      "description": "Activate multicast DNS proxy service profile on the AP.",
+      "operation_id": "activateMulticastDnsProxyProfile",
+      "tags": [
+        "MDNS Proxy Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}",
+      "method": "DELETE",
+      "summary": "Delete AP",
+      "description": "Delete an AP.",
+      "operation_id": "deleteAp",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}",
+      "method": "GET",
+      "summary": "Get AP",
+      "description": "Get the AP general info.",
+      "operation_id": "getAp",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}",
+      "method": "PUT",
+      "summary": "Update AP",
+      "description": "Update an AP.",
+      "operation_id": "updateAp",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/antennaTypeSettings",
+      "method": "GET",
+      "summary": "Get AP Antenna Type",
+      "description": "Get AP antenna type settings.",
+      "operation_id": "getAPAntennaType",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/antennaTypeSettings",
+      "method": "PUT",
+      "summary": "Update AP Antenna Type",
+      "description": "Update AP antenna type settings.",
+      "operation_id": "updateAPAntennaType",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/bssColoringSettings",
+      "method": "GET",
+      "summary": "Get AP Basic Service Set Coloring Settings",
+      "description": "Get basic service set coloring settings of this AP.",
+      "operation_id": "GetApBssColoringSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/bssColoringSettings",
+      "method": "PUT",
+      "summary": "Update AP Basic Service Set Coloring Settings",
+      "description": "Update basic service set coloring settings of this AP.",
+      "operation_id": "UpdateApBssColoringSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/capabilities",
+      "method": "GET",
+      "summary": "Get AP Capabilities",
+      "description": null,
+      "operation_id": "GetApCapabilities",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/clients/{clientMacAddress}",
+      "method": "PATCH",
+      "summary": "Patch AP Client",
+      "description": "Patch the AP's client.",
+      "operation_id": "patchApClient",
+      "tags": [
+        "Client"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/dhcpSettings",
+      "method": "GET",
+      "summary": "Get AP DHCP Settings",
+      "description": "Get DHCP settings by AP serial number.",
+      "operation_id": "getApDhcpSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/diagnosisCommands",
+      "method": "PATCH",
+      "summary": "Trigger AP Diagnosis Commands",
+      "description": "Trigger diagnosis commands for the AP.",
+      "operation_id": "TriggerApDiagnosisCommands",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/directedMulticastSettings",
+      "method": "GET",
+      "summary": "Get AP Directed Multicast Settings",
+      "description": "Get directed multicast settings for this AP.",
+      "operation_id": "getApDirectedMulticastSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/directedMulticastSettings",
+      "method": "PUT",
+      "summary": "Update AP Directed Multicast Settings",
+      "description": "Update directed multicast settings of this AP.",
+      "operation_id": "updateApDirectedMulticastSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/externalAntennaSettings",
+      "method": "GET",
+      "summary": "Get AP External Antenna Settings",
+      "description": "Get AP external antenna settings.",
+      "operation_id": "getApExternalAntennaSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/externalAntennaSettings",
+      "method": "PUT",
+      "summary": "Update AP External Antenna Settings",
+      "description": "Update external antenna settings of an AP.",
+      "operation_id": "updateApExternalAntennaSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/iotControllers/{iotControllerId}",
+      "method": "DELETE",
+      "summary": "Disassociate IoT Controller from AP",
+      "description": "Disassociate the IoT controller from the AP.",
+      "operation_id": "disassociateIotControllerFromAp",
+      "tags": [
+        "VRIoT Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/iotControllers/{iotControllerId}",
+      "method": "PUT",
+      "summary": "Associate IoT Controller with AP",
+      "description": "Associate the IoT controller with the AP.",
+      "operation_id": "associateIotControllerWithAp",
+      "tags": [
+        "VRIoT Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/iotSettings",
+      "method": "GET",
+      "summary": "Get AP IoT Settings",
+      "description": "Get the IoT settings of this AP.",
+      "operation_id": "GetApIotSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/iotSettings",
+      "method": "PUT",
+      "summary": "Update AP IoT Settings",
+      "description": "Update the IoT settings of this AP.",
+      "operation_id": "UpdateApIotSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPortSpecificSettings",
+      "method": "GET",
+      "summary": "Get AP LAN Port Specific Settings",
+      "description": "Get AP LAN port specific settings.",
+      "operation_id": "getApLanPortSpecificSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPortSpecificSettings",
+      "method": "PUT",
+      "summary": "Update AP LAN Port Specific Settings",
+      "description": "Update AP LAN port specific settings.",
+      "operation_id": "updateApLanPortSpecificSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Client Isolation Profile On AP LAN Port",
+      "description": "Deactivate the client isolation profile for the LAN port, specifying the AP and the venue.",
+      "operation_id": "deactivateClientIsolationProfileOnApLanPort",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "PUT",
+      "summary": "Activate Client Isolation Profile On AP LAN Port",
+      "description": "Activate the client isolation profile for the LAN port, specifying the AP and the venue.",
+      "operation_id": "activateClientIsolationProfileOnApLanPort",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Ethernet Port Profile On AP LAN Port",
+      "description": "Deactivate ethernet port profile on AP, specific to LAN ports. It will also clear VLAN overwrite setting.",
+      "operation_id": "deactivateEthernetPortProfileToApLanPort",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/ethernetPortProfiles/{ethernetPortProfileId}",
+      "method": "PUT",
+      "summary": "Activate Ethernet Port Profile On AP LAN Port",
+      "description": "Activate ethernet port profile on AP, specific to LAN ports. It will also clear VLAN overwrite setting.",
+      "operation_id": "activateEthernetPortProfileToApLanPort",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/settings",
+      "method": "GET",
+      "summary": "Get AP LAN Port Settings",
+      "description": "Get AP LAN port settings.",
+      "operation_id": "getApLanPortOverwriteSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/settings",
+      "method": "PUT",
+      "summary": "Update AP LAN Port Settings",
+      "description": "Update AP LAN port settings.",
+      "operation_id": "updateApLanPortOverwriteSettings",
+      "tags": [
+        "Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/softGreProfiles/{softGreProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate SoftGRE Profile On Venue AP LAN Port",
+      "description": "Deactivate the SoftGRE profile for the LAN port, specifying the AP and the venue.",
+      "operation_id": "deactivateSoftGreProfileOnVenueApLanPort",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/lanPorts/{portId}/softGreProfiles/{softGreProfileId}",
+      "method": "PUT",
+      "summary": "Activate SoftGRE Profile On Venue AP LAN Port",
+      "description": "Activate the SoftGRE profile for the LAN port, specifying the AP and the venue.",
+      "operation_id": "activateSoftGreProfileOnVenueApLanPort",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/ledSettings",
+      "method": "GET",
+      "summary": "Get AP LED",
+      "description": "Get AP LED settings.",
+      "operation_id": "getApLedSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/ledSettings",
+      "method": "PUT",
+      "summary": "Update AP LED",
+      "description": "Update LED of an AP.",
+      "operation_id": "updateApLedSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/logs",
+      "method": "GET",
+      "summary": "Get the AP Log Info",
+      "description": "Get the AP log info.",
+      "operation_id": "getApLogs",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/managementTrafficVlanSettings",
+      "method": "GET",
+      "summary": "Get AP Management Traffic VLAN Settings",
+      "description": "Get the AP management traffic VLAN settings of this AP.",
+      "operation_id": "GetApManagementTrafficVlanSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/managementTrafficVlanSettings",
+      "method": "PUT",
+      "summary": "Update AP Management Traffic VLAN Settings",
+      "description": "Update the AP management traffic VLAN settings of this AP.",
+      "operation_id": "UpdateApManagementTrafficVlanSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/meshSettings",
+      "method": "GET",
+      "summary": "Get AP Mesh Settings",
+      "description": "Get mesh settings for this AP.",
+      "operation_id": "getApMeshSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/meshSettings",
+      "method": "PUT",
+      "summary": "Update AP Mesh Settings",
+      "description": "Update mesh settings of this AP.",
+      "operation_id": "updateApMeshSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/neighbors",
+      "method": "PATCH",
+      "summary": "Patch AP Neighbors",
+      "description": "Ask AP to collect neighbors.",
+      "operation_id": "patchApNeighbors",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/neighbors/query",
+      "method": "POST",
+      "summary": "Query AP Neighbors",
+      "description": "Query the AP's neighbors.",
+      "operation_id": "queryApNeighbors",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/networkSettings",
+      "method": "GET",
+      "summary": "Get AP Network Settings",
+      "description": "Get network settings for this AP.",
+      "operation_id": "GetApNetworkSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/networkSettings",
+      "method": "PUT",
+      "summary": "Update AP Network Settings",
+      "description": "Update network settings of this AP.",
+      "operation_id": "UpdateApNetworkSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/packets",
+      "method": "GET",
+      "summary": "Get AP Packets",
+      "description": "Get the AP packet capture result.",
+      "operation_id": "getApPackets",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/packets",
+      "method": "PATCH",
+      "summary": "Patch AP Packets",
+      "description": "To start or stop the AP packet capture.",
+      "operation_id": "patchApPackets",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/pictures",
+      "method": "DELETE",
+      "summary": "Delete AP Pictures",
+      "description": "Delete the AP's pictures.",
+      "operation_id": "deleteApPictures",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/pictures",
+      "method": "GET",
+      "summary": "Get AP Pictures",
+      "description": "Get the AP's pictures.",
+      "operation_id": "getApPictures",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/pictures",
+      "method": "PUT",
+      "summary": "Update AP Pictures",
+      "description": "Update the AP's pictures.",
+      "operation_id": "updateApPictures",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/radioSettings",
+      "method": "GET",
+      "summary": "Get AP Radio",
+      "description": "Get AP radio details.",
+      "operation_id": "getApRadio",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/radioSettings",
+      "method": "PUT",
+      "summary": "Update AP Radio",
+      "description": "Update an AP radio settings.",
+      "operation_id": "updateApRadio",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/smartMonitorSettings",
+      "method": "GET",
+      "summary": "Get AP Smart Monitor Settings",
+      "description": "Get the smart monitor settings of this AP.",
+      "operation_id": "GetApSmartMonitorSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/smartMonitorSettings",
+      "method": "PUT",
+      "summary": "Update AP Smart Monitor Settings",
+      "description": "Update the smart monitor settings of this AP.",
+      "operation_id": "UpdateApSmartMonitorSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/snmpAgentProfileSettings",
+      "method": "GET",
+      "summary": "Get SNMP Agent Profile Settings On AP",
+      "description": "Get the SNMP agent profile settings on AP.",
+      "operation_id": "getVenueApSnmpAgentProfileSettings",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/snmpAgentProfileSettings",
+      "method": "PUT",
+      "summary": "Update SNMP Agent Profile Settings On AP",
+      "description": "Update the SNMP agent profile settings on AP.",
+      "operation_id": "updateVenueApSnmpAgentProfileSettings",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate SNMP Agent Profile On AP",
+      "description": "Deactivate the SNMP agent profile on the AP with the venue.",
+      "operation_id": "deactivateSnmpAgentProfileOnAp",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "PUT",
+      "summary": "Activate SNMP Agent Profile On AP",
+      "description": "Activate the SNMP agent profile on the AP with the venue.",
+      "operation_id": "activateSnmpAgentProfileOnAp",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/stickyClientSteeringSettings",
+      "method": "DELETE",
+      "summary": "Reset AP Sticky Client Steering Settings",
+      "description": "Reset the sticky client steering settings of this AP to use the venue's settings.",
+      "operation_id": "ResetApStickyClientSteeringSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/stickyClientSteeringSettings",
+      "method": "GET",
+      "summary": "Get AP Sticky Client Steering Settings",
+      "description": "Get the sticky client steering settings of this AP.",
+      "operation_id": "GetApStickyClientSteeringSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/stickyClientSteeringSettings",
+      "method": "PUT",
+      "summary": "Update AP Sticky Client Steering Settings",
+      "description": "Update the sticky client steering settings of this AP.",
+      "operation_id": "UpdateApStickyClientSteeringSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/systemCommands",
+      "method": "PATCH",
+      "summary": "Trigger AP System Commands",
+      "description": "Trigger system commands for the AP.",
+      "operation_id": "TriggerApSystemCommands",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/usbPortSettings",
+      "method": "GET",
+      "summary": "Get AP USB Port",
+      "description": "Get AP USB port settings.",
+      "operation_id": "getApUsbPortSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/usbPortSettings",
+      "method": "PUT",
+      "summary": "Update AP USB Port",
+      "description": "Update USB port of an AP.",
+      "operation_id": "updateApUsbPortSettings",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/wifiAvailableChannels",
+      "method": "GET",
+      "summary": "Get AP Available Channels",
+      "description": "Get AP available channels.",
+      "operation_id": "getWifiAvailableChannelsOfAp",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/wifiDhcpClientLeases",
+      "method": "GET",
+      "summary": "Get AP DHCP Client Leases",
+      "description": "Get a list of DHCP client leases of the AP.",
+      "operation_id": "getApWifiDhcpClientLeases",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/{serialNumber}/wifiDhcpPoolUsages",
+      "method": "GET",
+      "summary": "Get DHCP Pools Usage in This AP",
+      "description": "Get DHCP pools usage in this AP.",
+      "operation_id": "getApWifiDhcpPoolUsages",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate DHCP Configuration Service Profile On This Venue",
+      "description": "Deactivate DHCP configuration service profile on this venue.",
+      "operation_id": "deactivateDhcpConfigServiceProfileOnVenue",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "GET",
+      "summary": "Get DHCP Service Profile Settings of This Venue",
+      "description": "Get DHCP service profile settings of this venue.",
+      "operation_id": "getVenueDhcpConfigServiceProfileSettings",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/dhcpConfigServiceProfiles/{dhcpConfigServiceProfileId}",
+      "method": "PUT",
+      "summary": "Activate DHCP Configuration Service Profile On This Venue and Update Settings",
+      "description": "Activate DHCP configuration service profile on this venue and update settings.",
+      "operation_id": "activateDhcpConfigServiceProfileOnVenueAndUpdateSettings",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/{floorplanId}/aps/{serialNumber}/floorPositions",
+      "method": "DELETE",
+      "summary": "Deactivate AP Floor Position",
+      "description": "Deactivate the AP on a floor-plan and remove the position.",
+      "operation_id": "deactivateApFloorPosition",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/{floorplanId}/aps/{serialNumber}/floorPositions",
+      "method": "GET",
+      "summary": "Get AP Floor Position",
+      "description": "Get the position of the AP on a floor-plan.",
+      "operation_id": "getApFloorPosition",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/floorplans/{floorplanId}/aps/{serialNumber}/floorPositions",
+      "method": "PUT",
+      "summary": "Activate AP Floor Position",
+      "description": "Activate the AP on a floor-plan or update the position.",
+      "operation_id": "activateApFloorPosition",
+      "tags": [
+        "AP"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/iotControllers/{iotControllerId}",
+      "method": "DELETE",
+      "summary": "Disassociate IoT Controller from Venue",
+      "description": "Disassociate the IoT controller from the venue.",
+      "operation_id": "disassociateIotControllerFromVenue",
+      "tags": [
+        "VRIoT Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/iotControllers/{iotControllerId}",
+      "method": "PUT",
+      "summary": "Associate IoT Controller with Venue",
+      "description": "Associate the IoT controller with the venue.",
+      "operation_id": "associateIotControllerWithVenue",
+      "tags": [
+        "VRIoT Management"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/lbsServerProfiles/{lbsServerProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Location Based Service Server Profile On Venue",
+      "description": "Deactivate location based service server profile on venue.",
+      "operation_id": "deactivateLbsServerProfileOnVenue",
+      "tags": [
+        "LBS Server Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/lbsServerProfiles/{lbsServerProfileId}",
+      "method": "PUT",
+      "summary": "Activate Location Based Service Server Profile On Venue",
+      "description": "Activate location based service server profile on venue.",
+      "operation_id": "activateLbsServerProfileOnVenue",
+      "tags": [
+        "LBS Server Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/roguePolicies/{roguePolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Rogue AP Detection Policy On Venue",
+      "description": "Deactivate a rogue AP detection policy on a venue and apply the default policy to that venue instead. Note that deactivate a policy from a venue does not disable rogue AP detection in that venue.",
+      "operation_id": "deactivateRoguePolicyOnVenue",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/roguePolicies/{roguePolicyId}",
+      "method": "PUT",
+      "summary": "Activate Rogue AP Detection Policy On Venue",
+      "description": "Activate a rogue AP detection policy on a venue.",
+      "operation_id": "activateRoguePolicyOnVenue",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/roguePolicySettings",
+      "method": "GET",
+      "summary": "Get Venue Rogue Policy Settings",
+      "description": "Get the venue rogue policy settings.",
+      "operation_id": "getVenueRoguePolicySettings",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/roguePolicySettings",
+      "method": "PUT",
+      "summary": "Update Venue Rogue Policy Settings",
+      "description": "Update the venue rogue policy settings.",
+      "operation_id": "updateVenueRoguePolicySettings",
+      "tags": [
+        "Rogue AP Detection Policy"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate SNMP Agent Profile On Venue",
+      "description": "Deactivate the SNMP agent profile on the venue.",
+      "operation_id": "deactivateSnmpAgentProfileOnVenue",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/snmpAgentProfiles/{snmpAgentProfileId}",
+      "method": "PUT",
+      "summary": "Activate SNMP Agent Profile On Venue",
+      "description": "Activate the SNMP agent profile on the venue.",
+      "operation_id": "activateSnmpAgentProfileOnVenue",
+      "tags": [
+        "SNMP Agent Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/syslogServerProfiles/{syslogServerProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Syslog Server Profile On Venue",
+      "description": "Use this API command to delete a relationship between syslog server profile and venue.",
+      "operation_id": "deactivateSyslogServerProfileOnVenue",
+      "tags": [
+        "Syslog Server Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/syslogServerProfiles/{syslogServerProfileId}",
+      "method": "PUT",
+      "summary": "Activate Syslog Server Profile On Venue",
+      "description": "Use this API command to build a relationship between syslog server profile and venue.",
+      "operation_id": "activateSyslogServerProfileOnVenue",
+      "tags": [
+        "Syslog Server Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiAvailableChannels",
+      "method": "GET",
+      "summary": "Get Venue Available Channels",
+      "description": "Get venue available channels.",
+      "operation_id": "getWifiAvailableChannelsOfVenue",
+      "tags": [
+        "AP Venue"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiDhcpClientLeases",
+      "method": "GET",
+      "summary": "Get Venue DHCP Leases",
+      "description": "Get a list of DHCP leases of the venue.",
+      "operation_id": "getVenueWifiDhcpClientLeases",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiDhcpPoolUsages",
+      "method": "GET",
+      "summary": "Get DHCP Pools Usage in Venue",
+      "description": "Get DHCP pools usage in this venue.",
+      "operation_id": "getVenueWifiDhcpPoolUsages",
+      "tags": [
+        "DHCP Configuration Service Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}",
+      "method": "DELETE",
+      "summary": "Deactivate Wi-Fi Network On Venue",
+      "description": "Use this API to delete a relationship between Wi-Fi network and venue.",
+      "operation_id": "deactivateWifiNetworkOnVenue",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}",
+      "method": "PUT",
+      "summary": "Activate Wi-Fi Network On Venue",
+      "description": "Use this API to build a relationship between Wi-Fi network and venue.",
+      "operation_id": "activateWifiNetworkOnVenue",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}",
+      "method": "DELETE",
+      "summary": "Deactivate AP Group On Wi-Fi Network",
+      "description": "Deactivate the AP group and remove the settings on the Wi-Fi network with the venue.",
+      "operation_id": "deactivateApGroupOnWifiNetwork",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}",
+      "method": "PUT",
+      "summary": "Activate AP Group On Wi-Fi Network",
+      "description": "Activate the AP group on the Wi-Fi network with the venue.",
+      "operation_id": "activateApGroupOnWifiNetwork",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/settings",
+      "method": "GET",
+      "summary": "Get AP Group Settings On Wi-Fi Network",
+      "description": "Get the activated AP group settings on the Wi-Fi network with the venue.",
+      "operation_id": "getApGroupSettingsOnWifiNetwork",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/settings",
+      "method": "PUT",
+      "summary": "Update AP Group Settings On Wi-Fi Network",
+      "description": "Update the activated AP group settings on the Wi-Fi network with the venue.",
+      "operation_id": "updateApGroupSettingsOnWifiNetwork",
+      "tags": [
+        "AP Group"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate VLAN Pool Profile On AP Group",
+      "description": "Use this API command to deactivate a VLAN pool profile on an AP group.",
+      "operation_id": "deactivateVlanPoolProfileOnVenueWifiNetworkApGroup",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/apGroups/{apGroupId}/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "PUT",
+      "summary": "Activate VLAN Pool Profile On AP Group",
+      "description": "Use this API command to activate a VLAN pool profile on an AP group.",
+      "operation_id": "activateVlanPoolProfileOnVenueWifiNetworkApGroup",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Client Isolation Profile On Wi-Fi Network",
+      "description": "Deactivate the client isolation profile on the Wi-Fi network with the venue.",
+      "operation_id": "deactivateClientIsolationProfileOnWifiNetwork",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/clientIsolationProfiles/{clientIsolationProfileId}",
+      "method": "PUT",
+      "summary": "Activate Client Isolation Profile On Wi-Fi Network",
+      "description": "Activate the client isolation profile on the Wi-Fi network with the venue.",
+      "operation_id": "activateClientIsolationProfileOnWifiNetwork",
+      "tags": [
+        "Client Isolation Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/settings",
+      "method": "GET",
+      "summary": "Get Venue Wi-Fi Network Settings",
+      "description": "Get Wi-Fi network settings on this venue.",
+      "operation_id": "getVenueWifiNetworkSettings",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/settings",
+      "method": "PUT",
+      "summary": "Update Venue Wi-Fi Network Settings",
+      "description": "Update Wi-Fi network settings on this venue.",
+      "operation_id": "updateVenueWifiNetworkSettings",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/softGreProfiles/{softGreProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate SoftGRE Profile On Venue Wi-Fi Network",
+      "description": "Deactivate the SoftGRE profile on the Wi-Fi network with the venue.",
+      "operation_id": "deactivateSoftGreProfileOnVenueWifiNetwork",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/wifiNetworks/{wifiNetworkId}/softGreProfiles/{softGreProfileId}",
+      "method": "PUT",
+      "summary": "Activate SoftGRE Profile On Venue Wi-Fi Network",
+      "description": "Activate the SoftGRE profile on the Wi-Fi network with the venue.",
+      "operation_id": "activateSoftGreProfileOnVenueWifiNetwork",
+      "tags": [
+        "SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/vlanPoolProfiles",
+      "method": "POST",
+      "summary": "Add VLAN Pool Profile",
+      "description": "Use this API command to create a new VLAN pool profile.",
+      "operation_id": "addVlanPoolProfile",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "DELETE",
+      "summary": "Delete VLAN Pool Profile",
+      "description": "Use this API command to delete a VLAN pool profile.",
+      "operation_id": "deleteVlanPoolProfile",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "GET",
+      "summary": "Get VLAN Pool",
+      "description": "Use this API command to get the VLAN pool profile details.",
+      "operation_id": "getVlanPoolProfile",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "PUT",
+      "summary": "Update VLAN Pool Profile",
+      "description": "Use this API command to update a VLAN pool profile.",
+      "operation_id": "updateVlanPoolProfile",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/wifiCallingServiceProfiles",
+      "method": "POST",
+      "summary": "Create Wi-Fi Calling Service Profile",
+      "description": "Create a new Wi-Fi calling service profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "createWifiCallingServiceProfile",
+      "tags": [
+        "Wi-Fi Calling Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Delete Wi-Fi Calling Service Profile",
+      "description": "Delete a Wi-Fi calling service profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "deleteWifiCallingServiceProfile",
+      "tags": [
+        "Wi-Fi Calling Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "GET",
+      "summary": "Get Wi-Fi Calling Service Profile",
+      "description": "Get the Wi-Fi calling service profile details. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "getWiFiCallingServiceProfile",
+      "tags": [
+        "Wi-Fi Calling Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "PUT",
+      "summary": "Update Wi-Fi Calling Service Profile",
+      "description": "Update a Wi-Fi calling service profile. Content-Type: \"application/vnd.ruckus.v1+json\" will be deprecated on 2024/09/01.",
+      "operation_id": "updateWifiCallingServiceProfile",
+      "tags": [
+        "Wi-Fi Calling Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiFeatureSets/query",
+      "method": "POST",
+      "summary": "Wi-Fi Feature Sets Query",
+      "description": "Wi-Fi feature sets query.",
+      "operation_id": "wifiFeatureSetsQuery",
+      "tags": [
+        "AP Compatibility"
+      ]
+    },
+    {
+      "path": "/wifiNetworks",
+      "method": "POST",
+      "summary": "Create Wi-Fi Network",
+      "description": "Create a new Wi-Fi network.",
+      "operation_id": "addWifiNetwork",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/apCompatibilities/query",
+      "method": "POST",
+      "summary": "Wi-Fi Network Compatibility Query",
+      "description": "Details of the feature requirements, including the supported AP firmware and models, as well as the count of compatible and incompatible APs based on the targeted Wi-Fi networks.",
+      "operation_id": "networkCompatibilitiesQuery",
+      "tags": [
+        "AP Compatibility"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/hotspot20IdentityProviders",
+      "method": "GET",
+      "summary": "Get Predefined Hotspot 2.0 Identity Providers",
+      "description": "Get predefined Hotspot 2.0 identity providers.",
+      "operation_id": "getWifiNetworkPredefinedHotspot20IdentityProviders",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/hotspot20Operators",
+      "method": "GET",
+      "summary": "Get Predefined Hotspot 2.0 Operators",
+      "description": "Get predefined Hotspot 2.0 operators.",
+      "operation_id": "getWifiNetworkPredefinedHotspot20Operators",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/qosMapSetOptions",
+      "method": "GET",
+      "summary": "Get Default Options for QoS Map Set",
+      "description": "Get default options for QoS map set.",
+      "operation_id": "getWifiNetworkDefaultQosMapSetOptions",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/recoveryPassphraseSettings",
+      "method": "GET",
+      "summary": "Get Wi-Fi Recovery Network Passphrase Settings",
+      "description": "Get the passphrase settings for the Wi-Fi recovery network.",
+      "operation_id": "getRecoveryPassphraseSettings",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/recoveryPassphraseSettings",
+      "method": "PUT",
+      "summary": "Update Wi-Fi Recovery Network Passphrase Settings",
+      "description": "Update the passphrase settings for the Wi-Fi recovery network.",
+      "operation_id": "updateRecoveryPassphraseSettings",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/wisprProviders",
+      "method": "GET",
+      "summary": "Get External WISPr Providers",
+      "description": "Get the list of external WISPr providers for a captive portal network. Note: these providers have integrated their service with the RUCKUS cloud.",
+      "operation_id": "getWifiNetworkWisprProviders",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}",
+      "method": "DELETE",
+      "summary": "Delete Wi-Fi Network",
+      "description": "Delete a Wi-Fi network.",
+      "operation_id": "deleteWifiNetwork",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}",
+      "method": "GET",
+      "summary": "Get Wi-Fi Network",
+      "description": "Get the Wi-Fi network details.",
+      "operation_id": "getWifiNetwork",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}",
+      "method": "PUT",
+      "summary": "Update Wi-Fi Network",
+      "description": "Update this Wi-Fi network, including nested details.",
+      "operation_id": "updateWifiNetwork",
+      "tags": [
+        "Wi-Fi Network"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/accessControlProfiles/{accessControlProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Access Control Profile On Wi-Fi Network",
+      "description": "Use this API command to delete a relationship between access control profile and Wi-Fi network.",
+      "operation_id": "deactivateAccessControlProfileOnWifiNetwork",
+      "tags": [
+        "Access Control Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/accessControlProfiles/{accessControlProfileId}",
+      "method": "PUT",
+      "summary": "Activate Access Control Profile On Wi-Fi Network",
+      "description": "Use this API command to build a relationship between access control profile and Wi-Fi network.",
+      "operation_id": "activateAccessControlProfileOnWifiNetwork",
+      "tags": [
+        "Access Control Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/applicationPolicies/{applicationPolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Application Policy On Wifi Network",
+      "description": "Use this API command to deactivate an application policy on a Wi-Fi network.",
+      "operation_id": "deactivateApplicationPolicyOnWifiNetwork",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/applicationPolicies/{applicationPolicyId}",
+      "method": "PUT",
+      "summary": "Activate Application Policy On Wifi Network",
+      "description": "Use this API command to activate an application policy on a Wi-Fi network.",
+      "operation_id": "activateApplicationPolicyOnWifiNetwork",
+      "tags": [
+        "Application Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/certificateTemplates/{certificateTemplateId}",
+      "method": "DELETE",
+      "summary": "Deactivate Certificate Template On Wi-Fi Network",
+      "description": "Use this API command to delete the relationship between certificate template and Wi-Fi network.",
+      "operation_id": "deactivateCertificateTemplateOnWifiNetwork",
+      "tags": [
+        "Certificate Template Activation"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/certificateTemplates/{certificateTemplateId}",
+      "method": "PUT",
+      "summary": "Activate Certificate Template On Wi-Fi Network",
+      "description": "Use this API command to build the relationship between certificate template and Wi-Fi network.",
+      "operation_id": "activateCertificateTemplateOnWifiNetwork",
+      "tags": [
+        "Certificate Template Activation"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/devicePolicies/{policyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Device Policy On Wi-Fi Network",
+      "description": "Use this API command to delete a relationship between device policy and Wi-Fi network.",
+      "operation_id": "deactivateDevicePolicyOnWifiNetwork",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/devicePolicies/{policyId}",
+      "method": "PUT",
+      "summary": "Activate Device Policy On Wi-Fi Network",
+      "description": "Use this API command to build a relationship between device policy and Wi-Fi network.",
+      "operation_id": "activateDevicePolicyOnWifiNetwork",
+      "tags": [
+        "Device Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/dpskServices/{dpskServiceId}",
+      "method": "PUT",
+      "summary": "Activate DPSK Service On Wi-Fi Network",
+      "description": "Use this API command to build the relationship between DPSK service and Wi-Fi network.",
+      "operation_id": "activateDpskServiceOnWifiNetwork",
+      "tags": [
+        "DPSK Service"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/hotspot20IdentityProviders/{hotspot20IdentityProviderId}",
+      "method": "DELETE",
+      "summary": "Deactivate Hotspot 2.0 Identity Provider On Wi-Fi Network",
+      "description": "Deactivate Hotspot 2.0 identity provider on Wi-Fi network.",
+      "operation_id": "deactivateHotspot20IdentityProviderOnWifiNetwork",
+      "tags": [
+        "Hotspot 2.0 Identity Provider"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/hotspot20IdentityProviders/{hotspot20IdentityProviderId}",
+      "method": "PUT",
+      "summary": "Activate Hotspot 2.0 Identity Provider On Wi-Fi Network",
+      "description": "Activate Hotspot 2.0 identity provider on Wi-Fi network.",
+      "operation_id": "activateHotspot20IdentityProviderOnWifiNetwork",
+      "tags": [
+        "Hotspot 2.0 Identity Provider"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/hotspot20Operators/{hotspot20OperatorId}",
+      "method": "DELETE",
+      "summary": "Deactivate Hotspot 2.0 Operator On Wi-Fi Network",
+      "description": "Deactivate Hotspot 2.0 operator on Wi-Fi network.",
+      "operation_id": "deactivateHotspot20OperatorOnWifiNetwork",
+      "tags": [
+        "Hotspot 2.0 Operator"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/hotspot20Operators/{hotspot20OperatorId}",
+      "method": "PUT",
+      "summary": "Activate Hotspot 2.0 Operator On Wi-Fi Network",
+      "description": "Activate Hotspot 2.0 operator on Wi-Fi network.",
+      "operation_id": "activateHotspot20OperatorOnWifiNetwork",
+      "tags": [
+        "Hotspot 2.0 Operator"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/l2AclPolicies/{l2AclPolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Layer-2 ACL Policy On Wi-Fi Network",
+      "description": "Deactivate layer-2 ACL policy on Wi-Fi network.",
+      "operation_id": "deactivateL2AclPolicyOnWifiNetwork",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/l2AclPolicies/{l2AclPolicyId}",
+      "method": "PUT",
+      "summary": "Activate Layer-2 ACL Policy On Wi-Fi Network",
+      "description": "Activate layer-2 ACL policy on Wi-Fi network.",
+      "operation_id": "activateL2AclPolicyOnWifiNetwork",
+      "tags": [
+        "L2ACL Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/l3AclPolicies/{l3AclPolicyId}",
+      "method": "DELETE",
+      "summary": "Deactivate Layer-3 ACL Policy On Wi-Fi Network",
+      "description": "Deactivate layer-3 ACL policy on Wi-Fi network.",
+      "operation_id": "deactivateL3AclPolicyOnWifiNetwork",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/l3AclPolicies/{l3AclPolicyId}",
+      "method": "PUT",
+      "summary": "Activate Layer-3 ACL Policy On Wi-Fi Network",
+      "description": "Activate layer-3 ACL policy on Wi-Fi network.",
+      "operation_id": "activateL3AclPolicyOnWifiNetwork",
+      "tags": [
+        "L3ACL Policy"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/macRegistrationPools/{macRegistrationPoolId}",
+      "method": "DELETE",
+      "summary": "Deactivate MAC Registration Pool On Wi-Fi Network",
+      "description": "Use this API command to delete the relationship between MAC registration pool and Wi-Fi network.",
+      "operation_id": "deactivateMacRegistrationPoolOnWifiNetwork",
+      "tags": [
+        "MAC Registration Pool"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/macRegistrationPools/{macRegistrationPoolId}",
+      "method": "PUT",
+      "summary": "Activate MAC Registration Pool On Wi-Fi Network",
+      "description": "Use this API command to build the relationship between MAC registration pool and Wi-Fi network.",
+      "operation_id": "activateMacRegistrationPoolOnWifiNetwork",
+      "tags": [
+        "MAC Registration Pool"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/portalServiceProfiles/{portalServiceProfileId}",
+      "method": "PUT",
+      "summary": "Activate Portal Service Profile On Wi-Fi Network",
+      "description": "Activate a portal service profile on a Wi-Fi network.",
+      "operation_id": "activatePortalServiceProfileOnWifiNetwork",
+      "tags": [
+        "Wi-Fi Portal Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/radiusServerProfileSettings",
+      "method": "GET",
+      "summary": "Get RADIUS Server Profile Settings On Wi-Fi Network",
+      "description": "Get RADIUS server profile settings on Wi-Fi network.",
+      "operation_id": "getWifiNetworkRadiusServerProfileSettings",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/radiusServerProfileSettings",
+      "method": "PUT",
+      "summary": "Update RADIUS Server Profile Settings On Wi-Fi Network",
+      "description": "Update RADIUS server profile settings on Wi-Fi network.",
+      "operation_id": "updateWifiNetworkRadiusServerProfileSettings",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/radiusServerProfiles/{radiusId}",
+      "method": "DELETE",
+      "summary": "Deactivate RADIUS Server Profile On Wi-Fi Network",
+      "description": "Use this API command to delete a relationship between RADIUS server profile and Wi-Fi network.",
+      "operation_id": "deactivateRadiusServerProfileOnWifiNetwork",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/radiusServerProfiles/{radiusId}",
+      "method": "PUT",
+      "summary": "Activate RADIUS Server Profile On Wi-Fi Network",
+      "description": "Use this API command to build a relationship between RADIUS server profile and Wi-Fi network.",
+      "operation_id": "activateRadiusServerProfileOnWifiNetwork",
+      "tags": [
+        "RADIUS Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/samlIdpProfiles/{samlIdpProfileId}",
+      "method": "PUT",
+      "summary": "Activate SAML Identity Provider Profile On Wi-Fi Network",
+      "description": "Use this API command to build the relationship between SAML 2.0 identity provider profile and Wi-Fi network.",
+      "operation_id": "activateSamlIdpProfileOnWifiNetwork",
+      "tags": [
+        "SAML Identity Provider Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate VLAN Pool Profile On Wi-Fi Network",
+      "description": "Use this API command to deactivate a VLAN pool profile on a Wi-Fi network.",
+      "operation_id": "deactivateVlanPoolProfileOnWifiNetwork",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/vlanPoolProfiles/{vlanPoolProfileId}",
+      "method": "PUT",
+      "summary": "Activate VLAN Pool Profile On Wi-Fi Network",
+      "description": "Use this API command to activate a VLAN pool profile on a Wi-Fi network.",
+      "operation_id": "activateVlanPoolProfileOnWifiNetwork",
+      "tags": [
+        "VLAN Pool Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "DELETE",
+      "summary": "Deactivate Wi-Fi Calling Service Profile On Wi-Fi Network",
+      "description": "Deactivate a Wi-Fi calling service profile on a Wi-Fi network.",
+      "operation_id": "deactivateWifiCallingServiceProfileOnWifiNetwork",
+      "tags": [
+        "Wi-Fi Calling Service Profile"
+      ]
+    },
+    {
+      "path": "/wifiNetworks/{wifiNetworkId}/wifiCallingServiceProfiles/{wifiCallingServiceProfileId}",
+      "method": "PUT",
+      "summary": "Activate Wi-Fi Calling Service Profile On Wi-Fi Network",
+      "description": "Activate a Wi-Fi calling service profile on a Wi-Fi network.",
+      "operation_id": "activateWifiCallingServiceProfileOnWifiNetwork",
+      "tags": [
+        "Wi-Fi Calling Service Profile"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "name": "Workflow Management API",
+  "version": "0.0.3",
+  "url": "https://docs.ruckus.cloud/_bundle/api/workflow-api-0.0.3.yaml",
+  "downloaded_at": "2025-12-02T18:45:31.629963",
+  "endpoint_count": 27,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "The Workflow Management REST API's allow the creation of a workflow, and steps within that workflow. Steps, and split step options must be assigned actions that are already defined through the /enrollmentActions api.  Please see that API for additional information. For split steps only the action definition is to be provided, but the options require a matching action type, and must be of type split.## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/workflows",
+      "method": "POST",
+      "summary": "Create Workflow",
+      "description": "Initiates a request that will create a workflow with the requested values and sets its status to work-in-progress, any other state change request will be ignored. The start and end steps for the workflow are also automatically created.",
+      "operation_id": "createWorkflow",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/workflows",
+      "method": "POST",
+      "summary": "Create a New Workflow from the Specified Workflow",
+      "description": "Initiates a request that will create a new workflow from the specified workflow with the requested values and sets its status to work-in-progress. All steps in the workflow will be cloned.",
+      "operation_id": "cloneWorkflow",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/versions/query",
+      "method": "POST",
+      "summary": "Get All Workflows Including Versioned",
+      "description": "Retrieves all of the workflow versions for requested workflow.",
+      "operation_id": "queryForVersionedWorkflows",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/uiConfigurations",
+      "method": "GET",
+      "summary": "Get Workflow's UI Configuration",
+      "description": "Retrieves the UI configuration for the specified workflow.",
+      "operation_id": "getUiConfiguration",
+      "tags": [
+        "Enrollment UI Configuration"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/uiConfigurations",
+      "method": "POST",
+      "summary": "Update Workflows UI Configuration",
+      "description": "Initiates a request that will update the workflows UI configuration.",
+      "operation_id": "createUiConfig",
+      "tags": [
+        "Enrollment UI Configuration"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/uiConfigurations",
+      "method": "DELETE",
+      "summary": "Delete UI Configuration",
+      "description": "Deletes the custom settings on the UI configuration.",
+      "operation_id": "resetUiConfig",
+      "tags": [
+        "Enrollment UI Configuration"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/splitOptions",
+      "method": "GET",
+      "summary": "Get All Split Options",
+      "description": "Retrieves all of the split options for the split step.",
+      "operation_id": "getAllSplitStepOptionsForStep",
+      "tags": [
+        "Split Options"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/splitOptions",
+      "method": "POST",
+      "summary": "Creates Split Option",
+      "description": "Creates a split option for the step at the end of the list of options for the split step. All split options which are functional are processed in order, which is defined as they are created.",
+      "operation_id": "createOption",
+      "tags": [
+        "Split Options"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/splitOptions/{optionId}/nextSteps",
+      "method": "POST",
+      "summary": "Creates Step Under Option",
+      "description": "Creates a step under the requested split option. When there is no step already mapped, the step is just created and assigned to the option. When a step is already assigned to the option, this will create this step first, and move the existing step after this one.",
+      "operation_id": "createNextStepForOption",
+      "tags": [
+        "Split Options"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/nextSteps",
+      "method": "POST",
+      "summary": "Create Step",
+      "description": "Creates a step for the workflow under the specified step.",
+      "operation_id": "createChildStep",
+      "tags": [
+        "Steps"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/nextSteps/workflows/{referencedWorkflowId}",
+      "method": "POST",
+      "summary": "Import a Workflow Into the Existing Workflow",
+      "description": "Initiates a request to clone a workflow into the existing workflow after the requested step.",
+      "operation_id": "nestedCloneWorkflow",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/query",
+      "method": "POST",
+      "summary": "Query All Step",
+      "description": "Retrieves all of the steps for the requested workflow based on the query criteria.",
+      "operation_id": "queryForStepsAssignedToThisWorkflow",
+      "tags": [
+        "Steps"
+      ]
+    },
+    {
+      "path": "/workflows/query",
+      "method": "POST",
+      "summary": "Get All Current Workflow",
+      "description": "Retrieves all of the work in progress workflows based on the query criteria.",
+      "operation_id": "queryForWorkflows",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflowActionDefinitions/query",
+      "method": "POST",
+      "summary": "Query Action Definitions",
+      "description": "Returns the list of action definitions using the specified query.",
+      "operation_id": "queryForActionDefinitions",
+      "tags": [
+        "Action Definition"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}",
+      "method": "GET",
+      "summary": "Get Workflow",
+      "description": "Retrieves the requested workflow by id.",
+      "operation_id": "getWorkflowById",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}",
+      "method": "DELETE",
+      "summary": "Delete Workflow",
+      "description": "Initiates a request that will delete the workflow requested. If the workflow id provided is for a workflow that is in a work in progress' state then it will be deleted along with all dependent published and retired workflows.",
+      "operation_id": "deleteWorkflow",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}",
+      "method": "PATCH",
+      "summary": "Update a Workflow",
+      "description": "Initiates a request that will update the workflow requested. Once it has been published a workflow cannot be changed.",
+      "operation_id": "updateWorkflow",
+      "tags": [
+        "Workflow"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/uiConfigurations/{imageType}",
+      "method": "GET",
+      "summary": "Get UI Configuration's Image",
+      "description": "Get UI configuration's image for the specified workflow and image type.",
+      "operation_id": "getImageFile",
+      "tags": [
+        "Enrollment UI Configuration"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps",
+      "method": "GET",
+      "summary": "Get All Step",
+      "description": "Retrieves the complete list of steps for the workflow with paging.",
+      "operation_id": "getAllStepsForWorkflow",
+      "tags": [
+        "Steps"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}",
+      "method": "GET",
+      "summary": "Get Step",
+      "description": "Retrieves the step within the workflow by id.",
+      "operation_id": "getStepById",
+      "tags": [
+        "Steps"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}",
+      "method": "DELETE",
+      "summary": "Delete Step",
+      "description": "Deletes the requested step and reorders the remaining steps. If this is a split, all options except the first will be removed. The step under the first option will be moved to the current step flow. Start and end steps can never be deleted.",
+      "operation_id": "deleteStep",
+      "tags": [
+        "Steps"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/splitOptions/{optionId}",
+      "method": "GET",
+      "summary": "Get Split Option",
+      "description": "Retrieves the split option by id.",
+      "operation_id": "getSplitStepOptionById",
+      "tags": [
+        "Split Options"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/splitOptions/{optionId}",
+      "method": "DELETE",
+      "summary": "Delete Split Option",
+      "description": "Deletes the requested option and all of the steps under this option.",
+      "operation_id": "deleteSplitOption",
+      "tags": [
+        "Split Options"
+      ]
+    },
+    {
+      "path": "/workflowActionDefinitions",
+      "method": "GET",
+      "summary": "Get All Action Definitions",
+      "description": "Retrieves the complete list of action definitions with paging.",
+      "operation_id": "getAllActions",
+      "tags": [
+        "Action Definition"
+      ]
+    },
+    {
+      "path": "/workflowActionDefinitions/{definitionId}",
+      "method": "GET",
+      "summary": "Get Action Definition",
+      "description": "Retrieves the requested action definition by id.",
+      "operation_id": "getByDefinitionId",
+      "tags": [
+        "Action Definition"
+      ]
+    },
+    {
+      "path": "/workflowActionDefinitions/{definitionId}/requiredPriorDefinitions",
+      "method": "GET",
+      "summary": "Get Prior Required Actions",
+      "description": "Retrieves the list of required prior actions for this action.",
+      "operation_id": "getRequiredPriorDefinitions",
+      "tags": [
+        "Action Definition"
+      ]
+    },
+    {
+      "path": "/workflows/{workflowId}/steps/{stepId}/descendantSteps",
+      "method": "DELETE",
+      "summary": "Delete Descendant Step",
+      "description": "Deletes all of the steps that follow this step, leaving this step as the last step and the end step as the remaining steps in the list of steps.",
+      "operation_id": "deleteDescendantSteps",
+      "tags": [
+        "Steps"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "name": "Resident Portal API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/resident-portal-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.812516",
+  "endpoint_count": 16,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "Resident portals are provided to the unit owners to view and update unit details and secrets. The Resident portal APIs support these functions. These provide details on the property, units and dpsk passphrases associated. The APIs also supports updates of contact details and dpsk passphrases. APIs are authenticated using a specific token associated to the unit. These tokens are generated as the unit is created.",
+  "endpoints": [
+    {
+      "path": "/residents/properties/{propertyId}/units",
+      "method": "GET",
+      "summary": "Gets Unit Details",
+      "description": "Gets unit details for the authenticated unit.",
+      "operation_id": "residentFetchUnit",
+      "tags": [
+        "Resident Portal Unit API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units",
+      "method": "PUT",
+      "summary": "Selectively Updates Unit Configurations",
+      "description": "Allows the user to selectively update unit configurations such as passphrase, contact details.",
+      "operation_id": "residentEditUnit",
+      "tags": [
+        "Resident Portal Unit API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/users/{userId}",
+      "method": "GET",
+      "summary": "Get Unit User Details for Specific User",
+      "description": "Gets unit user details for the requested user.",
+      "operation_id": "getUnitUser",
+      "tags": [
+        "Resident Portal Unit Users API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/users/{userId}",
+      "method": "PUT",
+      "summary": "Updates Unit User",
+      "description": "Enables update of unit user.",
+      "operation_id": "updateUnitUser",
+      "tags": [
+        "Resident Portal Unit Users API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/users/query",
+      "method": "POST",
+      "summary": "Query Unit Users",
+      "description": "Gets the list of unit users using the specified query.",
+      "operation_id": "queryUnitUsers",
+      "tags": [
+        "Resident Portal Unit Users API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/logins",
+      "method": "POST",
+      "summary": "Access Resident Portal",
+      "description": "Enables user authentication and authorization.",
+      "operation_id": "residentLogin",
+      "tags": [
+        "Resident Portal Login API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}",
+      "method": "GET",
+      "summary": "Gets Property Details",
+      "description": "Gets details of the property.",
+      "operation_id": "residentFetchProperty",
+      "tags": [
+        "Resident Portal Configuration"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/users/{userId}/devices",
+      "method": "GET",
+      "summary": "Get Unit User Devices for Specific User",
+      "description": "Gets unit user devices for the requested user.",
+      "operation_id": "getUnitUserDevices",
+      "tags": [
+        "Resident Portal Unit Users API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/devices",
+      "method": "GET",
+      "summary": "Gets Unit Devices",
+      "description": "Allows the user to get all unit and guest devices with the given unit id.",
+      "operation_id": "residentFetchUnitDevices",
+      "tags": [
+        "Resident Portal Unit API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/uiConfigurations",
+      "method": "GET",
+      "summary": "Gets User Interface Configurations",
+      "description": "Gets user interface configurations for the portal.",
+      "operation_id": "residentFetchUiConfiguration",
+      "tags": [
+        "Resident Portal Configuration"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/styles",
+      "method": "GET",
+      "summary": "Gets Resident Portal Styles",
+      "description": "Gets resident portal page details.",
+      "operation_id": "getPropertyStyles",
+      "tags": [
+        "Resident Portal UI Configuration"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/files/{type}",
+      "method": "GET",
+      "summary": "Gets Resident Portal File",
+      "description": "Allows the user to download resident portal file with the given type.",
+      "operation_id": "residentDownloadPortalFile",
+      "tags": [
+        "Resident Portal Configuration"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/files/favicons",
+      "method": "GET",
+      "summary": "Gets Resident Portal Icon File",
+      "description": "Enables the user to get a resident portal icon file for the property.",
+      "operation_id": "downloadFavicons",
+      "tags": [
+        "Resident Portal UI Configuration"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/access",
+      "method": "GET",
+      "summary": "Gets Portal Access Details",
+      "description": "Fetches resident portal access details.",
+      "operation_id": "getTenantPortalAccess",
+      "tags": [
+        "Resident Portal UI Configuration"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/users/{userId}/devices/{deviceId}",
+      "method": "DELETE",
+      "summary": "Delete Unit User Device",
+      "description": "Allows the user to selectively remove a device.",
+      "operation_id": "removeUnitUserDevice",
+      "tags": [
+        "Resident Portal Unit Users API"
+      ]
+    },
+    {
+      "path": "/residents/properties/{propertyId}/units/devices/{deviceId}",
+      "method": "DELETE",
+      "summary": "Delete Device",
+      "description": "Allows the user to selectively remove unit device on the specified unit and device MAC address.",
+      "operation_id": "residentRemoveDevice",
+      "tags": [
+        "Resident Portal Unit API"
+      ]
+    }
+  ]
+}

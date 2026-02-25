@@ -1,0 +1,51 @@
+{
+  "name": "Admin Enrollment REST API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/enrollment-api-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.406628",
+  "endpoint_count": 4,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "# RateLimit",
+  "endpoints": [
+    {
+      "path": "/enrollments/registrations/query",
+      "method": "POST",
+      "summary": "Query Enrollment Registrations",
+      "description": "Gets the list of enrollment registrations using the specified query.",
+      "operation_id": "queryEnrollmentRegistrations",
+      "tags": [
+        "Admin Enrollment Registration API"
+      ]
+    },
+    {
+      "path": "/enrollments/query",
+      "method": "POST",
+      "summary": "Query Enrollments",
+      "description": "Gets the list of enrollments using the specified query.",
+      "operation_id": "queryEnrollments",
+      "tags": [
+        "Admin Enrollment API"
+      ]
+    },
+    {
+      "path": "/enrollments/{enrollmentId}",
+      "method": "GET",
+      "summary": "Get Enrollments for a Specific Enrollment Identifier",
+      "description": "Gets enrollment details for the requested enrollment identifier.",
+      "operation_id": "getEnrollments",
+      "tags": [
+        "Admin Enrollment API"
+      ]
+    },
+    {
+      "path": "/enrollments/registrations/{enrollmentRegistrationId}",
+      "method": "GET",
+      "summary": "Get Details for a Specific Enrollment RegistrationIdentifier",
+      "description": "Gets enrollment registration details for the requested enrollment registration identifier.",
+      "operation_id": "getEnrollmentRegistration",
+      "tags": [
+        "Admin Enrollment Registration API"
+      ]
+    }
+  ]
+}

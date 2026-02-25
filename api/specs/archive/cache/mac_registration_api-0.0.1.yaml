@@ -1,0 +1,1374 @@
+openapi: 3.0.1
+info:
+  title: MAC Registration API
+  version: 0.0.1
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+paths:
+  /macRegistrationPools/{id}/policySets/{policySetId}:
+    put:
+      tags:
+        - Registration Pool
+      summary: Update Policy Set for a Registration Pool
+      operationId: macPoolUpdatePolicySetId
+      parameters:
+        - name: id
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Registration pool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - Registration Pool
+      summary: Delete Policy Set from a Registration Pool
+      operationId: macPoolRemovePolicySetId
+      parameters:
+        - name: id
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The remove request has been accepted and is in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '404':
+          description: Registration pool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /macRegistrationPools/{poolId}/registrations/query:
+    post:
+      tags:
+        - MAC Registration
+      summary: Search for MAC Registrations with the Specified Criteria
+      operationId: searchRegistrations
+      parameters:
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/SearchDto'
+        required: true
+      responses:
+        '200':
+          description: Registrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageRegistration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageRegistration'
+  /macRegistrationPools/{poolId}/registrations/csvFile:
+    post:
+      tags:
+        - MAC Registration
+      summary: Import MAC Registrations with the Specified Registration Pool
+      operationId: importRegistrations_1
+      parameters:
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+                - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Registration pools created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Registration'
+        '202':
+          description: The registration import request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid content supplied
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '413':
+          description: Payload too large
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '419':
+          description: Exceed max registrations of the pool
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /macRegistrationPools/{poolId}/registrations:
+    get:
+      tags:
+        - MAC Registration
+      summary: MAC Registrations in the Specified Registration Pool
+      operationId: listAllRegistrations
+      parameters:
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      responses:
+        '200':
+          description: Registrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageRegistration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageRegistration'
+    post:
+      tags:
+        - MAC Registration
+      summary: Create a MAC Registration in the Specified Registration Pool
+      operationId: createRegistration_1
+      parameters:
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+        required: true
+      responses:
+        '201':
+          description: Registration pool created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '202':
+          description: The registration create request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid content supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '419':
+          description: Exceed max registrations of the pool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - MAC Registration
+      summary: Delete the Specific MAC Registrations
+      operationId: deleteRegistrations_1
+      parameters:
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              description: MAC registration ids
+              items:
+                type: string
+                format: uuid
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              description: MAC registration ids
+              items:
+                type: string
+                format: uuid
+        required: true
+      responses:
+        '200':
+          description: Registration deleted
+          content:
+            application/json: {}
+            application/vnd.ruckus.v1+json: {}
+        '202':
+          description: The registration bulk delete request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid ids supplied
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /macRegistrationPools/query:
+    post:
+      tags:
+        - Registration Pool
+      summary: Search for Registration Pools with the Specified Criteria
+      operationId: searchPools
+      parameters:
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/SearchDto'
+        required: true
+      responses:
+        '200':
+          description: Registrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagePool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagePool'
+  /macRegistrationPools:
+    get:
+      tags:
+        - Registration Pool
+      summary: Registration Pools That Contain MAC Registrations
+      operationId: listAllPools
+      parameters:
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Registration pools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagePool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagePool'
+    post:
+      tags:
+        - Registration Pool
+      summary: Create a Registration Pool
+      operationId: createPool_1
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pool'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Pool'
+        required: true
+      responses:
+        '201':
+          description: Registration pool created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+        '202':
+          description: The registration pool create request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid pool content
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '419':
+          description: Exceed max pools per tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups/{identityGroupId}/macRegistrationPools:
+    post:
+      tags:
+        - Assign Identity Group
+      summary: Create a Registration Pool with Identity Group
+      operationId: createPoolWithIdentityGroup
+      parameters:
+        - name: identityGroupId
+          in: path
+          description: The identity group to create
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pool'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Pool'
+        required: true
+      responses:
+        '202':
+          description: The registration pool create request is in progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid pool content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /macRegistrationPools/{poolId}/registrations/{id}:
+    get:
+      tags:
+        - MAC Registration
+      summary: Returns the Specific MAC Registration
+      operationId: getRegistrationById
+      parameters:
+        - name: id
+          in: path
+          description: MAC registration id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 28529868-9db0-4361-ba20-4d35fb402bc2
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      responses:
+        '200':
+          description: MAC registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: MAC registration not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - MAC Registration
+      summary: Delete the Specific MAC Registration
+      operationId: deleteRegistration_1
+      parameters:
+        - name: id
+          in: path
+          description: MAC registration id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      responses:
+        '200':
+          description: Registration deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '202':
+          description: The registration delete request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: MAC registration not found
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: >-
+            The Registration associated with other resources is not allowed to
+            be deleted
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    patch:
+      tags:
+        - MAC Registration
+      summary: Update Properties in the Specific MAC Registration
+      operationId: updateRegistration_1
+      parameters:
+        - name: id
+          in: path
+          description: MAC registration id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+        - name: poolId
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+        required: true
+      responses:
+        '200':
+          description: MAC registration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '202':
+          description: The registration update request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id or content supplied
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '404':
+          description: MAC registration not found
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+  /macRegistrationPools/{id}:
+    get:
+      tags:
+        - Registration Pool
+      summary: Returns the Specific Registration Pool Containing MAC Registrations
+      operationId: getPoolById
+      parameters:
+        - name: id
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      responses:
+        '200':
+          description: Registration pool
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Registration pool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - Registration Pool
+      summary: Delete the Specific Registration Pool
+      operationId: deletePool_1
+      parameters:
+        - name: id
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      responses:
+        '200':
+          description: Registration pool deleted
+          content:
+            application/json: {}
+            application/vnd.ruckus.v1+json: {}
+        '202':
+          description: The registration pool delete request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Registration pool not found
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: >-
+            The Registration pool associated with other resources is not allowed
+            to be deleted
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    patch:
+      tags:
+        - Registration Pool
+      summary: Update Properties in the Specific Registration Pool
+      operationId: updatePool_1
+      parameters:
+        - name: id
+          in: path
+          description: Registration pool id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: f1ae11f2-1390-47c1-b05e-8377180c2b27
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pool'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Pool'
+        required: true
+      responses:
+        '200':
+          description: Registration pool updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+        '202':
+          description: The registration pool update request is in progress
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Registration pool not found
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /wifiNetworks/{networkId}/macRegistrationPools:
+    get:
+      tags:
+        - Wifi Network
+      summary: Get MAC Registration Pools by Network
+      operationId: getPoolsByNetworkId
+      parameters:
+        - name: networkId
+          in: path
+          description: Wifi network id
+          required: true
+          schema:
+            type: string
+        - name: pageable
+          in: query
+          description: parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Registration pools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Pool'
+        '404':
+          description: Registration pool not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagePool'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagePool'
+components:
+  schemas:
+    OperationResponse:
+      required:
+        - requestId
+      type: object
+      properties:
+        requestId:
+          type: string
+        id:
+          type: string
+          description: Only present for the create operation.
+    ApiError:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        debugMessage:
+          type: string
+        subErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiSubError'
+    ApiSubError:
+      type: object
+    SearchCriteria:
+      type: object
+      properties:
+        filterKey:
+          type: string
+          example: name
+        value:
+          type: object
+          example: ruckus one
+        operation:
+          type: string
+          example: eq
+    SearchDto:
+      type: object
+      properties:
+        searchCriteriaList:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchCriteria'
+        dataOption:
+          type: string
+          example: ALL
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    PageRegistration:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Registration'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        first:
+          type: boolean
+        last:
+          type: boolean
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageSize:
+          type: integer
+          format: int32
+        pageNumber:
+          type: integer
+          format: int32
+        unpaged:
+          type: boolean
+        paged:
+          type: boolean
+    Registration:
+      required:
+        - macAddress
+        - revoked
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this MAC registration.
+          format: uuid
+        expirationDate:
+          type: string
+          description: >-
+            Indicates when this registration expires. Will derive from the pool
+            setting if not specified.
+          format: date-time
+        revoked:
+          type: boolean
+          description: If this MAC registration is revoked or not.
+        macAddress:
+          pattern: ^([0-9A-F]{2}:){5}([0-9A-F]{2})$
+          type: string
+          description: >-
+            The mac address for this registration. Must be provided on post, and
+            may not be changed.
+        username:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            A username for this device, it does not reflect an authenticated
+            user that has gone through a real authentication process.
+        email:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^(?:[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6})?$
+          type: string
+          description: The email to associate with this device.
+          example: dev@commscope.com
+        location:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The location of this device.
+        deviceName:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Device name
+        createdDate:
+          type: string
+          description: The created date of this device.
+          format: date-time
+        isReferenced:
+          type: boolean
+          description: >-
+            This registration is referenced by an identity and cannot be
+            deleted.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A MAC registration
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean
+    PagePool:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pool'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        first:
+          type: boolean
+        last:
+          type: boolean
+        empty:
+          type: boolean
+    Pool:
+      required:
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this pool.
+          format: uuid
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The unique reference name of the pool.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: A description of the pool.
+        autoCleanup:
+          type: boolean
+          description: >-
+            A toggle determining whether MAC registrations that are 24 hours
+            past the expiration time will be automatically removed from the
+            pool.
+          default: true
+        expirationType:
+          type: string
+          description: Defines the rule for expiration date calculation.
+          enum:
+            - SPECIFIED_DATE
+            - MINUTES_AFTER_TIME
+            - HOURS_AFTER_TIME
+            - DAYS_AFTER_TIME
+            - WEEKS_AFTER_TIME
+            - MONTHS_AFTER_TIME
+            - QUARTERS_AFTER_TIME
+            - YEARS_AFTER_TIME
+            - END_OF_HOUR
+            - END_OF_DAY
+            - END_OF_WEEK
+            - END_OF_MONTH
+            - END_OF_QUARTER
+            - END_OF_HALF
+            - END_OF_YEAR
+        expirationOffset:
+          type: integer
+          description: >-
+            If the expiration type is not specified_date then this field is the
+            offset amount.
+          format: int32
+        expirationDate:
+          type: string
+          description: >-
+            If the expiration type is specified_date then this field is the
+            related date.
+          format: date-time
+        ssidRegex:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            A regex to determine which SSIDs this registration pool will allows
+            access to.
+        expirationEnabled:
+          type: boolean
+          description: If the expiration setting is enabled for new MAC registration.
+          default: false
+        registrationCount:
+          type: integer
+          description: Number of registrations in the pool.
+          format: int32
+        defaultAccess:
+          type: string
+          description: The type of default access.
+          default: ACCEPT
+          enum:
+            - ACCEPT
+            - REJECT
+        createdDate:
+          type: string
+          description: The created date of this pool.
+          format: date-time
+        policySetId:
+          type: string
+          description: The policy set of this pool.
+        isReferenced:
+          type: boolean
+          description: This pool is referenced by an identity group and cannot be deleted.
+        networkCount:
+          type: integer
+          description: Number of networks associated with this pool.
+          format: int32
+        identityGroupId:
+          type: string
+          description: The identity group of this pool.
+        identityId:
+          type: string
+          description: The single identity policy of this pool.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Registration pool
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean

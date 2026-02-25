@@ -1,0 +1,614 @@
+{
+  "name": "ViewModel service API",
+  "version": "1.0.42",
+  "url": "https://docs.ruckus.cloud/_bundle/api/viewmodel-1.0.42.yaml",
+  "downloaded_at": "2025-12-02T18:45:29.093277",
+  "endpoint_count": 60,
+  "base_url": "http://localhost",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/wifiNetworks/query",
+      "method": "POST",
+      "summary": "Get Wi-Fi Networks Data",
+      "description": "Get Wi-Fi network information.",
+      "operation_id": "WifiNetworks",
+      "tags": [
+        "Network"
+      ]
+    },
+    {
+      "path": "/wifiCallingServiceProfiles/query",
+      "method": "POST",
+      "summary": "Get Wifi Calling Profiles",
+      "description": "Get data for a list of wifi calling service profiles.",
+      "operation_id": "getWifiCallingServiceProfiles",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/vlanPoolProfiles/query",
+      "method": "POST",
+      "summary": "Query VLAN Pool Profiles",
+      "description": "Query VLAN pool profiles.",
+      "operation_id": "queryVlanPoolProfiles",
+      "tags": [
+        "View VLAN Pool Profiles"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/rogueAps/query",
+      "method": "POST",
+      "summary": "Get Venue Rogue APs",
+      "description": "Get the list of rogue APs located in this venue.",
+      "operation_id": "getVenueRogueAPs",
+      "tags": [
+        "View Venue",
+        "View Platform"
+      ]
+    },
+    {
+      "path": "/venues/switches/switchPorts/query",
+      "method": "POST",
+      "summary": "Query Switch Ports",
+      "description": "Get a list of parameters for the switch's ports.",
+      "operation_id": "QuerySwitchPorts",
+      "tags": [
+        "View Switch"
+      ]
+    },
+    {
+      "path": "/venues/switches/query",
+      "method": "POST",
+      "summary": "Get Switches of Venue",
+      "description": "Get a list of switches of venue.",
+      "operation_id": "GetSwitchesOfVenue",
+      "tags": [
+        "View Switch"
+      ]
+    },
+    {
+      "path": "/venues/switches/query/csvFiles",
+      "method": "POST",
+      "summary": "Export Switch Inventory",
+      "description": "Export the list of switches belong to the tenant.",
+      "operation_id": "exportDeviceInventoryRbac",
+      "tags": [
+        "View Switch"
+      ]
+    },
+    {
+      "path": "/venues/switches/clients/query",
+      "method": "POST",
+      "summary": "Get Switch Clients",
+      "description": "Get a list of switch clients (i.e., end-user devices).",
+      "operation_id": "getSwitchClientsRbac",
+      "tags": [
+        "View Switch"
+      ]
+    },
+    {
+      "path": "/venues/switches/aggregationDetails",
+      "method": "POST",
+      "summary": "Get Switches Aggregation Details",
+      "description": "Get parameters and operational data for a list of switches with aggregation details.",
+      "operation_id": "getSwitchesAggregationDetailsRbac",
+      "tags": [
+        "View Switch"
+      ]
+    },
+    {
+      "path": "/venues/query",
+      "method": "POST",
+      "summary": "Get Venues",
+      "description": "Return a list of venue records.",
+      "operation_id": "venue",
+      "tags": [
+        "View Venue",
+        "View Platform"
+      ]
+    },
+    {
+      "path": "/venues/aps/query",
+      "method": "POST",
+      "summary": "Get APs",
+      "description": "Get parameters and operational data for a list of APs or mesh APs.",
+      "operation_id": "GetAPs_1",
+      "tags": [
+        "View Wi-Fi"
+      ]
+    },
+    {
+      "path": "/venues/aps/clients/query",
+      "method": "POST",
+      "summary": "Query AP Clients",
+      "description": "Query AP clients.",
+      "operation_id": "QueryApClients",
+      "tags": [
+        "Client API"
+      ]
+    },
+    {
+      "path": "/venues/apGroups/query",
+      "method": "POST",
+      "summary": "Query AP Groups",
+      "description": "Query AP groups information.",
+      "operation_id": "queryApGroups",
+      "tags": [
+        "View Wi-Fi"
+      ]
+    },
+    {
+      "path": "/tunnelServiceProfiles/query",
+      "method": "POST",
+      "summary": "Get Tunnel Profiles",
+      "description": "Get data for a list of tunnel profiles. This is only permitted for users with feature flag edge role.",
+      "operation_id": "getTunnelProfileProfiles",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/templates/wifiNetworks/query",
+      "method": "POST",
+      "summary": "Get Wi-Fi Network Template data",
+      "description": "Get Wi-Fi Network Template Information",
+      "operation_id": "WifiNetworkTemplate",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/wifiCallingServiceProfiles/query",
+      "method": "POST",
+      "summary": "Get Wifi Calling Profile Templates",
+      "description": "Get data for a list of wifi calling service profile templates.",
+      "operation_id": "getWifiCallingServiceProfileTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/vlanPoolProfiles/query",
+      "method": "POST",
+      "summary": "Query VLAN Pool Profile Templates",
+      "description": "Query VLAN pool profile templates.",
+      "operation_id": "queryVlanPoolProfileTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/query",
+      "method": "POST",
+      "summary": "Get Venue Templates",
+      "description": "Get venue templates.",
+      "operation_id": "getVenueTemplates",
+      "tags": [
+        "View Venue Template"
+      ]
+    },
+    {
+      "path": "/templates/venues/apGroups/query",
+      "method": "POST",
+      "summary": "Get AP Group Templates",
+      "description": "Get AP group template information.",
+      "operation_id": "getApGroupTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/syslogServerProfiles/query",
+      "method": "POST",
+      "summary": "Get Syslog Server Profile Templates",
+      "description": "Get data for a list of syslog server profile templates.",
+      "operation_id": "getSyslogServerProfileTemplatesForView",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/roguePolicies/query",
+      "method": "POST",
+      "summary": "Get Rogue Policy Templates",
+      "description": "Get the list of rogue policy templates in this tenant.",
+      "operation_id": "getRoguePolicyTemplatesForView",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/radiusServerProfiles/query",
+      "method": "POST",
+      "summary": "Get RADIUS Server Profile Templates",
+      "description": "Get data for a list of RADIUS server profile templates with enhanced query data.",
+      "operation_id": "getRadiusServerProfileTemplatesV2",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/query",
+      "method": "POST",
+      "summary": "Get Template List",
+      "description": "Get Template Information",
+      "operation_id": "getTemplates",
+      "tags": [
+        "View Template"
+      ]
+    },
+    {
+      "path": "/templates/portalServiceProfiles/query",
+      "method": "POST",
+      "summary": "Query Portal Service Profile Templates",
+      "description": "Query portal service profile template for the list.",
+      "operation_id": "QueryPortalServiceProfileTemplates",
+      "tags": [
+        "View Portal Service Template"
+      ]
+    },
+    {
+      "path": "/templates/l3AclPolicies/query",
+      "method": "POST",
+      "summary": "Get Layer Three Policy Templates",
+      "description": "Get data for a list of layer 3 policy templates.",
+      "operation_id": "getLayer3PolicyTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/l2AclPolicies/query",
+      "method": "POST",
+      "summary": "Get Layer Two Policy Templates",
+      "description": "Get data for a list of layer 2 policy templates.",
+      "operation_id": "getLayer2PolicyTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/ethernetPortProfiles/query",
+      "method": "POST",
+      "summary": "Get Ethernet Port Profile Templates",
+      "description": "Get data for a list of ethernet port profile templates.",
+      "operation_id": "getEthernetPortProfileTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/dhcpConfigServiceProfiles/query",
+      "method": "POST",
+      "summary": "Get DHCP Configuration Service Profile Templates",
+      "description": "Query DHCP configuration service profile templates for the list.",
+      "operation_id": "queryDhcpConfigServiceProfileTemplatesForView",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/devicePolicies/query",
+      "method": "POST",
+      "summary": "Get Device Policy Templates",
+      "description": "Get data for a list of device policy templates.",
+      "operation_id": "getDevicePolicyTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/applicationPolicies/query",
+      "method": "POST",
+      "summary": "Get Application Policy Templates",
+      "description": "Get data for a list of application policy templates.",
+      "operation_id": "getApplicationPolicyTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/templates/accessControlProfiles/query",
+      "method": "POST",
+      "summary": "Get Access Control Profile Templates",
+      "description": "Get data for a list of access control profile templates.",
+      "operation_id": "getAccessControlPolicyProfileTemplates",
+      "tags": [
+        "View Wi-Fi Template"
+      ]
+    },
+    {
+      "path": "/techpartners/mspecs/query",
+      "method": "POST",
+      "summary": "Query MSP-ECs for Tech Partner",
+      "description": "Query MSP-ECs for tech partner.",
+      "operation_id": "getMSP-ECs",
+      "tags": [
+        "View MSP"
+      ]
+    },
+    {
+      "path": "/syslogServerProfiles/query",
+      "method": "POST",
+      "summary": "Get Syslog Server Profiles",
+      "description": "Get data for a list of syslog server profiles.",
+      "operation_id": "getSyslogServerProfilesForView",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/softGreProfiles/query",
+      "method": "POST",
+      "summary": "Query SoftGRE Profiles",
+      "description": "Query SoftGRE profiles.",
+      "operation_id": "QuerySoftGreProfiles",
+      "tags": [
+        "View SoftGRE Profile"
+      ]
+    },
+    {
+      "path": "/snmpAgentProfiles/query",
+      "method": "POST",
+      "summary": "Query SNMP Agent Profiles",
+      "description": "Query SNMP agent profile for the list.",
+      "operation_id": "querySnmpAgentProfiles",
+      "tags": [
+        "View SNMP Agent Profiles"
+      ]
+    },
+    {
+      "path": "/roguePolicies/query",
+      "method": "POST",
+      "summary": "Get Rogue Policies",
+      "description": "Get the list of rogue policies in this tenant.",
+      "operation_id": "getRoguePoliciesForView",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/radiusServerProfiles/query",
+      "method": "POST",
+      "summary": "Get RADIUS Server Profiles",
+      "description": "Get data for a list of RADIUS server profiles.",
+      "operation_id": "getRadiusServerProfiles",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/qosStatistics/query",
+      "method": "POST",
+      "summary": "Get the Statistics of Quality of Service",
+      "description": "Retrieve the list of quality of service statistics.",
+      "operation_id": "viewQosStatistics",
+      "tags": [
+        "Quality of Service"
+      ]
+    },
+    {
+      "path": "/portalServiceProfiles/query",
+      "method": "POST",
+      "summary": "Query Portal Service Profiles",
+      "description": "Query portal service profile for the list.",
+      "operation_id": "QueryPortalServiceProfiles",
+      "tags": [
+        "View Portal Service Profiles"
+      ]
+    },
+    {
+      "path": "/multicastDnsProxyProfiles/query",
+      "method": "POST",
+      "summary": "Get Multicast DNS Proxy Profiles",
+      "description": "Get data for a list of multicast DNS proxy service profiles.",
+      "operation_id": "queryMulticastDnsProxyProfiles",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/msps/{mspTenantId}/ecInventories/query",
+      "method": "POST",
+      "summary": "Get EC Inventory",
+      "description": "View the list of networking devices installed in our end customers venues.",
+      "operation_id": "getDeviceInventory",
+      "tags": [
+        "View MSP"
+      ]
+    },
+    {
+      "path": "/msps/{mspTenantId}/ecInventories/query/csvFiles",
+      "method": "POST",
+      "summary": "Export EC Inventory",
+      "description": "Export the list of networking devices installed in our end customers venues.",
+      "operation_id": "exportDeviceInventory_1",
+      "tags": [
+        "View MSP"
+      ]
+    },
+    {
+      "path": "/mspecs/query",
+      "method": "POST",
+      "summary": "Query MSP-ECs",
+      "description": "Query MSP-ECs.",
+      "operation_id": "queryMSP-ECs",
+      "tags": [
+        "View MSP"
+      ]
+    },
+    {
+      "path": "/lbsServerProfiles/query",
+      "method": "POST",
+      "summary": "Get Location Based Service Server Profiles",
+      "description": "Get data for a list of location based service server profiles.",
+      "operation_id": "getLbsServerProfileForView",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/l3AclPolicies/query",
+      "method": "POST",
+      "summary": "Get Layer Three Policies",
+      "description": "Get data for a list of layer 3 policies.",
+      "operation_id": "getLayer3Policies",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/l2AclPolicies/query",
+      "method": "POST",
+      "summary": "Get Layer Two Policies",
+      "description": "Get data for a list of layer 2 policies.",
+      "operation_id": "getLayer2Policies",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/hotspot20Operators/query",
+      "method": "POST",
+      "summary": "Get Hotspot 2.0 Operators",
+      "description": "Get data for a list of Hotspot 2.0 operators.",
+      "operation_id": "getHotspot20OperatorForView",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/hotspot20IdentityProviders/query",
+      "method": "POST",
+      "summary": "Get Hotspot 2.0 Identity Providers",
+      "description": "Get data for a list of Hotspot 2.0 identity providers.",
+      "operation_id": "getHotspot20IdentityProviderForView",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/guestUsers/query",
+      "method": "POST",
+      "summary": "Get Guests",
+      "description": "Get guests.",
+      "operation_id": "getGuests_1",
+      "tags": [
+        "View Wi-Fi"
+      ]
+    },
+    {
+      "path": "/ethernetPortProfiles/query",
+      "method": "POST",
+      "summary": "Get Ethernet Port Profiles",
+      "description": "Get data for a list of ethernet port profiles.",
+      "operation_id": "getEthernetPortProfiles",
+      "tags": [
+        "View Ethernet Port Profile"
+      ]
+    },
+    {
+      "path": "/edgeSdLanServices/query",
+      "method": "POST",
+      "summary": "Get RUCKUS Edge SD-LANs",
+      "description": "Get SD-LAN list of RUCKUS Edge.",
+      "operation_id": "getEdgeSdLans",
+      "tags": [
+        "Edge SD-LAN Status"
+      ]
+    },
+    {
+      "path": "/dhcpConfigServiceProfiles/query",
+      "method": "POST",
+      "summary": "Get DHCP Configuration Service Profiles",
+      "description": "Query DHCP configuration service profiles for the list.",
+      "operation_id": "queryDhcpConfigServiceProfilesForView",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/devicePolicies/query",
+      "method": "POST",
+      "summary": "Get Device Policies",
+      "description": "Get data for a list of device policies.",
+      "operation_id": "getDeviceProfiles_1",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/delegations",
+      "method": "POST",
+      "summary": "Get Delegations",
+      "description": "Get the list of customer delegations.",
+      "operation_id": "getDelegationsForView",
+      "tags": [
+        "View MSP"
+      ]
+    },
+    {
+      "path": "/clientIsolationProfiles/query",
+      "method": "POST",
+      "summary": "Query Client Isolation Profiles",
+      "description": "Query client isolation profile for the list.",
+      "operation_id": "queryClientIsolationProfiles",
+      "tags": [
+        "View Client Isolation Profiles"
+      ]
+    },
+    {
+      "path": "/applicationPolicies/query",
+      "method": "POST",
+      "summary": "Get Application Policies",
+      "description": "Get data for a list of application policies.",
+      "operation_id": "getApplicationProfiles_1",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/accessControlProfiles/query",
+      "method": "POST",
+      "summary": "Get Access Control Profiles",
+      "description": "Get data for a list of access control profiles.",
+      "operation_id": "getAccessControlPolicyProfiles_1",
+      "tags": [
+        "View Wi-Fi Profile"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/topologies",
+      "method": "GET",
+      "summary": "Get Topology",
+      "description": "Get venue's topology data.",
+      "operation_id": "getTopology",
+      "tags": [
+        "View Venue Topology"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/meshTopologies",
+      "method": "GET",
+      "summary": "Get Mesh Topology",
+      "description": "Get venue's mesh topology data.",
+      "operation_id": "getMeshTopology",
+      "tags": [
+        "View Venue Topology"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/aps/models",
+      "method": "GET",
+      "summary": "Get Venue AP Models",
+      "description": "Get the AP models deployed in this venue.",
+      "operation_id": "getVenueAPModels",
+      "tags": [
+        "View Venue",
+        "View Platform"
+      ]
+    }
+  ]
+}

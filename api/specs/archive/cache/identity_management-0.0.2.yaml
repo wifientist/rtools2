@@ -1,0 +1,1436 @@
+openapi: 3.0.1
+info:
+  title: Identity Management
+  description: >-
+    # Overview
+
+
+    The Identity Management REST APIs and Model, allow the creation, deletion,
+    and modification of identity groups, and identities.
+
+
+    ## What This API Does
+
+    - Create, modify, and delete identities groups and identities
+
+    - Manage devices under identities
+
+
+    ## Error Handling
+
+    The API uses standard HTTP status codes with detailed error messages in the
+    response body.
+
+
+    ## Common Error Responses
+
+    All endpoints may return these common error responses:
+
+    - **400 Bad Request**: Invalid input data or validation errors
+
+    - **401 Unauthorized**: Missing or invalid authentication
+
+    - **403 Forbidden**: Insufficient permissions
+
+    - **404 Not Found**: Requested resource doesn't exist
+
+    - **409 Conflict**: Resource conflict (e.g., duplicate names)
+
+    - **422 Unprocessable Entity**: Business rule violations
+
+    - **500 Internal Server Error**: Unexpected server errors
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: UNKNOWN
+servers:
+  - url: https://api.ruckus.cloud
+    description: RUCKUS One API host for North American region.
+  - url: https://api.eu.ruckus.cloud
+    description: RUCKUS One API host for European region.
+  - url: https://api.asia.ruckus.cloud
+    description: RUCKUS One API host for Asian region.
+paths:
+  /identityGroups/{id}/policySets/{policySetId}:
+    put:
+      tags:
+        - Identity Group
+      summary: Update the Policy Set Association
+      operationId: updatePolicySetAssociation
+      parameters:
+        - name: id
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id or change supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - Identity Group
+      summary: Remove the Policy Set Association
+      operationId: removePolicySetAssociation
+      parameters:
+        - name: id
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id or change supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups/{id}/macRegistrationPools/{poolId}:
+    put:
+      tags:
+        - Identity Group
+      summary: Update the MAC Registration Association
+      operationId: updateMacRegistrationAssociation
+      parameters:
+        - name: id
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: poolId
+          in: path
+          description: MAC registration pool id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id or change supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups/{id}/dpskPools/{dpskPoolId}:
+    put:
+      tags:
+        - Identity Group
+      summary: Update the DPSK Pool Association
+      operationId: updateDpskPoolAssociation
+      parameters:
+        - name: id
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dpskPoolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid id or change supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups/{groupId}/identities/{id}/venues/{venueId}/ethernetPorts:
+    put:
+      tags:
+        - Identity
+      summary: Update the Identity's Ethernet Ports
+      operationId: updateIdentityEthernetPorts
+      parameters:
+        - name: groupId
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: venueId
+          in: path
+          description: Venue id
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Identity id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              description: Ethernet ports to be updated
+              items:
+                $ref: '#/components/schemas/EthernetPort'
+          application/json:
+            schema:
+              type: array
+              description: Ethernet ports to be updated
+              items:
+                $ref: '#/components/schemas/EthernetPort'
+        required: true
+      responses:
+        '202':
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponse'
+        '400':
+          description: Invalid Identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Identity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups:
+    get:
+      tags:
+        - Identity Group
+      summary: Returns the Identity Groups
+      operationId: getGroups
+      parameters:
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: The Identity Groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageIdentityGroup'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageIdentityGroup'
+  /identityGroups/{groupId}/identities:
+    get:
+      tags:
+        - Identity
+      summary: Returns Identities in the Group
+      operationId: listIdentitiesByGroup
+      parameters:
+        - name: groupId
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Identities returned
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Identity'
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Identity'
+        '400':
+          description: Invalid group id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups/query:
+    post:
+      tags:
+        - Identity Group
+      summary: Query the Identity Groups
+      operationId: searchGroups
+      parameters:
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityGroupSearch'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/IdentityGroupSearch'
+        required: true
+      responses:
+        '200':
+          description: The Identity Groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageIdentityGroup'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageIdentityGroup'
+  /identityGroups/csvFile:
+    post:
+      tags:
+        - Identity Group
+      summary: Export Identity Groups Into File
+      operationId: exportGroupsCSV
+      parameters:
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+        - name: timezone
+          in: query
+          required: false
+          schema:
+            type: string
+            default: UTC
+        - name: date-format
+          in: query
+          description: >-
+            Format will be applied for date values. Default value is "dd/MM/yyyy
+            HH:mm"
+          required: false
+          schema:
+            type: string
+            default: yyyyMMddHHmmss
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityGroupSearch'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/IdentityGroupSearch'
+        required: true
+      responses:
+        '200':
+          description: The CSV returned
+          content:
+            text/csv: {}
+  /identities/query:
+    post:
+      tags:
+        - Identity
+      summary: Query Identities
+      operationId: queryIdentity
+      parameters:
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentitySearch'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/IdentitySearch'
+        required: true
+      responses:
+        '200':
+          description: Identities found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageIdentity'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageIdentity'
+  /externalIdentities/query:
+    post:
+      tags:
+        - External Identity
+      summary: Query External Identities
+      operationId: queryExternalIdentity
+      parameters:
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalIdentitySearch'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/ExternalIdentitySearch'
+        required: true
+      responses:
+        '200':
+          description: External identities found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageExternal Identity'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageExternal Identity'
+  /identityGroups/{id}:
+    get:
+      tags:
+        - Identity Group
+      summary: Returns the Specific Identity Group
+      operationId: getGroupById
+      parameters:
+        - name: id
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Group found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityGroup'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/IdentityGroup'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identityGroups/{groupId}/identities/{id}:
+    get:
+      tags:
+        - Identity
+      summary: Returns the Identity
+      operationId: getIdentityById
+      parameters:
+        - name: groupId
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          description: Identity id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Identity found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Identity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /identities:
+    get:
+      tags:
+        - Identity
+      summary: Returns Identities in All Groups
+      operationId: listIdentities
+      parameters:
+        - name: pageable
+          in: query
+          description: Parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Identities in all groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageIdentity'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageIdentity'
+  /identityGroups/{groupId}/identities/{id}/vnis:
+    delete:
+      tags:
+        - Identity
+      summary: Retry VNI Allocation for Identity
+      operationId: allocateIdentityVni
+      parameters:
+        - name: groupId
+          in: path
+          description: Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          description: Identity id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The retry has been executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: The request is invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: The tenant is not allowed to retry the vni for the Identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Identity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+components:
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        debugMessage:
+          type: string
+        subErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiSubError'
+        requestId:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiSubError'
+    ApiSubError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+        suggestion:
+          type: string
+    OperationResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        id:
+          type: string
+    EthernetPort:
+      required:
+        - macAddress
+        - name
+        - portIndex
+      type: object
+      properties:
+        macAddress:
+          pattern: ^([0-9A-F]{2}-){5}([0-9A-F]{2})$
+          type: string
+          description: The MAC address for the ethernet port.
+        portIndex:
+          type: integer
+          description: The index of the port of the ethernet port.
+          format: int32
+        name:
+          maxLength: 255
+          type: string
+          description: The name for the ethernet port.
+        createdAt:
+          type: string
+          description: The timestamp that the ethernet port get created.
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          description: The timestamp that the ethernet get updated.
+          format: date-time
+          readOnly: true
+        identityId:
+          type: string
+          description: The identifier of the identity for the ethernet port.
+          format: uuid
+          readOnly: true
+      description: Ethernet port
+    IdentityGroup:
+      required:
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for the group.
+          format: uuid
+          readOnly: true
+        name:
+          maxLength: 255
+          type: string
+          description: The name for the group.
+        description:
+          maxLength: 255
+          type: string
+          description: The description for the group.
+        dpskPoolId:
+          type: string
+          description: The identifier of the DPSK pool associated with the group.
+        macRegistrationPoolId:
+          type: string
+          description: >-
+            The identifier of the MAC registration pool associated with the
+            group.
+        propertyId:
+          type: string
+          description: Then identifier of the property associated with the group.
+          readOnly: true
+        createdAt:
+          type: string
+          description: The timestamp that the group get created.
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          description: The timestamp that the group get last update.
+          format: date-time
+          readOnly: true
+        certificateTemplateId:
+          type: string
+          description: >-
+            Then identifier of the certificate template associated with the
+            group.
+          readOnly: true
+        policySetId:
+          type: string
+          description: The identifier of the policy set associated with the group.
+        networkCount:
+          type: integer
+          description: The number of the networks associated with the group.
+          format: int32
+        autoCleanupEnabled:
+          type: boolean
+          description: Whether auto cleanup is enabled for the group.
+          default: false
+        templateVersion:
+          type: integer
+          format: int64
+          readOnly: true
+        _links:
+          $ref: '#/components/schemas/Links'
+        personalIdentityNetworkId:
+          type: string
+          description: >-
+            The identifier of the personal identity network associated with the
+            group.
+          readOnly: true
+        identityCount:
+          type: integer
+          description: The number of identities belongs to the group.
+          format: int64
+          readOnly: true
+      description: Identity group
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    Device:
+      required:
+        - macAddress
+      type: object
+      properties:
+        macAddress:
+          pattern: ^([0-9A-F]{2}-){5}([0-9A-F]{2})$
+          type: string
+          description: The MAC of the device.
+        recentStatus:
+          type: string
+          description: The latest status for the device.
+          readOnly: true
+        hasMacRegistered:
+          type: boolean
+          description: Determine if the device has registered for MAC authentication.
+          readOnly: true
+        lastSeenAt:
+          type: string
+          description: The latest timestamp that the device was seen.
+          format: date-time
+          readOnly: true
+        createdAt:
+          type: string
+          description: The timestamp that the device get created.
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          description: The latest timestamp that the device get updated.
+          format: date-time
+          readOnly: true
+        status:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceStatusDto'
+        identityId:
+          type: string
+          description: The identifier of the identity that the device belongs to.
+          format: uuid
+          readOnly: true
+      description: Device
+    DeviceStatusDto:
+      type: object
+      properties:
+        macAddress:
+          type: string
+        authType:
+          type: string
+          enum:
+            - Dpsk
+            - MacAuth
+            - EapTls
+        lastConnectedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - Accept
+            - Reject
+        referenceId:
+          type: string
+        identityId:
+          type: string
+          format: uuid
+    Identity:
+      required:
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for the identity.
+          format: uuid
+          readOnly: true
+        groupId:
+          type: string
+          description: The identifier of the group for the identity.
+          format: uuid
+          readOnly: true
+        parentId:
+          type: string
+          description: The identifier of the parent identity.
+          format: uuid
+          readOnly: true
+        description:
+          maxLength: 255
+          type: string
+          description: The description for the identity.
+        name:
+          maxLength: 255
+          type: string
+          description: The name for the identity.
+        email:
+          pattern: >-
+            ^[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6}$
+          type: string
+          description: The email for the identity.
+          example: john.doe@example.com
+        dpskGuid:
+          type: string
+          description: The identifier of the DPSK for the identity.
+          readOnly: true
+        dpskPassphrase:
+          type: string
+          description: >-
+            The passphrase associated with the identity. If this field is set to
+            null in an update request, the passphrase will be reset. Note: if a
+            passphrase is provided but is shorter than the required minimum
+            length, it will also be reset.
+        identityId:
+          type: string
+          description: The identifier of entity that associated with identity.
+          readOnly: true
+        revoked:
+          type: boolean
+          description: The field to determine if identity is revoked.
+        vlan:
+          maximum: 4094
+          minimum: 1
+          type: integer
+          description: The VLAN for the identity.
+          format: int32
+        vni:
+          maximum: 8388608
+          minimum: 0
+          type: integer
+          description: The VNI for the identity.
+          format: int32
+          readOnly: true
+        createdAt:
+          type: string
+          description: The timestamp that the identity get created.
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          description: The timestamp that the identity get last updated.
+          format: date-time
+          readOnly: true
+        devices:
+          type: array
+          description: The list of devices for the identity.
+          items:
+            $ref: '#/components/schemas/Device'
+        deviceCount:
+          type: integer
+          description: The count of devices belongs to the identity.
+          format: int32
+          readOnly: true
+        ethernetPorts:
+          type: array
+          description: The list of ethernet port for the identity.
+          items:
+            $ref: '#/components/schemas/EthernetPort'
+        switches:
+          type: array
+          description: The list of switch for the identity.
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/Switch'
+        meteringProfileId:
+          type: string
+          description: The identifier of the metering profile.
+          format: uuid
+        expirationDate:
+          type: string
+          description: The expiration date for the metering profile of this identity.
+          format: date-time
+        phoneNumber:
+          type: string
+          description: The phone number for the identity.
+        displayName:
+          maxLength: 255
+          type: string
+          description: The display name for the identity.
+        externalIdentityId:
+          type: string
+          description: The identifier of the external identity for the identity.
+          format: uuid
+          readOnly: true
+        lastLoginAt:
+          type: string
+          description: The latest timestamp that the identity login.
+          format: date-time
+          readOnly: true
+        primary:
+          type: boolean
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Identity
+    Switch:
+      type: object
+      properties:
+        macAddress:
+          type: string
+          description: The MAC address for the switch.
+        portId:
+          type: string
+          description: The identifier of the port for the switch.
+        identityId:
+          type: string
+          description: The identifier of the identity for the switch.
+          format: uuid
+          readOnly: true
+      description: switch
+      readOnly: true
+    IdentityGroupSearch:
+      type: object
+      properties:
+        personalIdentityNetworkId:
+          type: string
+        macRegistrationPoolId:
+          type: string
+        dpskPoolId:
+          type: string
+        keyword:
+          type: string
+        groupIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        propertyId:
+          type: string
+        certificateTemplateId:
+          type: string
+        policySetId:
+          type: string
+        networkId:
+          type: string
+      description: Conditions for IdentityGroup Search
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    PageIdentityGroup:
+      type: object
+      properties:
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityGroup'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        unpaged:
+          type: boolean
+        paged:
+          type: boolean
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean
+    IdentitySearch:
+      type: object
+      properties:
+        groupId:
+          type: string
+          format: uuid
+        dpskPoolId:
+          type: string
+        propertyId:
+          type: string
+        keyword:
+          type: string
+        ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        ethernetPort:
+          $ref: '#/components/schemas/EthernetPort'
+        filter:
+          type: object
+          additionalProperties:
+            type: object
+      description: Conditions for Identity Search
+    PageIdentity:
+      type: object
+      properties:
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Identity'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        empty:
+          type: boolean
+    ExternalIdentitySearch:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      description: Conditions for External Identity Search
+    External Identity:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for the external identity.
+          format: uuid
+          readOnly: true
+        userId:
+          type: string
+          description: The identifier from identity provider for the external identity.
+          readOnly: true
+        identityProviderId:
+          type: string
+          description: The identifier for the identity provider.
+          readOnly: true
+        identityProviderType:
+          type: string
+          description: The type of the identity provider.
+          readOnly: true
+          enum:
+            - SAML
+            - AD
+            - LDAP
+        phoneNumber:
+          type: string
+          description: The phone number for the external identity.
+          readOnly: true
+        firstName:
+          maxLength: 255
+          type: string
+          description: The first name for the external identity.
+          readOnly: true
+        lastName:
+          maxLength: 255
+          type: string
+          description: The last name for the external identity.
+          readOnly: true
+        displayName:
+          maxLength: 255
+          type: string
+          description: The display name for the external identity.
+          readOnly: true
+        email:
+          pattern: >-
+            ^[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,6}$
+          type: string
+          description: The email for the external identity.
+          readOnly: true
+          example: john.doe@example.com
+        roles:
+          type: array
+          description: The roles for the external identity.
+          readOnly: true
+          items:
+            type: string
+            description: The roles for the external identity.
+            readOnly: true
+        groups:
+          type: array
+          description: The groups for the external identity.
+          readOnly: true
+          items:
+            type: string
+            description: The groups for the external identity.
+            readOnly: true
+        createdAt:
+          type: string
+          description: The timestamp that the external identity created.
+          format: date-time
+          readOnly: true
+        address:
+          type: string
+          description: The address for the external identity.
+          readOnly: true
+        title:
+          type: string
+          description: The title for the external identity.
+          readOnly: true
+        organization:
+          type: string
+          description: The organization for the external identity.
+          readOnly: true
+        department:
+          type: string
+          description: The department for the external identity.
+          readOnly: true
+        userPrincipalName:
+          type: string
+          description: The user principal name for the external identity.
+          readOnly: true
+      description: External Identity
+    PageExternal Identity:
+      type: object
+      properties:
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/External Identity'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        first:
+          type: boolean
+        last:
+          type: boolean
+        empty:
+          type: boolean
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

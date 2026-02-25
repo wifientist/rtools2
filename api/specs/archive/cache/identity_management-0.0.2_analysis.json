@@ -1,0 +1,161 @@
+{
+  "name": "Identity Management",
+  "version": "0.0.2",
+  "url": "https://docs.ruckus.cloud/_bundle/api/persona-0.0.2.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.334802",
+  "endpoint_count": 15,
+  "base_url": "https://api.ruckus.cloud",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/identityGroups/{id}/policySets/{policySetId}",
+      "method": "PUT",
+      "summary": "Update the Policy Set Association",
+      "description": null,
+      "operation_id": "updatePolicySetAssociation",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/{id}/policySets/{policySetId}",
+      "method": "DELETE",
+      "summary": "Remove the Policy Set Association",
+      "description": null,
+      "operation_id": "removePolicySetAssociation",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/{id}/macRegistrationPools/{poolId}",
+      "method": "PUT",
+      "summary": "Update the MAC Registration Association",
+      "description": null,
+      "operation_id": "updateMacRegistrationAssociation",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/{id}/dpskPools/{dpskPoolId}",
+      "method": "PUT",
+      "summary": "Update the DPSK Pool Association",
+      "description": null,
+      "operation_id": "updateDpskPoolAssociation",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/{groupId}/identities/{id}/venues/{venueId}/ethernetPorts",
+      "method": "PUT",
+      "summary": "Update the Identity's Ethernet Ports",
+      "description": null,
+      "operation_id": "updateIdentityEthernetPorts",
+      "tags": [
+        "Identity"
+      ]
+    },
+    {
+      "path": "/identityGroups",
+      "method": "GET",
+      "summary": "Returns the Identity Groups",
+      "description": null,
+      "operation_id": "getGroups",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/{groupId}/identities",
+      "method": "GET",
+      "summary": "Returns Identities in the Group",
+      "description": null,
+      "operation_id": "listIdentitiesByGroup",
+      "tags": [
+        "Identity"
+      ]
+    },
+    {
+      "path": "/identityGroups/query",
+      "method": "POST",
+      "summary": "Query the Identity Groups",
+      "description": null,
+      "operation_id": "searchGroups",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/csvFile",
+      "method": "POST",
+      "summary": "Export Identity Groups Into File",
+      "description": null,
+      "operation_id": "exportGroupsCSV",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identities/query",
+      "method": "POST",
+      "summary": "Query Identities",
+      "description": null,
+      "operation_id": "queryIdentity",
+      "tags": [
+        "Identity"
+      ]
+    },
+    {
+      "path": "/externalIdentities/query",
+      "method": "POST",
+      "summary": "Query External Identities",
+      "description": null,
+      "operation_id": "queryExternalIdentity",
+      "tags": [
+        "External Identity"
+      ]
+    },
+    {
+      "path": "/identityGroups/{id}",
+      "method": "GET",
+      "summary": "Returns the Specific Identity Group",
+      "description": null,
+      "operation_id": "getGroupById",
+      "tags": [
+        "Identity Group"
+      ]
+    },
+    {
+      "path": "/identityGroups/{groupId}/identities/{id}",
+      "method": "GET",
+      "summary": "Returns the Identity",
+      "description": null,
+      "operation_id": "getIdentityById",
+      "tags": [
+        "Identity"
+      ]
+    },
+    {
+      "path": "/identities",
+      "method": "GET",
+      "summary": "Returns Identities in All Groups",
+      "description": null,
+      "operation_id": "listIdentities",
+      "tags": [
+        "Identity"
+      ]
+    },
+    {
+      "path": "/identityGroups/{groupId}/identities/{id}/vnis",
+      "method": "DELETE",
+      "summary": "Retry VNI Allocation for Identity",
+      "description": null,
+      "operation_id": "allocateIdentityVni",
+      "tags": [
+        "Identity"
+      ]
+    }
+  ]
+}

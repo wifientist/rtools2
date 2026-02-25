@@ -1,0 +1,4281 @@
+openapi: 3.0.1
+info:
+  title: RUCKUS Edge API & Model Documentation
+  description: |-
+    # Overview
+
+    ## Rate Limit
+    For the Edge REST API the following will be true: 
+    - Limits are applied to each tenant.
+    - A maximum of 200 calls can be made per second.
+    - Each second 100 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 1.0.3
+servers:
+  - url: https://api.asia.ruckus.cloud
+    description: Asian region
+  - url: https://api.eu.ruckus.cloud
+    description: European region
+  - url: https://api.ruckus.cloud
+    description: North American region
+tags:
+  - name: Edge Static Route Configuration
+    description: Manage the static routes for a Edge
+  - name: Edge DHCP
+    description: Edge DHCP APIs.
+  - name: Edge LAG Configuration
+    description: Manage the Link Aggregation Group for Edge devices
+  - name: Edge Device Management
+    description: Manage Edge devices
+  - name: ARP Termination Settings
+    description: Configure ARP termination settings for a cluster
+  - name: Edge DNS Configuration
+    description: Manage the DNS server for a Edge
+  - name: Edge Sub-Interface Configuration
+    description: Manage the sub-interface of a physical port
+  - name: Edge LAG Sub-Interface
+    description: Manage the sub-interface of a LAG
+  - name: Edge Cluster Configuration
+    description: Manage the Edge cluster
+  - name: Edge Port Configuration
+    description: Manage the port of a Edge
+  - name: Edge Troubleshooting
+    description: Manage troubleshooting operations for the devices
+  - name: Edge Compatibility Checking
+    description: Check the compatibility of Edge devices.
+  - name: Edge Multicast DNS Profile
+    description: Manage the Multicast DNS Profile for Edge devices
+  - name: Tunnel Profile Configuration
+    description: Manage the tunnel profile
+paths:
+  /venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}:
+    get:
+      tags:
+        - Edge LAG Configuration
+      summary: Get Link Aggregation Group
+      description: Get the link aggregation group by unique identifier.
+      operationId: getEdgeLinkAggregationGroup
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lagId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkAggregationGroupDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/LinkAggregationGroupDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    put:
+      tags:
+        - Edge LAG Configuration
+      summary: Update Link Aggregation Group
+      description: Updates the link aggregation group by unique identifier.
+      operationId: updateEdgeLinkAggregationGroup
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lagId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLinkAggregationGroupDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateLinkAggregationGroupDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge LAG Configuration
+      summary: Delete Link Aggregation Group
+      description: Delete the link aggregation group by unique identifier.
+      operationId: deleteEdgeLinkAggregationGroup
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lagId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge LAG Configuration
+      summary: Partial Update Link Aggregation Group
+      description: Partial update of the link aggregation group by unique identifier.
+      operationId: partialUpdateEdgeLinkAggregationGroup
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lagId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLinkAggregationGroupDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateLinkAggregationGroupDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/tunnelProfiles/{tunnelProfileId}:
+    put:
+      tags:
+        - Tunnel Profile Configuration
+      summary: Activate Edge Cluster in Tunnel Profile
+      description: Activate Edge cluster in tunnel profile.
+      operationId: edgeClusterActivateTunnelProfile
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tunnelProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Tunnel Profile Configuration
+      summary: Deactivate Edge Cluster in Tunnel Profile
+      description: Deactivate Edge cluster in tunnel profile.
+      operationId: edgeClusterDeactivateTunnelProfile
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tunnelProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/arpTerminationSettings:
+    get:
+      tags:
+        - ARP Termination Settings
+      summary: Get ARP Termination Settings
+      operationId: getArpTerminationSettings
+      parameters:
+        - name: venueId
+          in: path
+          description: The ID of venue.
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          description: The ID of Edge cluster.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeArpTerminationSettings'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EdgeArpTerminationSettings'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    put:
+      tags:
+        - ARP Termination Settings
+      summary: Update ARP Termination Settings
+      operationId: updateArpTerminationSettings
+      parameters:
+        - name: venueId
+          in: path
+          description: The ID of venue.
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          description: The ID of Edge cluster.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeArpTerminationSettings'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EdgeArpTerminationSettings'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}:
+    get:
+      tags:
+        - Edge Multicast DNS Profile
+      summary: Get Multicast DNS Profile
+      operationId: getMdnsProxyProfile
+      parameters:
+        - name: multicastDnsProxyProfileId
+          in: path
+          description: The ID of Multicast DNS profile.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeMdnsProxyProfile'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EdgeMdnsProxyProfile'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    put:
+      tags:
+        - Edge Multicast DNS Profile
+      summary: Update Multicast DNS Profile
+      operationId: updateMdnsProxyProfile
+      parameters:
+        - name: multicastDnsProxyProfileId
+          in: path
+          description: The ID of Multicast DNS profile.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeMdnsProxyProfile'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EdgeMdnsProxyProfile'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge Multicast DNS Profile
+      summary: Delete Multicast DNS Profile
+      operationId: deleteMdnsProxyProfile
+      parameters:
+        - name: multicastDnsProxyProfileId
+          in: path
+          description: The ID of Multicast DNS profile.
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeMulticastDnsProxyProfiles/{multicastDnsProxyProfileId}/venues/{venueId}/edgeClusters/{edgeClusterId}:
+    put:
+      tags:
+        - Edge Multicast DNS Profile
+      summary: Activate Multicast DNS
+      operationId: ActivateMdnsProxy
+      parameters:
+        - name: multicastDnsProxyProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge Multicast DNS Profile
+      summary: Deactivate Multicast DNS
+      operationId: DeactivateMdnsProxy
+      parameters:
+        - name: multicastDnsProxyProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeDhcpServices/{dhcpId}:
+    get:
+      tags:
+        - Edge DHCP
+      summary: Get DHCP
+      operationId: getDhcpById
+      parameters:
+        - name: dhcpId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeDhcpProfile'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EdgeDhcpProfile'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    put:
+      tags:
+        - Edge DHCP
+      summary: Update DHCP
+      operationId: updateDhcp
+      parameters:
+        - name: dhcpId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEdgeDhcpProfile'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateEdgeDhcpProfile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge DHCP
+      summary: Delete DHCP
+      operationId: deleteDhcpById
+      parameters:
+        - name: dhcpId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge DHCP
+      summary: Patch DHCP
+      operationId: patchDhcp
+      parameters:
+        - name: dhcpId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchEdgeDhcpProfile'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PatchEdgeDhcpProfile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeDhcpServices/{dhcpId}/venues/{venueId}/edgeClusters/{edgeClusterId}:
+    put:
+      tags:
+        - Edge DHCP
+      summary: Activate DHCP
+      operationId: ActivateDhcp
+      parameters:
+        - name: dhcpId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge DHCP
+      summary: Deactivate DHCP
+      operationId: DeactivateDhcp
+      parameters:
+        - name: dhcpId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters:
+    get:
+      tags:
+        - Edge Cluster Configuration
+      summary: Get Edge Clusters
+      description: Get a list of Edge clusters.
+      operationId: getEdgeClustersByPage
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page index
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            format: int32
+            default: 1
+        - name: pageSize
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageResponseClusterResponseDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponseClusterResponseDtoV1_1'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/PageResponseClusterResponseDtoV1_1'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    post:
+      tags:
+        - Edge Cluster Configuration
+      summary: Create Edge Cluster
+      description: Create a Edge cluster.
+      operationId: createEdgeCluster
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CreateClusterDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClusterDtoV1_1'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/CreateClusterDtoV1_1'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags:
+    post:
+      tags:
+        - Edge LAG Configuration
+      summary: Create Link Aggregation Group
+      description: Create the link aggregation groups.
+      operationId: createEdgeLinkAggregationGroup
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkAggregationGroupDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/LinkAggregationGroupDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}/subInterfaces:
+    post:
+      tags:
+        - Edge LAG Sub-Interface
+      summary: Create Sub-Interface
+      description: Create a sub-interfaces of a LAG.
+      operationId: createEdgeLagSubInterface
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: lagId
+          in: path
+          description: ID of the LAG
+          required: true
+          schema:
+            type: string
+            description: ID of the LAG
+            example: 0
+          example: 0
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LagSubInterfaceDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/LagSubInterfaceDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges:
+    post:
+      tags:
+        - Edge Device Management
+      summary: Add Device
+      description: Add a new device.
+      operationId: createEdgeDevice
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEdgeDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/CreateEdgeDto'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/ports/{portId}/subInterfaces:
+    get:
+      tags:
+        - Edge Sub-Interface Configuration
+      summary: Get Sub-Interfaces
+      description: Get sub-interfaces of a physical port.
+      operationId: getEdgeSubInterfaces
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: portId
+          in: path
+          description: The ID of the physical port
+          required: true
+          schema:
+            type: string
+            description: The ID of the physical port
+            example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+          example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/GetSubInterfaceResponseDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    post:
+      tags:
+        - Edge Sub-Interface Configuration
+      summary: Create Multiple Sub-Interfaces
+      description: Create multiple sub-interfaces of a physical port from CSV file.
+      operationId: createEdgeSubInterfaces_1
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: portId
+          in: path
+          description: The ID of the physical port
+          required: true
+          schema:
+            type: string
+            description: The ID of the physical port
+            example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+          example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubInterfaceDto'
+          multipart/form-data:
+            schema:
+              required:
+                - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/edgeCompatibilities/query:
+    post:
+      tags:
+        - Edge Compatibility Checking
+      summary: Query the Edge Compatibility by Venues or Devices
+      description: Query the compatibility info of Edge by venues or devices.
+      operationId: queryVenueEdgeCompatibilities
+      requestBody:
+        content:
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/VenueEdgeCompatibilityRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueEdgeCompatibilityRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/VenueEdgeCompatibilityRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/VenueEdgeCompatibilityResponseV1_1'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueEdgeCompatibilityResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/VenueEdgeCompatibilityResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeMulticastDnsProxyProfiles:
+    post:
+      tags:
+        - Edge Multicast DNS Profile
+      summary: Create Multicast DNS Profile
+      operationId: createMdnsProxyProfile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeMdnsProxyProfile'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EdgeMdnsProxyProfile'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeFeatureSets/query:
+    post:
+      tags:
+        - Edge Compatibility Checking
+      summary: Query the Requirement of Edge Features
+      description: Query features' requirement info related to Edge.
+      operationId: queryEdgeFeaturesRequirement
+      requestBody:
+        content:
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/FeatureSetsRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeatureSetsRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/FeatureSetsRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/FeatureSetsResponseV1_1'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureSetsResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/FeatureSetsResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeDhcpServices:
+    post:
+      tags:
+        - Edge DHCP
+      summary: Create DHCP
+      operationId: createDhcp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeDhcpProfile'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EdgeDhcpProfile'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /edgeDhcpServices/edgeCompatibilities/query:
+    post:
+      tags:
+        - Edge DHCP
+      summary: Query the Edge Compatibility of DHCP Services
+      description: Query the compatibility info of Edge by DHCP services.
+      operationId: queryEdgeDhcpServiceCompatibilities
+      requestBody:
+        content:
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/ServiceEdgeCompatibilityRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceEdgeCompatibilityRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/ServiceEdgeCompatibilityRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ServiceEdgeCompatibilityResponseV1_1'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceEdgeCompatibilityResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ServiceEdgeCompatibilityResponse'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{edgeClusterId}/edges/{serialNumber}/lags/{lagId}/subInterfaces/{subInterfaceId}:
+    get:
+      tags:
+        - Edge LAG Sub-Interface
+      summary: Get Sub-Interface
+      description: Get the sub-interface of a LAG.
+      operationId: getEdgeLagSubInterface
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: lagId
+          in: path
+          description: ID of the LAG
+          required: true
+          schema:
+            type: string
+            description: ID of the LAG
+            example: 0
+          example: 0
+        - name: subInterfaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LagSubInterfaceDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/LagSubInterfaceDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge LAG Sub-Interface
+      summary: Delete Sub-Interface
+      description: Delete a sub-interfaces of a LAG.
+      operationId: deleteEdgeLagSubInterface
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: lagId
+          in: path
+          description: ID of the LAG
+          required: true
+          schema:
+            type: string
+            description: ID of the LAG
+            example: 0
+          example: 0
+        - name: subInterfaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge LAG Sub-Interface
+      summary: Partial Update Sub-Interface
+      description: Partial update a sub-interface of a LAG.
+      operationId: patchEdgeLagSubInterface
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: edgeClusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: lagId
+          in: path
+          description: ID of the LAG
+          required: true
+          schema:
+            type: string
+            description: ID of the LAG
+            example: 0
+          example: 0
+        - name: subInterfaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LagSubInterfaceDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/LagSubInterfaceDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}:
+    get:
+      tags:
+        - Edge Cluster Configuration
+      summary: Get Edge Cluster
+      description: Get the Edge cluster by unique identifier.
+      operationId: getEdgeCluster
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ClusterResponseDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterResponseDtoV1_1'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/ClusterResponseDtoV1_1'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge Cluster Configuration
+      summary: Delete a Edge Cluster
+      description: Delete a Edge cluster.
+      operationId: deleteSingleEdgeCluster
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge Cluster Configuration
+      summary: Update Edge Cluster
+      description: Update Edge cluster.
+      operationId: updateEdgeCluster
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PatchClusterDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchClusterDtoV1_1'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/PatchClusterDtoV1_1'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/networkSettings:
+    get:
+      tags:
+        - Edge Cluster Configuration
+      summary: Get Edge Cluster Network
+      description: Get Edge cluster network settings.
+      operationId: getEdgeClusterNetworkSettings
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClusterNetworkSettingsResponseDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ClusterNetworkSettingsResponseDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge Cluster Configuration
+      summary: Update Edge Cluster Network
+      description: Update Edge cluster network settings.
+      operationId: updateEdgeClusterNetworkSettings
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchClusterNetworkSettingsDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PatchClusterNetworkSettingsDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}:
+    get:
+      tags:
+        - Edge Device Management
+      summary: Get Device
+      description: Get device by the serial number.
+      operationId: getEdgeDevice
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseEdgeDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/BaseEdgeDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - Edge Device Management
+      summary: Delete Device
+      description: Delete the device by the serial number.
+      operationId: deleteEdgeDevice
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge Device Management
+      summary: Update Device
+      description: Patch the device configuration.
+      operationId: patchEdgeDevice
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchEdgeDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PatchEdgeDto'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/staticRouteConfigs:
+    get:
+      tags:
+        - Edge Static Route Configuration
+      summary: Get Static Route Configuration
+      description: Get static routes configuration.
+      operationId: getEdgeStaticRouteConfig
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaticRouteConfigDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/StaticRouteConfigDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge Static Route Configuration
+      summary: Update Static Route Configuration
+      description: Patch static route configuration.
+      operationId: patchEdgeStaticRouteConfig
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaticRouteConfigDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/StaticRouteConfigDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/ports/{portId}/subInterfaces/{subInterfaceId}:
+    delete:
+      tags:
+        - Edge Sub-Interface Configuration
+      summary: Delete Sub-Interface
+      description: Delete a sub-interfaces of a physical port.
+      operationId: deleteEdgeSubInterface
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: portId
+          in: path
+          description: The ID of the physical port
+          required: true
+          schema:
+            type: string
+            description: The ID of the physical port
+            example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+          example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+        - name: subInterfaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge Sub-Interface Configuration
+      summary: Update Sub-Interface
+      description: Update a sub-interface of a physical port.
+      operationId: patchEdgeSubInterface
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+        - name: portId
+          in: path
+          description: The ID of the physical port
+          required: true
+          schema:
+            type: string
+            description: The ID of the physical port
+            example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+          example: 3f21d371-35b6-4288-a70b-2dd6b83e7419
+        - name: subInterfaceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/SubInterfaceDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/portConfigs:
+    get:
+      tags:
+        - Edge Port Configuration
+      summary: Get Physical Port Configuration
+      description: Get the physical port configuration.
+      operationId: getEdgePortConfig
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortConfigDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PortConfigDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge Port Configuration
+      summary: Update Physical Port Configuration
+      description: Patch the physical port configuration.
+      operationId: patchEdgePortConfig
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The SN of the Edge device
+          required: true
+          schema:
+            type: string
+            description: The SN of the Edge device
+            example: 966B4AF92A7B5711EDB27B000C29D14F2E
+          example: 966B4AF92A7B5711EDB27B000C29D14F2E
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortConfigDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortConfigDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/hostDetails:
+    patch:
+      tags:
+        - Edge Troubleshooting
+      summary: Trigger Edge Action
+      description: Trigger Edge action.
+      operationId: TriggerEdgeAction
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          description: The serial number of the EDGE.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TroubleshootingDto'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+  /venues/{venueId}/edgeClusters/{clusterId}/edges/{serialNumber}/dnsServers:
+    get:
+      tags:
+        - Edge DNS Configuration
+      summary: Get DNS Configuration
+      description: Get the DNS configuration.
+      operationId: getEdgeDnsServers
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnsServersDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DnsServersDto'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+    patch:
+      tags:
+        - Edge DNS Configuration
+      summary: Update DNS Configuration
+      description: Patch the DNS configuration.
+      operationId: patchEdgeDnsServers
+      parameters:
+        - name: venueId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: clusterId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: serialNumber
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DnsServersDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DnsServersDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseObject'
+        '400':
+          description: Bad/malformed request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Requested resource or related-entity not found
+        '422':
+          description: Validation error
+        '500':
+          description: Internal Server Error
+components:
+  schemas:
+    LagMemberDto:
+      type: object
+      properties:
+        portId:
+          type: string
+        portEnabled:
+          type: boolean
+      description: The port members of the LAG.
+    NatPoolDto:
+      type: object
+      properties:
+        startIpAddress:
+          type: string
+          description: The starting IP address of the NAT IP address range.
+        endIpAddress:
+          type: string
+          description: The ending IP address of the NAT IP address range.
+      description: Represents a range of NAT IP addresses.
+    UpdateLinkAggregationGroupDto:
+      required:
+        - lacpMode
+        - lacpTimeout
+        - lagEnabled
+        - portType
+      type: object
+      properties:
+        description:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: The description of the LAG.
+        lagType:
+          type: string
+          description: >-
+            The type of the LAG only support the link aggregation control
+            protocol.
+          readOnly: true
+          enum:
+            - STATIC
+            - LACP
+          default: LACP
+        lacpMode:
+          type: string
+          enum:
+            - ACTIVE
+            - PASSIVE
+        lacpTimeout:
+          type: string
+          enum:
+            - SHORT
+            - LONG
+        lagMembers:
+          type: array
+          items:
+            $ref: '#/components/schemas/LagMemberDto'
+        portType:
+          type: string
+          enum:
+            - WAN
+            - LAN
+            - CLUSTER
+            - UNCONFIGURED
+        ipMode:
+          type: string
+          enum:
+            - DHCP
+            - STATIC
+          default: DHCP
+        ip:
+          type: string
+          description: The IP address to be assigned to the port.
+        subnet:
+          type: string
+          description: The IP sub-mask to be assigned to the port.
+        gateway:
+          type: string
+          description: The gateway address of the port.
+        corePortEnabled:
+          type: boolean
+          description: Whether to mark this port as a core port.
+          default: false
+        accessPortEnabled:
+          type: boolean
+          description: Whether to mark this port as a access port.
+          default: false
+        natEnabled:
+          type: boolean
+          description: Whether to enable the network address translation on the wan port.
+          default: false
+        natPools:
+          maxItems: 1
+          minItems: 0
+          type: array
+          description: List of NAT pools associated with the LAG.
+          items:
+            $ref: '#/components/schemas/NatPoolDto'
+        lagEnabled:
+          type: boolean
+          description: Whether to enable the LAG.
+      description: Link Aggregation Group Resource.
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean
+    OperationResponseObject:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          type: object
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+    EdgeArpTerminationSettings:
+      required:
+        - agingTimeSec
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the ARP Termination is enabled.
+        agingTimeSec:
+          maximum: 86400
+          minimum: 10
+          type: integer
+          description: The aging time in seconds for the ARP termination cache.
+          format: int32
+      description: DTO for Arp Termination Settings
+    EdgeMdnsProxyProfile:
+      required:
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier of the multicast DNS proxy.
+          readOnly: true
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the multicast DNS proxy.
+        forwardingRules:
+          type: array
+          description: Up to 32 rules may be added.
+          items:
+            $ref: '#/components/schemas/EdgeMdnsProxyProfileForwardingRule'
+      description: DTO for mDNS Proxy Profile
+    EdgeMdnsProxyProfileForwardingRule:
+      required:
+        - serviceType
+      type: object
+      properties:
+        serviceType:
+          type: string
+          enum:
+            - AIRDISK
+            - AIRPLAY
+            - AIRPORT_MANAGEMENT
+            - AIRPRINT
+            - AIRTUNES
+            - APPLE_FILE_SHARING
+            - APPLE_MOBILE_DEVICES
+            - APPLETV
+            - ICLOUD_SYNC
+            - ITUNES_REMOTE
+            - ITUNES_SHARING
+            - OPEN_DIRECTORY_MASTER
+            - OPTICAL_DISK_SHARING
+            - RUCKUS_CONTROLLER
+            - SCREEN_SHARING
+            - SECURE_FILE_SHARING
+            - SECURE_SHELL
+            - WWW_HTTP
+            - WWW_HTTPS
+            - WORKGROUP_MANAGER
+            - XGRID
+            - GOOGLE_CHROMECAST
+            - OTHER
+        mdnsName:
+          type: string
+          description: The multicast DNS name is required when service type is other.
+        mdnsProtocol:
+          type: string
+          description: The multicast DNS protocol is required when service type is other.
+          enum:
+            - TCP
+            - UDP
+        fromVlan:
+          maximum: 4094
+          minimum: 1
+          type: integer
+          description: VLAN ID must be between 1 and 4094.
+          format: int32
+        toVlan:
+          maximum: 4094
+          minimum: 1
+          type: integer
+          description: VLAN ID must be between 1 and 4094.
+          format: int32
+      description: DTO for forwarding proxy rule of mDNS Proxy Profile
+    DhcpOptions:
+      required:
+        - optionId
+        - optionName
+        - optionValue
+      type: object
+      properties:
+        id:
+          type: string
+        optionId:
+          maxLength: 32
+          minLength: 1
+          type: string
+        optionName:
+          maxLength: 255
+          minLength: 1
+          type: string
+        optionValue:
+          maxLength: 64
+          minLength: 1
+          type: string
+    DhcpPool:
+      required:
+        - poolEndIp
+        - poolName
+        - poolStartIp
+        - subnetMask
+      type: object
+      properties:
+        id:
+          type: string
+        poolName:
+          maxLength: 15
+          minLength: 1
+          type: string
+        subnetMask:
+          type: string
+        gatewayIp:
+          type: string
+        poolStartIp:
+          type: string
+        poolEndIp:
+          type: string
+        activated:
+          type: boolean
+    Host:
+      required:
+        - fixedAddress
+        - hostName
+        - mac
+      type: object
+      properties:
+        id:
+          type: string
+        hostName:
+          maxLength: 31
+          minLength: 1
+          type: string
+        mac:
+          type: string
+        fixedAddress:
+          type: string
+    UpdateEdgeDhcpProfile:
+      required:
+        - leaseTime
+        - leaseTimeUnit
+        - serviceName
+      type: object
+      properties:
+        dhcpRelay:
+          type: boolean
+        externalDhcpServerFqdnIp:
+          type: string
+        domainName:
+          maxLength: 31
+          minLength: 0
+          type: string
+        primaryDnsIp:
+          type: string
+        secondaryDnsIp:
+          type: string
+        dhcpPools:
+          type: array
+          items:
+            $ref: '#/components/schemas/DhcpPool'
+        dhcpOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DhcpOptions'
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Host'
+        serviceName:
+          maxLength: 64
+          minLength: 1
+          type: string
+        leaseTime:
+          type: integer
+          format: int32
+        leaseTimeUnit:
+          type: string
+          enum:
+            - MINUTES
+            - HOURS
+            - DAYS
+        action:
+          type: string
+          enum:
+            - UPDATE_NOW
+    ClusterMemberDto:
+      title: Edge Cluster Member Configuration
+      required:
+        - name
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the device.
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the Edge.
+        description:
+          type: string
+          description: The description of the Edge.
+      description: A list of Edge devices to be in the cluster.
+    CreateClusterDto:
+      title: Edge Cluster Creation Configuration
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the cluster.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of the cluster.
+        smartEdges:
+          type: array
+          description: A list of Edge devices to be in the cluster.
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        highAvailabilityMode:
+          type: string
+          description: The high availability mode.
+          enum:
+            - ACTIVE_STANDBY
+            - ACTIVE_ACTIVE
+    CreateClusterDtoV1_1:
+      title: Edge Cluster Creation Configuration
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the cluster.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of the cluster.
+        smartEdges:
+          type: array
+          description: A list of Edge devices to be in the cluster.
+          deprecated: true
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        members:
+          type: array
+          description: A list of Edge devices to be in the cluster.
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        highAvailabilityMode:
+          type: string
+          description: The high availability mode.
+          enum:
+            - ACTIVE_STANDBY
+            - ACTIVE_ACTIVE
+    LinkAggregationGroupDto:
+      required:
+        - id
+        - lacpMode
+        - lacpTimeout
+        - lagEnabled
+        - portType
+      type: object
+      properties:
+        id:
+          maximum: 3
+          minimum: 0
+          type: integer
+          description: The ID of the LAG, support from 0 to 3.
+          format: int32
+        description:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: The description of the LAG.
+        lagType:
+          type: string
+          description: >-
+            The type of the LAG only support the link aggregation control
+            protocol.
+          readOnly: true
+          enum:
+            - STATIC
+            - LACP
+          default: LACP
+        lacpMode:
+          type: string
+          enum:
+            - ACTIVE
+            - PASSIVE
+        lacpTimeout:
+          type: string
+          enum:
+            - SHORT
+            - LONG
+        lagMembers:
+          type: array
+          items:
+            $ref: '#/components/schemas/LagMemberDto'
+        portType:
+          type: string
+          enum:
+            - WAN
+            - LAN
+            - CLUSTER
+            - UNCONFIGURED
+        ipMode:
+          type: string
+          enum:
+            - DHCP
+            - STATIC
+          default: DHCP
+        ip:
+          type: string
+          description: The IP address to be assigned to the port.
+        subnet:
+          type: string
+          description: The IP sub-mask to be assigned to the port.
+        gateway:
+          type: string
+          description: The gateway address of the port.
+        corePortEnabled:
+          type: boolean
+          description: Whether to mark this port as a core port.
+          default: false
+        accessPortEnabled:
+          type: boolean
+          description: Whether to mark this port as a access port.
+          default: false
+        natEnabled:
+          type: boolean
+          description: Whether to enable the network address translation on the wan port.
+          default: false
+        natPools:
+          maxItems: 1
+          minItems: 0
+          type: array
+          description: List of NAT pools associated with the LAG.
+          items:
+            $ref: '#/components/schemas/NatPoolDto'
+        lagEnabled:
+          type: boolean
+          description: Whether to enable the LAG.
+        reportIp:
+          type: string
+          description: IP reported by edge device.
+          readOnly: true
+        reportSubnet:
+          type: string
+          description: Sub-network mask reported by edge device.
+          readOnly: true
+      description: Link Aggregation Group Resource.
+    LagSubInterfaceDto:
+      title: Link Aggregation Group SubInterface Resource
+      required:
+        - portType
+        - vlan
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        vlan:
+          minimum: 1
+          type: integer
+          description: The virtual LAN ID of the sub-interface.
+          format: int32
+        portType:
+          type: string
+          enum:
+            - WAN
+            - LAN
+            - CLUSTER
+            - UNCONFIGURED
+        ipMode:
+          type: string
+          enum:
+            - DHCP
+            - STATIC
+          default: DHCP
+        ip:
+          type: string
+          description: The IP address to be assigned to the port.
+        subnet:
+          type: string
+          description: The IP sub-mask to be assigned to the port.
+        gateway:
+          type: string
+          description: The gateway address of the port.
+        corePortEnabled:
+          type: boolean
+          description: Whether to mark this port as a core port.
+          default: false
+        accessPortEnabled:
+          type: boolean
+          description: Whether to mark this port as a access port.
+          default: false
+    CreateEdgeDto:
+      required:
+        - name
+        - serialNumber
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the device.
+        description:
+          type: string
+          description: The description of the device.
+        serialNumber:
+          type: string
+          description: The serial number of the device.
+      description: Edge Resource
+    SubInterfaceDto:
+      title: SubInterface configuration
+      required:
+        - portType
+        - vlan
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        vlan:
+          type: integer
+          description: The virtual LAN ID of the sub-interface.
+          format: int32
+        portType:
+          type: string
+          enum:
+            - WAN
+            - LAN
+            - CLUSTER
+            - UNCONFIGURED
+        ipMode:
+          type: string
+          enum:
+            - DHCP
+            - STATIC
+          default: DHCP
+        ip:
+          type: string
+          description: The IP address to be assigned to the port.
+        subnet:
+          type: string
+          description: The IP sub-mask to be assigned to the port.
+        gateway:
+          type: string
+          description: The gateway address of the port.
+        corePortEnabled:
+          type: boolean
+          description: Whether to mark this port as a core port.
+          default: false
+        accessPortEnabled:
+          type: boolean
+          description: Whether to mark this port as a access port.
+          default: false
+    VenueEdgeCompatibilityFilter:
+      type: object
+      properties:
+        venueIds:
+          type: array
+          items:
+            type: string
+        edgeIds:
+          type: array
+          items:
+            type: string
+      description: The filters for querying the venues of the compatibility.
+    VenueEdgeCompatibilityRequest:
+      title: Query request of Edge compatibility by venue
+      required:
+        - filters
+      type: object
+      properties:
+        featureNames:
+          type: array
+          description: The list of feature names to be queried.
+          items:
+            type: string
+            description: The list of feature names to be queried.
+        filters:
+          $ref: '#/components/schemas/VenueEdgeCompatibilityFilter'
+    IncompatibleDevice:
+      type: object
+      properties:
+        firmware:
+          type: string
+        count:
+          type: integer
+          format: int32
+    IncompatibleFeatureDto:
+      type: object
+      properties:
+        featureName:
+          type: string
+        featureGroup:
+          type: string
+        featureType:
+          type: string
+        featureLevel:
+          type: string
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequirementDto'
+        incompatibleDevices:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleDevice'
+    IncompatibleInfoDto:
+      type: object
+      properties:
+        identityType:
+          type: string
+        id:
+          type: string
+        incompatibleFeatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleFeatureDto'
+        total:
+          type: integer
+          format: int32
+        incompatible:
+          type: integer
+          format: int32
+      description: The incompatible information of Edge device.
+    RequirementDto:
+      title: Edge Requirement Details
+      type: object
+      properties:
+        firmware:
+          type: string
+          description: Minimum required firmware version
+    VenueEdgeCompatibilityResponseV1_1:
+      title: The response of Edge compatibility by venues.
+      type: object
+      properties:
+        compatibilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleInfoDto'
+    FeatureRequirement:
+      title: A Feature Requirement of Edge
+      type: object
+      properties:
+        featureName:
+          type: string
+          description: Name of the feature
+        requiredFw:
+          type: string
+          description: Minimum required firmware version
+    IncompatibleFeature:
+      type: object
+      properties:
+        featureRequirement:
+          $ref: '#/components/schemas/FeatureRequirement'
+        incompatibleDevices:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleDevice'
+    IncompatibleInfo:
+      type: object
+      properties:
+        identityType:
+          type: string
+        id:
+          type: string
+        incompatibleFeatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleFeature'
+        total:
+          type: integer
+          format: int32
+        incompatible:
+          type: integer
+          format: int32
+      description: The incompatible information of Edge device.
+    VenueEdgeCompatibilityResponse:
+      title: The response of Edge compatibility by venues.
+      type: object
+      properties:
+        compatibilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleInfo'
+    FeatureSetsFilter:
+      type: object
+      properties:
+        featureNames:
+          type: array
+          items:
+            type: string
+      description: The filters of the FeatureSets.
+    FeatureSetsRequest:
+      title: Query request of Edge Feature Requirement
+      type: object
+      properties:
+        filters:
+          $ref: '#/components/schemas/FeatureSetsFilter'
+    FeatureRequirementDetailsDto:
+      title: A Feature Requirement Details of Edge
+      type: object
+      properties:
+        featureName:
+          type: string
+          description: Name of the feature
+        featureGroup:
+          type: string
+          description: Group of the feature
+        requirements:
+          type: array
+          description: Edge device requirement
+          items:
+            $ref: '#/components/schemas/RequirementDto'
+        featureType:
+          type: string
+          description: Type of the feature
+        featureLevel:
+          type: string
+          description: Level of the feature
+      description: A list of Edge feature requirement.
+    FeatureSetsResponseV1_1:
+      title: Set of Edge Feature Requirement
+      type: object
+      properties:
+        featureSets:
+          type: array
+          description: A list of Edge feature requirement.
+          items:
+            $ref: '#/components/schemas/FeatureRequirementDetailsDto'
+    FeatureSetsResponse:
+      title: Set of Edge Feature Requirement
+      type: object
+      properties:
+        featureSets:
+          type: array
+          description: A list of Edge feature requirement.
+          items:
+            $ref: '#/components/schemas/FeatureRequirement'
+    EdgeDhcpProfile:
+      required:
+        - leaseTime
+        - leaseTimeUnit
+        - serviceName
+      type: object
+      properties:
+        dhcpRelay:
+          type: boolean
+        externalDhcpServerFqdnIp:
+          type: string
+        domainName:
+          maxLength: 31
+          minLength: 0
+          type: string
+        primaryDnsIp:
+          type: string
+        secondaryDnsIp:
+          type: string
+        dhcpPools:
+          type: array
+          items:
+            $ref: '#/components/schemas/DhcpPool'
+        dhcpOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DhcpOptions'
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Host'
+        id:
+          type: string
+        serviceName:
+          maxLength: 64
+          minLength: 1
+          type: string
+        leaseTime:
+          type: integer
+          format: int32
+        leaseTimeUnit:
+          type: string
+          enum:
+            - MINUTES
+            - HOURS
+            - DAYS
+    ServiceEdgeCompatibilityFilter:
+      type: object
+      properties:
+        serviceIds:
+          type: array
+          items:
+            type: string
+      description: The filters for querying the services of the compatibility.
+    ServiceEdgeCompatibilityRequest:
+      title: Query request of Edge compatibility by service
+      required:
+        - filters
+      type: object
+      properties:
+        filters:
+          $ref: '#/components/schemas/ServiceEdgeCompatibilityFilter'
+    ServiceEdgeCompatibilityResponseV1_1:
+      title: The response of Edge compatibility by services.
+      type: object
+      properties:
+        compatibilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceIncompatibleInfoDto'
+    ServiceIncompatibleInfoDto:
+      type: object
+      properties:
+        serviceId:
+          type: string
+        clusterEdgeCompatibilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleInfoDto'
+      description: The service incompatible information of Edge device.
+    ServiceEdgeCompatibilityResponse:
+      title: The response of Edge compatibility by services.
+      type: object
+      properties:
+        compatibilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceIncompatibleInfo'
+    ServiceIncompatibleInfo:
+      type: object
+      properties:
+        serviceId:
+          type: string
+        clusterEdgeCompatibilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompatibleInfo'
+      description: The service incompatible information of Edge device.
+    PatchClusterDto:
+      title: Edge Cluster Update Configuration
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the cluster.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of the cluster.
+        smartEdges:
+          type: array
+          description: A list of Edge devices to be in the cluster.
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        virtualIpSettings:
+          $ref: '#/components/schemas/VirtualIpSettingsDto'
+    VirtualIpDto:
+      title: Virtual IP Configuration
+      required:
+        - virtualIp
+      type: object
+      properties:
+        virtualIp:
+          type: string
+          description: >-
+            Virtual IP address shared across multiple ports on each node in the
+            cluster.
+        ports:
+          type: array
+          description: List of ports associated with the virtual IP.
+          items:
+            $ref: '#/components/schemas/VirtualIpPortDto'
+        timeoutSeconds:
+          maximum: 15
+          minimum: 3
+          type: integer
+          description: Timeout duration in seconds for fail over operations.
+          format: int32
+      description: The settings for a single virtual IP.
+    VirtualIpPortDto:
+      title: Virtual IP Port Configuration
+      required:
+        - portName
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the node that owns the port.
+        portName:
+          type: string
+          description: The name of the port associated with the virtual IP.
+      description: List of ports associated with the virtual IP.
+    VirtualIpSettingsDto:
+      title: Cluster Virtual IP Configuration
+      type: object
+      properties:
+        virtualIps:
+          maxItems: 255
+          minItems: 0
+          type: array
+          description: List of virtual IPs associated with the cluster.
+          items:
+            $ref: '#/components/schemas/VirtualIpDto'
+      description: The virtual IP settings of the cluster.
+      deprecated: true
+    PatchClusterDtoV1_1:
+      title: Edge Cluster Update Configuration
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the cluster.
+        description:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The description of the cluster.
+        smartEdges:
+          type: array
+          description: A list of Edge devices to be in the cluster.
+          deprecated: true
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        members:
+          type: array
+          description: A list of Edge devices to be in the cluster.
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        virtualIpSettings:
+          $ref: '#/components/schemas/VirtualIpSettingsDto'
+    ClusterNetworkLagSettingsDto:
+      title: Edge Link Aggregation Group Settings
+      required:
+        - lags
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the Edge.
+        lags:
+          maxItems: 4
+          minItems: 0
+          type: array
+          description: The link aggregation group configuration of the Edge node.
+          items:
+            $ref: '#/components/schemas/LinkAggregationGroupDto'
+      description: The link aggregation group settings of the Edge node.
+    ClusterNetworkMultiWanSettingsDto:
+      title: Edge Multi WAN Settings
+      required:
+        - mode
+        - wanMembers
+      type: object
+      properties:
+        mode:
+          type: string
+          description: Dual-WAN mode
+          enum:
+            - NONE
+            - ACTIVE_BACKUP
+        wanMembers:
+          maxItems: 2
+          minItems: 0
+          type: array
+          description: A list of WAN members in the cluster.
+          items:
+            $ref: '#/components/schemas/WanMemberDto'
+      description: The multi WAN settings of the Edge cluster.
+    ClusterNetworkPortSettingsDto:
+      title: Edge Port Settings
+      required:
+        - ports
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the Edge node.
+        ports:
+          maxItems: 2147483647
+          minItems: 1
+          type: array
+          description: The port configuration of the Edge node.
+          items:
+            $ref: '#/components/schemas/PortDto'
+      description: The port settings of the Edge node.
+    FallbackSettingsDto:
+      required:
+        - enable
+      type: object
+      properties:
+        enable:
+          type: boolean
+          description: Enable or disable the client periodic fallback feature.
+        schedule:
+          $ref: '#/components/schemas/Schedule'
+      description: Settings for client to attempt reconnecting to the primary node.
+    HighAvailabilitySettingsDto:
+      title: Edge Cluster High Availability Settings
+      required:
+        - fallbackSettings
+        - loadDistribution
+      type: object
+      properties:
+        fallbackSettings:
+          $ref: '#/components/schemas/FallbackSettingsDto'
+        loadDistribution:
+          type: string
+          description: Method for distributing clients to the nodes in the cluster.
+          enum:
+            - RANDOM
+            - AP_GROUP
+      description: High availability settings for active-active clusters.
+    LinkHealthCheckPolicy:
+      required:
+        - intervalSeconds
+        - linkDownCriteria
+        - maxCountToDown
+        - maxCountToUp
+        - protocol
+        - targetIpAddresses
+      type: object
+      properties:
+        protocol:
+          type: string
+          description: The protocol for checking link health.
+          enum:
+            - NONE
+            - PING
+        targetIpAddresses:
+          maxItems: 3
+          minItems: 1
+          type: array
+          description: IP addresses for link health checks.
+          items:
+            type: string
+            description: IP addresses for link health checks.
+        linkDownCriteria:
+          type: string
+          description: The criteria for link down detection.
+          enum:
+            - INVALID
+            - ALL_TARGETS_DOWN
+            - ANY_TARGET_DOWN
+        intervalSeconds:
+          maximum: 10
+          minimum: 1
+          type: integer
+          description: The interval in seconds for link health checks.
+          format: int32
+        maxCountToDown:
+          maximum: 10
+          minimum: 2
+          type: integer
+          description: Number of continuous failures to consider the link down.
+          format: int32
+        maxCountToUp:
+          maximum: 10
+          minimum: 2
+          type: integer
+          description: Number of continuous success to fallback.
+          format: int32
+      description: Configure a health check policy for the WAN link.
+    NodeLagSubInterface:
+      required:
+        - lagId
+        - subInterfaces
+      type: object
+      properties:
+        lagId:
+          type: integer
+          description: The ID of the physical LAG.
+          format: int32
+        subInterfaces:
+          maxItems: 16
+          minItems: 0
+          type: array
+          description: List of sub-interfaces.
+          items:
+            $ref: '#/components/schemas/SubInterfaceDto'
+      description: sub-interface of physical LAG on the node.
+    NodePortSubInterface:
+      required:
+        - portId
+        - subInterfaces
+      type: object
+      properties:
+        portId:
+          type: string
+          description: The UUID of the physical port.
+        subInterfaces:
+          maxItems: 16
+          minItems: 0
+          type: array
+          description: List of sub-interfaces.
+          items:
+            $ref: '#/components/schemas/SubInterfaceDto'
+      description: sub-interface of physical port on the node.
+    NodeSubInterfaceDto:
+      title: Edge SubInterface Settings
+      required:
+        - lags
+        - ports
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the Edge node.
+        ports:
+          type: array
+          description: List of physical ports on the node.
+          items:
+            $ref: '#/components/schemas/NodePortSubInterface'
+        lags:
+          type: array
+          description: List of physical LAGs on the node.
+          items:
+            $ref: '#/components/schemas/NodeLagSubInterface'
+      description: The sub-interface settings of the Edge node.
+    PatchClusterNetworkSettingsDto:
+      title: Edge Cluster Update Network Settings
+      type: object
+      properties:
+        virtualIpSettings:
+          maxItems: 2
+          minItems: 0
+          type: array
+          description: List of cluster virtual IP settings for active-standby clusters.
+          items:
+            $ref: '#/components/schemas/VirtualIpDto'
+        portSettings:
+          maxItems: 4
+          minItems: 0
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterNetworkPortSettingsDto'
+        lagSettings:
+          maxItems: 4
+          minItems: 1
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterNetworkLagSettingsDto'
+        highAvailabilitySettings:
+          $ref: '#/components/schemas/HighAvailabilitySettingsDto'
+        subInterfaceSettings:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeSubInterfaceDto'
+        multiWanSettings:
+          $ref: '#/components/schemas/ClusterNetworkMultiWanSettingsDto'
+    PortDto:
+      title: Port configuration
+      required:
+        - enabled
+        - id
+        - mac
+        - name
+        - portType
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier of the port.
+        name:
+          maxLength: 63
+          minLength: 0
+          type: string
+          description: The description or the alias name of the port.
+        interfaceName:
+          type: string
+          description: The interface name of the port.
+          readOnly: true
+        mac:
+          type: string
+          description: The mac address of the port.
+        enabled:
+          type: boolean
+          description: Whether to enable this port.
+        portType:
+          type: string
+          enum:
+            - WAN
+            - LAN
+            - CLUSTER
+            - UNCONFIGURED
+        natEnabled:
+          type: boolean
+          description: Whether to enable the network address translation on the wan port.
+          default: false
+        natPools:
+          maxItems: 1
+          minItems: 0
+          type: array
+          description: List of NAT pools associated with the port.
+          items:
+            $ref: '#/components/schemas/NatPoolDto'
+        ipMode:
+          type: string
+          enum:
+            - DHCP
+            - STATIC
+          default: DHCP
+        ip:
+          type: string
+          description: The IP address to be assigned to the port.
+        subnet:
+          type: string
+          description: The IP sub-mask to be assigned to the port.
+        gateway:
+          type: string
+          description: The gateway address of the port.
+        corePortEnabled:
+          type: boolean
+          description: Whether to mark this port as a core port.
+          default: false
+        accessPortEnabled:
+          type: boolean
+          description: Whether to mark this port as a access port.
+          default: false
+        reportIp:
+          type: string
+          description: IP reported by edge device.
+          readOnly: true
+        reportSubnet:
+          type: string
+          description: Sub-network mask reported by edge device.
+          readOnly: true
+        maxSpeedCapa:
+          type: number
+          description: The maximum speed capability of the port reported by edge device.
+          readOnly: true
+      description: The port configuration of the Edge node.
+    Schedule:
+      required:
+        - type
+      type: object
+      properties:
+        type:
+          type: string
+          description: Type of scheduling.
+          enum:
+            - DAILY
+            - WEEKLY
+            - INTERVAL
+        time:
+          pattern: HH:mm
+          type: string
+          description: Time of day in the venue's time zone.
+          format: partial-time
+          example: '16:00'
+        weekday:
+          type: string
+          description: Day of the week.
+          enum:
+            - MON
+            - TUE
+            - WED
+            - THU
+            - FRI
+            - SAT
+            - SUN
+        intervalHours:
+          minimum: 1
+          type: integer
+          description: Interval in hours.
+          format: int32
+          example: 48
+      description: Schedule for clients to attempt reconnecting to the primary node.
+    WanMemberDto:
+      required:
+        - healthCheckEnabled
+        - portName
+        - priority
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the Edge.
+        portName:
+          type: string
+          description: The interface name of the port.
+        priority:
+          maximum: 2
+          minimum: 1
+          type: integer
+          description: For the active WAN, set to 1. For the backup WAN, set to 2.
+          format: int32
+        healthCheckEnabled:
+          type: boolean
+          description: Whether to enable the health check for the WAN link.
+        linkHealthCheckPolicy:
+          $ref: '#/components/schemas/LinkHealthCheckPolicy'
+      description: A list of WAN members in the cluster.
+    PatchEdgeDto:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the device.
+        description:
+          type: string
+          description: The description of the device.
+        otpState:
+          type: string
+          enum:
+            - RENEW
+      description: Edge Resource
+    StaticRouteConfigDto:
+      title: Static route config
+      type: object
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaticRouteDto'
+      description: Static route config of the Edge
+    StaticRouteDto:
+      required:
+        - destIp
+        - destSubnet
+        - nextHop
+      type: object
+      properties:
+        id:
+          type: string
+        destIp:
+          type: string
+        destSubnet:
+          type: string
+        nextHop:
+          type: string
+    PortConfigDto:
+      title: Physical port config
+      type: object
+      properties:
+        ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortDto'
+      description: Physical port config of the Edge
+    TroubleshootingDto:
+      required:
+        - action
+      type: object
+      properties:
+        action:
+          type: string
+        targetHost:
+          pattern: >-
+            (^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$(?<!^255\.255\.255\.255$)(?<!^22[4-9]\..*$)(?<!^23[0-9]\..*$))|(^((?=[a-z0-9-]{1,63}\.)(xn--)?[a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,63}$)
+          type: string
+      description: Trigger Edge action request
+    DnsServersDto:
+      type: object
+      properties:
+        primary:
+          type: string
+        secondary:
+          type: string
+      description: Edge Dns Servers Config
+    PatchEdgeDhcpProfile:
+      type: object
+      properties:
+        dhcpRelay:
+          type: boolean
+        externalDhcpServerFqdnIp:
+          type: string
+        domainName:
+          maxLength: 31
+          minLength: 0
+          type: string
+        primaryDnsIp:
+          type: string
+        secondaryDnsIp:
+          type: string
+        dhcpPools:
+          type: array
+          items:
+            $ref: '#/components/schemas/DhcpPool'
+        dhcpOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DhcpOptions'
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Host'
+        serviceName:
+          maxLength: 64
+          minLength: 1
+          type: string
+        leaseTime:
+          type: integer
+          format: int32
+        leaseTimeUnit:
+          type: string
+          enum:
+            - MINUTES
+            - HOURS
+            - DAYS
+        action:
+          type: string
+          enum:
+            - UPDATE_NOW
+    ClusterResponseDto:
+      title: Edge Cluster Information
+      type: object
+      properties:
+        id:
+          type: string
+          description: The ID of the cluster.
+        name:
+          type: string
+          description: The name of the cluster.
+        description:
+          type: string
+          description: The description of the cluster.
+        highAvailabilityMode:
+          type: string
+          description: The high availability mode.
+          enum:
+            - ACTIVE_STANDBY
+            - ACTIVE_ACTIVE
+        smartEdges:
+          type: array
+          description: A list of Edge devices in the cluster.
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        virtualIpSettings:
+          $ref: '#/components/schemas/VirtualIpSettingsDto'
+    PageResponseClusterResponseDto:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterResponseDto'
+        paging:
+          $ref: '#/components/schemas/Paging'
+    Paging:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalCount:
+          type: integer
+          format: int64
+    ClusterResponseDtoV1_1:
+      title: Edge Cluster Information
+      type: object
+      properties:
+        id:
+          type: string
+          description: The ID of the cluster.
+        name:
+          type: string
+          description: The name of the cluster.
+        description:
+          type: string
+          description: The description of the cluster.
+        highAvailabilityMode:
+          type: string
+          description: The high availability mode.
+          enum:
+            - ACTIVE_STANDBY
+            - ACTIVE_ACTIVE
+        smartEdges:
+          type: array
+          description: A list of Edge devices in the cluster.
+          deprecated: true
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        members:
+          type: array
+          description: A list of Edge devices in the cluster.
+          items:
+            $ref: '#/components/schemas/ClusterMemberDto'
+        virtualIpSettings:
+          $ref: '#/components/schemas/VirtualIpSettingsDto'
+    PageResponseClusterResponseDtoV1_1:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterResponseDtoV1_1'
+        paging:
+          $ref: '#/components/schemas/Paging'
+    ClusterNetworkSettingsResponseDto:
+      title: Edge Cluster Network Settings
+      type: object
+      properties:
+        virtualIpSettings:
+          type: array
+          description: List of cluster virtual IP settings for active-standby clusters.
+          items:
+            $ref: '#/components/schemas/VirtualIpDto'
+        portSettings:
+          type: array
+          description: List of cluster edges port settings.
+          items:
+            $ref: '#/components/schemas/ClusterNetworkPortSettingsDto'
+        lagSettings:
+          type: array
+          description: List of cluster edges LAG settings.
+          items:
+            $ref: '#/components/schemas/ClusterNetworkLagSettingsDto'
+        highAvailabilitySettings:
+          $ref: '#/components/schemas/HighAvailabilitySettingsDto'
+        subInterfaceSettings:
+          type: array
+          description: List of cluster sub-interface settings.
+          items:
+            $ref: '#/components/schemas/NodeSubInterfaceResponseDto'
+        multiWanSettings:
+          $ref: '#/components/schemas/ClusterNetworkMultiWanSettingsDto'
+    LagSubInterfaceResponseDto:
+      required:
+        - lagId
+        - lagName
+        - subInterfaces
+      type: object
+      properties:
+        lagId:
+          type: integer
+          description: The ID of the physical LAG.
+          format: int32
+        lagName:
+          type: string
+          description: The interface name of the physical LAG.
+        subInterfaces:
+          type: array
+          description: List of sub-interfaces.
+          items:
+            $ref: '#/components/schemas/SubInterfaceResponseDto'
+      description: List of physical LAGs on the node.
+    NodeSubInterfaceResponseDto:
+      required:
+        - lags
+        - ports
+        - serialNumber
+      type: object
+      properties:
+        serialNumber:
+          type: string
+          description: The serial number of the Edge node.
+        ports:
+          type: array
+          description: List of physical ports on the node.
+          items:
+            $ref: '#/components/schemas/PortSubInterfaceResponseDto'
+        lags:
+          type: array
+          description: List of physical LAGs on the node.
+          items:
+            $ref: '#/components/schemas/LagSubInterfaceResponseDto'
+      description: List of cluster sub-interface settings.
+    PortSubInterfaceResponseDto:
+      required:
+        - interfaceName
+        - portId
+        - subInterfaces
+      type: object
+      properties:
+        portId:
+          type: string
+          description: The UUID of the physical port.
+        interfaceName:
+          type: string
+          description: The interface name of the physical port.
+        subInterfaces:
+          type: array
+          description: List of sub-interfaces.
+          items:
+            $ref: '#/components/schemas/SubInterfaceResponseDto'
+      description: List of physical ports on the node.
+    SubInterfaceResponseDto:
+      title: SubInterface configuration
+      required:
+        - portType
+        - vlan
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        vlan:
+          type: integer
+          description: The virtual LAN ID of the sub-interface.
+          format: int32
+        portType:
+          type: string
+          enum:
+            - WAN
+            - LAN
+            - CLUSTER
+            - UNCONFIGURED
+        ipMode:
+          type: string
+          enum:
+            - DHCP
+            - STATIC
+          default: DHCP
+        ip:
+          type: string
+          description: The IP address to be assigned to the port.
+        subnet:
+          type: string
+          description: The IP sub-mask to be assigned to the port.
+        gateway:
+          type: string
+          description: The gateway address of the port.
+        corePortEnabled:
+          type: boolean
+          description: Whether to mark this port as a core port.
+          default: false
+        accessPortEnabled:
+          type: boolean
+          description: Whether to mark this port as a access port.
+          default: false
+        interfaceName:
+          type: string
+          description: The interface name of the sub-interface.
+          readOnly: true
+      description: List of sub-interfaces.
+    BaseEdgeDto:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          maxLength: 64
+          minLength: 1
+          type: string
+          description: The name of the device.
+        description:
+          type: string
+          description: The description of the device.
+      description: Edge Resource
+    GetSubInterfaceResponseDto:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: Zero-based page index.
+          format: int32
+        pageSize:
+          type: integer
+          description: The size of the page to be returned.
+          format: int32
+        totalCount:
+          type: integer
+          description: The total number of the data.
+          format: int64
+        content:
+          type: array
+          description: The queried data.
+          items:
+            $ref: '#/components/schemas/SubInterfaceDto'

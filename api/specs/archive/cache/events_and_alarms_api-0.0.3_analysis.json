@@ -1,0 +1,102 @@
+{
+  "name": "Events and Alarms API",
+  "version": "0.0.3",
+  "url": "https://docs.ruckus.cloud/_bundle/api/event-alarm-api-0.0.3.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.377403",
+  "endpoint_count": 9,
+  "base_url": "http://localhost",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/historicalClients/query",
+      "method": "POST",
+      "summary": "Get Historical Clients",
+      "description": "Get historical client list information grouped by client MAC address.",
+      "operation_id": "getEventAggList",
+      "tags": [
+        "Event"
+      ]
+    },
+    {
+      "path": "/events/query",
+      "method": "POST",
+      "summary": "Get Events",
+      "description": "Get event list information.",
+      "operation_id": "getEventList",
+      "tags": [
+        "Event"
+      ]
+    },
+    {
+      "path": "/events/metas/query",
+      "method": "POST",
+      "summary": "Get Events Venue,AP and Network Data",
+      "description": "Get events with venue, access point and network data.",
+      "operation_id": "getEventListMetaData",
+      "tags": [
+        "Event"
+      ]
+    },
+    {
+      "path": "/events/details/query",
+      "method": "POST",
+      "summary": "Get Events Details Like Venue, AP and Network Data",
+      "description": "Get events details with venue, access point and network data.",
+      "operation_id": "getEventDetails",
+      "tags": [
+        "Event"
+      ]
+    },
+    {
+      "path": "/events/csvFiles",
+      "method": "POST",
+      "summary": "Export Events Within a Date Range",
+      "description": "Export specific events within a date range.",
+      "operation_id": "exportEvents",
+      "tags": [
+        "Event"
+      ]
+    },
+    {
+      "path": "/alarms/query",
+      "method": "POST",
+      "summary": "Get Alarms",
+      "description": "Returns the set of alarms. Added the support for MSP tenant. For MSP tenant need to pass tenant ids and sort order.",
+      "operation_id": "getAlarmList",
+      "tags": [
+        "Alarm"
+      ]
+    },
+    {
+      "path": "/alarms/metas/query",
+      "method": "POST",
+      "summary": "Get Alarms Venue,AP and Network Data",
+      "description": "Get all alarms filtered by the query. Includes venue, access point and network data.",
+      "operation_id": "getAlarmListMetaData",
+      "tags": [
+        "Alarm"
+      ]
+    },
+    {
+      "path": "/alarms/{alarmId}",
+      "method": "PATCH",
+      "summary": "Clear Alarm",
+      "description": "Clear the alarm.",
+      "operation_id": "clearAlarm",
+      "tags": [
+        "Alarm"
+      ]
+    },
+    {
+      "path": "/events/adminGroups/{adminGroupId}/latestLogins",
+      "method": "GET",
+      "summary": "Get Admin Members Last Logins",
+      "description": "Get admin members last logins.",
+      "operation_id": "adminGroupMemberLastLogin",
+      "tags": [
+        "Group Members Last login Event",
+        "Event"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "name": "Message Template API",
+  "version": "0.0.12",
+  "url": "https://docs.ruckus.cloud/_bundle/api/msg_template_management-0.0.12.yaml",
+  "downloaded_at": "2025-12-02T18:45:25.938527",
+  "endpoint_count": 8,
+  "base_url": "http://localhost:8080",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/templateScopes",
+      "method": "GET",
+      "summary": "Retrieve All Template Scopes",
+      "description": "Returns all available template scopes.",
+      "operation_id": "msgTemplate.getAllTemplateScopes",
+      "tags": [
+        "Template Scope"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}",
+      "method": "GET",
+      "summary": "Get Template Scope",
+      "description": "Retrieves the template scope for the given id.",
+      "operation_id": "msgTemplate.getTemplateScope",
+      "tags": [
+        "Template Scope"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}/variables",
+      "method": "GET",
+      "summary": "Retrieve Template Scope Variables",
+      "description": "Retrieve variables within the given template scope.",
+      "operation_id": "msgTemplate.getVariablesForTemplateScope",
+      "tags": [
+        "Variables"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}/templates",
+      "method": "GET",
+      "summary": "Retrieve All Templates in Scope",
+      "description": "Returns all templates within the given template scope.",
+      "operation_id": "msgTemplate.getTemplatesForScope",
+      "tags": [
+        "Manage Templates"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}/templates/{templateId}/registrations",
+      "method": "GET",
+      "summary": "Retrieve a Template's Registrations",
+      "description": "Returns all registrations that reference the given template.",
+      "operation_id": "msgTemplate.getAllTemplateRegistrations",
+      "tags": [
+        "Template Registrations"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}/templates/{genericTemplateId}",
+      "method": "GET",
+      "summary": "Retrieve Template",
+      "description": "Returns the template specified by the give id, which can be either a registration id or template id.",
+      "operation_id": "msgTemplate.getTemplate",
+      "tags": [
+        "Manage Templates"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}/registrations",
+      "method": "GET",
+      "summary": "Retrieve All Registrations",
+      "description": "Returns all registrations within the given template scope.",
+      "operation_id": "msgTemplate.getAllRegistrations",
+      "tags": [
+        "Registrations"
+      ]
+    },
+    {
+      "path": "/templateScopes/{templateScopeId}/registrations/{registrationId}",
+      "method": "GET",
+      "summary": "Retrieve Registration",
+      "description": "Returns the registration for the given ID.",
+      "operation_id": "msgTemplate.getRegistration",
+      "tags": [
+        "Registrations"
+      ]
+    }
+  ]
+}

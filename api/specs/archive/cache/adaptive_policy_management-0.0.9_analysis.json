@@ -1,0 +1,301 @@
+{
+  "name": "Adaptive Policy Management",
+  "version": "0.0.9",
+  "url": "https://docs.ruckus.cloud/_bundle/api/policy-mgmt-0.0.9.yaml",
+  "downloaded_at": "2025-12-02T18:45:27.459859",
+  "endpoint_count": 29,
+  "base_url": "https://api.ruckus.cloud",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/policySets/{policySetId}/prioritizedPolicies/{policyId}",
+      "method": "GET",
+      "summary": "Get Prioritized Policy",
+      "description": "Retrieves the requested prioritized policy.",
+      "operation_id": "getPrioritizedRuleById",
+      "tags": [
+        "Prioritized Policies"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}/prioritizedPolicies/{policyId}",
+      "method": "PUT",
+      "summary": "Assign Policy to Policy Set",
+      "description": "Assigns a policy to a policy set with a specific priority.",
+      "operation_id": "assignPolicyToPolicySetWithPriority",
+      "tags": [
+        "Prioritized Policies"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}/prioritizedPolicies/{policyId}",
+      "method": "DELETE",
+      "summary": "Remove Policy from Policy Set",
+      "description": "Removes a policy from a policy set.",
+      "operation_id": "removeMappedPolicySet",
+      "tags": [
+        "Prioritized Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies",
+      "method": "GET",
+      "summary": "Get Policies for Template",
+      "description": "Gets the list of policies that are based off of this template.",
+      "operation_id": "getAllPoliciesUnderTemplate",
+      "tags": [
+        "Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies",
+      "method": "POST",
+      "summary": "Create Policy",
+      "description": "Creates a policy from the requested values, and based on the specified parent. If the content type of \"application/ruckus.one.v1-synchronous+json\" is provided, than the method will be asynchronous, and will return only once it has correctly associated with the requested radius attribute group. Otherwise it is asynchronous, and must be looked up by id to be complete. ",
+      "operation_id": "createPolicy",
+      "tags": [
+        "Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}/conditions",
+      "method": "GET",
+      "summary": "Get Conditions",
+      "description": "Retrieves the list of condition for the policy.",
+      "operation_id": "getAllConditionForPolicy",
+      "tags": [
+        "Policy Conditions"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}/conditions",
+      "method": "POST",
+      "summary": "Create Condition",
+      "description": "Creates a condition and applies it to the policy.",
+      "operation_id": "createPolicyCondition",
+      "tags": [
+        "Policy Conditions"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/query",
+      "method": "POST",
+      "summary": "Query Policies for Template",
+      "description": "Returns the list of policies which are based on the provided template using the specified query details.",
+      "operation_id": "getAllPoliciesForTemplateByQuery",
+      "tags": [
+        "Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/attributes/query",
+      "method": "POST",
+      "summary": "Query Template Attributes",
+      "description": "Returns the list of attributes for the specified template using the specified query.",
+      "operation_id": "queryAttributeForTemplate",
+      "tags": [
+        "Policy Templates"
+      ]
+    },
+    {
+      "path": "/policyTemplates/query",
+      "method": "POST",
+      "summary": "Query Policy Templates",
+      "description": "Returns the list of policy templates using the specified query.",
+      "operation_id": "getAllTemplatesByQuery",
+      "tags": [
+        "Policy Templates"
+      ]
+    },
+    {
+      "path": "/policyTemplates/policies/query",
+      "method": "POST",
+      "summary": "Query Policies Across Templates",
+      "description": "Returns the list of policies across all templates using the specified query.",
+      "operation_id": "getAllPoliciesAcrossTemplatesByQuery",
+      "tags": [
+        "Policy Templates"
+      ]
+    },
+    {
+      "path": "/policySets",
+      "method": "POST",
+      "summary": "Create Policy Set",
+      "description": "Creates a policy set from the requested values.",
+      "operation_id": "createPolicySet",
+      "tags": [
+        "Policy Sets"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}/assignments/query",
+      "method": "POST",
+      "summary": "Query Policy Set Assignments",
+      "description": "Returns the list of assignments for the specified policy set using the specified query.",
+      "operation_id": "getAllPolicySetsAssignmentsByQuery",
+      "tags": [
+        "Policy Set Assignments"
+      ]
+    },
+    {
+      "path": "/policySets/query",
+      "method": "POST",
+      "summary": "Query Policy Sets",
+      "description": "Returns the list of policy sets using the specified query.",
+      "operation_id": "getAllPolicySetsByQuery",
+      "tags": [
+        "Policy Sets"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}",
+      "method": "GET",
+      "summary": "Get Policy",
+      "description": "Retrieves the requested policy.",
+      "operation_id": "getPolicyById",
+      "tags": [
+        "Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}",
+      "method": "DELETE",
+      "summary": "Delete Policy",
+      "description": "Deletes the policy and conditions, may not be assigned to a service.",
+      "operation_id": "deletePolicy",
+      "tags": [
+        "Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}",
+      "method": "PATCH",
+      "summary": "Update Policy",
+      "description": "Updates the policy from the requested values. The policy template assigned to this policy cannot be changed.",
+      "operation_id": "updatePolicy",
+      "tags": [
+        "Policies"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}/conditions/{conditionId}",
+      "method": "GET",
+      "summary": "Get Condition",
+      "description": "Retrieves the requested condition for the policy.",
+      "operation_id": "getConditionById",
+      "tags": [
+        "Policy Conditions"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}/conditions/{conditionId}",
+      "method": "DELETE",
+      "summary": "Delete Conditions",
+      "description": "Deletes the condition from the specified policy, but only if at least one condition still exists.",
+      "operation_id": "deletePolicyConditions",
+      "tags": [
+        "Policy Conditions"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/policies/{policyId}/conditions/{conditionId}",
+      "method": "PATCH",
+      "summary": "Update Policy Condition",
+      "description": "Updates the policy condition from the requested values.",
+      "operation_id": "updateCondition",
+      "tags": [
+        "Policy Conditions"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}",
+      "method": "GET",
+      "summary": "Get Policy Set",
+      "description": "Retrieves the requested policy set.",
+      "operation_id": "getPolicySetById",
+      "tags": [
+        "Policy Sets"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}",
+      "method": "DELETE",
+      "summary": "Delete Policy Set",
+      "description": "Deletes the policy set, may not be assigned to a service.",
+      "operation_id": "deletePolicySet",
+      "tags": [
+        "Policy Sets"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}",
+      "method": "PATCH",
+      "summary": "Update Policy Set",
+      "description": "Updates the policy set from the requested values.",
+      "operation_id": "updatePolicySet",
+      "tags": [
+        "Policy Sets"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}",
+      "method": "GET",
+      "summary": "Get Policy Template",
+      "description": "Retrieves the requested policy template.",
+      "operation_id": "getPolicyTemplateById",
+      "tags": [
+        "Policy Templates"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/attributes",
+      "method": "GET",
+      "summary": "Get Template Attributes",
+      "description": "Gets the list of attributes for the specified template.",
+      "operation_id": "getAttributesForTemplate",
+      "tags": [
+        "Policy Templates"
+      ]
+    },
+    {
+      "path": "/policyTemplates/{templateId}/attributes/{attributeId}",
+      "method": "GET",
+      "summary": "Get Template Attribute",
+      "description": "Retrieves the requested template attribute.",
+      "operation_id": "getAttributesByIdForTemplate",
+      "tags": [
+        "Policy Templates"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}/prioritizedPolicies",
+      "method": "GET",
+      "summary": "Get Prioritized Policies",
+      "description": "Gets the list of prioritized policies for the specified policy set.",
+      "operation_id": "getAllPrioritizedPolicies",
+      "tags": [
+        "Prioritized Policies"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}/assignments",
+      "method": "GET",
+      "summary": "Get Policy Set Assignments",
+      "description": "Gets the list of assignments for the specified policy set.",
+      "operation_id": "getAllPolicySetAssignments",
+      "tags": [
+        "Policy Set Assignments"
+      ]
+    },
+    {
+      "path": "/policySets/{policySetId}/assignments/{assignmentId}",
+      "method": "GET",
+      "summary": "Get Policy Set Assignment",
+      "description": "Retrieves the requested policy set assignment.",
+      "operation_id": "getAssignmentById",
+      "tags": [
+        "Policy Set Assignments"
+      ]
+    }
+  ]
+}

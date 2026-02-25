@@ -1,0 +1,91 @@
+{
+  "name": "Device Enrollment REST API",
+  "version": "0.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/device-enrollment-api-0.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.279727",
+  "endpoint_count": 8,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "# RateLimit",
+  "endpoints": [
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/steps/{stepId}",
+      "method": "GET",
+      "summary": "Gets the Workflow Step ",
+      "description": "Allows the user to fetch workflow step for the enrollment.",
+      "operation_id": "getStepForNav",
+      "tags": [
+        "Workflow Step API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/steps/{stepId}",
+      "method": "PUT",
+      "summary": "Updates a Workflow Step",
+      "description": "Allows the user to update a workflow step for the enrollment.",
+      "operation_id": "updateStep",
+      "tags": [
+        "Workflow Step API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/login",
+      "method": "POST",
+      "summary": "Logs in to Workflow",
+      "description": "Allows the user to login for device enrollment.",
+      "operation_id": "login",
+      "tags": [
+        "Workflow Login API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}",
+      "method": "GET",
+      "summary": "Gets Workflow Configuration",
+      "description": "Allows the user to fetch workflow configuration.",
+      "operation_id": "getWorkflow",
+      "tags": [
+        "Workflow Configuration API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/steps/currentSteps",
+      "method": "GET",
+      "summary": "Gets the Current Workflow Step ",
+      "description": "Allows the user to fetch the current step for the enrollment.",
+      "operation_id": "getCurrentStep",
+      "tags": [
+        "Workflow Step API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/files/{fileId}",
+      "method": "GET",
+      "summary": "Get Signed URL for Download",
+      "description": "Get signed URL for download.",
+      "operation_id": "getSignedUrlForDownload",
+      "tags": [
+        "Enrollment File Management API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/enrollments/{enrollmentId}",
+      "method": "GET",
+      "summary": "Get Enrollment",
+      "description": "Allows the user to get an enrollment.",
+      "operation_id": "fetchEnrollment",
+      "tags": [
+        "Device Enrollment API"
+      ]
+    },
+    {
+      "path": "/deviceEnrollments/workflows/{workflowId}/certificates",
+      "method": "GET",
+      "summary": "Downloads the Certificate",
+      "description": "Allows the user to download certificate for the enrollment.",
+      "operation_id": "downloadCertificate",
+      "tags": [
+        "Certificate Download API"
+      ]
+    }
+  ]
+}

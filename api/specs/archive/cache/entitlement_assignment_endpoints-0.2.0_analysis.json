@@ -1,0 +1,101 @@
+{
+  "name": "Entitlement Assignment Endpoints",
+  "version": "0.2.0",
+  "url": "https://docs.ruckus.cloud/_bundle/deprecated_apis/pentitlement-assign-0.2.0.yaml",
+  "downloaded_at": "2025-12-02T18:45:25.775413",
+  "endpoint_count": 9,
+  "base_url": "http://localhost",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/assignments",
+      "method": "GET",
+      "summary": "Retrieve Assignments",
+      "description": "Retrieve all the assignments (created and revoked).",
+      "operation_id": "getAssignments",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/assignments",
+      "method": "POST",
+      "summary": "Create multiple assignments",
+      "description": "Create a list of entitlement assignments for MSP owned devices",
+      "operation_id": "ownAssignmentsCreate",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/assignments",
+      "method": "DELETE",
+      "summary": "Revoke multiple assignments",
+      "description": "Revoke multiple assignments for MSP owned devices.",
+      "operation_id": "revokeOwnAssignment",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/assignments",
+      "method": "PATCH",
+      "summary": "Replace multiple assignments",
+      "description": "Replace multiple assignments for MSP owned devices.",
+      "operation_id": "ownAssignmentUpdate",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/mspEntitlements",
+      "method": "GET",
+      "summary": "MSP Entitlements",
+      "description": "Retrieve all the MSP's (bulk) entitlements.",
+      "operation_id": "getMspEntitlements",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/mspEntitlements/summaries",
+      "method": "GET",
+      "summary": "Refresh MSP Entitlements",
+      "description": "Refresh MSP entitlements.",
+      "operation_id": "syncMspEntitlements",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/mspBanners",
+      "method": "GET",
+      "summary": "Retrieve MSP Banner Data",
+      "description": "Retrieve banner data for the MSP's (bulk) entitlements. Banners provide information about MSP (bulk) entitlements that are either near their expiry or have expired.",
+      "operation_id": "getMspEntitlementBanners",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/licenseUsageReports",
+      "method": "GET",
+      "summary": "Get Entitlement Usage Report",
+      "description": "Get the entitlement usage report.",
+      "operation_id": "getUsageReport-Deprecated",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    },
+    {
+      "path": "/assignments/summaries",
+      "method": "GET",
+      "summary": "Retrieve Device Type Summary",
+      "description": "Retrieve a summary by device type of all an MSP's entitlement assignments.",
+      "operation_id": "getAssignmentsSummary",
+      "tags": [
+        "Manage Entitlements"
+      ]
+    }
+  ]
+}

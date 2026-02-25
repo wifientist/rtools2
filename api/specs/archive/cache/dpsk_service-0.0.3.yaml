@@ -1,0 +1,1840 @@
+openapi: 3.0.1
+info:
+  title: DPSK Service
+  version: v0
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+paths:
+  /templates/dpskServices/{poolTemplateId}:
+    get:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Get Specific DPSK Pool Template
+      operationId: getDpskPoolTemplateById
+      parameters:
+        - name: poolTemplateId
+          in: path
+          description: DPSK pool template id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: DPSK pool template
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolDto'
+        '404':
+          description: DPSK pool template not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+    put:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Update the DPSK Pool Template
+      operationId: updateDpskPoolTemplate
+      parameters:
+        - name: poolTemplateId
+          in: path
+          description: DPSK pool template id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    delete:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Delete the DPSK Pool Template
+      operationId: deleteDpskPoolTemplate
+      parameters:
+        - name: poolTemplateId
+          in: path
+          description: DPSK pool template id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Update the DPSK Pool Template
+      operationId: patchDpskPoolTemplate
+      parameters:
+        - name: poolTemplateId
+          in: path
+          description: DPSK pool template id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /dpskServices/{poolId}:
+    get:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Get Specific DPSK Pool
+      operationId: getDpskPoolById
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: DPSK pool
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolDto'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolDto'
+        '404':
+          description: DPSK pool not found
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                type: object
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                type: object
+    put:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Update the DPSK Pool
+      operationId: updateDpskPool
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    delete:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Delete the DPSK Pool
+      operationId: deleteDpskPool
+      parameters:
+        - name: poolId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The delete request has been accepted and is in progress.
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Update the DPSK Pool
+      operationId: patchDpskPool
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress.
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /dpskServices/{poolId}/policySets/{policySetId}:
+    put:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Update Policy Set for a DPSK Pool
+      operationId: updatePolicySetId
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK passphrase id
+          required: true
+          schema:
+            type: string
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    delete:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Remove Policy Set from a DPSK Pool
+      operationId: removePolicySetId
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK passphrase id
+          required: true
+          schema:
+            type: string
+        - name: policySetId
+          in: path
+          description: Policy set id
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: The update request has been accepted and is in progress
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /dpskServices/{poolId}/passphrases/{id}:
+    get:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Get Specific DPSK Passphrase
+      operationId: getPassphraseById
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: DPSK passphrase id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: DPSK passphrase
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseDto'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseDto'
+        '404':
+          description: DPSK passphrase not found
+    put:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Update Specific DPSK Passphrase
+      operationId: updatePassphrase
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: DPSK passphrase id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+        required: true
+      responses:
+        '202':
+          description: The passphrase update request is in progress
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Update Specific DPSK Passphrase
+      description: >-
+        Update an entity partially with provided attributes. Only the attributes
+        provided in the request body will be updated.
+      operationId: updatePassphrase_1
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: DPSK passphrase id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseDto'
+        required: true
+      responses:
+        '202':
+          description: The passphrase update request is in progress
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /templates/identityGroups/{identityGroupId}/dpskServices:
+    post:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Create New DPSK Pool Template with Identity Group
+      operationId: createDpskPoolTemplate
+      parameters:
+        - name: identityGroupId
+          in: path
+          description: Identity group id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: DPSK pool created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid pool content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /templates/dpskServices:
+    post:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Create New DPSK Pool Template
+      operationId: createDpskPoolTemplate_1
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: DPSK pool template created
+          content:
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid pool content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /templates/dpskServices/{poolTemplateId}/cloneSettings:
+    post:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Clone the DPSK Pool Template
+      operationId: cloneDpskPoolTemplate
+      parameters:
+        - name: poolTemplateId
+          in: path
+          description: DPSK pool template id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/TemplateCloneSettingsRequest'
+        required: true
+      responses:
+        '202':
+          description: DPSK pool template cloned
+          content:
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /templates/dpskServices/query:
+    post:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Search for DPSK Pool Templates Matching Search String in Paged Result
+      operationId: queryDpskPoolTemplates
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: DPSK pool templates
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolTemplateQueryResponse'
+  /identityGroups/{identityGroupId}/dpskServices:
+    post:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Create New DPSK Pool
+      operationId: createDpskPool
+      parameters:
+        - name: identityGroupId
+          in: path
+          description: Identity group id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolDto'
+        required: true
+      responses:
+        '202':
+          description: DPSK pool created
+          content:
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+        '400':
+          description: Invalid pool content
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+  /dpskServices/{poolId}/passphrases:
+    get:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Get Passphrase
+      operationId: listAllPassphrases
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Zero-based page index (0..N)
+          required: false
+          schema:
+            minimum: 0
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          description: The size of the page to be returned
+          required: false
+          schema:
+            minimum: 1
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: >-
+            Sorting criteria in the format: property,(asc|desc). Default sort
+            order is ascending. Multiple sort criteria are supported.
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Passphrases
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                $ref: '#/components/schemas/Page'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Create DPSK Passphrase
+      operationId: createPassphrase
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseCreateDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseCreateDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseCreateDto'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseCreateDto'
+        required: true
+      responses:
+        '202':
+          description: Create DPSK passphrase(s) accepted
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                type: string
+        '400':
+          description: Invalid content supplied
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                type: object
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Delete Passphrase
+      operationId: deletePassphrases
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              type: array
+              items:
+                type: string
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              items:
+                type: string
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              type: array
+              items:
+                type: string
+        required: true
+      responses:
+        '202':
+          description: The passphrase(s) delete request is in progress
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    patch:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Update Specific DPSK Passphrases
+      description: >-
+        Update entities partially with provided attributes. Only the attributes
+        provided in the request body will be updated.
+      operationId: updatePassphrases
+      parameters:
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphrasesPatchRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphrasesPatchRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphrasesPatchRequest'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphrasesPatchRequest'
+        required: true
+      responses:
+        '202':
+          description: DPSK passphrases updated
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /dpskServices/{poolId}/passphrases/{passphraseId}/devices:
+    get:
+      tags:
+        - APIs for DPSK Passphrase Device Management
+      summary: Get Devices for a Specific Passphrase
+      operationId: getPassphraseDevices
+      parameters:
+        - name: passphraseId
+          in: path
+          description: DPSK passphrase id
+          required: true
+          schema:
+            type: string
+        - name: poolId
+          in: path
+          description: DPSK pool id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Get Passphrase Devices
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseDeviceDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseDeviceDto'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseDeviceDto'
+        '404':
+          description: DPSK passphrase not found
+    post:
+      tags:
+        - APIs for DPSK Passphrase Device Management
+      summary: Create Devices for a Specific Passphrase
+      operationId: createPassphraseDevice
+      parameters:
+        - name: passphraseId
+          in: path
+          description: DPSK passphrase ID
+          required: true
+          schema:
+            type: string
+        - name: poolId
+          in: path
+          description: DPSK pool ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+        required: true
+      responses:
+        '202':
+          description: >-
+            The request to create devices for the specified passphrase has been
+            accepted.
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+    delete:
+      tags:
+        - APIs for DPSK Passphrase Device Management
+      summary: Delete Devices Associated with a Specific Passphrase
+      operationId: deletePassphraseDevices
+      parameters:
+        - name: passphraseId
+          in: path
+          description: DPSK passphrase ID
+          required: true
+          schema:
+            type: string
+        - name: poolId
+          in: path
+          description: DPSK pool ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              type: array
+              items:
+                type: string
+            example:
+              - '00:11:22:33:44:55'
+              - '00:11:22:33:44:56'
+        required: true
+      responses:
+        '202':
+          description: >-
+            The request to delete devices associated with the specified
+            passphrase has been accepted.
+          content:
+            application/vnd.ruckus.v2+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+            application/vnd.ruckus.v1.1+json:
+              example:
+                requestId: b3d3a0a0-0b1a-4b1a-9b0a-0b1a0b1a0b1a
+  /dpskServices/{poolId}/passphrases/query:
+    post:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Query Passphrases for Specified Pool
+      operationId: queryResponse
+      parameters:
+        - name: poolId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Passphrases
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseQueryResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseQueryResponse'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPassphraseQueryResponse'
+  /dpskServices/{poolId}/passphrases/query/csvFiles:
+    post:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: DPSK Passphrase to CSV
+      operationId: exportDpskPassphrase
+      parameters:
+        - name: poolId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: timezone
+          in: query
+          description: >-
+            If specified, the timezone will be used for date values. Default
+            value is UTC.
+          required: false
+          schema:
+            type: string
+            default: UTC
+        - name: date-format
+          in: query
+          description: >-
+            Format will be applied for date values. Default value is "dd/MM/yyyy
+            HH:mm"
+          required: false
+          schema:
+            type: string
+            default: dd/MM/yyyy HH:mm
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPassphraseQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: Exported passphrases
+          content:
+            text/csv: {}
+        '400':
+          description: Invalid timezone or date format supplied
+  /dpskServices/{poolId}/passphrases/csvFiles:
+    post:
+      tags:
+        - APIs for DPSK Passphrase Management
+      summary: Import Passphrase from CSV
+      operationId: importDpskPassphrasesFromCsv
+      parameters:
+        - name: poolId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: usernamePrefix
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+                - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Passphrases
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: string
+  /dpskServices/query:
+    post:
+      tags:
+        - APIs for DPSK Service Management
+      summary: Search for DPSK Pools Matching Search String in Paged Result
+      operationId: queryDpskPools
+      requestBody:
+        content:
+          application/vnd.ruckus.v2+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolQueryRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolQueryRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolQueryRequest'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/DpskPoolQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: DPSK pools
+          content:
+            application/vnd.ruckus.v2+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolQueryResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolQueryResponse'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolQueryResponse'
+  /templates/wifiNetworks/{networkTemplateId}/dpskServices:
+    get:
+      tags:
+        - APIs for DPSK Service Template Management
+      summary: Get DPSK Pool Templates by Network Template
+      operationId: getDpskPoolsByNetworkId
+      parameters:
+        - name: networkTemplateId
+          in: path
+          description: Wifi network template id
+          required: true
+          schema:
+            type: string
+        - name: pageable
+          in: query
+          description: parameters for paging
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: DPSK pool template
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/DpskPoolDto'
+        '404':
+          description: DPSK pool not found
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+components:
+  schemas:
+    DpskPoolDto:
+      required:
+        - name
+        - passphraseFormat
+        - passphraseLength
+      type: object
+      properties:
+        id:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Unique identifier for pool.
+          readOnly: true
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+        passphraseFormat:
+          type: string
+          description: Passphrase format.
+          enum:
+            - MOST_SECURED
+            - KEYBOARD_FRIENDLY
+            - NUMBERS_ONLY
+        passphraseLength:
+          type: integer
+          description: Generated passphrase length.
+          format: int32
+        policyDefaultAccess:
+          type: boolean
+        deviceCountLimit:
+          type: integer
+          format: int32
+        expirationType:
+          type: string
+          description: Expiration date rule.
+          enum:
+            - SPECIFIED_DATE
+            - HOURS_AFTER_TIME
+            - DAYS_AFTER_TIME
+            - WEEKS_AFTER_TIME
+            - MONTHS_AFTER_TIME
+            - YEARS_AFTER_TIME
+        expirationOffset:
+          type: integer
+          description: Date of expiration offset.
+          format: int32
+        expirationDate:
+          type: string
+          description: Expiration date of pool.
+          format: date-time
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        lastModifiedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        isReferenced:
+          type: boolean
+          description: >-
+            If this entity is referenced by an identity group and cannot be
+            deleted.
+          readOnly: true
+        networkCount:
+          type: integer
+          description: Number of networks associated with this pool.
+          format: int32
+          readOnly: true
+        isEnforced:
+          type: boolean
+          description: Template enforcement setting.
+          readOnly: true
+        identityId:
+          type: string
+          description: Deprecated. Use identity group ID instead.
+          readOnly: true
+          deprecated: true
+        identityGroupId:
+          type: string
+          description: Linked identity group ID. Only editable for template.
+    DpskPassphraseDeviceDto:
+      type: object
+      properties:
+        mac:
+          type: string
+        lastConnectedNetwork:
+          type: string
+        lastConnectedNetworkId:
+          type: string
+        lastConnectedTime:
+          type: string
+          format: date-time
+        deviceConnectivity:
+          type: string
+        devicePassphrase:
+          type: string
+        lastConnected:
+          type: string
+          format: date-time
+        online:
+          type: boolean
+          deprecated: true
+      description: The devices configured or connected to the passphrase.
+      readOnly: true
+    DpskPassphraseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        passphrase:
+          maxLength: 63
+          minLength: 8
+          type: string
+          description: The actual passphrase.
+        username:
+          type: string
+          description: Username for the passphrase.
+        vlanId:
+          type: integer
+          description: VLAN associated with passphrase.
+          format: int32
+        numberOfDevices:
+          type: integer
+          description: >-
+            Number of devices. Must be between 1 and 50. Inputs outside this
+            range will be adjusted.
+          format: int32
+        createdDate:
+          type: string
+          description: Passphrase creation date.
+          format: date-time
+          readOnly: true
+        lastModifiedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        expirationDate:
+          type: string
+          description: Expiration date of passphrase.
+          format: date-time
+        email:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$|^$
+          type: string
+          description: Email associated with passphrase.
+          example: abc@email.com
+        phoneNumber:
+          type: string
+          description: Phone associated with passphrase.
+        revocationDate:
+          type: string
+          format: date-time
+          readOnly: true
+        revocationReason:
+          type: string
+          description: Reason for revocation of passphrase.
+        devices:
+          type: array
+          description: The devices configured or connected to the passphrase.
+          readOnly: true
+          items:
+            $ref: '#/components/schemas/DpskPassphraseDeviceDto'
+        isReferenced:
+          type: boolean
+          description: If this entity is referenced by an identity and cannot be deleted.
+          readOnly: true
+    TemplateCloneSettingsRequest:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+      description: Request for cloning template
+    DpskPoolFilters:
+      type: object
+      properties:
+        passphraseFormat:
+          type: array
+          items:
+            type: string
+        isEnforced:
+          type: boolean
+    DpskPoolQueryRequest:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          $ref: '#/components/schemas/DpskPoolFilters'
+    DpskPoolTemplateDto:
+      required:
+        - name
+        - passphraseFormat
+        - passphraseLength
+      type: object
+      properties:
+        id:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Unique identifier for pool.
+          readOnly: true
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+        passphraseFormat:
+          type: string
+          description: Passphrase format.
+          enum:
+            - MOST_SECURED
+            - KEYBOARD_FRIENDLY
+            - NUMBERS_ONLY
+        passphraseLength:
+          type: integer
+          description: Generated passphrase length.
+          format: int32
+        policyDefaultAccess:
+          type: boolean
+        deviceCountLimit:
+          type: integer
+          format: int32
+        expirationType:
+          type: string
+          description: Expiration date rule.
+          enum:
+            - SPECIFIED_DATE
+            - HOURS_AFTER_TIME
+            - DAYS_AFTER_TIME
+            - WEEKS_AFTER_TIME
+            - MONTHS_AFTER_TIME
+            - YEARS_AFTER_TIME
+        expirationOffset:
+          type: integer
+          description: Date of expiration offset.
+          format: int32
+        expirationDate:
+          type: string
+          description: Expiration date of pool.
+          format: date-time
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        lastModifiedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        isReferenced:
+          type: boolean
+          description: >-
+            If this entity is referenced by an identity group and cannot be
+            deleted.
+          readOnly: true
+        networkCount:
+          type: integer
+          description: Number of networks associated with this pool.
+          format: int32
+          readOnly: true
+        templateVersion:
+          type: integer
+          description: Template version.
+          format: int64
+          readOnly: true
+        isEnforced:
+          type: boolean
+          description: Template enforcement setting.
+          readOnly: true
+        identityId:
+          type: string
+          description: Deprecated. Use identity group ID instead.
+          readOnly: true
+          deprecated: true
+        identityGroupId:
+          type: string
+          description: Linked identity group ID. Only editable for template.
+      description: DPSK service templates in page.
+    DpskPoolTemplateQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          description: DPSK service templates in page.
+          items:
+            $ref: '#/components/schemas/DpskPoolTemplateDto'
+    DpskPassphraseCreateDto:
+      type: object
+      properties:
+        id:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Unique identifier for passphrase.
+          readOnly: true
+        passphrase:
+          maxLength: 63
+          minLength: 8
+          type: string
+          description: Actual passphrase.
+        username:
+          type: string
+          description: The username for passphrase.
+        length:
+          maximum: 63
+          minimum: 8
+          type: integer
+          description: Passphrase length
+          format: int32
+        vlanId:
+          type: integer
+          description: The VLAN for passphrase.
+          format: int32
+        mac:
+          pattern: >-
+            ^$|^([0-9A-Fa-f]{2}[.:-]){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{3}[.:-]){3}([0-9A-Fa-f]{3})$|^([0-9A-Fa-f]{4}[.:-]){2}([0-9A-Fa-f]{4})$|^([0-9A-Fa-f]{12})$
+          type: string
+          description: The mac for passphrase.
+          example: '11:22:33:44:55:66'
+        numberOfPassphrases:
+          type: integer
+          description: Passphrase limit.
+          format: int32
+        numberOfDevices:
+          type: integer
+          description: >-
+            Number of devices. Must be between 1 and 50. Inputs outside this
+            range will be adjusted.
+          format: int32
+        expiration:
+          type: string
+          description: The expiration for passphrase.
+          enum:
+            - UNLIMITED
+            - ONE_DAY
+            - TWO_DAYS
+            - ONE_WEEK
+            - TWO_WEEKS
+            - ONE_MONTH
+            - SIX_MONTHS
+            - ONE_YEAR
+            - TWO_YEARS
+        numberOfDevicesType:
+          type: string
+          description: Number of devices type.
+          enum:
+            - UNLIMITED
+            - LIMITED
+        format:
+          type: string
+          description: The format for passphrase.
+          enum:
+            - MOST_SECURED
+            - KEYBOARD_FRIENDLY
+            - NUMBERS_ONLY
+        expirationDate:
+          type: string
+          description: The expiration for passphrase.
+          format: date-time
+        email:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^(?:[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})?$|^$
+          type: string
+          description: The email for passphrase.
+          example: abc@email.com
+        phoneNumber:
+          type: string
+          description: The number for passphrase.
+        identityId:
+          type: string
+          description: The identity ID for passphrase.
+          readOnly: true
+        vxlanId:
+          type: integer
+          format: int32
+      description: DPSK passphrase configuration REST input model.
+    DpskPassphraseFilters:
+      type: object
+      properties:
+        networkId:
+          type: array
+          items:
+            type: string
+        vlanId:
+          type: array
+          items:
+            type: integer
+            format: int32
+        passphrase:
+          type: array
+          items:
+            type: string
+        mac:
+          type: array
+          items:
+            type: string
+        username:
+          type: array
+          items:
+            type: string
+        email:
+          type: array
+          items:
+            type: string
+        phoneNumber:
+          type: array
+          items:
+            type: string
+        status:
+          type: array
+          items:
+            type: string
+            enum:
+              - ACTIVE
+              - REVOKED
+              - EXPIRED
+    DpskPassphraseQueryRequest:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          $ref: '#/components/schemas/DpskPassphraseFilters'
+    DpskPassphraseQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DpskPassphraseDto'
+    DpskPoolQueryResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        page:
+          type: integer
+          format: int32
+        data:
+          type: array
+          description: DPSK services in page.
+          items:
+            $ref: '#/components/schemas/DpskPoolDto'
+    DpskPassphrasesPatchRequest:
+      required:
+        - changes
+        - ids
+      type: object
+      properties:
+        ids:
+          maxItems: 2147483647
+          minItems: 1
+          type: array
+          description: The passphrase IDs to be changed.
+          items:
+            type: string
+            description: The passphrase IDs to be changed.
+        changes:
+          type: object
+          properties:
+            id:
+              type: string
+              readOnly: true
+            passphrase:
+              maxLength: 63
+              minLength: 8
+              type: string
+              description: The actual passphrase.
+            username:
+              type: string
+              description: Username for the passphrase.
+            vlanId:
+              type: integer
+              description: VLAN associated with passphrase.
+              format: int32
+            numberOfDevices:
+              type: integer
+              description: >-
+                Number of devices. Must be between 1 and 50. Inputs outside this
+                range will be adjusted.
+              format: int32
+            createdDate:
+              type: string
+              description: Passphrase creation date.
+              format: date-time
+              readOnly: true
+            lastModifiedDate:
+              type: string
+              format: date-time
+              readOnly: true
+            expirationDate:
+              type: string
+              description: Expiration date of passphrase.
+              format: date-time
+            email:
+              maxLength: 255
+              minLength: 0
+              pattern: >-
+                ^[\w!#$%&’*+/=?`{|}~^-]+(?:\.[\w!#$%&’*+/=?`{|}~^-]+)*@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$|^$
+              type: string
+              description: Email associated with passphrase.
+              example: abc@email.com
+            phoneNumber:
+              type: string
+              description: Phone associated with passphrase.
+            revocationDate:
+              type: string
+              format: date-time
+              readOnly: true
+            revocationReason:
+              type: string
+              description: Reason for revocation of passphrase.
+            devices:
+              type: array
+              description: The devices configured or connected to the passphrase.
+              readOnly: true
+              items:
+                $ref: '#/components/schemas/DpskPassphraseDeviceDto'
+            isReferenced:
+              type: boolean
+              description: >-
+                If this entity is referenced by an identity and cannot be
+                deleted.
+              readOnly: true
+          description: Changes to be applied to the passphrases.
+      description: DPSK passphrase configuration PATCH input model.
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    Page:
+      type: object
+      properties:
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            type: object
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        first:
+          type: boolean
+        last:
+          type: boolean
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        paged:
+          type: boolean
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        unpaged:
+          type: boolean
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean

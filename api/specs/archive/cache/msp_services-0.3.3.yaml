@@ -1,0 +1,2879 @@
+openapi: 3.0.1
+info:
+  title: MSP Services
+  description: Documentation for Dashboard API
+  contact:
+    name: Support Team
+    url: http://support.ruckuswireless.com
+    email: support@ruckuswireless.com
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: V0.3.3
+externalDocs:
+  description: Ruckus Network Technical Documents
+  url: https://support.ruckuswireless.com/documents
+servers:
+  - url: https://api.ruckus.cloud
+    description: RUCKUS One API host for North American region.
+  - url: https://api.eu.ruckus.cloud
+    description: RUCKUS One API host for European region.
+  - url: https://api.asia.ruckus.cloud
+    description: RUCKUS One API host for Asian region.
+tags:
+  - name: Managed-Tenant Operations
+    description: Managed-Tenant Operations
+paths:
+  /tenants/{tenantId}:
+    get:
+      tags:
+        - Managed-Tenant Operations
+      summary: Retrieve Managed Tenant
+      description: Retrieve a managed tenant.
+      operationId: getTenantAccount
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MspEcAccountView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/MspEcAccountView'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    put:
+      tags:
+        - Managed-Tenant Operations
+      summary: Update Managed Tenant
+      description: Update a managed tenant.
+      operationId: updateManagedTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspEcRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspEcRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    delete:
+      tags:
+        - Managed-Tenant Operations
+      summary: Remove Managed Tenant
+      description: Remove a managed tenant.
+      operationId: deleteTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants/{tenantId}/tenantDelegations:
+    get:
+      tags:
+        - Tenant Delegation Management
+      summary: >-
+        Retrieve Active Relationships Between Designated Accounts and Their
+        Managed Tenant
+      description: >-
+        Retrieve active relationships between designated accounts and their
+        managed tenant.
+      operationId: getTenantDelegations
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: delegationType
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MspEcDelegationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/MspEcDelegationResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    put:
+      tags:
+        - Tenant Delegation Management
+      summary: >-
+        Update Active Relationships Between Designated Accounts and Their
+        Managed Tenant
+      description: >-
+        Update active relationships between designated accounts and their
+        managed tenant.
+      operationId: updateTenantDelegations
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignMspEcListRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AssignMspEcListRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants/{tenantId}/invitations:
+    put:
+      tags:
+        - Resend email Invitation
+      summary: Resend Email Invitation
+      description: Send or resend email invitation.
+      operationId: sendInvitationEmail
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailInvitation'
+        required: true
+      responses:
+        '204':
+          description: No Content
+          content:
+            application/json: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants/{tenantId}/admins/{adminId}:
+    get:
+      tags:
+        - Admin Delegation Management
+      summary: Retrieve Administrator
+      description: Retrieve an administrator.
+      operationId: getTenantAdmin
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MspEcAdminView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/MspEcAdminView'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    put:
+      tags:
+        - Admin Delegation Management
+      summary: Assign Administrator
+      description: Assign an administrator.
+      operationId: updateTenantAdmin
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspEcAdminRequest'
+        required: true
+      responses:
+        '204':
+          description: No Content
+          content:
+            application/json: {}
+            application/vnd.ruckus.v1+json: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    delete:
+      tags:
+        - Admin Delegation Management
+      summary: Revoke Administrator
+      description: Revoke an administrator.
+      operationId: deleteTenantAdmin
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+          content:
+            application/json: {}
+            application/vnd.ruckus.v1+json: {}
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants/{tenantId}/adminDelegations:
+    get:
+      tags:
+        - Admin Delegation Management
+      summary: >-
+        Retrieve Active Relationships Between Designated Administrators and
+        Their Assigned Tenants
+      description: >-
+        Retrieve active relationships between designated administrators and
+        their assigned tenants.
+      operationId: getDelegatedAdmins
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspAdminRole'
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspAdminRole'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    put:
+      tags:
+        - Admin Delegation Management
+      summary: >-
+        Update Active Relationships Between Designated Administrators and Their
+        Managed Tenant
+      description: >-
+        Update active relationships between designated administrators and their
+        managed tenant.
+      operationId: updateDelegatedAdmins
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignedMspAdminsRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AssignedMspAdminsRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenantActivations/{tenantId}:
+    put:
+      tags:
+        - Reactivation
+        - Reactivation and Deactivation
+      summary: Reactivate
+      description: Re-enable login access and all operations.
+      operationId: reActivateTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspEcAccountView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspEcAccountView'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    delete:
+      tags:
+        - Deactivation
+        - Reactivation and Deactivation
+      summary: Deactivate
+      description: Disable login access and all operations.
+      operationId: deActivateTenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspEcAccountView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MspEcAccountView'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenantActivations/supportStatus/{tenantId}:
+    get:
+      tags:
+        - Support Team assistance
+      summary: Retrieve Support Team Assistance Status
+      description: >-
+        Retrieve the status of support team assistance, indicating whether it is
+        currently enabled or disabled.
+      operationId: getRuckusSupportStatus
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    put:
+      tags:
+        - Enable Support Team Assistance
+        - Support Team Assistance
+      summary: Enable Support Team Assistance
+      description: Enable support team assistance.
+      operationId: enableSupport
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    delete:
+      tags:
+        - Disable Support Team Assistance
+        - Support Team Assistance
+      summary: Disable Support Team Assistance
+      description: Disable support team assistance.
+      operationId: disableSupport
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /brandings:
+    get:
+      tags:
+        - Brand Settings
+      summary: Retrieve Brand Settings
+      description: Retrieve brand settings.
+      operationId: getBrandInfo
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MspView'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/MspView'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    put:
+      tags:
+        - Brand Settings
+      summary: Update Brand Settings
+      description: Update brand settings.
+      operationId: updateBrandInfo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+    post:
+      tags:
+        - Brand Settings
+      summary: Add Brand Settings
+      description: Create brand settings.
+      operationId: addBrandInfo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants:
+    post:
+      tags:
+        - Managed-Tenant Operations
+      summary: Add Managed Tenants
+      description: Add managed tenants.
+      operationId: createTenantV2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddTenantRequestHolder'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AddTenantRequestHolder'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBOV2'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBOV2'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants/devices/apCounts/query:
+    post:
+      tags:
+        - tenant-device-query-controller
+      operationId: apCountSummary
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamicQueryPayloadDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DynamicQueryPayloadDto'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponseApCountSummary'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/QueryResponseApCountSummary'
+  /logoFiles:
+    post:
+      tags:
+        - Brand Settings
+      summary: Update Brand Logos
+      description: Update brand logo files.
+      operationId: uploadBrandLogoFileUrl
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+        required: true
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /firmwareUpgradeSchedules:
+    post:
+      tags:
+        - Manage Firmware Upgrade Schedules
+      summary: Update Firmware Upgrade Schedules
+      description: Update firmware upgrade schedules.
+      operationId: setScheduleForFirmwareUpgrades
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirmwareUpgradeRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/FirmwareUpgradeRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenantDelegations:
+    patch:
+      tags:
+        - Tenant Delegation Management
+      summary: Add Designated Accounts to Manage Tenants
+      description: >-
+        Retrieve active relationships between designated accounts and their
+        assigned tenants.
+      operationId: patchTenantDelegations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignMspEcToMultipleTechPartners'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AssignMspEcToMultipleTechPartners'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /adminDelegations:
+    patch:
+      tags:
+        - Admin Delegation Management
+      summary: Assign Administrators
+      description: Add designated administrators to manage assigned tenants.
+      operationId: patchAdminDelegations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MspAdminRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MspAdminRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /tenants/{tenantId}/admins:
+    get:
+      tags:
+        - Admin Delegation Management
+      summary: Retrieve Administrators
+      description: Retrieve administrators.
+      operationId: getTenantAdmins
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: string
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+  /logoFiles/{fileId}:
+    get:
+      tags:
+        - Brand Settings
+      summary: Retrieve Brand Logos
+      description: Retrieve the download links for the brand logo files.
+      operationId: getBrandLogoFileDownloadUrl
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UpdateMspRequest'
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ResponseBo'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+        '500':
+          description: Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/RestErrorResponse'
+components:
+  schemas:
+    AssignmentRequest:
+      type: object
+      properties:
+        assignmentId:
+          type: integer
+          format: int64
+          example: 140352312
+        quantity:
+          minimum: 0
+          type: integer
+          description: Quantity of devices permitted by this assignment.
+          format: int64
+          example: 15
+        isTrial:
+          type: boolean
+          description: Trial license enabled
+          nullable: true
+          example: false
+        deviceType:
+          type: string
+          description: Entitlement for device type.
+          example: MSP_WIFI
+        deviceSubType:
+          type: string
+          description: Entitlement for device sub type.
+          example: ICX701
+          deprecated: true
+        action:
+          type: string
+          description: Entitlement action
+          example: ADD
+        licenseType:
+          type: string
+          description: License type
+          example: MSP_APSW, MSP_SLTN_TOKEN
+      description: License assignments
+    License:
+      type: object
+      properties:
+        trialAction:
+          type: string
+          description: Activate or deactivate trial licenses.
+          example: ACTIVATE
+        assignments:
+          type: array
+          description: License assignments
+          items:
+            $ref: '#/components/schemas/AssignmentRequest'
+        subscription_start_date:
+          type: string
+          description: License subscription start date
+        subscription_end_date:
+          type: string
+          description: License subscription end date
+      description: license information
+    PrivacyFeatureRequest:
+      required:
+        - featureName
+        - status
+      type: object
+      properties:
+        featureName:
+          type: string
+          description: Privacy feature
+        status:
+          type: string
+          description: Status
+      description: Privacy features.
+    UpdateMspEcRequest:
+      required:
+        - name
+        - service_effective_date
+        - service_expiration_date
+      type: object
+      properties:
+        name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The name of the MSP-EC account.
+          example: Acme Sales
+        street_address:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The street address of the MSP-EC account.
+          nullable: true
+          example: 350 West Java st
+        state:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The state of the MSP-EC account.
+          nullable: true
+          example: CA
+        country:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The country of the MSP-EC account.
+          nullable: true
+          example: US
+        postal_code:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The postal code of the MSP-EC account.
+          nullable: true
+          example: '95089'
+        phone_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The phone number of the MSP-EC account.
+          nullable: true
+          example: 650-123-4567
+        fax_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The fax number of the MSP-EC account.
+          nullable: true
+          example: 650-123-9999
+        city:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The city of the MSP-EC account.
+          nullable: true
+          example: Sunnyvale
+        mapping_url:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The map URL of the MSP-EC account.
+          nullable: true
+          example: https//map.gogle.com/zsdweews
+        service_effective_date:
+          type: string
+          description: The effective date of the MSP-EC account.
+          example: '2019-09-14 01:12:51.805Z'
+        service_expiration_date:
+          type: string
+          description: The expiration date of the MSP-EC account.
+          example: '2020-09-14 01:12:51.805Z'
+        licenses:
+          $ref: '#/components/schemas/License'
+        tier:
+          type: string
+          description: MSP-EC tier info
+          example: GOLD, PLATINUM
+        privacyFeatures:
+          maxItems: 1
+          minItems: 0
+          uniqueItems: true
+          type: array
+          description: Privacy features
+          items:
+            $ref: '#/components/schemas/PrivacyFeatureRequest'
+    ResponseBo:
+      required:
+        - requestId
+      type: object
+      properties:
+        requestId:
+          type: string
+        tenantId:
+          type: string
+    RestErrorResponse:
+      type: object
+      properties:
+        errors:
+          type: object
+          additionalProperties:
+            type: object
+    AssignMspEcListRequest:
+      required:
+        - delegation_type
+      type: object
+      properties:
+        mspec_list:
+          uniqueItems: true
+          type: array
+          description: List of MSP EC to be assigned.
+          items:
+            type: string
+            description: List of MSP EC to be assigned.
+        delegation_type:
+          type: string
+          description: The type of MSP EC delegated tenant.
+          example: delegationtype
+        number_of_days:
+          type: string
+          description: Expiry days for MSP EC to delegated tenant.
+          example: 1-60
+        isManageAllEcs:
+          type: boolean
+          description: Flag to admins to manage account.
+    EmailInvitation:
+      required:
+        - admin_email
+      type: object
+      properties:
+        admin_email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The email of the MSP-EC administrator.
+          example: john.wang@sampledomain.com
+        resend:
+          type: boolean
+          description: Indicate if this is to resend in case of email got lost.
+          example: false
+    UpdateMspEcAdminRequest:
+      required:
+        - email
+        - first_name
+        - user_name
+      type: object
+      properties:
+        email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The email address of the MSP EC administrator.
+          example: john.wang@sampledomain.com
+        user_name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The user name of the MSP EC administrator.
+          nullable: true
+          example: JohnWang or john.wang@sampledomain.com
+        full_name:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The full name of the MSP EC administrator.
+          nullable: true
+          example: John Wang
+        first_name:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: The first name of the MSP EC administrator.
+          nullable: true
+          example: John
+        last_name:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: The last name of the MSP EC administrator.
+          nullable: true
+          example: Wang
+    AssignedMspAdminsRequest:
+      required:
+        - delegation_type
+      type: object
+      properties:
+        mspec_list:
+          type: array
+          description: List of MSP EC admins to be assigned.
+          items:
+            $ref: '#/components/schemas/MspAdminRole'
+        delegation_type:
+          type: string
+          description: The type of MSP EC delegated tenant.
+          example: delegationtype
+        privilege_group_ids:
+          uniqueItems: true
+          type: array
+          description: Privilege groups to manage accounts.
+          items:
+            type: string
+            description: Privilege groups to manage accounts.
+    MspAdminRole:
+      required:
+        - msp_admin_id
+        - msp_admin_role
+      type: object
+      properties:
+        msp_admin_id:
+          type: string
+          description: The admin ID of MSP tenant.
+          example: 4c2b196a205d11ea978f-2e728ce88125
+        msp_admin_role:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The admin role of the first MSP administrator.
+          example: PRIME_ADMIN
+    MspEcAccountView:
+      type: object
+      properties:
+        msp_label:
+          type: string
+          description: The MSP label.
+          example: msp-label
+        name:
+          type: string
+          description: The name of MSP-EC account.
+          example: Acme Sales
+        street_address:
+          type: string
+          description: The street address of MSP-EC account.
+          nullable: true
+          example: 350 West Java st
+        state:
+          type: string
+          description: The state of MSP-EC account.
+          nullable: true
+          example: CA
+        country:
+          type: string
+          description: The country of MSP-EC account.
+          nullable: true
+          example: US
+        postal_code:
+          type: string
+          description: The postal code of MSP-EC account.
+          nullable: true
+          example: '95089'
+        phone_number:
+          type: string
+          description: The phone number of MSP-EC account.
+          nullable: true
+          example: 650-123-4567
+        fax_number:
+          type: string
+          description: The fax number of MSP-EC account.
+          nullable: true
+          example: 650-123-9999
+        city:
+          type: string
+          description: The city of MSP-EC account.
+          nullable: true
+          example: Sunnyvale
+        mapping_url:
+          type: string
+          description: The map URL of MSP-EC account.
+          nullable: true
+          example: https//map.gogle.com/zsdweews
+        service_effective_date:
+          type: string
+          description: The effective date of MSP-EC account.
+          example: '2019-09-14 01:12:51Z'
+        service_expiration_date:
+          type: string
+          description: The expiration date of MSP-EC account.
+          example: '2020-09-14 01:12:51Z'
+        is_active:
+          type: string
+          description: Active state of MSP-EC account.
+          nullable: true
+          example: 'true'
+        tenant_id:
+          type: string
+          description: Tenant ID.
+          example: 6173ca160495421c95be47b42b349067
+        parent_tenant_id:
+          type: string
+          description: Parent tenant ID.
+          example: 6173ca160495421c95be47b42b349067
+        tenant_type:
+          type: string
+          description: The tenant type of the MSP EC administrator.
+          example: MSP, MSP_INTEGRATOR, MSP_INSTALLER
+        account_id:
+          type: string
+          description: Account ID.
+          example: _53997fe0-dffb-4bac-bcc1-e21c689a320f_kodzLWdS
+        tier:
+          type: string
+          description: Account ID.
+          example: _53997fe0-dffb-4bac-bcc1-e21c689a320f_kodzLWdS
+        logo_url:
+          type: string
+        privacyFeatures:
+          uniqueItems: true
+          type: array
+          description: Privacy features
+          items:
+            $ref: '#/components/schemas/PrivacyFeatureResponse'
+    PrivacyFeatureResponse:
+      type: object
+      properties:
+        featureName:
+          type: string
+          description: Privacy feature
+        isEnabled:
+          type: boolean
+          description: Is enabled
+      description: Privacy features
+    MspLogoFileData:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        parentId:
+          type: string
+          readOnly: true
+        logo_fileuuid:
+          type: string
+        logo_file_name:
+          type: string
+    PreferredWisprProvider:
+      required:
+        - providerName
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        providerName:
+          type: string
+        apiKey:
+          type: string
+        apiSecret:
+          type: string
+        customExternalProvider:
+          type: boolean
+        auth:
+          $ref: '#/components/schemas/Radius'
+        acct:
+          $ref: '#/components/schemas/Radius'
+        parentId:
+          type: string
+          readOnly: true
+    Radius:
+      type: object
+      properties:
+        primary:
+          $ref: '#/components/schemas/RadiusServer'
+        secondary:
+          $ref: '#/components/schemas/RadiusServer'
+    RadiusServer:
+      required:
+        - ip
+        - sharedSecret
+      type: object
+      properties:
+        ip:
+          type: string
+        port:
+          maximum: 65535
+          minimum: 1
+          type: integer
+          format: int32
+        sharedSecret:
+          type: string
+    UpdateMspRequest:
+      required:
+        - msp_label
+      type: object
+      properties:
+        msp_label:
+          pattern: '[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]'
+          type: string
+          description: The MSP label.
+          example: msp-label
+        logo_uuid:
+          pattern: ^$|[a-zA-Z0-9~\.+_-]+
+          type: string
+          description: The ID of logo file.
+          nullable: true
+          example: b183ae56e08111e98a342a2ae2dbcce4-001.png
+        alarm_notification_logo_uuid:
+          pattern: ^$|[a-zA-Z0-9~\.+_-]+
+          type: string
+          description: The ID of alarm notification logo file.
+          nullable: true
+          example: b183ae56e08111e98a342a2ae2dbcce4-001.png
+        ping_notification_logo_uuid:
+          pattern: ^$|[a-zA-Z0-9~\.+_-]+
+          type: string
+          description: The ID of ping notification logo file.
+          nullable: true
+          example: b183ae56e08111e98a342a2ae2dbcce4-001.png
+        mlisa_logo_uuid:
+          pattern: ^$|[a-zA-Z0-9~\.+_-]+
+          type: string
+          description: The ID of Ruckus Analytics logo file.
+          nullable: true
+          example: b183ae56e08111e98a342a2ae2dbcce4-001.png
+        ping_login_logo_uuid:
+          pattern: ^$|[a-zA-Z0-9~\.+_-]+
+          type: string
+          description: The ID of ping login logo file.
+          nullable: true
+          example: b183ae56e08111e98a342a2ae2dbcce4-001.png
+        default_logo_uuid:
+          pattern: ^$|[a-zA-Z0-9~\.+_-]+
+          type: string
+          description: The ID of default logo file.
+          nullable: true
+          example: b183ae56e08111e98a342a2ae2dbcce4-001.png
+        msp_fqdn:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^$|[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+
+          type: string
+          description: The FQDN of MSP portal.
+          nullable: true
+          example: wifi.sampledomain.com
+        contact_support_url:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^$|(http|https)://[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+(:[1-9][0-9]{1,4})?((/?)|(/([a-zA-Z0-9~_.-]|(%[0-9]{2}))*)*)((\?|#).*)?
+          type: string
+          description: The URL at which to obtain customer support from your MSP.
+          nullable: true
+          example: https://support.sampledomain.com/
+        contact_support_behavior:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The contact support behavior of MSP tenant.
+          nullable: true
+          example: redirect
+        open_case_url:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^$|(http|https)://[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+(:[1-9][0-9]{1,4})?((/?)|(/([a-zA-Z0-9~_.-]|(%[0-9]{2}))*)*)((\?|#).*)?
+          type: string
+          description: The URL at which to open a customer support case with your MSP.
+          nullable: true
+          example: http://support.sampledomain.com/opencase
+        open_case_behavior:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The open case behavior of MSP tenant.
+          nullable: true
+          example: redirect
+        my_open_case_url:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^$|(http|https)://[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+(:[1-9][0-9]{1,4})?((/?)|(/([a-zA-Z0-9~_.-]|(%[0-9]{2}))*)*)((\?|#).*)?
+          type: string
+          description: The URL to view your open customer support cases.
+          nullable: true
+          example: http://support.sampledomain.com/myopencase
+        my_open_case_behavior:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The my open case behavior of MSP tenant.
+          nullable: true
+          example: redirect
+        change_password_url:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^$|(http|https)://[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+(:[1-9][0-9]{1,4})?((/?)|(/([a-zA-Z0-9~_.-]|(%[0-9]{2}))*)*)((\?|#).*)?
+          type: string
+          description: The change password URL of MSP tenant.
+          nullable: true
+          example: http://wifi.sampledomain.com/password
+        msp_phone:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Your MSP's customer-support phone number.
+          nullable: true
+          example: 408-123-5678
+        msp_email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: Your MSP's customer-support email address.
+          nullable: true
+          example: joho.wang@sampledomain.com
+        msp_website:
+          maxLength: 255
+          minLength: 0
+          pattern: >-
+            ^$|(http|https)://[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])+(:[1-9][0-9]{1,4})?((/?)|(/([a-zA-Z0-9~_.-]|(%[0-9]{2}))*)*)((\?|#).*)?
+          type: string
+          description: Your MSP's website.
+          nullable: true
+          example: http://wifi.sampledomain.com/
+        mspLogoFileDataList:
+          type: array
+          items:
+            $ref: '#/components/schemas/MspLogoFileData'
+        preferredWisprProvider:
+          $ref: '#/components/schemas/PreferredWisprProvider'
+    AddMspEcRequestV1_4:
+      type: object
+      properties:
+        account_id:
+          maxLength: 255
+          minLength: 0
+          type: string
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of MSP-EC account.
+          example: Acme Sales
+        street_address:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' street name and number.
+          nullable: true
+          example: 350 West Java st
+        state:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' geographical state.
+          nullable: true
+          example: CA
+        country:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' country.
+          nullable: true
+          example: US
+        postal_code:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' postal code.
+          nullable: true
+          example: '95089'
+        phone_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's phone number.
+          nullable: true
+          example: 650-123-4567
+        fax_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's fax number.
+          nullable: true
+          example: 650-123-9999
+        city:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' city.
+          nullable: true
+          example: Sunnyvale
+        mapping_url:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The map URL corresponding to the MSP-EC's mailing address.
+          nullable: true
+          example: https//map.gogle.com/zsdweews
+        service_effective_date:
+          type: string
+          description: The date when the MSP-EC's service started.
+          example: '2019-09-14 01:12:51Z'
+        service_expiration_date:
+          type: string
+          description: The date when the MSP-EC's service terminates/terminated.
+          example: '2020-09-14 01:12:51Z'
+        admin_email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The email address of the first MSP-EC administrator added to the
+            account by the MSP.
+          example: john.wang@sampledomain.com
+        admin_firstname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The first name of the first MSP-EC administrator added to the
+            account by the MSP.
+          nullable: true
+          example: John
+        admin_lastname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The last name of the first MSP-EC administrator added to the account
+            by the MSP.
+          nullable: true
+          example: Wang
+        admin_role:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The admin role of the first MSP-EC administrator.
+          example: PRIME_ADMIN,ADMIN,READ_ONLY
+        tenant_type:
+          maxLength: 25
+          minLength: 0
+          type: string
+          description: The tenant type of the MSP EC administrator.
+          example: MSP, MSP_INTEGRATOR, MSP_INSTALLER
+        licenses:
+          $ref: '#/components/schemas/License'
+        delegations:
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to tenants to manage the customer.
+          items:
+            $ref: '#/components/schemas/EcDelegation'
+        admin_delegations:
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to admins to manage the customer.
+          items:
+            $ref: '#/components/schemas/MspAdminRole'
+        tier:
+          type: string
+          description: MSP-EC tier info
+          example: GOLD, PLATINUM
+        privilege_group_ids:
+          uniqueItems: true
+          type: array
+          description: Privilege groups to manage account.
+          items:
+            type: string
+            description: Privilege groups to manage account.
+        privacyFeatures:
+          maxItems: 1
+          minItems: 0
+          uniqueItems: true
+          type: array
+          description: Privacy features.
+          items:
+            $ref: '#/components/schemas/PrivacyFeatureRequest'
+        propertyCode:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The property code.
+          nullable: true
+          example: BNADC
+    AddTenantRequestHolder:
+      type: object
+      properties:
+        data:
+          maxItems: 100
+          minItems: 1
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/AddMspEcRequestV1_4'
+    EcDelegation:
+      required:
+        - delegation_type
+      type: object
+      properties:
+        mspec_list:
+          uniqueItems: true
+          type: array
+          description: List of MSP EC to be assigned.
+          items:
+            type: string
+            description: List of MSP EC to be assigned.
+        delegation_type:
+          type: string
+          description: The type of MSP EC delegated tenant.
+          example: MSP_INTEGRATOR
+        delegation_id:
+          type: string
+          description: Delegated to tenant.
+          example: delegationtenantid
+        number_of_days:
+          type: string
+          description: Expiry days for MSP EC to delegated tenant.
+          example: 1-60
+      description: Grant or revoke access to tenants to manage the customer.
+    ResponseBOV2:
+      required:
+        - data
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResponseBo'
+    DynamicQueryPayloadDto:
+      type: object
+      properties:
+        multiSortFields:
+          type: array
+          items:
+            type: string
+        matchFields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchFieldDto'
+        rangeFilter:
+          $ref: '#/components/schemas/RangeFilterDto'
+        rangeDateFilter:
+          $ref: '#/components/schemas/RangeFilterDto'
+        mustNotMatchField:
+          type: array
+          items:
+            $ref: '#/components/schemas/MustNotMatchFieldDto'
+        sortField:
+          type: string
+        sortOrder:
+          type: string
+        page:
+          type: integer
+          format: int32
+        pageByDate:
+          type: object
+          properties:
+            value:
+              type: string
+            key:
+              type: string
+        pageSize:
+          type: integer
+          format: int32
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        search_after:
+          type: array
+          items:
+            type: string
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+        searchString:
+          type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        mustHaveFields:
+          type: array
+          items:
+            type: string
+        mustNotHaveFields:
+          type: array
+          items:
+            type: string
+        termField:
+          $ref: '#/components/schemas/TermFieldDto'
+        terms:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        exists:
+          type: string
+        groupBy:
+          type: string
+    MatchFieldDto:
+      type: object
+      properties:
+        field:
+          type: string
+        value:
+          type: string
+    MustNotMatchFieldDto:
+      type: object
+      properties:
+        field:
+          type: string
+        value:
+          type: string
+    RangeFilterDto:
+      type: object
+      properties:
+        field:
+          type: string
+        gte:
+          type: integer
+          format: int64
+        lte:
+          type: integer
+          format: int64
+        lt:
+          type: integer
+          format: int64
+    TermFieldDto:
+      type: object
+      properties:
+        field:
+          type: string
+        value:
+          type: string
+    ApCountSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        apCount:
+          type: integer
+          format: int32
+    HttpMethod:
+      type: object
+    QueryResponseApCountSummary:
+      type: object
+      properties:
+        fields:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int32
+        objectId:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApCountSummary'
+        errorMessage:
+          type: string
+        subsequentQueries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubsequentQuery'
+    SubsequentQuery:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        url:
+          type: string
+          format: uri
+        httpMethod:
+          $ref: '#/components/schemas/HttpMethod'
+        payload:
+          type: object
+    AddMspEcRequestV1_3:
+      type: object
+      properties:
+        account_id:
+          maxLength: 255
+          minLength: 0
+          type: string
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of MSP-EC account.
+          example: Acme Sales
+        street_address:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' street name and number.
+          nullable: true
+          example: 350 West Java st
+        state:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' geographical state.
+          nullable: true
+          example: CA
+        country:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' country.
+          nullable: true
+          example: US
+        postal_code:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' postal code.
+          nullable: true
+          example: '95089'
+        phone_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's phone number.
+          nullable: true
+          example: 650-123-4567
+        fax_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's fax number.
+          nullable: true
+          example: 650-123-9999
+        city:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' city.
+          nullable: true
+          example: Sunnyvale
+        mapping_url:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The map URL corresponding to the MSP-EC's mailing address.
+          nullable: true
+          example: https//map.gogle.com/zsdweews
+        service_effective_date:
+          type: string
+          description: The date when the MSP-EC's service started.
+          example: '2019-09-14 01:12:51Z'
+        service_expiration_date:
+          type: string
+          description: The date when the MSP-EC's service terminates/terminated.
+          example: '2020-09-14 01:12:51Z'
+        admin_email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The email address of the first MSP-EC administrator added to the
+            account by the MSP.
+          example: john.wang@sampledomain.com
+        admin_firstname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The first name of the first MSP-EC administrator added to the
+            account by the MSP.
+          nullable: true
+          example: John
+        admin_lastname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The last name of the first MSP-EC administrator added to the account
+            by the MSP.
+          nullable: true
+          example: Wang
+        admin_role:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The admin role of the first MSP-EC administrator.
+          example: PRIME_ADMIN,ADMIN,READ_ONLY
+        tenant_type:
+          maxLength: 25
+          minLength: 0
+          type: string
+          description: The tenant type of the MSP EC administrator.
+          example: MSP, MSP_INTEGRATOR, MSP_INSTALLER
+        licenses:
+          $ref: '#/components/schemas/License'
+        delegations:
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to tenants to manage the customer.
+          items:
+            $ref: '#/components/schemas/EcDelegation'
+        admin_delegations:
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to admins to manage the customer.
+          items:
+            $ref: '#/components/schemas/MspAdminRole'
+        tier:
+          type: string
+          description: MSP-EC tier info
+          example: GOLD, PLATINUM
+    AddMspEcRequestV1_2:
+      required:
+        - name
+        - service_effective_date
+        - service_expiration_date
+        - tenant_type
+      type: object
+      properties:
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of MSP-EC account.
+          example: Acme Sales
+        street_address:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' street name and number.
+          nullable: true
+          example: 350 West Java st
+        state:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' geographical state.
+          nullable: true
+          example: CA
+        country:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' country.
+          nullable: true
+          example: US
+        postal_code:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' postal code.
+          nullable: true
+          example: '95089'
+        phone_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's phone number.
+          nullable: true
+          example: 650-123-4567
+        fax_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's fax number.
+          nullable: true
+          example: 650-123-9999
+        city:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' city.
+          nullable: true
+          example: Sunnyvale
+        mapping_url:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The map URL corresponding to the MSP-EC's mailing address.
+          nullable: true
+          example: https//map.gogle.com/zsdweews
+        service_effective_date:
+          type: string
+          description: The date when the MSP-EC's service started.
+          example: '2019-09-14 01:12:51Z'
+        service_expiration_date:
+          type: string
+          description: The date when the MSP-EC's service terminates/terminated.
+          example: '2020-09-14 01:12:51Z'
+        admin_email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The email address of the first MSP-EC administrator added to the
+            account by the MSP.
+          example: john.wang@sampledomain.com
+        admin_firstname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The first name of the first MSP-EC administrator added to the
+            account by the MSP.
+          nullable: true
+          example: John
+        admin_lastname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The last name of the first MSP-EC administrator added to the account
+            by the MSP.
+          nullable: true
+          example: Wang
+        admin_role:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The admin role of the first MSP-EC administrator.
+          example: PRIME_ADMIN,ADMIN,READ_ONLY
+        tenant_type:
+          maxLength: 25
+          minLength: 0
+          type: string
+          description: The tenant type of the MSP EC administrator.
+          example: MSP, MSP_INTEGRATOR, MSP_INSTALLER
+        licenses:
+          $ref: '#/components/schemas/License'
+        delegations:
+          maxItems: 2
+          minItems: 0
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to tenants to manage the customer.
+          items:
+            $ref: '#/components/schemas/EcDelegation'
+        admin_delegations:
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to admins to manage the customer.
+          items:
+            $ref: '#/components/schemas/MspAdminRole'
+    AddMspEcRequestV1:
+      required:
+        - admin_email
+        - admin_role
+        - name
+        - service_effective_date
+        - service_expiration_date
+        - tenant_type
+      type: object
+      properties:
+        name:
+          maxLength: 255
+          minLength: 2
+          type: string
+          description: The name of MSP-EC account.
+          example: Acme Sales
+        street_address:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' street name and number.
+          nullable: true
+          example: 350 West Java st
+        state:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' geographical state.
+          nullable: true
+          example: CA
+        country:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' country.
+          nullable: true
+          example: US
+        postal_code:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' postal code.
+          nullable: true
+          example: '95089'
+        phone_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's phone number.
+          nullable: true
+          example: 650-123-4567
+        fax_number:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC's fax number.
+          nullable: true
+          example: 650-123-9999
+        city:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The MSP-EC mailing address' city.
+          nullable: true
+          example: Sunnyvale
+        mapping_url:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The map URL corresponding to the MSP-EC's mailing address.
+          nullable: true
+          example: https//map.gogle.com/zsdweews
+        service_effective_date:
+          type: string
+          description: The date when the MSP-EC's service started.
+          example: '2019-09-14 01:12:51Z'
+        service_expiration_date:
+          type: string
+          description: The date when the MSP-EC's service terminates/terminated.
+          example: '2020-09-14 01:12:51Z'
+        admin_email:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: >-
+            The email address of the first MSP-EC administrator added to the
+            account by the MSP.
+          example: john.wang@sampledomain.com
+        admin_firstname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The first name of the first MSP-EC administrator added to the
+            account by the MSP.
+          nullable: true
+          example: John
+        admin_lastname:
+          maxLength: 64
+          minLength: 0
+          type: string
+          description: >-
+            The last name of the first MSP-EC administrator added to the account
+            by the MSP.
+          nullable: true
+          example: Wang
+        admin_role:
+          maxLength: 255
+          minLength: 0
+          type: string
+          description: The admin role of the first MSP-EC administrator.
+          example: PRIME_ADMIN,ADMIN,READ_ONLY
+        tenant_type:
+          maxLength: 25
+          minLength: 0
+          type: string
+          description: The tenant type of the MSP EC administrator.
+          example: MSP, MSP_INTEGRATOR, MSP_INSTALLER
+        licenses:
+          $ref: '#/components/schemas/License'
+        delegations:
+          maxItems: 2
+          minItems: 0
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to tenants to manage the customer.
+          items:
+            $ref: '#/components/schemas/EcDelegation'
+        admin_delegations:
+          uniqueItems: true
+          type: array
+          description: Grant or revoke access to admins to manage the customer.
+          items:
+            $ref: '#/components/schemas/MspAdminRole'
+    AutoSchedule:
+      required:
+        - days
+        - timeSlots
+      type: object
+      properties:
+        days:
+          type: array
+          description: List of days to schedule firmware upgrade.
+          example: '[''Monday'',''Friday'']'
+          items:
+            type: string
+            description: List of days to schedule firmware upgrade.
+            example: '[''Monday'',''Friday'']'
+        timeSlots:
+          type: array
+          description: List of time slots to schedule firmware upgrade.
+          example: '[''00:00-02:00'',''00:00-04:00'']'
+          items:
+            type: string
+            description: List of time slots to schedule firmware upgrade.
+            example: '[''00:00-02:00'',''00:00-04:00'']'
+      description: >-
+        Scheduling firmware upgrade based on days and time slots (Timezone is
+        defined by the venue).
+    DataRequest:
+      type: object
+      properties:
+        mspEcList:
+          maxItems: 100
+          minItems: 1
+          uniqueItems: true
+          type: array
+          description: List of MSP-EC to schedule firmware upgrade.
+          items:
+            type: string
+            description: List of MSP-EC to schedule firmware upgrade.
+        autoSchedule:
+          $ref: '#/components/schemas/AutoSchedule'
+        manualSchedule:
+          $ref: '#/components/schemas/ManualSchedule'
+      description: The bulk operation data.
+    FirmwareUpgradeRequest:
+      required:
+        - operation
+      type: object
+      properties:
+        operation:
+          maxLength: 255
+          minLength: 1
+          type: string
+          description: The bulk operation type.
+          example: AP_FIRMWARE_UPGRADE
+        data:
+          $ref: '#/components/schemas/DataRequest'
+    ManualSchedule:
+      required:
+        - timeSlot
+      type: object
+      properties:
+        date:
+          pattern: \d{4}-\d{2}-\d{2}
+          type: string
+          description: Date to schedule firmware upgrade.
+          example: '2023-09-30'
+        timeSlot:
+          type: string
+          description: Time slot to schedule firmware upgrade.
+          example: 00:00-02:00
+      description: >-
+        Scheduling manual firmware upgrade based on date and time slot (Timezone
+        is defined by the venue).
+    AssignDelegatedRequest:
+      required:
+        - delegation_type
+        - mspec_id
+      type: object
+      properties:
+        delegation_id:
+          type: string
+          example: 96d4c0c2-3aea-4446-a22d-e7d6801c9358
+        delegation_type:
+          type: string
+          description: The type of MSP EC delegated tenant.
+          example: MSP_INTEGRATOR
+        mspec_id:
+          type: string
+          description: MSP EC to be assigned.
+        number_of_days:
+          type: string
+          description: Expiry days for MSP EC to delegated tenant.
+          example: '90'
+      description: List of tech partner details.
+    AssignMspEcToMultipleTechPartners:
+      type: object
+      properties:
+        AssignDelegatedRequest:
+          type: array
+          description: List of tech partner details.
+          items:
+            $ref: '#/components/schemas/AssignDelegatedRequest'
+    MspAdmin:
+      required:
+        - mspEcId
+      type: object
+      properties:
+        operation:
+          type: string
+        mspEcId:
+          type: string
+          example: 96d4c0c2-3aea-4446-a22d-e7d6801c9358
+        mspAdminRoles:
+          uniqueItems: true
+          type: array
+          description: Set of admin ids and roles.
+          items:
+            $ref: '#/components/schemas/MspAdminRole'
+        privilege_group_ids:
+          uniqueItems: true
+          type: array
+          description: Privilege groups to manage accounts.
+          items:
+            type: string
+            description: Privilege groups to manage accounts.
+    MspAdminRequest:
+      type: object
+      properties:
+        associations:
+          maxItems: 200
+          minItems: 1
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/MspAdmin'
+    MspEcDelegationResponse:
+      type: object
+      properties:
+        mspec_list:
+          type: array
+          description: List of MSP EC delegated.
+          items:
+            type: string
+            description: List of MSP EC delegated.
+        delegation_type:
+          type: string
+          description: The type of MSP EC delegation.
+          example: delegationtype
+        delegated_to:
+          type: string
+          description: Delegated to tenant.
+          example: delegationtenantid
+        expiry_date:
+          type: string
+          description: Expiry date for delegation.
+    MspEcAdminView:
+      type: object
+      properties:
+        email:
+          type: string
+          description: The email address of MSP EC administrator.
+          example: john.wang@sampledomain.com
+        user_name:
+          type: string
+          description: The user name of MSP EC administrator.
+          nullable: true
+          example: JohnWang or john.wang@sampledomain.com
+        full_name:
+          type: string
+          description: The full name of MSP EC administrator.
+          nullable: true
+          example: John Wang
+        first_name:
+          type: string
+          description: The first name of MSP EC administrator.
+          nullable: true
+          example: John
+        last_name:
+          type: string
+          description: The last name of MSP EC administrator.
+          nullable: true
+          example: Wang
+    MspView:
+      type: object
+      properties:
+        msp_label:
+          type: string
+          description: The MSP label.
+          example: msp-label
+        logo_uuid:
+          type: string
+          description: The UUID of logo file.
+          nullable: true
+          example: b183ae56-e081-11e9-8a34-2a2ae2dbcce4.jpg
+        alarm_notification_logo_uuid:
+          type: string
+          description: The UUID of alarm notification logo file.
+          nullable: true
+          example: b183ae56-e081-11e9-8a34-2a2ae2dbcce4.jpg
+        ping_notification_logo_uuid:
+          type: string
+          description: The UUID of ping notification logo file.
+          nullable: true
+          example: b183ae56-e081-11e9-8a34-2a2ae2dbcce4.jpg
+        mlisa_logo_uuid:
+          type: string
+          description: The UUID of Ruckus Analytics logo file.
+          nullable: true
+          example: b183ae56-e081-11e9-8a34-2a2ae2dbcce4.jpg
+        ping_login_logo_uuid:
+          type: string
+          description: The UUID of ping login logo file.
+          nullable: true
+          example: b183ae56-e081-11e9-8a34-2a2ae2dbcce4.jpg
+        default_logo_uuid:
+          type: string
+          description: The UUID of default logo file.
+          nullable: true
+          example: b183ae56-e081-11e9-8a34-2a2ae2dbcce4.jpg
+        msp_fqdn:
+          type: string
+          description: The FQDN of MSP portal.
+          nullable: true
+          example: wifi.sampledomain.com
+        contact_support_url:
+          type: string
+          description: The URL at which to obtain customer support from your MSP.
+          nullable: true
+          example: http://support.sampledomain.com/
+        contact_support_behavior:
+          type: string
+          description: The contact support behavior of MSP tenant.
+          nullable: true
+          example: redirect
+        open_case_url:
+          type: string
+          description: The URL at which to open a customer support case with your MSP.
+          nullable: true
+          example: http://support.sampledomain.com/opencase
+        open_case_behavior:
+          type: string
+          description: The open case behavior of MSP tenant.
+          nullable: true
+          example: redirect
+        my_open_case_url:
+          type: string
+          description: The URL to view your open customer support cases.
+          nullable: true
+          example: http://support.sampledomain.com/myopencase
+        my_open_case_behavior:
+          type: string
+          description: The my open case behavior of MSP tenant.
+          nullable: true
+          example: redirect
+        change_password_url:
+          type: string
+          description: The change password URL of MSP tenant.
+          nullable: true
+          example: http://wifi.sampledomain.com/password
+        msp_phone:
+          type: string
+          description: Your MSP's customer-support phone number.
+          nullable: true
+          example: '+6501234567'
+        msp_email:
+          type: string
+          description: Your MSP's customer-support email address.
+          nullable: true
+          example: support@msp.com
+        msp_website:
+          type: string
+          description: Your MSP's website.
+          nullable: true
+          example: http://wifi.sampledomain.com
+        msp_external_id:
+          type: string
+          description: The MSP external account ID.
+          nullable: true
+          example: 0015B000015bJEfQAM
+        msp_tenant_name:
+          type: string
+          description: Your MSP's name.
+          nullable: true
+          example: sampledomain Inc.
+        mspLogoFileDataList:
+          type: array
+          items:
+            $ref: '#/components/schemas/MspLogoFileData'
+        preferredWisprProvider:
+          $ref: '#/components/schemas/PreferredWisprProvider'
+        domain_suffix:
+          type: string
+    MspEc:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        properties:
+          type: object
+          additionalProperties:
+            type: object
+        switchActivated:
+          type: boolean
+        wifiActivated:
+          type: boolean
+        tenantActivated:
+          type: boolean
+        parentId:
+          type: string
+          readOnly: true

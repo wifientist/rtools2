@@ -1,0 +1,960 @@
+openapi: 3.0.1
+info:
+  title: RADIUS Attribute Group Management REST API
+  description: |-
+    # Overview
+
+     The RADIUS Attribute Group Management REST API's and Model, allow the creation, delete and modification of RADIUS attribute groups. A RADIUS attribute group is a set of RADIUS attributes that can then be applied to a RADIUS authentication. When a RADIUS response is made and a RADIUS attribute group is associated with that response, then the attributes in the group are applied to the response.   Currently, policies defined in the dynamic policy service, of type "RADIUS" or of type "DPSK", must provide a radius attribute group when created.
+    ## Rate Limit
+    For the Radius Attribute Group REST API the following will be true: 
+    - Limits are applied to each tenant.
+    - A maximum of 60 calls can be made per second.
+    - Each second 30 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 1.0.8
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: RADIUS Attribute Group
+    description: Manage the RADIUS attribute groups.
+  - name: RADIUS Attribute
+    description: View the list of supported RADIUS attributes.
+  - name: RADIUS Attribute Group Assignments
+    description: Manages the external service assignments to a specified Attribute Group
+paths:
+  /radiusAttributes/query:
+    post:
+      tags:
+        - RADIUS Attribute
+      summary: Get RADIUS Attributes
+      description: >-
+        Gets the list of RADIUS attributes using the specified query. Paging is
+        indexed starting at one.
+      operationId: getAllRadiusAttributesByQuery
+      parameters:
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            types:
+              - boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: List RADIUS attributes in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponseResourceRADIUS Attribute'
+  /radiusAttributeGroups:
+    get:
+      tags:
+        - RADIUS Attribute Group
+      summary: Get RADIUS Attribute Groups
+      description: Gets the complete list of RADIUS attribute group in a paged format.
+      operationId: getAllRadiusAttributeGroups
+      parameters:
+        - name: size
+          description: Page size
+        - name: page
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+      responses:
+        '200':
+          description: Radius attribute groups paged.
+          content:
+            application/json: {}
+    post:
+      tags:
+        - RADIUS Attribute Group
+      summary: Create RADIUS Attribute Group
+      description: Creates a RADIUS attribute group with the requested values.
+      operationId: createRadiusAttributeGroup
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RADIUS Attribute Group'
+        required: true
+      responses:
+        '201':
+          description: RADIUS attribute group created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+        '409':
+          description: Invalid RADIUS attribute group details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+  /radiusAttributeGroups/{groupId}/assignments:
+    get:
+      tags:
+        - RADIUS Attribute Group Assignments
+      summary: Get External Assignments
+      description: Gets the external assignments for the specified Radius attribute group.
+      operationId: getAllExternalAssignments
+      parameters:
+        - name: size
+          description: Page size
+        - name: page
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+        - name: groupId
+          in: path
+          description: RADIUS Attribute Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      responses:
+        '200':
+          description: RADIUS Attribute Group Assignments
+          content:
+            application/json: {}
+        '404':
+          description: ' RADIUS Attribute Group not found'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageAttribute Group Assignment'
+    post:
+      tags:
+        - RADIUS Attribute Group Assignments
+      summary: Create External Assignment
+      description: >-
+        Create an external service assignment to the requested RADIUS attribute
+        group.
+      operationId: createExternalAssignment
+      parameters:
+        - name: groupId
+          in: path
+          description: RADIUS Attribute Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Attribute Group Assignment'
+        required: true
+      responses:
+        '201':
+          description: Assignment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attribute Group Assignment'
+        '409':
+          description: Invalid assignment details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attribute Group Assignment'
+  /radiusAttributeGroups/query:
+    post:
+      tags:
+        - RADIUS Attribute Group
+      summary: Get RADIUS Attribute Groups
+      description: Gets the list of RADIUS attribute groups using the specified query.
+      operationId: getAllRadiusAttributeGroupsByQuery
+      parameters:
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            types:
+              - boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryData'
+        required: true
+      responses:
+        '200':
+          description: RADIUS attribute groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+        '400':
+          description: Invalid query data supplied.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/QueryResponseResourceRADIUS Attribute
+                  Group
+  /radiusAttributeGroups/{groupId}:
+    get:
+      tags:
+        - RADIUS Attribute Group
+      summary: Get RADIUS Attribute Group
+      description: Gets the requested RADIUS attribute group by the id.
+      operationId: getAttributeGroupById
+      parameters:
+        - name: groupId
+          in: path
+          description: RADIUS attribute group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      responses:
+        '200':
+          description: RADIUS attribute group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+        '404':
+          description: ' RADIUS attribute group not found'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+    delete:
+      tags:
+        - RADIUS Attribute Group
+      summary: Delete RADIUS Attribute Group
+      description: Deletes the requested RADIUS attribute group.
+      operationId: deleteAttributeGroup
+      parameters:
+        - name: groupId
+          in: path
+          description: Radius Attribute Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      responses:
+        '200':
+          description: RADIUS attribute group deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+        '204':
+          description: RADIUS attribute group deleted
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: RADIUS attribute group not found
+          content:
+            application/json:
+              schema:
+                type: object
+        '409':
+          description: >-
+            The requested RADIUS attribute group is still in use by another
+            service.
+          content:
+            application/json:
+              schema:
+                type: object
+    patch:
+      tags:
+        - RADIUS Attribute Group
+      summary: Update RADIUS Attribute Group
+      description: Updates the properties on the requested RADIUS attribute group.
+      operationId: updateRadiusAttribGroup
+      parameters:
+        - name: groupId
+          in: path
+          description: RADIUS attribute group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: object
+              description: A map contains the properties and values to be updated.
+              types:
+                - object
+        required: true
+      responses:
+        '200':
+          description: RADIUS attribute group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+        '400':
+          description: Invalid id or content supplied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+        '404':
+          description: RADIUS attribute group not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Group'
+  /radiusAttributes:
+    get:
+      tags:
+        - RADIUS Attribute
+      summary: Get RADIUS Attributes
+      description: Gets the list of RADIUS attributes in a paged format.
+      operationId: getAllRadiusAttribute
+      parameters:
+        - name: size
+          description: Page size
+        - name: page
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+      responses:
+        '200':
+          description: RADIUS Attributes in a paged format.
+          content:
+            application/json: {}
+  /radiusAttributes/{id}:
+    get:
+      tags:
+        - RADIUS Attribute
+      summary: Get RADIUS Attribute
+      description: Gets the specific RADIUS attribute requested.
+      operationId: getAttributeById
+      parameters:
+        - name: id
+          in: path
+          description: Attribute unique identifier.
+          required: true
+          schema:
+            type: integer
+            format: int64
+            types:
+              - integer
+      responses:
+        '200':
+          description: RADIUS Attribute
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute'
+        '404':
+          description: ' Radius Attribute not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute'
+  /radiusAttributes/vendors:
+    get:
+      tags:
+        - RADIUS Attribute
+      summary: Get RADIUS Attribute Vendors
+      description: Gets the list of vendors that are supported in the RADIUS attributes.
+      operationId: getAllRadiusAttributeVendors
+      responses:
+        '200':
+          description: RADIUS Attribute Vendors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RADIUS Attribute Vendors'
+  /radiusAttributeGroups/{groupId}/assignments/{assignmentId}:
+    get:
+      tags:
+        - RADIUS Attribute Group Assignments
+      summary: Get External Assignment
+      description: Gets the external assignment for the specified RADIUS attribute group.
+      operationId: getExternalAssignmentByID
+      parameters:
+        - name: groupId
+          in: path
+          description: RADIUS Attribute Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+        - name: assignmentId
+          in: path
+          description: RADIUS Attribute Group Assignment id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      responses:
+        '200':
+          description: RADIUS Attribute Group Assignment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attribute Group Assignment'
+        '400':
+          description: Invalid id supplied
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: ' RADIUS Attribute Group not found'
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - RADIUS Attribute Group Assignments
+      summary: Delete External Assignment
+      description: >-
+        Delete the requested external assignment for this RADIUS attribute
+        group.
+      operationId: deleteExternalAssignment
+      parameters:
+        - name: groupId
+          in: path
+          description: RADIUS Attribute Group id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+        - name: assignmentId
+          in: path
+          description: RADIUS Attribute Group Assignment id
+          required: true
+          schema:
+            type: string
+            format: uuid
+            types:
+              - string
+      responses:
+        '200':
+          description: External Assignment to be deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+        '204':
+          description: External Assignment to be deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  schemas:
+    QueryData:
+      type: object
+      properties:
+        sortField:
+          type: string
+          description: The field to use to sort on.
+          types:
+            - string
+        sortOrder:
+          type: string
+          description: The sort order of the applied query.
+          types:
+            - string
+          enum:
+            - ASC
+            - DESC
+        page:
+          minimum: 0
+          type: integer
+          description: The page number to return, indexed starting with 0.
+          format: int32
+          types:
+            - integer
+        pageSize:
+          maximum: 2000
+          minimum: 1
+          type: integer
+          description: The number of items requested on the page.
+          format: int32
+          types:
+            - integer
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+            description: The list of filters to apply.
+            types:
+              - object
+          description: The list of filters to apply.
+          types:
+            - object
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+      types:
+        - object
+    RADIUS Attribute:
+      required:
+        - id
+        - name
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The identifier for this RADIUS attribute.
+          format: int64
+          types:
+            - integer
+        name:
+          type: string
+          description: The attribute name, as viewed in RADIUS.
+          types:
+            - string
+        vendorName:
+          type: string
+          description: The vendor for this RADIUS attribute.
+          types:
+            - string
+        dataType:
+          type: string
+          description: The attribute name, as viewed in RADIUS.
+          types:
+            - string
+          enum:
+            - ABINARY
+            - BYTE
+            - COMBO_IP
+            - DATE
+            - ETHER
+            - IFID
+            - INTEGER
+            - IPADDR
+            - IPV6ADDR
+            - IPV6PREFIX
+            - OCTETS
+            - OTHER
+            - STRING
+            - SIGNED
+            - SHORT
+            - TLV
+        showOnDefault:
+          type: boolean
+          description: Indicates if this attribute should be shown by default.
+          types:
+            - boolean
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: RADIUS Attribute
+    QueryResponseResourceRADIUS Attribute:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          format: int64
+          types:
+            - integer
+        page:
+          type: integer
+          format: int32
+          types:
+            - integer
+        pageSize:
+          type: integer
+          format: int32
+          types:
+            - integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RADIUS Attribute'
+          types:
+            - array
+    Attribute Assignment:
+      required:
+        - attributeName
+        - attributeValue
+        - dataType
+        - operator
+      type: object
+      properties:
+        attributeName:
+          type: string
+          description: >-
+            The RADIUS attribute name to use. This should be from the list of
+            supported radius attributes.
+          types:
+            - string
+        operator:
+          type: string
+          description: The operator to use, which must be one of the allowed types.
+          types:
+            - string
+          enum:
+            - ADD
+            - ADD_REPLACE
+            - DOES_NOT_EXIST
+        attributeValue:
+          type: string
+          description: The assignment value to be returned for this RADIUS attribute.
+          types:
+            - string
+        dataType:
+          type: string
+          description: >-
+            The data type for this attribute. The value provided must be of the
+            specified data types.
+          types:
+            - string
+          enum:
+            - ABINARY
+            - BYTE
+            - COMBO_IP
+            - DATE
+            - ETHER
+            - IFID
+            - INTEGER
+            - IPADDR
+            - IPV6ADDR
+            - IPV6PREFIX
+            - OCTETS
+            - OTHER
+            - STRING
+            - SIGNED
+            - SHORT
+            - TLV
+      description: The RADIUS attribute details for the attribute group.
+    External Assignment Service Group:
+      required:
+        - externalAssignmentIdentifier
+        - serviceName
+      type: object
+      properties:
+        serviceName:
+          type: string
+          description: The name of the service that is using the attribute group.
+          types:
+            - string
+        externalAssignmentIdentifier:
+          type: array
+          description: >-
+            The list of external identifiers that have been made by this service
+            name.
+          items:
+            type: string
+            description: >-
+              The list of external identifiers that have been made by this
+              service name.
+            types:
+              - string
+          types:
+            - array
+      description: >-
+        The list of assignments identifiers which have been made for the
+        specified service.
+    RADIUS Attribute Group:
+      required:
+        - attributeAssignments
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier for this attribute group.
+          format: uuid
+          types:
+            - string
+        name:
+          type: string
+          description: The the name for this attribute group.
+          types:
+            - string
+        description:
+          type: string
+          description: The the description for this attribute group.
+          types:
+            - string
+        attributeAssignments:
+          type: array
+          description: The RADIUS attributes that are assigned to this group.
+          items:
+            $ref: '#/components/schemas/Attribute Assignment'
+          types:
+            - array
+        attributeCount:
+          type: integer
+          description: >-
+            The number of attributes assigned to this attribute group. Allows
+            sorting and filtering.
+          format: int32
+          types:
+            - integer
+        externalAssignmentsCount:
+          type: integer
+          description: >-
+            The number of attributes assigned to this attribute group. Allows
+            sorting and filtering.
+          format: int32
+          types:
+            - integer
+        externalServiceAssignments:
+          type: array
+          description: >-
+            The number of attributes assigned to this attribute group. Allows
+            sorting and filtering.
+          items:
+            $ref: '#/components/schemas/External Assignment Service Group'
+          types:
+            - array
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A group of RADIUS attributes.
+    Attribute Group Assignment:
+      required:
+        - externalAssignmentIdentifier
+        - serviceName
+      type: object
+      properties:
+        id:
+          type: string
+          description: >-
+            The unique identifier for this external assignment of an attribute
+            group.
+          format: uuid
+          types:
+            - string
+        externalAssignmentIdentifier:
+          type: string
+          description: >-
+            The identifier for this external assignment and must be unique when
+            combined with the service name.
+          types:
+            - string
+        serviceName:
+          type: string
+          description: The name of the service that is using the attribute group.
+          types:
+            - string
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: The RADIUS attribute group assignment to an external service.
+    QueryResponseResourceRADIUS Attribute Group:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          format: int64
+          types:
+            - integer
+        page:
+          type: integer
+          format: int32
+          types:
+            - integer
+        pageSize:
+          type: integer
+          format: int32
+          types:
+            - integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RADIUS Attribute Group'
+          types:
+            - array
+    RADIUS Attribute Vendors:
+      type: object
+      properties:
+        supportedVendors:
+          type: array
+          description: The list of vendors found in the RADIUS attributes.
+          items:
+            type: string
+            description: The list of vendors found in the RADIUS attributes.
+            types:
+              - string
+          types:
+            - array
+      description: The list of supported Vendors found in the RADIUS attributes
+    PageAttribute Group Assignment:
+      type: object
+      properties:
+        totalElements:
+          type: integer
+          format: int64
+          types:
+            - integer
+        totalPages:
+          type: integer
+          format: int32
+          types:
+            - integer
+        size:
+          type: integer
+          format: int32
+          types:
+            - integer
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attribute Group Assignment'
+          types:
+            - array
+        number:
+          type: integer
+          format: int32
+          types:
+            - integer
+        sort:
+          $ref: '#/components/schemas/Sort'
+        first:
+          type: boolean
+          types:
+            - boolean
+        last:
+          type: boolean
+          types:
+            - boolean
+        numberOfElements:
+          type: integer
+          format: int32
+          types:
+            - integer
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        empty:
+          type: boolean
+          types:
+            - boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+          types:
+            - integer
+        sort:
+          $ref: '#/components/schemas/Sort'
+        pageNumber:
+          type: integer
+          format: int32
+          types:
+            - integer
+        pageSize:
+          type: integer
+          format: int32
+          types:
+            - integer
+        paged:
+          type: boolean
+          types:
+            - boolean
+        unpaged:
+          type: boolean
+          types:
+            - boolean
+    Sort:
+      type: object
+      properties:
+        empty:
+          type: boolean
+          types:
+            - boolean
+        sorted:
+          type: boolean
+          types:
+            - boolean
+        unsorted:
+          type: boolean
+          types:
+            - boolean
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+          types:
+            - string
+        hreflang:
+          type: string
+          types:
+            - string
+        title:
+          type: string
+          types:
+            - string
+        type:
+          type: string
+          types:
+            - string
+        deprecation:
+          type: string
+          types:
+            - string
+        profile:
+          type: string
+          types:
+            - string
+        name:
+          type: string
+          types:
+            - string
+        templated:
+          type: boolean
+          types:
+            - boolean

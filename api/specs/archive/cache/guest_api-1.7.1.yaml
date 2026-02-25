@@ -1,0 +1,2323 @@
+openapi: 3.0.1
+info:
+  title: Guest API and Model Documentation
+  description: |-
+    # Overview
+
+    ## Rate Limit
+     For the ApOps REST API the following will be true: 
+     - Limits are applied to each tenant.
+     - A maximum of 200 calls can be made per second.
+     - Each second 100 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 1.7.1
+externalDocs:
+  url: >-
+    https://support.ruckuswireless.com/ruckus-cloud-wifi-legal-terms-and-conditions
+servers:
+  - url: https://api.asia.ruckus.cloud
+    description: Asian region
+  - url: https://api.eu.ruckus.cloud
+    description: European region
+  - url: https://api.ruckus.cloud
+    description: North American region
+tags:
+  - name: Portal Service Profile
+    description: Manage Portal Service Profile.
+  - name: Guest User
+    description: Manage guest users.
+  - name: Portal Service Template
+    description: >-
+      Manage Portal Service Profile Template. Use /rec/templates for REC
+      templates.
+paths:
+  /templates/portalServiceProfiles/{portalServiceProfileId}:
+    get:
+      tags:
+        - Portal Service Template
+      summary: Retrieve Portal Service Profile Template
+      description: Retrieve a portal service profile template by id.
+      operationId: GetPortalServiceProfileTemplateByIdV1_1
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalServiceProfileWithoutId'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/PortalServiceProfileWithoutId'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - Portal Service Template
+      summary: Update Portal Service Profile Template
+      description: Update portal service profile template by id.
+      operationId: updatePortalServiceProfileTemplateV1_1
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfile'
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfile'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Portal Service Template
+      summary: Remove Portal Service Profile Template
+      description: Remove a portal service profile template by id.
+      operationId: DeletePortalServiceProfileTemplateById
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/portalServiceProfiles/{portalServiceProfileId}/poweredImages:
+    put:
+      tags:
+        - Portal Service Template
+      summary: Update Portal Service Profile Template Powered Image
+      description: Update portal service profile template powered image by id.
+      operationId: updatePortalServiceProfilePoweredImageTemplate
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/portalServiceProfiles/{portalServiceProfileId}/photos:
+    put:
+      tags:
+        - Portal Service Template
+      summary: Update Portal Service Profile Template Photo
+      description: Update portal service profile template photo by id.
+      operationId: updatePortalServiceProfilePhotoTemplate
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/portalServiceProfiles/{portalServiceProfileId}/logos:
+    put:
+      tags:
+        - Portal Service Template
+      summary: Update Portal Service Profile Template Logo
+      description: Update portal service profile template logo by id.
+      operationId: updatePortalServiceProfileLogoTemplate
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/portalServiceProfiles/{portalServiceProfileId}/backgroundImages:
+    put:
+      tags:
+        - Portal Service Template
+      summary: Update Portal Service Profile Template Background Image
+      description: Update portal service profile template background image by id.
+      operationId: updatePortalServiceProfileBackgroundImageTemplate
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /portalServiceProfiles/{portalServiceProfileId}:
+    get:
+      tags:
+        - Portal Service Profile
+      summary: Retrieve Portal Service Profile
+      description: Retrieve a portal service profile.
+      operationId: GetPortalServiceProfileById_1_1
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalServiceProfileWithoutId'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/PortalServiceProfileWithoutId'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PortalServiceProfileDetailDto'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags:
+        - Portal Service Profile
+      summary: Update Portal Service Profile
+      description: Update portal service profile by id.
+      operationId: UpdatePortalServiceProfileById_1_1
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfile'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileDto'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponsePortalServiceProfileDto'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Portal Service Profile
+      summary: Remove Portal Service Profile
+      description: Remove portal service profile by id.
+      operationId: DeletePortalServiceProfileById
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /portalServiceProfiles/{portalServiceProfileId}/poweredImages:
+    put:
+      tags:
+        - Portal Service Profile
+      summary: Update Portal Service Profile Powered Image
+      description: Update portal service profile powered image by id.
+      operationId: UpdatePortalServiceProfilePoweredImage
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /portalServiceProfiles/{portalServiceProfileId}/photos:
+    put:
+      tags:
+        - Portal Service Profile
+      summary: Update Portal Service Profile Photo
+      description: Update portal service profile photo by id.
+      operationId: UpdatePortalServiceProfilePhoto
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /portalServiceProfiles/{portalServiceProfileId}/logos:
+    put:
+      tags:
+        - Portal Service Profile
+      summary: Update Portal Service Profile Logo
+      description: Update portal service profile logo by id.
+      operationId: UpdatePortalServiceProfileLogo
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /portalServiceProfiles/{portalServiceProfileId}/backgroundImages:
+    put:
+      tags:
+        - Portal Service Profile
+      summary: Update Portal Service Profile Background Image
+      description: Update portal service profile background image by id.
+      operationId: UpdatePortalServiceProfileBackgroundImage
+      parameters:
+        - name: portalServiceProfileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileImage'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /wifiNetworks/{wifiNetworkId}/guestUsers:
+    post:
+      tags:
+        - Guest User
+      summary: Add Guest User
+      description: Create a new guest user.
+      operationId: AddGuestUser_1
+      parameters:
+        - name: wifiNetworkId
+          in: path
+          description: >-
+            Network ID of the guest network to which the guest user will
+            connect.
+          required: true
+          schema:
+            type: string
+        - name: expiration.activationType
+          in: query
+          description: >-
+            When activation type is set to creation, the guest pass is valid
+            when it's created until the specified expiration duration, even if
+            it's not being used; when set to login, the guest pass is valid
+            starting from when the user first logs on until the specified
+            expiration duration.
+          required: true
+          schema:
+            type: string
+            enum:
+              - Creation
+              - Login
+        - name: expiration.duration
+          in: query
+          required: true
+          schema:
+            maximum: 8760
+            minimum: 1
+            type: integer
+            format: int32
+        - name: expiration.unit
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - Minute
+              - Hour
+              - Day
+              - Week
+              - Month
+              - Year
+              - Never
+        - name: maxDevices
+          in: query
+          description: >-
+            Maximum number of devices the guest user can simultaneously connect
+            to the guest network. If set to -1, no limit is enforced.
+          required: true
+          schema:
+            type: integer
+            format: int32
+            default: 3
+        - name: deliveryMethods
+          in: query
+          description: At least one delivery method.
+          required: false
+          schema:
+            uniqueItems: true
+            type: array
+            items:
+              type: string
+              enum:
+                - MAIL
+                - SMS
+                - WHATSAPP
+                - STUB
+                - PRINT
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              required:
+                - file
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GuestUserV1'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/GuestUserV1'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: >-
+                      #/components/schemas/OperationResponseListGuestUserImportResponseV1
+                  - $ref: '#/components/schemas/OperationResponseGuestUserDtoV1'
+            application/vnd.ruckus.v1+json:
+              schema:
+                oneOf:
+                  - $ref: >-
+                      #/components/schemas/OperationResponseListGuestUserImportResponseV1
+                  - $ref: '#/components/schemas/OperationResponseGuestUserDtoV1'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Guest User
+      summary: Guest User Action
+      description: Guest user action for the guest user.
+      operationId: ActionByGuestUserIdAndWifiNetworkId
+      parameters:
+        - name: wifiNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GuestUserAction'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/GuestUserAction'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /templates/portalServiceProfiles:
+    post:
+      tags:
+        - Portal Service Template
+      summary: Add Portal Service Profile Template
+      description: Add a portal service profile template.
+      operationId: AddPortalServiceProfileTemplate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfile'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfile'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /portalServiceProfiles:
+    post:
+      tags:
+        - Portal Service Profile
+      summary: Add Portal Service Profile
+      description: Provision one portal service profile as defined in the payload.
+      operationId: AddPortalServiceProfile_1_1
+      requestBody:
+        content:
+          application/vnd.ruckus.v1.1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfile'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileDto'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/PortalServiceProfileDto'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityIdOperationResponse'
+            application/vnd.ruckus.v1.1+json:
+              schema:
+                $ref: '#/components/schemas/EntityIdOperationResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponsePortalServiceProfileDto'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /wifiNetworks/{wifiNetworkId}/guestUsers/{guestUserId}:
+    get:
+      tags:
+        - Guest User
+      summary: Retrieve Guest User by ID
+      description: Retrieve a guest user.
+      operationId: GetGuestUserByIdAndWifiNetworkId
+      parameters:
+        - name: wifiNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: guestUserId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuestUserWithoutIdV1'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/GuestUserWithoutIdV1'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+        - Guest User
+      summary: Remove Guest User by ID
+      description: Remove a guest user.
+      operationId: DeleteGuestUserByIdAndWifiNetworkId
+      parameters:
+        - name: wifiNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: guestUserId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseRequestIdOnly'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+        - Guest User
+      summary: Update Guest User
+      description: >-
+        Update guest user enable/disable status or create new password for the
+        guest user.
+      operationId: UpdateByGuestUserIdAndWifiNetworkId
+      parameters:
+        - name: wifiNetworkId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: guestUserId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: |-
+          Parameter combination option: 
+
+           Option1: Enable or disable user by "disabled: false" or "disabled: true".
+
+           Option2: Regenerate guest user credential by "action: regeneratePassword" + "deliveryMethods"
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GuestUserUpdate'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/GuestUserUpdate'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseGuestUserWithoutIdV1'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseGuestUserWithoutIdV1'
+        '400':
+          description: Bad/malformed request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Not-authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Requested resource or related-entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    ComponentDisplayDto:
+      type: object
+      properties:
+        logo:
+          type: boolean
+        welcome:
+          type: boolean
+        photo:
+          type: boolean
+        secondaryText:
+          type: boolean
+        termsConditions:
+          type: boolean
+        poweredBy:
+          type: boolean
+        wifi4eu:
+          type: boolean
+    PortalServiceProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        name:
+          type: string
+        content:
+          $ref: '#/components/schemas/PortalServiceProfileContentDto'
+    PortalServiceProfileContentDto:
+      type: object
+      properties:
+        welcomeText:
+          type: string
+        welcomeColor:
+          type: string
+        bgImage:
+          type: string
+        bgImageChecksum:
+          type: string
+        bgColor:
+          type: string
+        welcomeSize:
+          type: integer
+          format: int32
+        photo:
+          type: string
+        photoChecksum:
+          type: string
+        photoRatio:
+          type: integer
+          format: int32
+        logo:
+          type: string
+        logoChecksum:
+          type: string
+        logoRatio:
+          type: integer
+          format: int32
+        secondaryText:
+          type: string
+        secondaryColor:
+          type: string
+        secondarySize:
+          type: integer
+          format: int32
+        buttonColor:
+          type: string
+        poweredBgColor:
+          type: string
+        poweredColor:
+          type: string
+        poweredSize:
+          type: integer
+          format: int32
+        poweredImg:
+          type: string
+        poweredImgChecksum:
+          type: string
+        poweredImgRatio:
+          type: integer
+          format: int32
+        wifi4EUNetworkId:
+          type: string
+        termsCondition:
+          type: string
+        componentDisplay:
+          $ref: '#/components/schemas/ComponentDisplayDto'
+        displayLangCode:
+          type: string
+    OperationResponseRequestIdOnly:
+      type: object
+      properties:
+        requestId:
+          type: string
+    PortalServiceProfileImage:
+      type: object
+      properties:
+        image:
+          maxLength: 6990507
+          minLength: 0
+          type: string
+          description: >-
+            A base 64 encoded string. Note that all images are saved as portable
+            network graphics files.
+          example: >-
+            iVBORw0KGgoAAAANSUhEUgAAAAUAAAADCAIAAADUVFKvAAAAFklEQVR4AWP4TwABAAAAAcADfzEPFwAAAABJRU5ErkJggg==
+    PortalServiceProfileDto:
+      type: object
+      properties:
+        id:
+          type: string
+        serviceName:
+          type: string
+        content:
+          $ref: '#/components/schemas/PortalServiceProfileContentDto'
+        tags:
+          type: string
+    OperationResponsePortalServiceProfileDto:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/PortalServiceProfileDto'
+    GuestUserExpiration:
+      required:
+        - activationType
+      type: object
+      properties:
+        activationType:
+          type: string
+          description: >-
+            When activation type is set to creation, the guest pass is valid
+            when it's created until the specified expiration duration, even if
+            it's not being used; when set to login, the guest pass is valid
+            starting from when the user first logs on until the specified
+            expiration duration.
+          enum:
+            - Creation
+            - Login
+        duration:
+          type: integer
+          format: int32
+        unit:
+          type: string
+          enum:
+            - Minute
+            - Hour
+            - Day
+            - Week
+            - Month
+            - Year
+            - Never
+    GuestUserImportV2:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          description: Download the provisioned guest pass users in a CSV file format.
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestUserV1'
+    GuestUserV1:
+      required:
+        - deliveryMethods
+        - expiration
+        - maxDevices
+        - mobilePhoneNumber
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        createdDate:
+          type: integer
+          format: int64
+          readOnly: true
+        lastModified:
+          type: integer
+          format: int64
+          readOnly: true
+        name:
+          type: string
+          description: The name assigned to the guest user.
+        disabled:
+          type: boolean
+          description: >-
+            If true, this guest user will not be permitted to join the guest
+            network.
+          example: false
+        notes:
+          maxLength: 180
+          minLength: 0
+          type: string
+        email:
+          type: string
+        mobilePhoneNumber:
+          type: string
+          description: The mobile phone number associated to the guest user.
+        maxDevices:
+          type: integer
+          description: >-
+            Maximum number of devices the guest user can simultaneously connect
+            to the guest network. If set to minus one, no limit is enforced.
+          format: int32
+          example: 3
+        macAddresses:
+          uniqueItems: true
+          type: array
+          description: MAC addresses of the guest user's connected devices.
+          readOnly: true
+          items:
+            type: string
+            description: MAC addresses of the guest user's connected devices.
+            readOnly: true
+        ssid:
+          type: string
+          description: SSID of the network to which the guest connected.
+          readOnly: true
+        deliveryMethods:
+          uniqueItems: true
+          type: array
+          description: At least one delivery method.
+          items:
+            type: string
+            description: At least one delivery method.
+            enum:
+              - MAIL
+              - SMS
+              - WHATSAPP
+              - STUB
+              - PRINT
+        guestUserType:
+          type: string
+          description: This field is not editable after creation.
+          readOnly: true
+          example: GuestPass
+          enum:
+            - GuestPass
+            - Anonymous
+            - SelfSign
+            - HostGuest
+            - Directory
+            - SAML
+            - GuestPass,SelfSign,HostGuest
+        expiration:
+          $ref: '#/components/schemas/GuestUserExpiration'
+        password:
+          type: string
+          description: The password is auto-generated by the system.
+          readOnly: true
+        expirationDate:
+          type: integer
+          description: Expiration date is calculated per the expiration configuration.
+          format: int64
+          readOnly: true
+    OperationResponseListGuestUserImportResponseV1:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestUserImportV2'
+    OperationResponseGuestUserDtoV1:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/GuestUserV1'
+    EntityId:
+      type: object
+      properties:
+        id:
+          type: string
+    EntityIdOperationResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/EntityId'
+    GuestUser:
+      required:
+        - deliveryMethods
+        - expiration
+        - maxDevices
+        - mobilePhoneNumber
+        - name
+        - networkId
+      type: object
+      properties:
+        id:
+          type: string
+          readOnly: true
+        createdDate:
+          type: integer
+          format: int64
+          readOnly: true
+        lastModified:
+          type: integer
+          format: int64
+          readOnly: true
+        name:
+          type: string
+          description: The name assigned to the guest user.
+        disabled:
+          type: boolean
+          description: >-
+            If true, this guest user will not be permitted to join the guest
+            network.
+          example: false
+        networkId:
+          type: string
+          description: Network ID of the guest network.
+        notes:
+          maxLength: 180
+          minLength: 0
+          type: string
+        email:
+          type: string
+        mobilePhoneNumber:
+          type: string
+          description: The mobile phone number associated to the guest user.
+        maxDevices:
+          type: integer
+          description: >-
+            Maximum number of devices the guest user can simultaneously connect
+            to the guest network. If set to minus one, no limit is enforced.
+          format: int32
+          example: 3
+        macAddresses:
+          uniqueItems: true
+          type: array
+          description: MAC addresses of the guest user's connected devices.
+          readOnly: true
+          items:
+            type: string
+            description: MAC addresses of the guest user's connected devices.
+            readOnly: true
+        ssid:
+          type: string
+          description: SSID of the network to which the guest connected.
+          readOnly: true
+        deliveryMethods:
+          uniqueItems: true
+          type: array
+          description: At least one delivery method.
+          items:
+            type: string
+            description: At least one delivery method.
+            enum:
+              - MAIL
+              - SMS
+              - WHATSAPP
+              - STUB
+              - PRINT
+        guestUserType:
+          type: string
+          description: This field is not editable after creation.
+          readOnly: true
+          example: GuestPass
+          enum:
+            - GuestPass
+            - Anonymous
+            - SelfSign
+            - HostGuest
+            - Directory
+            - SAML
+            - GuestPass,SelfSign,HostGuest
+        expiration:
+          $ref: '#/components/schemas/GuestUserExpiration'
+        password:
+          type: string
+          description: The password is auto-generated by the system.
+          readOnly: true
+        expirationDate:
+          type: integer
+          description: Expiration date is calculated per the expiration configuration.
+          format: int64
+          readOnly: true
+    GuestUserImport:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          description: Download the provisioned guest pass users in a CSV file format.
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestUser'
+    OperationResponseGuestUserImport:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/GuestUserImport'
+    OperationResponseListGuestUser:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestUser'
+    GuestUserAction:
+      required:
+        - action
+      type: object
+      properties:
+        action:
+          type: string
+          description: Action for guest user.
+          example: passwordValidation
+          enum:
+            - passwordValidation
+        password:
+          maxLength: 16
+          minLength: 6
+          type: string
+          description: >-
+            Manual password. The password must contain at least 6 characters (up
+            to 16). The following characters are permitted: a-z, A-Z, 0-9, and
+            other special characters !@#$%^&*()\[]{}-_+=~`|:;"'<>,./?.
+    GuestUserUpdate:
+      type: object
+      properties:
+        disabled:
+          type: boolean
+          description: >-
+            If true, this guest user will not be permitted to join the guest
+            network.
+          example: false
+        action:
+          type: string
+          description: Action for updating guest user.
+          example: regeneratePassword
+          enum:
+            - regeneratePassword
+            - passwordValidation
+        password:
+          type: string
+          description: >-
+            Manual password. The password must contain at least 6 characters (up
+            to 16). The following characters are permitted: a-z, A-Z, 0-9, and
+            other special characters !@#$%^&*()\[]{}-_+=~`|:;"'<>,./?.
+        deliveryMethods:
+          uniqueItems: true
+          type: array
+          description: At least one delivery method.
+          example:
+            - MAIL
+            - PRINT
+          items:
+            type: string
+            description: At least one delivery method.
+            example: '["MAIL","PRINT"]'
+            enum:
+              - MAIL
+              - SMS
+              - WHATSAPP
+              - STUB
+              - PRINT
+    GuestUserWithoutIdV1:
+      required:
+        - deliveryMethods
+        - expiration
+        - maxDevices
+        - mobilePhoneNumber
+        - name
+      type: object
+      properties:
+        createdDate:
+          type: integer
+          format: int64
+          readOnly: true
+        lastModified:
+          type: integer
+          format: int64
+          readOnly: true
+        name:
+          type: string
+          description: The name assigned to the guest user.
+        disabled:
+          type: boolean
+          description: >-
+            If true, this guest user will not be permitted to join the guest
+            network.
+          example: false
+        notes:
+          maxLength: 180
+          minLength: 0
+          type: string
+        email:
+          type: string
+        mobilePhoneNumber:
+          type: string
+          description: The mobile phone number associated to the guest user.
+        maxDevices:
+          type: integer
+          description: >-
+            Maximum number of devices the guest user can simultaneously connect
+            to the guest network. If set to minus one, no limit is enforced.
+          format: int32
+          example: 3
+        macAddresses:
+          uniqueItems: true
+          type: array
+          description: MAC addresses of the guest user's connected devices.
+          readOnly: true
+          items:
+            type: string
+            description: MAC addresses of the guest user's connected devices.
+            readOnly: true
+        ssid:
+          type: string
+          description: SSID of the network to which the guest connected.
+          readOnly: true
+        deliveryMethods:
+          uniqueItems: true
+          type: array
+          description: At least one delivery method.
+          items:
+            type: string
+            description: At least one delivery method.
+            enum:
+              - MAIL
+              - SMS
+              - WHATSAPP
+              - STUB
+              - PRINT
+        guestUserType:
+          type: string
+          description: This field is not editable after creation.
+          readOnly: true
+          example: GuestPass
+          enum:
+            - GuestPass
+            - Anonymous
+            - SelfSign
+            - HostGuest
+            - Directory
+            - SAML
+            - GuestPass,SelfSign,HostGuest
+        expiration:
+          $ref: '#/components/schemas/GuestUserExpiration'
+        password:
+          type: string
+          description: The password is auto-generated by the system.
+          readOnly: true
+        expirationDate:
+          type: integer
+          description: Expiration date is calculated per the expiration configuration.
+          format: int64
+          readOnly: true
+    OperationResponseGuestUserWithoutIdV1:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/GuestUserWithoutIdV1'
+    GuestUserUpdateDto:
+      required:
+        - action
+      type: object
+      properties:
+        action:
+          type: string
+          description: Action for updating guest user.
+          example: enabled
+        deliveryMethods:
+          uniqueItems: true
+          type: array
+          description: At least one delivery method.
+          example: MAIL
+          items:
+            type: string
+            description: At least one delivery method.
+            example: MAIL
+            enum:
+              - MAIL
+              - SMS
+              - WHATSAPP
+              - STUB
+              - PRINT
+    OperationResponseGuestUser:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/GuestUser'
+    PortalServiceProfileWithoutId:
+      type: object
+      properties:
+        name:
+          type: string
+        content:
+          $ref: '#/components/schemas/PortalServiceProfileContentDto'
+    Paging:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalCount:
+          type: integer
+          format: int64
+    PagingResponsePortalServiceProfileDto:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalServiceProfileDto'
+        paging:
+          $ref: '#/components/schemas/Paging'
+    PortalServiceProfileDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        serviceName:
+          type: string
+        content:
+          $ref: '#/components/schemas/PortalServiceProfileContentDto'
+        tags:
+          type: string
+        networkIds:
+          type: array
+          items:
+            type: string
+    FilterOptionDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tags:
+          type: string
+    PageResponseGuestUser:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/GuestUser'
+        totalElements:
+          type: integer
+          format: int64
+    OperationResponseVoid:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          type: object
+    ErrorResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/WifiError'
+        downloadUrl:
+          type: string
+    WifiError:
+      type: object
+      properties:
+        message:
+          type: string
+        reason:
+          type: string
+        code:
+          type: string
+        suggestion:
+          type: string

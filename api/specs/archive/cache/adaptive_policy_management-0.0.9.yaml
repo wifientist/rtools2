@@ -1,0 +1,2191 @@
+openapi: 3.0.1
+info:
+  title: Adaptive Policy Management
+  description: >-
+    # Overview
+
+
+    The Adaptive Policy Management REST APIs and Model, allow the creation,
+    deletion, and modification of policies, policy sets, and assigning policies
+    to policy sets.  All policies must be inherited from a policy template. 
+    Only those evaluation conditions that are defined for the template can be
+    assigned to the policy. Once a policy is assigned to a policy set, it must
+    be given an evaluation priority. If the priority is changed, or a policy
+    added or removed, the priority of the other policies will be automatically
+    re-ordered.
+
+
+    ## What This API Does
+
+    - Create, modify, and delete policies
+
+    - Manage policy sets and assignments
+
+    - Configure policy templates and evaluation conditions
+
+    - Set and manage policy priorities
+
+
+    ## Authentication
+
+    All API calls require valid authentication via Bearer token in Authorization
+    header.
+
+
+    ## Error Handling
+
+    The API uses standard HTTP status codes with detailed error messages in the
+    response body.
+
+
+    ## Common Error Responses
+
+    All endpoints may return these common error responses:
+
+    - **400 Bad Request**: Invalid input data or validation errors
+
+    - **401 Unauthorized**: Missing or invalid authentication
+
+    - **403 Forbidden**: Insufficient permissions
+
+    - **404 Not Found**: Requested resource doesn't exist
+
+    - **409 Conflict**: Resource conflict (e.g., duplicate names)
+
+    - **422 Unprocessable Entity**: Business rule violations
+
+    - **500 Internal Server Error**: Unexpected server errors
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 0.0.9
+servers:
+  - url: https://api.ruckus.cloud
+    description: RUCKUS One API host for North American region.
+  - url: https://api.eu.ruckus.cloud
+    description: RUCKUS One API host for European region.
+  - url: https://api.asia.ruckus.cloud
+    description: RUCKUS One API host for Asian region.
+tags:
+  - name: Policy Conditions
+    description: Manage the conditions that are applied on the specified policy.
+  - name: Policy Set Assignments
+    description: Manage the assignments of policy sets to identities.
+  - name: Policy Templates
+    description: View the list of policy templates.
+  - name: Policies
+    description: Manages, create and get of policies assigned to a specific template.
+  - name: Prioritized Policies
+    description: Manage the prioritized policies within a policy set.
+  - name: Policy Sets
+    description: Manages the policy sets.
+paths:
+  /policySets/{policySetId}/prioritizedPolicies/{policyId}:
+    get:
+      tags:
+        - Prioritized Policies
+      summary: Get Prioritized Policy
+      description: Retrieves the requested prioritized policy.
+      operationId: getPrioritizedRuleById
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prioritized policy found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prioritized Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Prioritized Policy'
+        '404':
+          description: Policy set or policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    put:
+      tags:
+        - Prioritized Policies
+      summary: Assign Policy to Policy Set
+      description: Assigns a policy to a policy set with a specific priority.
+      operationId: assignPolicyToPolicySetWithPriority
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Prioritized Policy'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Prioritized Policy'
+        required: true
+      responses:
+        '201':
+          description: Policy assigned to policy set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prioritized Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Prioritized Policy'
+        '409':
+          description: Invalid assignment details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Prioritized Policies
+      summary: Remove Policy from Policy Set
+      description: Removes a policy from a policy set.
+      operationId: removeMappedPolicySet
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy removed from policy set successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty response object for successful removal
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+                description: Empty response object for successful removal
+        '204':
+          description: Policy removed from policy set, no content.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: No content
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+                description: No content
+        '404':
+          description: Policy set or policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/policies:
+    get:
+      tags:
+        - Policies
+      summary: Get Policies for Template
+      description: Gets the list of policies that are based off of this template.
+      operationId: getAllPoliciesUnderTemplate
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve, paging starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: pageable
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Policies in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    post:
+      tags:
+        - Policies
+      summary: Create Policy
+      description: >-
+        Creates a policy from the requested values, and based on the specified
+        parent. If the content type of
+        "application/ruckus.one.v1-synchronous+json" is provided, than the
+        method will be asynchronous, and will return only once it has correctly
+        associated with the requested radius attribute group. Otherwise it is
+        asynchronous, and must be looked up by id to be complete. 
+      operationId: createPolicy
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Policy'
+        required: true
+      responses:
+        '201':
+          description: Created
+          content:
+            application/ruckus.one.v1-synchronous+json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '409':
+          description: Invalid policy details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/policies/{policyId}/conditions:
+    get:
+      tags:
+        - Policy Conditions
+      summary: Get Conditions
+      description: Retrieves the list of condition for the policy.
+      operationId: getAllConditionForPolicy
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+        - name: templateId
+          in: path
+          description: Template identifier.
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy Condition'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy Condition'
+        '404':
+          description: ' Not Found'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    post:
+      tags:
+        - Policy Conditions
+      summary: Create Condition
+      description: Creates a condition and applies it to the policy.
+      operationId: createPolicyCondition
+      parameters:
+        - name: templateId
+          in: path
+          description: Policy Template identifier.
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy Condition'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Policy Condition'
+        required: true
+      responses:
+        '201':
+          description: Condition created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Condition type is already mapped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/policies/query:
+    post:
+      tags:
+        - Policies
+      summary: Query Policies for Template
+      description: >-
+        Returns the list of policies which are based on the provided template
+        using the specified query details.
+      operationId: getAllPoliciesForTemplateByQuery
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+        required: true
+      responses:
+        '200':
+          description: List Policy in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '422':
+          description: Some of the provided query data is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/attributes/query:
+    post:
+      tags:
+        - Policy Templates
+      summary: Query Template Attributes
+      description: >-
+        Returns the list of attributes for the specified template using the
+        specified query.
+      operationId: queryAttributeForTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+        required: true
+      responses:
+        '200':
+          description: List Template Attributes in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceDynamic Policy
+                  Template Attribute
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceDynamic Policy
+                  Template Attribute
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '422':
+          description: Some of the provided query data is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/query:
+    post:
+      tags:
+        - Policy Templates
+      summary: Query Policy Templates
+      description: Returns the list of policy templates using the specified query.
+      operationId: getAllTemplatesByQuery
+      parameters:
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+        required: true
+      responses:
+        '200':
+          description: List Policy Template in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceDynamic Policy
+                  Template
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceDynamic Policy
+                  Template
+        '422':
+          description: Some of the provided query data is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/policies/query:
+    post:
+      tags:
+        - Policy Templates
+      summary: Query Policies Across Templates
+      description: >-
+        Returns the list of policies across all templates using the specified
+        query.
+      operationId: getAllPoliciesAcrossTemplatesByQuery
+      parameters:
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+        required: true
+      responses:
+        '200':
+          description: List Policy in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy'
+        '422':
+          description: Some of the provided query data is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policySets:
+    post:
+      tags:
+        - Policy Sets
+      summary: Create Policy Set
+      description: Creates a policy set from the requested values.
+      operationId: createPolicySet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy Set'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Policy Set'
+        required: true
+      responses:
+        '201':
+          description: Policy set created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Set'
+        '409':
+          description: Invalid policy set details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policySets/{policySetId}/assignments/query:
+    post:
+      tags:
+        - Policy Set Assignments
+      summary: Query Policy Set Assignments
+      description: >-
+        Returns the list of assignments for the specified policy set using the
+        specified query.
+      operationId: getAllPolicySetsAssignmentsByQuery
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: excludeContent
+          in: query
+          description: >-
+            Indicates that the content should be excluded from the query and
+            only count and size data returned.
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+        required: true
+      responses:
+        '200':
+          description: List Policy Set Assignments in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourcePolicy Set
+                  Assignment
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourcePolicy Set
+                  Assignment
+        '404':
+          description: Policy set not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '422':
+          description: Some of the provided query data is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policySets/query:
+    post:
+      tags:
+        - Policy Sets
+      summary: Query Policy Sets
+      description: Returns the list of policy sets using the specified query.
+      operationId: getAllPolicySetsByQuery
+      parameters:
+        - name: excludeContent
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Query Data'
+        required: true
+      responses:
+        '200':
+          description: List Policy Sets in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePolicy Set'
+        '422':
+          description: Some of the provided query data is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/policies/{policyId}:
+    get:
+      tags:
+        - Policies
+      summary: Get Policy
+      description: Retrieves the requested policy.
+      operationId: getPolicyById
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '400':
+          description: Invalid id supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: ' Policy Template not found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Policies
+      summary: Delete Policy
+      description: Deletes the policy and conditions, may not be assigned to a service.
+      operationId: deletePolicy
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy deleted
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '204':
+          description: Policy deleted, no content.
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '404':
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: The requested policy is still in use in a policy set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    patch:
+      tags:
+        - Policies
+      summary: Update Policy
+      description: >-
+        Updates the policy from the requested values. The policy template
+        assigned to this policy cannot be changed.
+      operationId: updatePolicy
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy Update'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Policy Update'
+        required: true
+      responses:
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '409':
+          description: Invalid policy details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+  /policyTemplates/{templateId}/policies/{policyId}/conditions/{conditionId}:
+    get:
+      tags:
+        - Policy Conditions
+      summary: Get Condition
+      description: Retrieves the requested condition for the policy.
+      operationId: getConditionById
+      parameters:
+        - name: templateId
+          in: path
+          description: Template identifier.
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: conditionId
+          in: path
+          description: Condition identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+        '404':
+          description: ' Not Found.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Policy Conditions
+      summary: Delete Conditions
+      description: >-
+        Deletes the condition from the specified policy, but only if at least
+        one condition still exists.
+      operationId: deletePolicyConditions
+      parameters:
+        - name: templateId
+          in: path
+          description: Policy Template identifier.
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          description: Policy identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: conditionId
+          in: path
+          description: Condition identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Condition deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Empty response object for successful deletion
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+                description: Empty response object for successful deletion
+        '204':
+          description: Condition deleted, no content.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: No content
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+                description: No content
+        '404':
+          description: Policy or template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: Policy will not have any conditions if this is deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    patch:
+      tags:
+        - Policy Conditions
+      summary: Update Policy Condition
+      description: Updates the policy condition from the requested values.
+      operationId: updateCondition
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: conditionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy Condition Update'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Policy Condition Update'
+        required: true
+      responses:
+        '200':
+          description: Policy condition updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+        '409':
+          description: Invalid policy condition details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy Condition'
+  /policySets/{policySetId}:
+    get:
+      tags:
+        - Policy Sets
+      summary: Get Policy Set
+      description: Retrieves the requested policy set.
+      operationId: getPolicySetById
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy set found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Set'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy Set'
+        '404':
+          description: Policy set not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    delete:
+      tags:
+        - Policy Sets
+      summary: Delete Policy Set
+      description: Deletes the policy set, may not be assigned to a service.
+      operationId: deletePolicySet
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy set deleted
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '204':
+          description: Policy set deleted, no content.
+          content:
+            application/json:
+              schema:
+                type: object
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: object
+        '404':
+          description: Policy set not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '409':
+          description: The requested policy set is still in use.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    patch:
+      tags:
+        - Policy Sets
+      summary: Update Policy Set
+      description: Updates the policy set from the requested values.
+      operationId: updatePolicySet
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy Set'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/Policy Set'
+        required: true
+      responses:
+        '200':
+          description: Policy set updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Set'
+        '409':
+          description: Invalid policy set details provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}:
+    get:
+      tags:
+        - Policy Templates
+      summary: Get Policy Template
+      description: Retrieves the requested policy template.
+      operationId: getPolicyTemplateById
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Policy template found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dynamic Policy Template'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Dynamic Policy Template'
+        '404':
+          description: Policy template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/attributes:
+    get:
+      tags:
+        - Policy Templates
+      summary: Get Template Attributes
+      description: Gets the list of attributes for the specified template.
+      operationId: getAttributesForTemplate
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: pageable
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Pageable'
+      responses:
+        '200':
+          description: Template attributes in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceDynamic Policy
+                  Template Attribute
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourceDynamic Policy
+                  Template Attribute
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policyTemplates/{templateId}/attributes/{attributeId}:
+    get:
+      tags:
+        - Policy Templates
+      summary: Get Template Attribute
+      description: Retrieves the requested template attribute.
+      operationId: getAttributesByIdForTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: attributeId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Template attribute found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dynamic Policy Template Attribute'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Dynamic Policy Template Attribute'
+        '404':
+          description: Template or attribute not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policySets/{policySetId}/prioritizedPolicies:
+    get:
+      tags:
+        - Prioritized Policies
+      summary: Get Prioritized Policies
+      description: Gets the list of prioritized policies for the specified policy set.
+      operationId: getAllPrioritizedPolicies
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prioritized policies in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePrioritized Policy'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PagedResponseResourcePrioritized Policy'
+        '404':
+          description: Policy set not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policySets/{policySetId}/assignments:
+    get:
+      tags:
+        - Policy Set Assignments
+      summary: Get Policy Set Assignments
+      description: Gets the list of assignments for the specified policy set.
+      operationId: getAllPolicySetAssignments
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy set assignments in a paged format.
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourcePolicy Set
+                  Assignment
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/PagedResponseResourcePolicy Set
+                  Assignment
+        '404':
+          description: Policy set not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /policySets/{policySetId}/assignments/{assignmentId}:
+    get:
+      tags:
+        - Policy Set Assignments
+      summary: Get Policy Set Assignment
+      description: Retrieves the requested policy set assignment.
+      operationId: getAssignmentById
+      parameters:
+        - name: policySetId
+          in: path
+          description: Policy set identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assignmentId
+          in: path
+          description: Assignment identifier.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy set assignment found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy Set Assignment'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Policy Set Assignment'
+        '404':
+          description: Policy set or assignment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+components:
+  schemas:
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    Prioritized Policy:
+      type: object
+      properties:
+        policyId:
+          type: string
+          description: >-
+            The identifier for the prioritized policy. Will be ignored on a put,
+            as URL is the identifier.
+          format: uuid
+        priority:
+          type: integer
+          description: The priority of this policy, 1 being the highest priority.
+          format: int32
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: The prioritized policy assignment details.
+    ErrorResource:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique identifier for the request that generated this error.
+        status:
+          type: string
+          description: HTTP status code of the error response.
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          description: Timestamp when the error occurred.
+          format: date-time
+        message:
+          type: string
+          description: Human-readable error message for end users.
+        debugMessage:
+          type: string
+          description: Detailed error message for debugging purposes.
+        nestedErrors:
+          type: array
+          description: List of validation errors and constraint violations.
+          items:
+            $ref: '#/components/schemas/RestErrorDetails'
+        errors:
+          type: array
+          description: List of user-friendly error messages with codes and suggestions.
+          items:
+            $ref: '#/components/schemas/UxNestedError'
+      description: >-
+        Standard error response containing error details, validation errors, and
+        debugging information.
+    RestErrorDetails:
+      type: object
+      description: Base class for error details containing common error information.
+    UxNestedError:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code identifier for programmatic error handling.
+        message:
+          type: string
+          description: Human-readable error message for end users.
+        reason:
+          type: string
+          description: Explanation of why the error occurred.
+        suggestion:
+          type: string
+          description: Optional suggestion for resolving the error.
+      description: >-
+        User-friendly error message with code, message, reason, and optional
+        suggestion.
+    Policy:
+      required:
+        - name
+        - policyType
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for this dynamic policy.
+          format: uuid
+        name:
+          type: string
+          description: The name of the policy.
+        description:
+          type: string
+          description: The policy description.
+        policyType:
+          type: string
+          description: >-
+            The data type for this attribute text. EX:  it identifies which type
+            of value the test data will be. This cannot be changed, and will be
+            matched with the policy template for this policy type. It cannot be
+            changed.
+          enum:
+            - RADIUS
+            - DPSK
+        onMatchResponse:
+          type: string
+          description: >-
+            The response details if the policy is matched. For policy types
+            which are RADIUS and DPSK, this is expected to be the identifier of
+            a valid RADIUS attribute group.
+        policySetCount:
+          type: integer
+          description: The number of policy sets that this policy is assigned to.
+          format: int64
+        conditionsCount:
+          type: integer
+          description: The number of conditions that are used when evaluating this policy.
+          format: int64
+        policySetNames:
+          type: array
+          description: >-
+            The names of the policy sets that this policy is currently assigned
+            to.
+          items:
+            type: string
+            description: >-
+              The names of the policy sets that this policy is currently
+              assigned to.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A policy definition, based on the parent policy template.
+    BooleanCriteria:
+      required:
+        - booleanCriteria
+      type: object
+      description: A boolean condition to evaluate, will use equals.
+      allOf:
+        - $ref: '#/components/schemas/Evaluation Criteria'
+        - type: object
+          properties:
+            booleanCriteria:
+              type: boolean
+              description: The boolean value requested to be used in equals evaluation.
+    DateRangeCriteria:
+      required:
+        - endTime
+        - startTime
+        - when
+        - zoneOffset
+      type: object
+      description: DateRangeCriteria for conditions evaluation.
+      allOf:
+        - $ref: '#/components/schemas/Evaluation Criteria'
+        - type: object
+          properties:
+            when:
+              type: string
+              description: Defines when in a week the policy condition is valid
+              enum:
+                - All
+                - Weekend
+                - Weekdays
+            startTime:
+              $ref: '#/components/schemas/LocalTime'
+            endTime:
+              $ref: '#/components/schemas/LocalTime'
+            zoneOffset:
+              type: string
+              description: >-
+                The time zone offset to apply for evaluation. This needs to be a
+                valid timezone. If null, or invalid, will default to UTC.
+    Dynamic Policy Template Attribute:
+      required:
+        - attributeType
+        - id
+        - name
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The identifier for this dynamic policy template attribute.
+          format: int64
+        name:
+          type: string
+          description: The policy attribute name.
+        description:
+          type: string
+          description: The description for this policy template.
+        attributeTextMatch:
+          type: string
+          description: >-
+            The attribute value that is use match the value provided in the
+            policy.
+        attributeType:
+          type: string
+          description: >-
+            The data type for this attribute text. EX:  it identifies which type
+            of value the test data will be.
+          enum:
+            - STRING
+            - NUMBER
+            - BOOLEAN
+            - DATE_RANGE
+        category:
+          type: string
+          description: The category for this attribute.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Attribute that is allowed to be assigned on a policy using the template.
+    Evaluation Criteria:
+      required:
+        - criteriaType
+      type: object
+      properties:
+        criteriaType:
+          type: string
+      description: >-
+        Base class for evaluation criteria used in policy conditions. Supports
+        different types of criteria including boolean, number, string regex, and
+        date range evaluations.
+      discriminator:
+        propertyName: criteriaType
+      oneOf:
+        - $ref: '#/components/schemas/BooleanCriteria'
+        - $ref: '#/components/schemas/DateRangeCriteria'
+        - $ref: '#/components/schemas/NumberCriteria'
+        - $ref: '#/components/schemas/StringCriteria'
+    LocalTime:
+      type: object
+      properties:
+        hour:
+          type: integer
+          format: int32
+        minute:
+          type: integer
+          format: int32
+        second:
+          type: integer
+          format: int32
+        nano:
+          type: integer
+          format: int32
+      description: The end time for this date range.
+    NumberCriteria:
+      required:
+        - numberCriteria
+      type: object
+      description: Number criteria for evaluation, the numbers must be equal.
+      allOf:
+        - $ref: '#/components/schemas/Evaluation Criteria'
+        - type: object
+          properties:
+            numberCriteria:
+              type: number
+              description: The number to be used with equals evaluation.
+    Policy Condition:
+      required:
+        - policyId
+        - templateAttributeId
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for this policy condition.
+          format: uuid
+        policyId:
+          type: string
+          description: The identifier of the policy to assign this condition.
+          format: uuid
+        templateAttributeId:
+          type: integer
+          description: >-
+            The identifier for the template attribute to associate with this
+            condition.
+          format: int64
+        templateAttribute:
+          $ref: '#/components/schemas/Dynamic Policy Template Attribute'
+        evaluationRule:
+          $ref: '#/components/schemas/Evaluation Criteria'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Condition that will be used when evaluating this policy.
+    StringCriteria:
+      required:
+        - regexStringCriteria
+      type: object
+      description: String regular expression for conditions evaluation.
+      allOf:
+        - $ref: '#/components/schemas/Evaluation Criteria'
+        - type: object
+          properties:
+            regexStringCriteria:
+              maxLength: 255
+              minLength: 0
+              type: string
+              description: The regex string to use in evaluation.
+    Query Data:
+      type: object
+      properties:
+        sortField:
+          type: string
+          description: The field to use to sort on.
+        sortOrder:
+          type: string
+          description: Defines the sort direction for query results.
+          enum:
+            - ASC
+            - DESC
+        page:
+          minimum: 0
+          type: integer
+          description: The page number to return, paging starts with 0.
+          format: int32
+        pageSize:
+          maximum: 2000
+          minimum: 1
+          type: integer
+          description: The number of items requested on the page.
+          format: int32
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+            description: The list of filters to apply.
+          description: The list of filters to apply.
+      description: Data for the requested query.
+    Page Data:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          description: The total count of items.
+          format: int64
+        page:
+          type: integer
+          description: The page number requested, starting with 0.
+          format: int32
+        pageSize:
+          type: integer
+          description: The number of items on this page.
+          format: int32
+        pageCount:
+          type: integer
+          description: The total number of pages available.
+          format: int32
+      description: >-
+        Pagination metadata for query results including total count, current
+        page, page size, and total pages
+    PagedResponseResourcePolicy:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Policy'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    PagedResponseResourceDynamic Policy Template Attribute:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Dynamic Policy Template Attribute'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    Dynamic Policy Template:
+      required:
+        - id
+        - name
+        - returnType
+        - ruleType
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The identifier for this dynamic policy template.
+          format: int64
+        name:
+          type: string
+          description: The policy template name.
+        description:
+          type: string
+          description: The policy template description.
+        returnType:
+          type: string
+          description: The allowed return type for this dynamic policy template.
+          enum:
+            - RADIUS_ATTRIB_GROUP
+        ruleType:
+          type: string
+          description: The allowed rule type for this dynamic policy template.
+          enum:
+            - RADIUS
+            - DPSK
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Dynamic Policy Template
+    PagedResponseResourceDynamic Policy Template:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Dynamic Policy Template'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    Policy Set:
+      required:
+        - description
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for this dynamic policy.
+          format: uuid
+        name:
+          type: string
+          description: The policy set name.
+        description:
+          type: string
+          description: The policy set description.
+        mappedPolicyCount:
+          type: integer
+          description: The number of policies mapped to this policy set.
+          format: int64
+        assignmentCount:
+          type: integer
+          description: The number of assignments to this policy set.
+          format: int64
+        policyNames:
+          type: array
+          description: The names of the policies mapped to this policy set.
+          items:
+            type: string
+            description: The names of the policies mapped to this policy set.
+        externalAssignments:
+          type: array
+          description: The list of external assignments assigned to this policy set.
+          items:
+            $ref: '#/components/schemas/Policy Set Assignment Groups'
+        policyOverrideEnabled:
+          type: boolean
+          description: The policy override enabled flag.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        A map contains the properties and values to be updated from the policy
+        set resource.
+    Policy Set Assignment Groups:
+      required:
+        - identityId
+        - identityName
+      type: object
+      properties:
+        identityName:
+          type: string
+          description: >-
+            The identity name for the service which is mapped to this
+            assignment.
+        identityId:
+          type: array
+          description: >-
+            The list of identities that are mapped to the identity name and
+            assigned to this policy set.
+          items:
+            type: string
+            description: >-
+              The list of identities that are mapped to the identity name and
+              assigned to this policy set.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        The external assignments to the policy set per identity name. Each
+        service provides an identity name, so it is possible to determine the
+        resource references the policy set in that specific service.
+    PagedResponseResourcePolicy Set Assignment:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Policy Set Assignment'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    Policy Set Assignment:
+      required:
+        - id
+        - identityId
+        - identityName
+      type: object
+      properties:
+        id:
+          type: string
+          description: The identifier for this assignment.
+          format: uuid
+        identityId:
+          type: string
+          description: >-
+            The unique identifier for the identity that is assigned to this
+            policy set.
+        identityName:
+          type: string
+          description: The identity name that is assigned to this policy set.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: An assignment that has been made to a policy set.
+    PagedResponseResourcePolicy Set:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Policy Set'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    Policy Update:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          type: string
+          description: The name of the policy. Must be unique within the tenant.
+        description:
+          type: string
+          description: The policy description.
+        onMatchResponse:
+          type: string
+          description: >-
+            The response details if the policy is matched. For policy types
+            which are RADIUS and DPSK, this is expected to be the identifier of
+            a valid RADIUS attribute group.
+      description: Fields that can be updated for a policy.
+    Policy Condition Update:
+      type: object
+      properties:
+        templateAttributeId:
+          type: integer
+          description: The complete template attribute to associate with this condition.
+          format: int64
+        evaluationRule:
+          $ref: '#/components/schemas/Evaluation Criteria'
+      description: Fields that can be updated for a policy condition.
+    Pageable:
+      type: object
+      properties:
+        page:
+          minimum: 0
+          type: integer
+          format: int32
+        size:
+          minimum: 1
+          type: integer
+          format: int32
+        sort:
+          type: array
+          items:
+            type: string
+    PagedResponseResourcePolicy Condition:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Policy Condition'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    PagedResponseResourcePrioritized Policy:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Data'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Prioritized Policy'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: A paged response containing a list of items with pagination metadata.
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,51 @@
+{
+  "name": "Property Management REST API",
+  "version": "1.0.0",
+  "url": "https://docs.ruckus.cloud/_bundle/deprecated_apis/property-management-1.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:25.831017",
+  "endpoint_count": 4,
+  "base_url": "http://localhost:8080",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/venues/{venueId}/units",
+      "method": "DELETE",
+      "summary": "Delete Units for Venue",
+      "description": "Allows the user to delete units with the given ids.",
+      "operation_id": "deleteUnits",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/residentPortals",
+      "method": "GET",
+      "summary": "Get Resident Portals",
+      "description": "Gets the list of resident portals paged.",
+      "operation_id": "getAllPortals",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/residentPortals",
+      "method": "DELETE",
+      "summary": "Delete Resident Portals",
+      "description": "Allows the user to delete resident portals with the given ids.",
+      "operation_id": "deleteResidentPortals",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/venues/propertyConfigs",
+      "method": "GET",
+      "summary": "Gets Property Configurations",
+      "description": "Gets the list of property configurations paged.",
+      "operation_id": "getAllPropertyConfigs",
+      "tags": [
+        "Property Configuration"
+      ]
+    }
+  ]
+}

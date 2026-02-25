@@ -1,0 +1,2523 @@
+openapi: 3.0.1
+info:
+  title: Tenant Management API
+  description: |-
+
+    # Overview
+    This document provides information about Tenant management.
+    ## Rate Limit
+    For the Ptenant REST API the following will be true: 
+    - Limits are applied to each tenant.
+    - A maximum of 200 calls can be made per second.
+    - Each second 100 calls will be returned to be used.
+  version: v0.3.0
+externalDocs:
+  description: Ruckus Network Technical Documents
+  url: https://support.ruckuswireless.com/documents
+servers:
+  - url: https://api.ruckus.cloud
+    description: North American region
+  - url: https://api.asia.ruckus.cloud
+    description: Asian region
+  - url: https://api.eu.ruckus.cloud
+    description: European region
+tags:
+  - name: Notification Recipient
+    description: Manage notification recipients.
+  - name: Tenant
+    description: Manage tenants.
+  - name: Delegation
+    description: Manage delegations.
+  - name: User Profile
+    description: Manage user profiles.
+  - name: Privacy Features
+    description: Manage privacy features.
+  - name: Administrator
+    description: Manage administrators.
+paths:
+  /tenants/userProfiles:
+    get:
+      tags:
+        - User Profile
+      summary: Get User Profile
+      description: Get user profile.
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    put:
+      tags:
+        - User Profile
+      summary: Update User Profile
+      description: Update user profile.
+      operationId: updateUser
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfile'
+        required: true
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseUserProfile'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseUserProfile'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseUserProfile'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseUserProfile'
+  /tenants/self:
+    get:
+      tags:
+        - Tenant
+      summary: Get Tenant
+      description: Get tenant by identifier.
+      operationId: get
+      parameters:
+        - name: deep
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    put:
+      tags:
+        - Tenant
+      summary: Update a Tenant
+      description: >-
+        Update tenant information are tenant name, tenant type,external id by
+        passing the alto tenant id. 
+      operationId: updateTenant
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/TenantDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantDto'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/APICallInfo'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APICallInfo'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /tenants/delegations/{delegationId}:
+    get:
+      tags:
+        - Delegation
+      summary: Get Delegation
+      description: Get delegation by ID.
+      operationId: getDelegation
+      parameters:
+        - name: delegationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/Delegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Delegation'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    put:
+      tags:
+        - Delegation
+      summary: Respond to Delegation
+      description: >-
+        A VAR uses this endpoint to respond to a delegation invitation; the
+        response is either accept or reject.
+      operationId: acceptOrRejectDelegation
+      parameters:
+        - name: delegationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/DelegationAction'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegationAction'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+    delete:
+      tags:
+        - Delegation
+      summary: Revoke VAR Delegation
+      description: Revoke VAR delegation by ID.
+      operationId: deleteDelegation
+      parameters:
+        - name: delegationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+  /tenants/betaFeatures:
+    get:
+      tags:
+        - Tenant
+      summary: Get Beta Feature Identifiers
+      description: Get list of beta features.
+      operationId: getFeatureIds
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BetaFeatureResponse'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    put:
+      tags:
+        - Tenant
+      summary: Update Beta Feature Identifiers
+      description: Update beta feature identifiers.
+      operationId: updateFeatureIds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BetaFeatureRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BetaFeatureResponse'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /admins:
+    get:
+      tags:
+        - Administrator
+      summary: Get Administrator
+      description: Get list of administrators.
+      operationId: getAdminList
+      parameters:
+        - name: withExternalId
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminView'
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminView'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    put:
+      tags:
+        - Administrator
+      summary: Update Administrator
+      description: Update administrator.
+      operationId: updateAdminRole
+      parameters:
+        - name: updateSwuId
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AdminView'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+    post:
+      tags:
+        - Administrator
+      summary: Add Administrator
+      description: Add administrator.
+      operationId: addAdmin
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AdminView'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminView'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+        '400':
+          description: Bad/Malformed Request
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseAdmin'
+    delete:
+      tags:
+        - Administrator
+      summary: Delete Administrators
+      description: Delete administrators in bulk.
+      operationId: deleteBulkAdmin
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              items:
+                type: string
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+  /tenants/supportDelegations:
+    post:
+      tags:
+        - Delegation
+      summary: Grant Access
+      description: Grant Ruckus customer support access to my account.
+      operationId: inviteSupport
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+    delete:
+      tags:
+        - Delegation
+      summary: Revoke Access
+      description: Revoke Ruckus customer support's access to my account.
+      operationId: deleteSupportDelegation
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+  /tenants/privacySettings:
+    get:
+      tags:
+        - Privacy Features
+      summary: Get Configured Privacy Settings
+      description: Get configured privacy settings.
+      operationId: getPrivacySettings
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PrivacyFeatureResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyFeatureResponse'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    post:
+      tags:
+        - Privacy Features
+      summary: Clear and Save Privacy Settings
+      description: Clear and save privacy settings.
+      operationId: postPrivacySettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyFeatureRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PrivacyFeatureResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyFeatureResponse'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    patch:
+      tags:
+        - Privacy Features
+      summary: Add or Update Privacy Settings
+      description: >-
+        Configure, add, or update tenant-specific privacy settings such as arc,
+        visibility controls, and related features.
+      operationId: patchPrivacySettings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyFeatureRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PrivacyFeatureResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyFeatureResponse'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /tenants/notifications/recipients/query:
+    post:
+      tags:
+        - Notification Recipient
+      summary: Query Notification Recipients
+      description: Query notification recipient list.
+      operationId: queryNotificationRecipients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRecipientQueryRequest'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+        '400':
+          description: Bad/Malformed Request
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+  /tenants/notificationRecipients:
+    get:
+      tags:
+        - Notification Recipient
+      summary: Get Notification Recipients
+      description: Get notification recipient list.
+      operationId: getNotificationRecipients
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationRecipientRBACDTO'
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationRecipientRBACDTO'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    post:
+      tags:
+        - Notification Recipient
+      summary: Add Notification Recipient
+      description: Add notification recipient.
+      operationId: addNotificationRecipient
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRecipientRBACDTO'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/OperationResponseNotificationRecipientRBACDTO
+        '400':
+          description: Bad/Malformed Request
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/OperationResponseNotificationRecipientRBACDTO
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/OperationResponseNotificationRecipientRBACDTO
+    delete:
+      tags:
+        - Notification Recipient
+      summary: Delete Notification Recipient
+      description: Delete notification recipient list.
+      operationId: deleteNotificationRecipients
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationRecipient'
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationRecipient'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+  /tenants/mobilePushNotifications:
+    post:
+      tags:
+        - acx-mobile-push-notification-endpoint-controller
+      summary: Add Mobile Push Notification
+      description: Add mobile push notification.
+      operationId: addMobilePushNotifications
+      parameters:
+        - name: app
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/MobilePushNotificationEndpoint'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobilePushNotificationEndpoint'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: >-
+                  #/components/schemas/OperationResponseMobilePushNotificationEndpoint
+            application/json:
+              schema:
+                $ref: >-
+                  #/components/schemas/OperationResponseMobilePushNotificationEndpoint
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /tenants/delegations:
+    get:
+      tags:
+        - Delegation
+      summary: Get Delegations
+      description: Get delegation list.
+      operationId: getDelegations
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - VAR
+              - SUPPORT
+              - MSP
+              - SUPPORT_EC
+              - MSP_INSTALLER
+              - MSP_INTEGRATOR
+              - UNKNOWN
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Delegation'
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Delegation'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    post:
+      tags:
+        - Delegation
+      summary: Invite VAR
+      description: >-
+        Send invitation to VAR (aka delegate) to manage my account.This
+        operation is not supported using client credentials.
+      operationId: inviteVAR
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/InviteVAR'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteVAR'
+        required: true
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+        '400':
+          description: Bad/Malformed Request
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+        '404':
+          description: Requested Resource or Related-Entity Not Found
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseDelegation'
+  /tenants/authentications:
+    get:
+      tags:
+        - authentication-controller
+      summary: Get Authentications
+      description: Get all authentications.
+      operationId: getAuthentications
+      parameters:
+        - name: withExtendedRole
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuthenticationInfo'
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuthenticationInfo'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    post:
+      tags:
+        - authentication-controller
+      summary: Add Authentication
+      description: Add authentication.
+      operationId: addAuthentication
+      requestBody:
+        content:
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/AuthenticationInfo'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthenticationInfo'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationInfo'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationInfo'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /admins/query:
+    post:
+      tags:
+        - Administrator
+      summary: Get Administrator
+      description: Get list of administrators.
+      operationId: queryAdminList
+      parameters:
+        - name: withExternalId
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminQueryRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageObject'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /tenants/accounts:
+    get:
+      tags:
+        - User Profile
+      summary: Get Account
+      description: Get account details.
+      operationId: getAccountDetails
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountInfo'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+  /admins/{adminId}:
+    get:
+      tags:
+        - Administrator
+      summary: Get Administrator
+      description: Get administrator by identifier.
+      operationId: getAdminById
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/AdminView'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminView'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+    delete:
+      tags:
+        - Administrator
+      summary: Delete Administrator
+      description: Delete administrator by identifier.
+      operationId: deleteAdmin
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+        '415':
+          description: Unsupported Media Type
+          content:
+            '*/*':
+              schema:
+                type: string
+        '500':
+          description: Internal Server Error
+          content:
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResponseVoid'
+components:
+  schemas:
+    PreferredNotifications:
+      type: object
+      properties:
+        emailPreferences:
+          type: boolean
+        smsPreferences:
+          type: boolean
+    Region:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        link:
+          type: string
+        current:
+          type: boolean
+        id:
+          type: string
+          readOnly: true
+      description: >-
+        Regions are the continents to which the user is allowed. Currently
+        permitted regions are North America, European Union and Asia.
+    UserProfile:
+      required:
+        - dateFormat
+        - detailLevel
+      type: object
+      properties:
+        region:
+          type: string
+        allowedRegions:
+          uniqueItems: true
+          type: array
+          description: >-
+            Regions are the continents to which the user is allowed. Currently
+            permitted regions are North America, European Union and Asia.
+          items:
+            $ref: '#/components/schemas/Region'
+        externalId:
+          type: string
+        pver:
+          type: string
+          readOnly: true
+        companyName:
+          type: string
+        delegatedDogfood:
+          type: boolean
+          description: >-
+            Delegation to a dog food account (internal RUCKUS test accounts,
+            named per the saying, eat your own dog food).
+        firstName:
+          type: string
+        lastName:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          deprecated: true
+        roles:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        detailLevel:
+          type: string
+          enum:
+            - ba
+            - it
+            - su
+            - debug
+        dateFormat:
+          type: string
+          enum:
+            - mm/dd/yyyy
+            - dd/mm/yyyy
+            - yyyy/mm/dd
+        newDateFormat:
+          type: string
+        email:
+          type: string
+        var:
+          type: boolean
+        tenantId:
+          type: string
+        varTenantId:
+          type: string
+        adminId:
+          type: string
+        support:
+          type: boolean
+          readOnly: true
+        dogfood:
+          type: boolean
+          readOnly: true
+        edgeBeta:
+          type: string
+        alphaStatus:
+          type: string
+        phoneNumber:
+          type: string
+        customRoleName:
+          type: string
+        customRoleType:
+          type: string
+        privilegeGroupName:
+          type: string
+        privilegeGroupType:
+          type: string
+        scopes:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+        preferredLanguage:
+          type: string
+        preferredNotifications:
+          $ref: '#/components/schemas/PreferredNotifications'
+    OperationResponseUserProfile:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/UserProfile'
+    TenantDto:
+      type: object
+      properties:
+        newIdmId:
+          type: string
+        var:
+          type: boolean
+        tenantName:
+          type: string
+        enableMfa:
+          type: string
+        enableSa:
+          type: boolean
+        enableBeta:
+          type: boolean
+        enableAlpha:
+          type: boolean
+        entitlementId:
+          type: string
+        subscribes:
+          type: string
+        requestId:
+          type: string
+        response:
+          type: string
+        userName:
+          type: string
+        missingAdminIds:
+          type: array
+          items:
+            type: string
+    APICallInfo:
+      type: object
+      properties:
+        requestId:
+          type: string
+    DelegationAction:
+      required:
+        - accept
+        - fromTenantId
+      type: object
+      properties:
+        accept:
+          type: boolean
+        fromTenantId:
+          type: string
+    Delegation:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        delegatedTo:
+          type: string
+        type:
+          type: string
+          description: >-
+            <table><tr><td><b>Enum</b></td><td><b>Meaning</b></td></tr><tr><td>VAR</td><td>Return
+            delegations to this VAR.</td></tr><tr><td>SUPPORT</td><td>Return
+            delegations to RUCKUS customer
+            support.</td></tr><tr><td>MSP</td><td>Return the MSP's
+            MSP-ECs.</td></tr><tr><td>SUPPORT_EC</td><td>Return MSP-EC
+            delegations to RUCKUS customer
+            support.</td></tr><tr><td>MSP_INSTALLER</td><td>Return the MSP's
+            installers.</td></tr><tr><td>MSP_INTEGRATOR</td><td>Return the MSP's
+            integrators.</td></tr><tr><td>UNKNOWN</td><td>Unknown.</td></tr></table>
+          enum:
+            - VAR
+            - SUPPORT
+            - MSP
+            - SUPPORT_EC
+            - MSP_INSTALLER
+            - MSP_INTEGRATOR
+            - UNKNOWN
+        status:
+          type: string
+          enum:
+            - INVITED
+            - ACCEPTED
+            - REJECTED
+            - REVOKED
+        delegatedBy:
+          type: string
+        expiryDate:
+          type: string
+          format: date-time
+        delegatedToName:
+          type: string
+        delegatedToAdmin:
+          type: string
+          deprecated: true
+        parentId:
+          type: string
+          readOnly: true
+        isValid:
+          type: boolean
+    OperationResponseDelegation:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/Delegation'
+    BetaFeatureRequest:
+      type: object
+      properties:
+        betaFeatureIds:
+          uniqueItems: true
+          type: array
+          items:
+            type: string
+    BetaFeature:
+      type: object
+      properties:
+        id:
+          type: string
+        enabled:
+          type: boolean
+    BetaFeatureResponse:
+      type: object
+      properties:
+        betaFeatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/BetaFeature'
+        errorMessage:
+          type: string
+        invalidFeatureIds:
+          type: array
+          items:
+            type: string
+    AdminView:
+      required:
+        - email
+        - role
+      type: object
+      properties:
+        id:
+          type: string
+        externalId:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        role:
+          type: string
+        delegateToAllECs:
+          type: boolean
+          description: >-
+            If set to true, this admin is permitted to manage all delegated
+            account IDs (RECs or MSP-ECs).
+        delegatedECs:
+          type: array
+          description: >-
+            List of delegated account IDs (RECs or MSP-ECs) that this admin is
+            permitted to manage.
+          items:
+            type: string
+            description: >-
+              List of delegated account IDs (RECs or MSP-ECs) that this admin is
+              permitted to manage.
+        detailLevel:
+          type: string
+          description: >-
+            <table><tr><td><b>Enum</b></td><td><b>Meaning</b></td></tr><tr><td>ba</td><td>Show
+            events appropriate for a basic
+            user.</td></tr><tr><td>it</td><td>Show events appropriate for
+            someone having training as an IT
+            administrator.</td></tr><tr><td>su</td><td>Show events appropriate
+            for a super user.</td></tr><tr><td>debug</td><td>Show events useful
+            for debugging purposes.</td></tr></table>
+          enum:
+            - ba
+            - it
+            - su
+            - debug
+        authenticationId:
+          type: string
+      description: AdminView View Model
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        streetAddress:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postalCode:
+          type: string
+        phoneNumber:
+          type: string
+        faxNumber:
+          type: string
+        city:
+          type: string
+        type:
+          type: string
+        mappingURL:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        parentId:
+          type: string
+          readOnly: true
+    Admin:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        detailLevel:
+          type: string
+          enum:
+            - ba
+            - it
+            - su
+            - debug
+        externalId:
+          type: string
+        adminRoles:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminRole'
+        adminAppSettings:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAppSettings'
+        dateFormat:
+          type: string
+          enum:
+            - mm/dd/yyyy
+            - dd/mm/yyyy
+            - yyyy/mm/dd
+        username:
+          type: string
+        authentication:
+          $ref: '#/components/schemas/Authentication'
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        local:
+          type: boolean
+        defaultTenant:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+    AdminAppSettings:
+      required:
+        - appType
+        - productType
+        - value
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        appType:
+          type: string
+          enum:
+            - UI
+            - MA
+        productType:
+          type: string
+          enum:
+            - WIFI
+            - SWITCH
+            - LTE
+            - COMMON
+            - USER_PROFILE
+        value:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+    AdminRole:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        role:
+          type: string
+          description: >-
+            <table><tr><td><b>Enum</b></td><td><b>Meaning</b></td></tr><tr><td>PRIME_ADMIN</td><td>Role
+            with the highest level of administrator privilege; all actions are
+            permitted.</td></tr><tr><td>ADMIN</td><td>Role permitting
+            administrator to perform any action except personnel assignments
+            (i.e., manage other administrators); for MSP's, this role is not
+            permitted to manage (e.g., create or delete)
+            MSP-ECs.</td></tr><tr><td>READ_ONLY</td><td>Role permitting
+            administrator to observe network configuration and operational data,
+            but not the capability to change any configuration. Role can be
+            appropriate for personnel
+            training.</td></tr><tr><td>OFFICE_ADMIN</td><td>Role permitting
+            administrator the capability to manage guest Wi-Fi
+            users.</td></tr></table>
+        delegated:
+          type: string
+        delegatedRoleType:
+          type: string
+          enum:
+            - RKS_EC
+            - MSP_EC
+        privilegeGroup:
+          $ref: '#/components/schemas/PrivilegeGroup'
+        parentId:
+          type: string
+          readOnly: true
+    AuthDomain:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        domain:
+          type: string
+        parentTenantId:
+          type: string
+        authentication:
+          $ref: '#/components/schemas/Authentication'
+        parentId:
+          type: string
+          readOnly: true
+    AuthScope:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        authentication:
+          $ref: '#/components/schemas/Authentication'
+        privilegeGroup:
+          $ref: '#/components/schemas/PrivilegeGroup'
+        parentId:
+          type: string
+          readOnly: true
+    Authentication:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        clientID:
+          type: string
+        clientSecret:
+          type: string
+        scopes:
+          type: string
+        tokenURL:
+          type: string
+        authorizationURL:
+          type: string
+        authenticationType:
+          type: string
+          enum:
+            - IDM
+            - SAML
+            - OATH2_OIDC
+            - OAUTH2_CLIENT_CREDENTIALS
+            - LDAP
+            - GOOGLE_WORKSPACE
+        samlFileURL:
+          type: string
+        name:
+          type: string
+        samlFileType:
+          type: string
+          enum:
+            - DIRECT_URL
+            - FILE
+        authDomains:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthDomain'
+        authScopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthScope'
+        clientIDStatus:
+          type: string
+          enum:
+            - ACTIVE
+            - REVOKED
+        accountBased:
+          type: boolean
+        samlSignatureEnabled:
+          type: boolean
+        samlEncryptionCertificateId:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+    CustomRole:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+        roleType:
+          type: string
+        policyBased:
+          type: boolean
+        frameworkRO:
+          type: boolean
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        scopes:
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        features:
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/Feature'
+        preDefinedRole:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+    EmailNotificationEndpoint:
+      required:
+        - destination
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/NotificationEndpoint'
+    Feature:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+        parentFeatureId:
+          type: string
+        category:
+          type: string
+        scopes:
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        featureOrder:
+          type: integer
+          format: int32
+        deprecatedDate:
+          type: string
+          format: date-time
+        deprecationReason:
+          type: string
+        replacedFeatureId:
+          type: string
+        purge:
+          type: boolean
+        display:
+          type: boolean
+        subFeatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/Feature'
+        parentId:
+          type: string
+          readOnly: true
+    MobilePushNotificationEndpoint:
+      required:
+        - deviceId
+        - deviceToken
+        - platform
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/NotificationEndpoint'
+        - type: object
+          properties:
+            platform:
+              type: string
+            deviceToken:
+              type: string
+            deviceId:
+              type: string
+              description: The email address to which notifications are sent.
+    Msp:
+      type: object
+      properties:
+        mspLabel:
+          type: string
+        mspFQDN:
+          type: string
+        logoUUID:
+          type: string
+        alarmNotificationLogoUUID:
+          type: string
+        pingNotificationLogoUUID:
+          type: string
+        mlisaLogoUUID:
+          type: string
+        pingLoginLogoUUID:
+          type: string
+        defaultLogoUUID:
+          type: string
+        contactSupportUrl:
+          type: string
+        contractSupportBehavior:
+          type: string
+        openCaseUrl:
+          type: string
+        openCaseBehavior:
+          type: string
+        myOpenCaseUrl:
+          type: string
+        myOpenCaseBehavior:
+          type: string
+        changePasswordUrl:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        website:
+          type: string
+        isDisableNotification:
+          type: boolean
+    MspEc:
+      type: object
+      properties:
+        parentMspId:
+          type: string
+        serviceExpirationDate:
+          type: string
+          format: date-time
+        serviceEffectiveDate:
+          type: string
+          format: date-time
+      description: MspEcServiceDates
+    NotificationEndpoint:
+      required:
+        - destination
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        destination:
+          type: string
+          description: The email address to which notifications are sent.
+        active:
+          type: boolean
+        status:
+          type: string
+          description: >-
+            This parameter is set to bounced when emails are not deliverable to
+            the destination.
+          enum:
+            - OK
+            - BOUNCED
+        type:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+      discriminator:
+        propertyName: type
+    NotificationRecipient:
+      required:
+        - description
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        description:
+          type: string
+        emailPreferences:
+          type: boolean
+        smsPreferences:
+          type: boolean
+        privilegeGroup:
+          $ref: '#/components/schemas/PrivilegeGroup'
+        endpoints:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/EmailNotificationEndpoint'
+              - $ref: '#/components/schemas/MobilePushNotificationEndpoint'
+              - $ref: '#/components/schemas/SmsNotificationEndpoint'
+        parentId:
+          type: string
+          readOnly: true
+    OperationResponseAdmin:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/Admin'
+    PrivilegeGroup:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        name:
+          type: string
+        description:
+          type: string
+        roleObjectPermissions:
+          uniqueItems: true
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleObjectPermissions'
+        delegatedBy:
+          type: string
+        readOnly:
+          type: boolean
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        type:
+          type: string
+        memberCount:
+          type: integer
+          format: int32
+        delegationDetails:
+          type: string
+        hasDelegations:
+          type: boolean
+        customRole:
+          $ref: '#/components/schemas/CustomRole'
+        parentPrivilegeGroupId:
+          type: string
+        mspCustomers:
+          type: integer
+          format: int32
+        parentId:
+          type: string
+          readOnly: true
+    RoleObjectPermissions:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        entityInstanceId:
+          type: string
+        objectType:
+          type: string
+        tenant:
+          $ref: '#/components/schemas/Tenant'
+        read:
+          type: boolean
+        update:
+          type: boolean
+        add:
+          type: boolean
+        delete:
+          type: boolean
+        apply:
+          type: boolean
+        conditions:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+    Scope:
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        name:
+          type: string
+        parentId:
+          type: string
+          readOnly: true
+    SmsNotificationEndpoint:
+      required:
+        - destination
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/NotificationEndpoint'
+    Tenant:
+      required:
+        - externalId
+      type: object
+      properties:
+        id:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedDate:
+          type: string
+          format: date-time
+          readOnly: true
+        entitlementId:
+          type: string
+          readOnly: true
+        externalModifiedDate:
+          type: string
+          format: date-time
+        maintenanceState:
+          type: boolean
+          readOnly: true
+          deprecated: true
+        maintenanceDate:
+          type: string
+          format: date-time
+          readOnly: true
+          deprecated: true
+        name:
+          type: string
+        externalId:
+          type: string
+        admins:
+          type: array
+          items:
+            $ref: '#/components/schemas/Admin'
+        notificationRecipients:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationRecipient'
+        authentications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Authentication'
+        almActivated:
+          type: boolean
+        almActivationDate:
+          type: string
+          format: date-time
+        almSysAccountId:
+          type: string
+        almMigrationFlag:
+          type: boolean
+        almMigrationDate:
+          type: string
+          format: date-time
+        accountTier:
+          type: string
+        accountVertical:
+          type: string
+        obsolete:
+          type: boolean
+          description: Tenant is no longer used or active.
+        oemName:
+          type: string
+        upgradeGroup:
+          type: string
+          readOnly: true
+          deprecated: true
+        msp:
+          $ref: '#/components/schemas/Msp'
+        MspEcServiceDates:
+          $ref: '#/components/schemas/MspEc'
+        tenantMFA:
+          $ref: '#/components/schemas/TenantMFA'
+        serviceAccount:
+          type: boolean
+        mspPingOrgId:
+          type: string
+        aggregateNotifications:
+          type: boolean
+        excludeecforAggregation:
+          type: boolean
+        pingMigrated:
+          type: boolean
+        inMaintenance:
+          type: boolean
+        account:
+          $ref: '#/components/schemas/Account'
+        extendedTrial:
+          type: boolean
+        propertyCode:
+          type: string
+        expirationEnforcement:
+          type: boolean
+        expirationEnforcementDate:
+          type: string
+          format: date-time
+        preferences:
+          type: string
+        isActivated:
+          type: boolean
+        ruckusUser:
+          type: boolean
+        delegationsTo:
+          type: array
+          items:
+            $ref: '#/components/schemas/Delegation'
+        parentId:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          description: >-
+            <table><tr><td><b>Enum</b></td><td><b>Meaning</b></td></tr><tr><td>active</td><td>The
+            account is active.</td></tr><tr><td>suspended</td><td>The account
+            has been administratively suspended for an indefinite period of
+            time; while in this state, logins are
+            disabled.</td></tr><tr><td>maintenance</td><td>The account is
+            temporarily undergoing maintenance; while in this state, logins are
+            disabled.</td></tr><tr><td>deleted</td><td>The account has been
+            deleted; although a record of the account exists, all other network
+            management configuration and data has been
+            deleted.</td></tr></table>
+          enum:
+            - active
+            - suspended
+            - deleted
+            - maintenance
+        tenantType:
+          type: string
+          description: >-
+            <table><tr><td><b>Enum</b></td><td><b>Meaning</b></td></tr><tr><td>REC</td><td>RUCKUS
+            end customer.</td></tr><tr><td>VAR</td><td>Value-added
+            reseller.</td></tr><tr><td>MSP</td><td>Managed service
+            provider.</td></tr><tr><td>MSP_EC</td><td>MSP's end
+            customer.</td></tr><tr><td>MSP_NON_VAR</td><td>This value is
+            reserved for RUCKUS
+            purposes.</td></tr><tr><td>MSP_INSTALLER</td><td>Installer
+            organization which administratively reports to an
+            MSP.</td></tr><tr><td>MSP_INTEGRATOR</td><td>Installer organization
+            which administratively reports to an
+            MSP.</td></tr><tr><td>UNKNOWN</td><td>Unknown.</td></tr></table>
+          enum:
+            - REC
+            - MSP
+            - MSP_EC
+            - VAR
+            - MSP_NON_VAR
+            - UNKNOWN
+            - MSP_INSTALLER
+            - MSP_INTEGRATOR
+            - MSP_REC
+        subscribes:
+          type: string
+    TenantMFA:
+      type: object
+      properties:
+        mfaStatus:
+          type: string
+          description: Flag indicating whether multi-factor authentication (MFA) is active.
+        recoveryCodes:
+          type: string
+          readOnly: true
+    PrivacyFeature:
+      required:
+        - featureName
+        - status
+      type: object
+      properties:
+        featureName:
+          type: string
+          description: Privacy feature
+        status:
+          type: string
+          description: Status
+      description: Manage privacy settings, including arc and related features.
+    PrivacyFeatureRequest:
+      type: object
+      properties:
+        privacyFeatures:
+          maxItems: 2147483647
+          minItems: 1
+          uniqueItems: true
+          type: array
+          description: Manage privacy settings, including arc and related features.
+          items:
+            $ref: '#/components/schemas/PrivacyFeature'
+    PrivacyFeatureResponse:
+      type: object
+      properties:
+        privacyFeatures:
+          uniqueItems: true
+          type: array
+          description: A set of privacy features and their statuses applied to this tenant.
+          items:
+            $ref: '#/components/schemas/PrivacyFeature'
+    NotificationRecipientQueryRequest:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+          enum:
+            - name
+            - email
+            - mobile
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+            enum:
+              - name
+              - email
+              - mobile
+        searchString:
+          type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+    PageObject:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        first:
+          type: boolean
+        last:
+          type: boolean
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            type: object
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        paged:
+          type: boolean
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        unpaged:
+          type: boolean
+    SortObject:
+      type: object
+      properties:
+        sorted:
+          type: boolean
+        empty:
+          type: boolean
+        unsorted:
+          type: boolean
+    NotificationEndpointDTO:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        destination:
+          type: string
+        active:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - OK
+            - BOUNCED
+    NotificationRecipientRBACDTO:
+      type: object
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationEndpointDTO'
+        emailPreferences:
+          type: boolean
+        smsPreferences:
+          type: boolean
+        privilegeGroupId:
+          type: string
+        recipientType:
+          type: string
+    OperationResponseNotificationRecipientRBACDTO:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/NotificationRecipientRBACDTO'
+    OperationResponseMobilePushNotificationEndpoint:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          $ref: '#/components/schemas/MobilePushNotificationEndpoint'
+    InviteVAR:
+      type: object
+      properties:
+        username:
+          type: string
+    AuthenticationInfo:
+      required:
+        - authenticationType
+        - name
+      type: object
+      properties:
+        id:
+          type: string
+        clientID:
+          type: string
+        clientSecret:
+          type: string
+        scopes:
+          type: string
+        tokenURL:
+          type: string
+        authorizationURL:
+          type: string
+        authenticationType:
+          type: string
+          enum:
+            - IDM
+            - SAML
+            - OATH2_OIDC
+            - OAUTH2_CLIENT_CREDENTIALS
+            - LDAP
+            - GOOGLE_WORKSPACE
+        samlFileURL:
+          type: string
+        name:
+          type: string
+        clientIDStatus:
+          type: string
+          enum:
+            - ACTIVE
+            - REVOKED
+        samlFileType:
+          type: string
+          enum:
+            - DIRECT_URL
+            - FILE
+        domains:
+          type: array
+          items:
+            type: string
+        samlSignatureEnabled:
+          type: boolean
+        samlEncryptionCertificateId:
+          type: string
+        parentTenantId:
+          type: string
+        samlEncryptionPublicCertificate:
+          type: string
+        samlEncryptionPrivateKey:
+          type: string
+    AdminQueryRequest:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        sortField:
+          type: string
+          enum:
+            - name
+            - username
+            - role
+            - authenticationType
+        sortOrder:
+          type: string
+          enum:
+            - ASC
+            - DESC
+        searchTargetFields:
+          type: array
+          items:
+            type: string
+            enum:
+              - name
+              - username
+        searchString:
+          type: string
+        filters:
+          type: object
+          additionalProperties:
+            type: object
+    AccountInfo:
+      type: object
+      properties:
+        userFullName:
+          type: string
+        userEmail:
+          type: string
+        accountName:
+          type: string
+        accountSapId:
+          type: string
+        assetSerialNumber:
+          type: string
+        organization:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        stateOrProvince:
+          type: string
+        zip:
+          type: string
+        country:
+          type: string
+    OperationResponseVoid:
+      type: object
+      properties:
+        requestId:
+          type: string
+        response:
+          type: object

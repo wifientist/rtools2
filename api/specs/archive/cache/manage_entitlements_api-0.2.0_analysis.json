@@ -1,0 +1,41 @@
+{
+  "name": "Manage Entitlements API",
+  "version": "0.2.0",
+  "url": "https://docs.ruckus.cloud/_bundle/api/entitlement-0.2.0.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.236709",
+  "endpoint_count": 3,
+  "base_url": "https://api.devalto.ruckuswireless.com",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/entitlements",
+      "method": "GET",
+      "summary": "Get Entitlements",
+      "description": "Get the list of device entitlements.Please note that this API will be retired on 04/2024 and will be fully removed no earlier than 10/2024. For updated functionality, refer to '/entitlements/query'",
+      "operation_id": "getEntitlements_1",
+      "tags": [
+        "Entitlement"
+      ]
+    },
+    {
+      "path": "/entitlements/summaries",
+      "method": "GET",
+      "summary": "Get Entitlement Summaries",
+      "description": "Get summaries of the device entitlements.Please note that this API will be retired on 4/2024 and will be fully removed no earlier than 10/2024. For updated functionality, refer to '/entitlements/utilizations/query'.",
+      "operation_id": "getSummary",
+      "tags": [
+        "Entitlement"
+      ]
+    },
+    {
+      "path": "/banners",
+      "method": "GET",
+      "summary": "Get Banners",
+      "description": "Retrieve entitlement banner data. Banners provide information about entitlements that are either near their expiry or have expired.Please note that this API will be retired on 4/2024 and will be fully removed no earlier than 10/2024. For updated functionality, refer to '/entitlements/banners/query'.",
+      "operation_id": "getBanners_1",
+      "tags": [
+        "Entitlement"
+      ]
+    }
+  ]
+}

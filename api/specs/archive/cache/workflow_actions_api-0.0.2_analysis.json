@@ -1,0 +1,111 @@
+{
+  "name": "Workflow Actions API",
+  "version": "0.0.2",
+  "url": "https://docs.ruckus.cloud/_bundle/api/workflow-actions-0.0.2.yaml",
+  "downloaded_at": "2025-12-02T18:45:31.534315",
+  "endpoint_count": 10,
+  "base_url": "http://localhost:8080",
+  "rate_limit": "# RateLimit",
+  "endpoints": [
+    {
+      "path": "/enrollmentActions",
+      "method": "GET",
+      "summary": "Get All Enrollment Actions Across Action Types",
+      "description": "Gets all enrollment actions across action types.",
+      "operation_id": "getAllEnrollmentActions",
+      "tags": [
+        "Enrollment Action API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions",
+      "method": "POST",
+      "summary": "Create Enrollment Action Across Action Types",
+      "description": "Allows user to create various enrollment actions across action types.",
+      "operation_id": "createEnrollmentActions",
+      "tags": [
+        "Enrollment Action API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/query",
+      "method": "POST",
+      "summary": "Query Enrollment Actions Across Action Types",
+      "description": "Gets the list of enrollment actions using the specified query.",
+      "operation_id": "queryEnrollmentActions",
+      "tags": [
+        "Enrollment Action API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/files",
+      "method": "POST",
+      "summary": "Upload File",
+      "description": "Allows user to upload file.",
+      "operation_id": "uploadFile",
+      "tags": [
+        "Enrollment Action Files API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/{actionId}",
+      "method": "GET",
+      "summary": "Get Enrollment Action Configuration for Specific Action Identifier",
+      "description": "Gets enrollment action configuration for the requested action identifier.",
+      "operation_id": "getEnrollmentAction",
+      "tags": [
+        "Enrollment Action API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/{actionId}",
+      "method": "DELETE",
+      "summary": "Delete Specific Enrollment Actions",
+      "description": "Allows the user to delete enrollment action with the given id.",
+      "operation_id": "deleteEnrollmentActions",
+      "tags": [
+        "Enrollment Action API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/{actionId}",
+      "method": "PATCH",
+      "summary": "Selectively Updates Enrollment Actions",
+      "description": "Allows the user to selectively update enrollment actions.",
+      "operation_id": "editEnrollmentActions",
+      "tags": [
+        "Enrollment Action API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/files/{fileId}",
+      "method": "GET",
+      "summary": "Get Signed URL for Download",
+      "description": "Get signed URL for download.",
+      "operation_id": "getSignedUrlForDownload",
+      "tags": [
+        "Enrollment Action Files API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/files/{fileId}",
+      "method": "DELETE",
+      "summary": "Delete File",
+      "description": "Delete file.",
+      "operation_id": "DeleteFile",
+      "tags": [
+        "Enrollment Action Files API"
+      ]
+    },
+    {
+      "path": "/enrollmentActions/actionTypes/{actionType}",
+      "method": "GET",
+      "summary": "Get All Enrollment Action Configuration for Specific Action Type",
+      "description": "Gets all enrollment action configurations for a specific action type.",
+      "operation_id": "getAllEnrollmentActionByType",
+      "tags": [
+        "Enrollment Action Type API"
+      ]
+    }
+  ]
+}

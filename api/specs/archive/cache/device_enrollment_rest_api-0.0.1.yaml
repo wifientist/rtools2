@@ -1,0 +1,894 @@
+openapi: 3.1.0
+info:
+  title: Device Enrollment REST API
+  description: "# Overview\n\tThese APIs facilitate enrolling users devices by going thorough different enrollment steps in the workflow.\n# RateLimit\n\tFor the Device enrollment REST APIs the following will be true:\n\tLimits are applied to each workflow.\n\tA maximum of 60 calls can be made per second.\n\tEach second 30 calls will be returned to be used."
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 0.0.1
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: Workflow Step API
+    description: Manages workflow enrollment step
+  - name: Device Enrollment API
+    description: Manages enrollments for a device
+  - name: Certificate Download API
+    description: Manages certificate downloads
+  - name: Workflow Login API
+    description: Manages workflow token for enrollment
+  - name: Enrollment File Management API
+    description: Manages enrollment action files
+  - name: Workflow Configuration API
+    description: Manages workflow for an enrollment
+paths:
+  /deviceEnrollments/workflows/{workflowId}/steps/{stepId}:
+    get:
+      tags:
+        - Workflow Step API
+      summary: 'Gets the Workflow Step '
+      description: Allows the user to fetch workflow step for the enrollment.
+      operationId: getStepForNav
+      parameters:
+        - name: nav
+          in: query
+          description: Navigation parameter value
+          required: false
+          schema:
+            type: string
+            enum:
+              - ''
+              - next
+              - prev
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentStepConfig'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentStepConfig'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+    put:
+      tags:
+        - Workflow Step API
+      summary: Updates a Workflow Step
+      description: Allows the user to update a workflow step for the enrollment.
+      operationId: updateStep
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: stepId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: Step information to update
+        content:
+          application/json:
+            schema:
+              type: string
+              oneOf:
+                - $ref: '#/components/schemas/AupInput'
+                - $ref: '#/components/schemas/DataPromptInput'
+                - $ref: '#/components/schemas/MacRegInput'
+                - $ref: '#/components/schemas/ActionInput'
+          application/vnd.ruckus.v1+json:
+            schema:
+              type: string
+              oneOf:
+                - $ref: '#/components/schemas/AupInput'
+                - $ref: '#/components/schemas/DataPromptInput'
+                - $ref: '#/components/schemas/MacRegInput'
+                - $ref: '#/components/schemas/ActionInput'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelAcceptedResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelAcceptedResponse'
+        '204':
+          description: No Content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelAcceptedResponse'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelAcceptedResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /deviceEnrollments/workflows/{workflowId}/login:
+    post:
+      tags:
+        - Workflow Login API
+      summary: Logs in to Workflow
+      description: Allows the user to login for device enrollment.
+      operationId: login
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        description: Enrollment information to create
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginPayload'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/LoginPayload'
+        required: true
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollmentToken'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollmentToken'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /deviceEnrollments/workflows/{workflowId}:
+    get:
+      tags:
+        - Workflow Configuration API
+      summary: Gets Workflow Configuration
+      description: Allows the user to fetch workflow configuration.
+      operationId: getWorkflow
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowConfig'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/WorkflowConfig'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /deviceEnrollments/workflows/{workflowId}/steps/currentSteps:
+    get:
+      tags:
+        - Workflow Step API
+      summary: 'Gets the Current Workflow Step '
+      description: Allows the user to fetch the current step for the enrollment.
+      operationId: getCurrentStep
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentStepConfig'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentStepConfig'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /deviceEnrollments/workflows/{workflowId}/files/{fileId}:
+    get:
+      tags:
+        - Enrollment File Management API
+      summary: Get Signed URL for Download
+      description: Get signed URL for download.
+      operationId: getSignedUrlForDownload
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FileResponseDto'
+        '400':
+          description: Bad request
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /deviceEnrollments/workflows/{workflowId}/enrollments/{enrollmentId}:
+    get:
+      tags:
+        - Device Enrollment API
+      summary: Get Enrollment
+      description: Allows the user to get an enrollment.
+      operationId: fetchEnrollment
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: enrollmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollment'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollment'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /deviceEnrollments/workflows/{workflowId}/certificates:
+    get:
+      tags:
+        - Certificate Download API
+      summary: Downloads the Certificate
+      description: Allows the user to download certificate for the enrollment.
+      operationId: downloadCertificate
+      parameters:
+        - name: auth
+          in: query
+          description: Authentication token
+          required: false
+          schema:
+            type: string
+        - name: password
+          in: query
+          description: Password for certificate encryption
+          required: false
+          schema:
+            type: string
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/x-pkcs12:
+              schema:
+                type: string
+                format: byte
+            application/vnd.ruckus.v1+json:
+              schema:
+                type: string
+                format: byte
+        '400':
+          description: Bad request.
+          content:
+            application/x-pkcs12:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/x-pkcs12:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+components:
+  schemas:
+    AupInput:
+      type: object
+      properties:
+        actionType:
+          type: string
+        acceptAup:
+          type: boolean
+    DataPromptInput:
+      type: object
+      properties:
+        actionType:
+          type: string
+        userName:
+          type: string
+          description: User name
+          maxLength: 100
+          minLength: 1
+        email:
+          type: string
+          description: User email
+          maxLength: 100
+          minLength: 0
+        phoneNumber:
+          type: string
+          description: User phone
+          maxLength: 16
+          minLength: 0
+        firstName:
+          type: string
+          description: First name
+          maxLength: 100
+          minLength: 0
+        lastName:
+          type: string
+          description: Last name
+          maxLength: 100
+          minLength: 0
+        inputField1:
+          type: string
+          description: Input field 1
+          maxLength: 1000
+          minLength: 0
+        inputField2:
+          type: string
+          description: Input field 2
+          maxLength: 1000
+          minLength: 0
+        inputField3:
+          type: string
+          description: Input field 3
+          maxLength: 1000
+          minLength: 0
+        inputField4:
+          type: string
+          description: Input field 4
+          maxLength: 1000
+          minLength: 0
+        inputField5:
+          type: string
+          description: Input field 5
+          maxLength: 1000
+          minLength: 0
+        inputField6:
+          type: string
+          description: Input field 6
+          maxLength: 1000
+          minLength: 0
+      required:
+        - userName
+    MacRegInput:
+      type: object
+      properties:
+        actionType:
+          type: string
+        macAddress:
+          type: string
+          description: The MAC address of the device.
+          pattern: >-
+            ^([0-9A-Fa-f]{2}-){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{6})-([0-9A-Fa-f]{6})$|^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$|^[0-9A-Fa-f]{12}$
+      required:
+        - macAddress
+    ActionInput:
+      type: object
+      properties:
+        actionType:
+          type: string
+    ErrorResource:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        detailedMessage:
+          type: string
+        requestId:
+          type: string
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/NestedError'
+    NestedError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        reason:
+          type: string
+        suggestion:
+          type: string
+    EntityModelAcceptedResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+        id:
+          type: string
+        _links:
+          $ref: '#/components/schemas/Links'
+    CaptivePortalArgs:
+      type: object
+      properties:
+        ssid:
+          type: string
+        redirectUrl:
+          type: string
+        clientMac:
+          type: string
+        uip:
+          type: string
+    LoginPayload:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: Access token for login.
+          minLength: 1
+        enrollmentId:
+          type: string
+          format: uuid
+          description: Enrollment identifier to get access.
+        cpArgs:
+          $ref: '#/components/schemas/CaptivePortalArgs'
+      required:
+        - accessToken
+    Enrollment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the new enrollment.
+        description:
+          type: string
+          description: Description for the enrollment.
+        status:
+          type: string
+          description: Enrollment status.
+          enum:
+            - CREATED
+            - STARTED
+            - FINISHED
+            - ABANDONED
+            - ACTIVE
+            - INACTIVE
+            - REVOKED
+    EntityModelEnrollmentToken:
+      type: object
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+          description: Workflow identifier.
+        publishedWorkflowId:
+          type: string
+          format: uuid
+          description: Published workflow identifier.
+        token:
+          type: string
+          description: JWT token.
+        enrollment:
+          $ref: '#/components/schemas/Enrollment'
+          description: Enrollment
+        _links:
+          $ref: '#/components/schemas/Links'
+    RedisColorSchema:
+      type: object
+      properties:
+        backgroundColor:
+          type: string
+        lineColor:
+          type: string
+        fontColor:
+          type: string
+        fontHeaderColor:
+          type: string
+        headerBackgroundColor:
+          type: string
+        startOverFontColor:
+          type: string
+        buttonColor:
+          type: string
+        buttonFontColor:
+          type: string
+    StyleSchema:
+      type: object
+      properties:
+        welcomeTitle:
+          type: string
+        welcomeSubTitle:
+          type: string
+        logoImage:
+          type: string
+        backgroundImage:
+          type: string
+        iconImage:
+          type: string
+        fontName:
+          type: string
+        wifi4EuNetworkId:
+          type: string
+        logoSize:
+          type: string
+        disablePoweredBy:
+          type: boolean
+        headerFontSize:
+          type: integer
+          format: int32
+    WorkflowConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the workflow.
+        name:
+          type: string
+          description: Name of the workflow.
+        color:
+          $ref: '#/components/schemas/RedisColorSchema'
+          description: Workflow color configuration.
+        styles:
+          $ref: '#/components/schemas/StyleSchema'
+          description: Workflow styles configuration.
+        startStepId:
+          type: string
+          format: uuid
+          description: Identifier of the start step.
+        firstActionStepId:
+          type: string
+          format: uuid
+          description: Identifier of the first action configured step.
+    EnrollmentStep:
+      type: object
+      properties:
+        actionId:
+          type: string
+          format: uuid
+          description: Existing enrollment input for the step.
+        status:
+          type: string
+          description: Step status for the enrollment.
+          enum:
+            - IN_PROGRESS
+            - SUCCESS
+            - FAILED
+        failureReason:
+          type: string
+          description: Reason for step failure.
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+        execution:
+          description: Step status for the enrollment.
+          readOnly: true
+        input:
+          $ref: '#/components/schemas/ActionInput'
+          description: Existing enrollment input for the step.
+    EnrollmentStepConfig:
+      type: object
+      properties:
+        step:
+          $ref: '#/components/schemas/EnrollmentStep'
+          description: Existing enrollment input for the step.
+        config:
+          $ref: '#/components/schemas/StepConfig'
+          description: Workflow step information.
+    StepConfig:
+      type: object
+      properties:
+        stepId:
+          type: string
+          format: uuid
+          description: Identifier of the step.
+        stepType:
+          type: string
+          description: Type of the step.
+        actionType:
+          type: string
+          description: Type of the action.
+        actionId:
+          type: string
+          format: uuid
+          description: Identifier of the action.
+        actionConfiguration:
+          type: string
+          description: Configuration of the action.
+        options:
+          type: object
+          additionalProperties: {}
+          description: Split step options.
+        optionName:
+          type: string
+          description: Split step option name.
+        providedEnrollmentVariables:
+          type: array
+          description: Provided enrollment variables for the action.
+          items:
+            type: string
+        requiredEnrollmentVariables:
+          type: array
+          description: Required enrollment variables for the action.
+          items:
+            type: string
+    FileResponseDto:
+      type: object
+      description: Output file.
+      properties:
+        url:
+          type: string
+          description: File download URL.
+          minLength: 1
+      required:
+        - url
+    EntityModelEnrollment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identifier of the new enrollment.
+        description:
+          type: string
+          description: Description for the enrollment.
+        status:
+          type: string
+          description: Enrollment status.
+          enum:
+            - CREATED
+            - STARTED
+            - FINISHED
+            - ABANDONED
+            - ACTIVE
+            - INACTIVE
+            - REVOKED
+        _links:
+          $ref: '#/components/schemas/Links'
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'

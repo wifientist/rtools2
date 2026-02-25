@@ -1,0 +1,241 @@
+{
+  "name": "Property Management REST API",
+  "version": "1.0.1",
+  "url": "https://docs.ruckus.cloud/_bundle/api/property-management-1.0.1.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.054247",
+  "endpoint_count": 23,
+  "base_url": "http://localhost:8080",
+  "rate_limit": null,
+  "endpoints": [
+    {
+      "path": "/venues/{venueId}/units/{unitId}/identities/{identityId}",
+      "method": "PUT",
+      "summary": "Associate Identity to Unit",
+      "description": "Allows the user to associate identities on the specified unit.",
+      "operation_id": "associateIdentity",
+      "tags": [
+        "Units Identity API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/{unitId}/identities/{identityId}",
+      "method": "DELETE",
+      "summary": "Delete Unit Identity ",
+      "description": "Allows the user to delete associated identity of the unit.",
+      "operation_id": "deleteIdentity",
+      "tags": [
+        "Units Identity API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/qosProfileAssignments/{qosProfileId}",
+      "method": "PUT",
+      "summary": "Update QoS Profile Assignment",
+      "description": "Allows the user to update QoS profile assignments.",
+      "operation_id": "qosProfileAssignments",
+      "tags": [
+        "QoS Profile Assignment API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/propertyConfigs",
+      "method": "GET",
+      "summary": "Get Property Configuration",
+      "description": "Gets property configuration for the requested venue Id.",
+      "operation_id": "getProperty",
+      "tags": [
+        "Property Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/propertyConfigs",
+      "method": "PUT",
+      "summary": "Update Property Configuration",
+      "description": "Allows the user to enable or disable property management configuration on the specified venue.",
+      "operation_id": "enableProperty",
+      "tags": [
+        "Property Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/propertyConfigs",
+      "method": "PATCH",
+      "summary": "Selectively Update Property Configuration",
+      "description": "Allows the user to selectively update property management configuration on the specified venue.",
+      "operation_id": "enablePropertySelectively",
+      "tags": [
+        "Property Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/propertyConfigs/residentPortalAssignments/{residentPortalId}",
+      "method": "PUT",
+      "summary": "Update Resident Portal Assignment",
+      "description": "Allows the user to assign resident portal for the specified venue.",
+      "operation_id": "assignResidentPortal",
+      "tags": [
+        "Property Configuration"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units",
+      "method": "GET",
+      "summary": "Gets Units for Venue",
+      "description": "Gets the list of units paged.",
+      "operation_id": "getAllUnits",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units",
+      "method": "POST",
+      "summary": "Adds Unit to Venue",
+      "description": "Allows the user to add a unit on the specified venue.",
+      "operation_id": "addUnit",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/query",
+      "method": "POST",
+      "summary": "Query Units for Venue",
+      "description": "Gets the list of units using the specified query.",
+      "operation_id": "queryUnits",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/notifications",
+      "method": "POST",
+      "summary": "Gets Notifications for Units",
+      "description": "Allows the user to resend notifications for units with the given ids.",
+      "operation_id": "resendNotifications",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/identities/query",
+      "method": "POST",
+      "summary": "Query Associated Identities for a Unit",
+      "description": "Gets the list of identities using the specified query.",
+      "operation_id": "queryIdentities",
+      "tags": [
+        "Units Identity API"
+      ]
+    },
+    {
+      "path": "/venues/propertyConfigs/query",
+      "method": "POST",
+      "summary": "Query Property Configurations",
+      "description": "Gets the list of property configurations using the specified query.",
+      "operation_id": "queryPropertyConfigs",
+      "tags": [
+        "Property Configuration"
+      ]
+    },
+    {
+      "path": "/residentPortals",
+      "method": "POST",
+      "summary": "Adds Resident Portal",
+      "description": "Allows the user to add a resident portal.",
+      "operation_id": "addResidentPortal",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/residentPortals/query",
+      "method": "POST",
+      "summary": "Query Resident Portals",
+      "description": "Gets the list of resident portals using the specified query.",
+      "operation_id": "queryResidentPortals",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/{unitId}",
+      "method": "GET",
+      "summary": "Gets Unit for Venue",
+      "description": "Allows the user to get a unit with the given id.",
+      "operation_id": "fetchUnit",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/{unitId}",
+      "method": "DELETE",
+      "summary": "Delete Unit for Venue",
+      "description": "Allows the user to delete a unit with the given id.",
+      "operation_id": "deleteUnit",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/venues/{venueId}/units/{unitId}",
+      "method": "PATCH",
+      "summary": "Selectively Updates Unit Configurations",
+      "description": "Allows the user to selectively update unit configurations on the specified venue.",
+      "operation_id": "editUnit",
+      "tags": [
+        "Units API"
+      ]
+    },
+    {
+      "path": "/residentPortals/{portalId}",
+      "method": "GET",
+      "summary": "Gets Resident Portal",
+      "description": "Allows the user to get a resident portal with the given id.",
+      "operation_id": "fetchResidentPortal",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/residentPortals/{portalId}",
+      "method": "DELETE",
+      "summary": "Delete Resident Portal",
+      "description": "Allows the user to delete a resident portal with the given id.",
+      "operation_id": "deleteResidentPortal",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/residentPortals/{portalId}",
+      "method": "PATCH",
+      "summary": "Updates Resident Portal Configurations",
+      "description": "Allows the user to selectively update resident portal configurations.",
+      "operation_id": "editResidentPortal",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/residentPortals/{portalId}/files/{type}",
+      "method": "GET",
+      "summary": "Gets Resident Portal File",
+      "description": "Allows the user to get a resident portal file with the given id.",
+      "operation_id": "downloadPortalFile",
+      "tags": [
+        "Resident Portals"
+      ]
+    },
+    {
+      "path": "/residentPortals/{portalId}/files/{type}",
+      "method": "DELETE",
+      "summary": "Deletes Resident Portal File",
+      "description": "Allows the user to delete a resident portal file with the given id.",
+      "operation_id": "deletePortalFile",
+      "tags": [
+        "Resident Portals"
+      ]
+    }
+  ]
+}

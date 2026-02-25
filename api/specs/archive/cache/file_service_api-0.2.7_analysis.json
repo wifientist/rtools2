@@ -1,0 +1,41 @@
+{
+  "name": "File service API",
+  "version": "0.2.7",
+  "url": "https://docs.ruckus.cloud/_bundle/api/file-0.2.7.yaml",
+  "downloaded_at": "2025-12-02T18:45:26.984157",
+  "endpoint_count": 3,
+  "base_url": "http://localhost",
+  "rate_limit": "## Rate Limit",
+  "endpoints": [
+    {
+      "path": "/files/uploadurls",
+      "method": "POST",
+      "summary": "Get Upload URL",
+      "description": "Get a URL with which to upload a file.",
+      "operation_id": "getUploadUrl",
+      "tags": [
+        "File"
+      ]
+    },
+    {
+      "path": "/files/{fileId}",
+      "method": "GET",
+      "summary": "Get Download URL",
+      "description": "Get the URL from which to download this file.",
+      "operation_id": "getDownloadUrl",
+      "tags": [
+        "File"
+      ]
+    },
+    {
+      "path": "/files/{fileId}/urls",
+      "method": "GET",
+      "summary": "Get File Download URL",
+      "description": "Get the URL from which to download this file.",
+      "operation_id": "getFileDownloadUrl",
+      "tags": [
+        "File"
+      ]
+    }
+  ]
+}

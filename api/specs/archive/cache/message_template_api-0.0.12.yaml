@@ -1,0 +1,654 @@
+openapi: 3.0.1
+info:
+  title: Message Template API
+  description: >-
+    APIs published in this document are subject to strict change control by
+    RUCKUS. As far as possible, when new versions of the Public API are
+    published, all documented API endpoints will maintain backward
+    compatibility. When not possible, an API endpoint will be deprecated, and a
+    replacement API or another workaround will be provided. Support for
+    deprecated API endpoints will continue for at least six months before
+    removal to provide API client developers sufficient time to adopt the
+    replacement. This document will indicate when API endpoints are deprecated
+    along with the schedule for their removal. API client developers may
+    discover other experimental API endpoints provided by the RUCKUS cloud, not
+    included in this API document. RUCKUS reserves the right to change these
+    experimental APIs to API client developers without notice.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 0.0.12
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: Manage Templates
+    description: Manage Templates
+  - name: Template Scope
+    description: Retrieve information about the template scope
+  - name: Variables
+    description: Retrieve variables available to templates within the given template scope.
+  - name: Template Registrations
+    description: Retrieve template registrations
+  - name: Registrations
+    description: Manage template registrations
+paths:
+  /templateScopes:
+    get:
+      tags:
+        - Template Scope
+      summary: Retrieve All Template Scopes
+      description: Returns all available template scopes.
+      operationId: msgTemplate.getAllTemplateScopes
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).  Sortable fields are: id, messageType, and
+            nameLocalizationKey
+      responses:
+        '200':
+          description: The list of template scopes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTemplateScopesRestResponse'
+  /templateScopes/{templateScopeId}:
+    get:
+      tags:
+        - Template Scope
+      summary: Get Template Scope
+      description: Retrieves the template scope for the given id.
+      operationId: msgTemplate.getTemplateScope
+      parameters:
+        - name: templateScopeId
+          in: path
+          description: Template scope id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: includes
+          in: query
+          description: >-
+            A comma seperated list of child resources to include in the response
+            in the format: includes={resourcePath},{resourcePath}. Where
+            {resourcePath} must match the REST API path for that resource
+            underneath the Template Scope. Only individual registrations are
+            allowed.  Any resource that is invalid or not found will be silently
+            ignored. For example:
+            includes=registrations/registration.id.1,registrations/registration.id.2
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: Template scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template Scope'
+        '404':
+          description: Template scope not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /templateScopes/{templateScopeId}/variables:
+    get:
+      tags:
+        - Variables
+      summary: Retrieve Template Scope Variables
+      description: Retrieve variables within the given template scope.
+      operationId: msgTemplate.getVariablesForTemplateScope
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: Sorting is not allowed for this endpoint.
+        - name: templateScopeId
+          in: path
+          description: Template scope id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: >-
+            The list of variables available to templates within this template
+            scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedVariablesRestResponse'
+        '404':
+          description: Template scope not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /templateScopes/{templateScopeId}/templates:
+    get:
+      tags:
+        - Manage Templates
+      summary: Retrieve All Templates in Scope
+      description: Returns all templates within the given template scope.
+      operationId: msgTemplate.getTemplatesForScope
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort, comma seperated from the sort order (asc or
+            desc).  Sortable fields are: id, nameLocalizationKey,
+            userProvidedName, messageTemplate, and extraFieldOneTemplate
+        - name: templateScopeId
+          in: path
+          description: Template scope ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The list of templates within the template scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTemplatesRestResponse'
+        '404':
+          description: Template Scope not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /templateScopes/{templateScopeId}/templates/{templateId}/registrations:
+    get:
+      tags:
+        - Template Registrations
+      summary: Retrieve a Template's Registrations
+      description: Returns all registrations that reference the given template.
+      operationId: msgTemplate.getAllTemplateRegistrations
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort and the sort order  (asc or desc) comma
+            separated. Sortable fields are: id, templateId,
+            usageLocalizationKey, usageDescriptionFieldOne,
+            usageDescriptionFieldTwo
+        - name: templateScopeId
+          in: path
+          description: Template Scope ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: templateId
+          in: path
+          description: Template ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The list of registrations referencing the given template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedRegistrationsRestResponse'
+        '404':
+          description: Template Scope not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /templateScopes/{templateScopeId}/templates/{genericTemplateId}:
+    get:
+      tags:
+        - Manage Templates
+      summary: Retrieve Template
+      description: >-
+        Returns the template specified by the give id, which can be either a
+        registration id or template id.
+      operationId: msgTemplate.getTemplate
+      parameters:
+        - name: templateScopeId
+          in: path
+          description: Template Scope ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: genericTemplateId
+          in: path
+          description: Template or Registration ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The template
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Template'
+        '404':
+          description: Template scope or template not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /templateScopes/{templateScopeId}/registrations:
+    get:
+      tags:
+        - Registrations
+      summary: Retrieve All Registrations
+      description: Returns all registrations within the given template scope.
+      operationId: msgTemplate.getAllRegistrations
+      parameters:
+        - name: size
+          in: query
+          description: Page size
+        - name: page
+          in: query
+          description: The page to retrieve (starts at zero).
+        - name: sort
+          in: query
+          description: >-
+            The field name to sort and the sort order  (asc or desc) comma
+            separated. Sortable fields are: id, templateId,
+            usageLocalizationKey, usageDescriptionFieldOne,
+            usageDescriptionFieldTwo
+        - name: templateScopeId
+          in: path
+          description: Template Scope ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The list of registrations within the template scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedRegistrationsRestResponse'
+        '404':
+          description: Template Scope not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /templateScopes/{templateScopeId}/registrations/{registrationId}:
+    get:
+      tags:
+        - Registrations
+      summary: Retrieve Registration
+      description: Returns the registration for the given ID.
+      operationId: msgTemplate.getRegistration
+      parameters:
+        - name: templateScopeId
+          in: path
+          description: Template Scope ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: registrationId
+          in: path
+          description: Registration ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+        '404':
+          description: Template scope or registration not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    Page Information:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          description: The total count of items.
+          format: int64
+        page:
+          type: integer
+          description: The page number requested, starting with 1.
+          format: int32
+        pageSize:
+          type: integer
+          description: The number of items on this page.
+          format: int32
+        pageCount:
+          type: integer
+          description: The total number of pages available.
+          format: int32
+      description: The paging information for this response.
+    PagedTemplateScopesRestResponse:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Information'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Template Scope'
+        _links:
+          $ref: '#/components/schemas/Links'
+    Registration:
+      required:
+        - templateId
+        - usageLocalizationKey
+      type: object
+      properties:
+        id:
+          type: string
+          description: The registration ID. This is any string from 5 to 255 characters.
+          readOnly: true
+        templateId:
+          type: string
+          description: The ID of the template this registration references.
+          format: uuid
+        usageLocalizationKey:
+          type: string
+          description: >-
+            A key which can be used by a user interface to lookup a localized
+            description of where the referenced template is being used.
+        usageDescriptionFieldOne:
+          type: string
+          description: >-
+            A user specified string that can be placed into the localized
+            description.
+        usageDescriptionFieldTwo:
+          type: string
+          description: >-
+            A second user specified string that can be placed into the localized
+            description.
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Registration which points to a template being used.
+    Template Scope:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        messageType:
+          type: string
+          enum:
+            - EMAIL
+            - SMS
+        nameLocalizationKey:
+          type: string
+        defaultTemplateId:
+          type: string
+          format: uuid
+        registrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Registration'
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        A Template Scope is a parent object for a group of templates and the
+        available variables to those templates.  The template scope specifies
+        the purpose and medium (E-mail, SMS, etc) for a group of templates.
+    Error:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        debugMessage:
+          type: string
+        nestedErrors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationErrorResource'
+      description: Error information relating to processing the REST request.
+    ValidationErrorResource:
+      type: object
+      properties:
+        object:
+          type: string
+        field:
+          type: string
+        rejectedValue:
+          type: object
+        message:
+          type: string
+    PagedVariablesRestResponse:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Information'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Variable'
+        _links:
+          $ref: '#/components/schemas/Links'
+    Variable:
+      type: object
+      properties:
+        variableKey:
+          type: string
+          description: >-
+            The variable key is that will be placed in the template and replaced
+            later on.
+        nameLocalizationKey:
+          type: string
+          description: >-
+            A key which can be used to localize the short name/description of
+            this variable.
+        defaultValue:
+          type: string
+          description: >-
+            When replacing the variable key in a template this value will be
+            used if no other value is provided. an empty string is a valid
+            value, a null value indicates that the system default value (an
+            empty string) will be used.
+        file:
+          type: boolean
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: >-
+        A variable is used in a template to represent a value that will be
+        populated later.
+    PagedTemplatesRestResponse:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Information'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Template'
+        _links:
+          $ref: '#/components/schemas/Links'
+    Template:
+      required:
+        - messageTemplate
+        - userProvidedName
+      type: object
+      properties:
+        id:
+          type: string
+          description: >-
+            The template ID. If the template is retrieved with a registration ID
+            this will still be the template ID.
+          readOnly: true
+        nameLocalizationKey:
+          type: string
+          description: A key which can be used to reference the name of the template.
+          readOnly: true
+        userProvidedName:
+          type: string
+          description: >-
+            A user provided name for the template. If available this should be
+            used instead of the name localization key.
+        messageTemplate:
+          type: string
+          description: The template.
+        extraFieldOneTemplate:
+          type: string
+          description: >-
+            An extra template field which can be used in conjunction with the
+            template; used for the subject in e-mail templates.
+        editable:
+          type: boolean
+          description: True if the template was user generated and therefore can be edited.
+          readOnly: true
+        _links:
+          $ref: '#/components/schemas/Links'
+      description: Template with variables which can be populated to form a message.
+    PagedRegistrationsRestResponse:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Page Information'
+        content:
+          type: array
+          description: The content list of the data.
+          items:
+            $ref: '#/components/schemas/Registration'
+        _links:
+          $ref: '#/components/schemas/Links'
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean

@@ -1,0 +1,641 @@
+openapi: 3.0.1
+info:
+  title: Admin Enrollment REST API
+  description: |-
+    # Overview
+       These APIs supports admin view of enrollments and registrations.
+    # RateLimit
+       For the admin enrollment REST APIs the following will be true:
+       Limits are applied to each property.
+       A maximum of 60 calls can be made per second.
+       Each second 30 calls will be returned to be used.
+  license:
+    name: RUCKUS Cloud Privacy Policy
+    url: https://support.ruckuswireless.com/ruckus-cloud-privacy-policy
+  version: 0.0.1
+servers:
+  - url: http://localhost:8080
+    description: Generated server url
+tags:
+  - name: Admin Enrollment Registration API
+    description: Manages enrollment registration admin views
+  - name: Admin Enrollment API
+    description: Manages enrollment admin views
+paths:
+  /enrollments/registrations/query:
+    post:
+      tags:
+        - Admin Enrollment Registration API
+      summary: Query Enrollment Registrations
+      description: Gets the list of enrollment registrations using the specified query.
+      operationId: queryEnrollmentRegistrations
+      requestBody:
+        description: Search criteria and pagination details
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentQueryCriteria'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentQueryCriteria'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageEntityModelEnrollmentRegistrationDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageEntityModelEnrollmentRegistrationDto'
+        '400':
+          description: Invalid query data supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /enrollments/query:
+    post:
+      tags:
+        - Admin Enrollment API
+      summary: Query Enrollments
+      description: Gets the list of enrollments using the specified query.
+      operationId: queryEnrollments
+      requestBody:
+        description: Search criteria and pagination details
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentQueryCriteria'
+          application/vnd.ruckus.v1+json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentQueryCriteria'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageEntityModelEnrollmentDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/PageEntityModelEnrollmentDto'
+        '400':
+          description: Invalid query data supplied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /enrollments/{enrollmentId}:
+    get:
+      tags:
+        - Admin Enrollment API
+      summary: Get Enrollments for a Specific Enrollment Identifier
+      description: Gets enrollment details for the requested enrollment identifier.
+      operationId: getEnrollments
+      parameters:
+        - name: enrollmentId
+          in: path
+          description: Enrollment Id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollmentDetailsDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollmentDetailsDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+  /enrollments/registrations/{enrollmentRegistrationId}:
+    get:
+      tags:
+        - Admin Enrollment Registration API
+      summary: Get Details for a Specific Enrollment RegistrationIdentifier
+      description: >-
+        Gets enrollment registration details for the requested enrollment
+        registration identifier.
+      operationId: getEnrollmentRegistration
+      parameters:
+        - name: enrollmentRegistrationId
+          in: path
+          description: Enrollment Registration Id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollmentRegistrationDto'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/EntityModelEnrollmentRegistrationDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+        '404':
+          description: Not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+            application/vnd.ruckus.v1+json:
+              schema:
+                $ref: '#/components/schemas/ErrorResource'
+components:
+  schemas:
+    EnrollmentQueryCriteria:
+      type: object
+      properties:
+        sortDirection:
+          type: string
+          description: Sort direction.
+          enum:
+            - ASC
+            - DESC
+        page:
+          type: integer
+          description: Page number. If not specified the first page will be returned.
+          format: int32
+        pageSize:
+          type: integer
+          description: >-
+            Number of records in a page.If not specified default page size of 20
+            will be applied.
+          format: int32
+        workflowId:
+          type: string
+          description: Identifier of the workflow.
+          format: uuid
+        enrollmentId:
+          type: string
+          description: Identifier of the enrollment.
+          format: uuid
+        description:
+          maxLength: 1000
+          minLength: 0
+          type: string
+          description: Description of the enrollment.
+        macAddress:
+          pattern: >-
+            ^([0-9A-Fa-f]{2}-){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{6})-([0-9A-Fa-f]{6})$|^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$|^[0-9A-Fa-f]{12}$
+          type: string
+          description: Mac address of the enrolled device.
+        ipAddress:
+          pattern: >-
+            (([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|((([0-9a-fA-F]){1,4})\:){7}([0-9a-fA-F]){1,4}
+          type: string
+          description: Network address of the enrolled device.
+        status:
+          type: string
+          description: Enrollment status.
+          enum:
+            - STARTED
+            - IN_PROGRESS
+            - FINISHED
+            - ABANDONED
+            - ACTIVE
+            - INACTIVE
+            - REVOKED
+        sortFields:
+          type: array
+          description: Sort by
+          items:
+            type: string
+            description: Sort by
+            enum:
+              - workflowId
+              - enrollmentId
+              - description
+              - macAddress
+              - ipAddress
+              - status
+          enum:
+            - workflowId
+            - enrollmentId
+            - description
+            - macAddress
+            - ipAddress
+            - status
+    ErrorResource:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - 100 CONTINUE
+            - 101 SWITCHING_PROTOCOLS
+            - 102 PROCESSING
+            - 103 EARLY_HINTS
+            - 103 CHECKPOINT
+            - 200 OK
+            - 201 CREATED
+            - 202 ACCEPTED
+            - 203 NON_AUTHORITATIVE_INFORMATION
+            - 204 NO_CONTENT
+            - 205 RESET_CONTENT
+            - 206 PARTIAL_CONTENT
+            - 207 MULTI_STATUS
+            - 208 ALREADY_REPORTED
+            - 226 IM_USED
+            - 300 MULTIPLE_CHOICES
+            - 301 MOVED_PERMANENTLY
+            - 302 FOUND
+            - 302 MOVED_TEMPORARILY
+            - 303 SEE_OTHER
+            - 304 NOT_MODIFIED
+            - 305 USE_PROXY
+            - 307 TEMPORARY_REDIRECT
+            - 308 PERMANENT_REDIRECT
+            - 400 BAD_REQUEST
+            - 401 UNAUTHORIZED
+            - 402 PAYMENT_REQUIRED
+            - 403 FORBIDDEN
+            - 404 NOT_FOUND
+            - 405 METHOD_NOT_ALLOWED
+            - 406 NOT_ACCEPTABLE
+            - 407 PROXY_AUTHENTICATION_REQUIRED
+            - 408 REQUEST_TIMEOUT
+            - 409 CONFLICT
+            - 410 GONE
+            - 411 LENGTH_REQUIRED
+            - 412 PRECONDITION_FAILED
+            - 413 PAYLOAD_TOO_LARGE
+            - 413 REQUEST_ENTITY_TOO_LARGE
+            - 414 URI_TOO_LONG
+            - 414 REQUEST_URI_TOO_LONG
+            - 415 UNSUPPORTED_MEDIA_TYPE
+            - 416 REQUESTED_RANGE_NOT_SATISFIABLE
+            - 417 EXPECTATION_FAILED
+            - 418 I_AM_A_TEAPOT
+            - 419 INSUFFICIENT_SPACE_ON_RESOURCE
+            - 420 METHOD_FAILURE
+            - 421 DESTINATION_LOCKED
+            - 422 UNPROCESSABLE_ENTITY
+            - 423 LOCKED
+            - 424 FAILED_DEPENDENCY
+            - 425 TOO_EARLY
+            - 426 UPGRADE_REQUIRED
+            - 428 PRECONDITION_REQUIRED
+            - 429 TOO_MANY_REQUESTS
+            - 431 REQUEST_HEADER_FIELDS_TOO_LARGE
+            - 451 UNAVAILABLE_FOR_LEGAL_REASONS
+            - 500 INTERNAL_SERVER_ERROR
+            - 501 NOT_IMPLEMENTED
+            - 502 BAD_GATEWAY
+            - 503 SERVICE_UNAVAILABLE
+            - 504 GATEWAY_TIMEOUT
+            - 505 HTTP_VERSION_NOT_SUPPORTED
+            - 506 VARIANT_ALSO_NEGOTIATES
+            - 507 INSUFFICIENT_STORAGE
+            - 508 LOOP_DETECTED
+            - 509 BANDWIDTH_LIMIT_EXCEEDED
+            - 510 NOT_EXTENDED
+            - 511 NETWORK_AUTHENTICATION_REQUIRED
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          type: string
+        detailedMessage:
+          type: string
+        validationErrors:
+          type: array
+          items:
+            type: string
+    AuthenticationDto:
+      type: object
+      properties:
+        authType:
+          type: string
+          description: Authentication service type.
+          enum:
+            - DPSK
+            - MAC_REG
+        identity:
+          type: string
+          description: Identity.
+        groupId:
+          type: string
+          description: Identity group.
+        networkId:
+          type: string
+          description: Network identifier.
+      description: Authentication details.
+    EntityModelEnrollmentRegistrationDto:
+      type: object
+      properties:
+        registrationId:
+          type: string
+          description: Identifier of the new enrollment registration.
+          format: uuid
+        enrollmentId:
+          type: string
+          description: Identifier of the new enrollment.
+          format: uuid
+        status:
+          type: string
+          description: Enrollment Status.
+          enum:
+            - STARTED
+            - IN_PROGRESS
+            - FINISHED
+            - ABANDONED
+            - ACTIVE
+            - INACTIVE
+            - REVOKED
+        macAddress:
+          type: string
+          description: Mac Address.
+        workflowId:
+          type: string
+          description: Identifier of the workflow.
+          format: uuid
+        authentication:
+          $ref: '#/components/schemas/AuthenticationDto'
+        revocation:
+          $ref: '#/components/schemas/RevocationDto'
+        _links:
+          $ref: '#/components/schemas/Links'
+    Links:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/Link'
+    PageEntityModelEnrollmentRegistrationDto:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        first:
+          type: boolean
+        last:
+          type: boolean
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityModelEnrollmentRegistrationDto'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        paged:
+          type: boolean
+        unpaged:
+          type: boolean
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+    RevocationDto:
+      type: object
+      properties:
+        revokedDate:
+          type: string
+          description: Revocation date.
+          format: date-time
+        revokedReason:
+          type: string
+          description: Revocation reason.
+        revokedBy:
+          type: string
+          description: Revoked by.
+      description: Revocation details.
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        unsorted:
+          type: boolean
+        sorted:
+          type: boolean
+    EntityModelEnrollmentDto:
+      type: object
+      properties:
+        workflowId:
+          type: string
+          description: Identifier of the workflow.
+          format: uuid
+        enrollmentId:
+          type: string
+          description: Identifier of the enrollment.
+          format: uuid
+        description:
+          maxLength: 1000
+          minLength: 0
+          type: string
+          description: Description of the enrollment.
+        macAddress:
+          pattern: >-
+            ^([0-9A-Fa-f]{2}-){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{6})-([0-9A-Fa-f]{6})$|^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$|^[0-9A-Fa-f]{12}$
+          type: string
+          description: Mac address of the enrolled device.
+        ipAddress:
+          pattern: >-
+            (([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|((([0-9a-fA-F]){1,4})\:){7}([0-9a-fA-F]){1,4}
+          type: string
+          description: Network address of the enrolled device.
+        status:
+          type: string
+          description: Enrollment status.
+          enum:
+            - STARTED
+            - IN_PROGRESS
+            - FINISHED
+            - ABANDONED
+            - ACTIVE
+            - INACTIVE
+            - REVOKED
+        _links:
+          $ref: '#/components/schemas/Links'
+    PageEntityModelEnrollmentDto:
+      type: object
+      properties:
+        totalPages:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        first:
+          type: boolean
+        last:
+          type: boolean
+        size:
+          type: integer
+          format: int32
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityModelEnrollmentDto'
+        number:
+          type: integer
+          format: int32
+        sort:
+          $ref: '#/components/schemas/SortObject'
+        pageable:
+          $ref: '#/components/schemas/PageableObject'
+        numberOfElements:
+          type: integer
+          format: int32
+        empty:
+          type: boolean
+    EnrollmentVariableDto:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the enrollment variable.
+        value:
+          type: string
+          description: Value of the enrollment variable.
+      description: Enrollment variables.
+    EntityModelEnrollmentDetailsDto:
+      type: object
+      properties:
+        workflowId:
+          type: string
+          description: Identifier of the workflow.
+          format: uuid
+        enrollmentId:
+          type: string
+          description: Identifier of the enrollment.
+          format: uuid
+        description:
+          maxLength: 1000
+          minLength: 0
+          type: string
+          description: Description of the enrollment.
+        macAddress:
+          pattern: >-
+            ^([0-9A-Fa-f]{2}-){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{2}:){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{6})-([0-9A-Fa-f]{6})$|^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$|^[0-9A-Fa-f]{12}$
+          type: string
+          description: Mac address of the enrolled device.
+        ipAddress:
+          pattern: >-
+            (([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])|((([0-9a-fA-F]){1,4})\:){7}([0-9a-fA-F]){1,4}
+          type: string
+          description: Network address of the enrolled device.
+        status:
+          type: string
+          description: Enrollment status.
+          enum:
+            - STARTED
+            - IN_PROGRESS
+            - FINISHED
+            - ABANDONED
+            - ACTIVE
+            - INACTIVE
+            - REVOKED
+        userAgentName:
+          type: string
+          description: User agent name.
+        variables:
+          type: array
+          description: Enrollment variables.
+          items:
+            $ref: '#/components/schemas/EnrollmentVariableDto'
+        _links:
+          $ref: '#/components/schemas/Links'
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+        hreflang:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        deprecation:
+          type: string
+        profile:
+          type: string
+        name:
+          type: string
+        templated:
+          type: boolean
