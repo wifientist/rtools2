@@ -14,7 +14,7 @@ load_dotenv()
 # 📌 Load environment variables
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM")
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes (refresh token handles seamless renewal)
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 60 minutes (refresh token handles seamless renewal)
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days (weekly OTP)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Default to development for safety
 
@@ -33,7 +33,7 @@ def is_production():
 ### 🚀 Generate JWT Access Token
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     """
-    Create a short-lived access token (12 hours).
+    Create a short-lived access token (60 minutes).
     Includes a unique JTI for revocation tracking.
     """
     to_encode = data.copy()

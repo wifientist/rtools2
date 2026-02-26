@@ -115,6 +115,7 @@ import workflow.phases.cloudpath.dpsk_pools  # noqa: F401
 import workflow.phases.cloudpath.passphrases  # noqa: F401
 import workflow.phases.cloudpath.update_identities  # noqa: F401
 import workflow.phases.cloudpath.audit  # noqa: F401
+import workflow.phases.cloudpath.activate_venue_wide  # noqa: F401
 
 # Access policies (reusable across workflows)
 import workflow.phases.create_access_policies  # noqa: F401

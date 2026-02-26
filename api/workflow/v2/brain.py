@@ -1188,10 +1188,11 @@ class WorkflowBrain:
                 "total_phases": len(per_unit_phases),
             })
 
-        # Update unit status (starting phase)
+        # Update unit status (starting phase) — loads fresh copy from Redis
         updated = await self.state.update_unit_phase_status(job.id, unit_id, phase_id)
         if updated:
             job.units[unit_id] = updated
+            unit = updated  # Use freshest copy for _build_inputs
 
         start_time = datetime.utcnow()
 
@@ -1205,7 +1206,7 @@ class WorkflowBrain:
             executor = phase_class(context)
 
             # Build typed inputs from unit mapping
-            inputs = self._build_inputs(executor, unit, job)
+            inputs = await self._build_inputs(executor, unit, job)
 
             await self._publish_event(job.id, "phase_started", {
                 "unit_id": unit_id,
@@ -1246,7 +1247,8 @@ class WorkflowBrain:
             )
 
         except Exception as e:
-            error_msg = str(e)
+            # Flatten multi-line pydantic errors to single line for log visibility
+            error_msg = str(e).replace('\n', ' | ')
             logger.error(
                 f"Job {job.id}: Phase {phase_id} failed for {unit_id}: {error_msg}"
             )
@@ -1361,7 +1363,7 @@ class WorkflowBrain:
     # Input/Output Wiring
     # =========================================================================
 
-    def _build_inputs(
+    async def _build_inputs(
         self,
         executor: PhaseExecutor,
         unit: UnitMapping,
@@ -1371,54 +1373,101 @@ class WorkflowBrain:
         Build typed inputs for a phase from the unit mapping.
 
         Wires resolved IDs and plan data to the executor's Inputs model.
+        If any required fields are missing, reloads unit from Redis as
+        a fallback in case the in-memory copy is stale.
         """
         input_class = executor.Inputs
         input_data = {}
+        missing_required = []
 
         for field_name, field_info in input_class.model_fields.items():
-            value = None
-
-            # 1. Check unit resolved (IDs from completed phases)
-            if hasattr(unit.resolved, field_name):
-                value = getattr(unit.resolved, field_name)
-
-            # 2. Check unit plan (names from validation)
-            if value is None and hasattr(unit.plan, field_name):
-                value = getattr(unit.plan, field_name)
-
-            # 3. Check unit input_config (original per-unit config)
-            if value is None and field_name in unit.input_config:
-                value = unit.input_config[field_name]
-
-            # 4. Check unit-level fields
-            if value is None and field_name == "unit_id":
-                value = unit.unit_id
-            elif value is None and field_name == "unit_number":
-                value = unit.unit_number
-
-            # 5. Check global phase results
-            if value is None:
-                for phase_id, results in job.global_phase_results.items():
-                    if field_name in results:
-                        value = results[field_name]
-                        break
-
-            # 6. Check job options
-            if value is None and field_name in job.options:
-                value = job.options[field_name]
-
-            # 7. Check resolved.extra
-            if value is None and field_name in unit.resolved.extra:
-                value = unit.resolved.extra[field_name]
-
-            # 8. Check plan.extra
-            if value is None and field_name in unit.plan.extra:
-                value = unit.plan.extra[field_name]
+            value = self._resolve_field(field_name, unit, job)
 
             if value is not None:
                 input_data[field_name] = value
+            elif field_info.is_required():
+                missing_required.append(field_name)
+
+        # If required fields are missing, reload unit from Redis and retry.
+        # The in-memory unit may be stale if concurrent phases wrote to Redis.
+        if missing_required:
+            logger.warning(
+                f"_build_inputs: {len(missing_required)} required field(s) missing "
+                f"for unit={unit.unit_id}: {missing_required}. "
+                f"Reloading from Redis..."
+            )
+            fresh_unit = await self.state.get_unit(job.id, unit.unit_id)
+            if fresh_unit:
+                for field_name in list(missing_required):
+                    value = self._resolve_field(field_name, fresh_unit, job)
+                    if value is not None:
+                        input_data[field_name] = value
+                        missing_required.remove(field_name)
+                        logger.info(
+                            f"_build_inputs: resolved '{field_name}' from Redis "
+                            f"reload for unit={unit.unit_id}"
+                        )
+
+            # Log remaining unresolved fields
+            for field_name in missing_required:
+                src_unit = fresh_unit or unit
+                logger.error(
+                    f"_build_inputs: required field '{field_name}' is STILL None "
+                    f"for unit={src_unit.unit_id} after Redis reload "
+                    f"(resolved={getattr(src_unit.resolved, field_name, 'N/A')}, "
+                    f"plan={getattr(src_unit.plan, field_name, 'N/A')}, "
+                    f"input_config={'present' if field_name in src_unit.input_config else 'absent'})"
+                )
 
         return input_class(**input_data)
+
+    @staticmethod
+    def _resolve_field(
+        field_name: str,
+        unit: UnitMapping,
+        job: WorkflowJobV2,
+    ) -> Any:
+        """Resolve a single input field from the unit mapping and job context."""
+        value = None
+
+        # 1. Check unit resolved (IDs from completed phases)
+        if hasattr(unit.resolved, field_name):
+            value = getattr(unit.resolved, field_name)
+
+        # 2. Check unit plan (names from validation)
+        if value is None and hasattr(unit.plan, field_name):
+            value = getattr(unit.plan, field_name)
+
+        # 3. Check unit input_config (original per-unit config)
+        if value is None and field_name in unit.input_config:
+            value = unit.input_config[field_name]
+
+        # 4. Check unit-level fields
+        if value is None and field_name == "unit_id":
+            value = unit.unit_id
+        elif value is None and field_name == "unit_number":
+            value = unit.unit_number
+
+        # 5. Check global phase results
+        if value is None:
+            for phase_id, results in job.global_phase_results.items():
+                if field_name in results:
+                    value = results[field_name]
+                    break
+
+        # 6. Check job options
+        if value is None and field_name in job.options:
+            value = job.options[field_name]
+
+        # 7. Check resolved.extra
+        if value is None and field_name in unit.resolved.extra:
+            value = unit.resolved.extra[field_name]
+
+        # 8. Check plan.extra
+        if value is None and field_name in unit.plan.extra:
+            value = unit.plan.extra[field_name]
+
+        return value
 
     async def _apply_outputs(
         self,

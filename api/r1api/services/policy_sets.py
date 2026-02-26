@@ -753,7 +753,11 @@ class PolicySetService:
         Raises:
             TimeoutError: If policy doesn't complete within ~30 seconds
         """
-        elapsed = 0.0
+        # Initial delay before first poll — R1 returns 202 but the policy
+        # resource isn't immediately available via GET (race condition).
+        # Without this, the first GET always returns 404.
+        await asyncio.sleep(0.5)
+        elapsed = 0.5
 
         while elapsed < 30.0:
             # Determine sleep interval based on elapsed time

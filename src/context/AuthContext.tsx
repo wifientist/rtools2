@@ -228,7 +228,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkAuth();
   }, []);
 
-  // Auto-refresh access token before it expires (30-min token, refresh at 20 min)
+  // Auto-refresh access token before it expires (60-min token, refresh at 25 min)
   // With visibility API support to handle backgrounded tabs
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -236,7 +236,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let intervalId: NodeJS.Timeout;
     let retryTimeoutId: NodeJS.Timeout;
     let lastRefreshTime = Date.now();
-    const REFRESH_INTERVAL = 20 * 60 * 1000; // 20 minutes (10-min buffer before 30-min expiry)
+    const REFRESH_INTERVAL = 25 * 60 * 1000; // 25 minutes (35-min buffer before 60-min expiry)
     const RETRY_DELAY = 60 * 1000; // Retry failed refresh after 60 seconds
 
     const doRefresh = async () => {

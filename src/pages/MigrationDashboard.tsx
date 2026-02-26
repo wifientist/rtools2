@@ -157,7 +157,7 @@ function DeltaRow({ label, value, sparkData }: { label: string; value: number; s
         {sparkData && sparkData.length >= 2 && (
           <Sparkline data={sparkData} color="#6366f1" width={80} height={18} />
         )}
-        <span className={`font-mono font-medium ${color}`}>{display}</span>
+        <span className={`font-mono font-medium ${color} w-16 text-right`}>{display}</span>
       </div>
     </div>
   );

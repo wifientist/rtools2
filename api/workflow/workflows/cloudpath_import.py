@@ -83,7 +83,7 @@ CloudpathImportWorkflow = Workflow(
         "ap_assignments": [],
 
         # Network settings
-        "default_vlan": 1,
+        "default_vlan": "1",
         "name_conflict_resolution": "keep",  # "keep" | "replace" | "rename"
 
         # LAN port configuration (optional)
@@ -284,7 +284,34 @@ CloudpathImportWorkflow = Workflow(
         ),
 
         # =====================================================================
-        # Phase 8: Activate Networks on Venue (Optional)
+        # Phase 8a: Activate Network Venue-Wide (ssid_mode="single" only)
+        # Property-wide SSID - just activate on all AP groups, no targeting.
+        # Uses cloudpath-specific phase to avoid touching the shared
+        # activate_network phase used by the Per-Unit SSID tool.
+        # =====================================================================
+        Phase(
+            id="activate_venue_wide",
+            name="Activate Network Venue-Wide",
+            description=(
+                "Activate property-wide SSID on all AP groups. "
+                "Only runs for ssid_mode='single'."
+            ),
+            executor="activate_venue_wide",
+            depends_on=["create_dpsk_network"],
+            per_unit=True,
+            critical=False,
+            skip_if="options.get('ssid_mode') != 'single'",
+            inputs=[
+                "unit_id", "unit_number", "network_id", "ssid_name",
+            ],
+            outputs=["activated", "already_active"],
+            api_calls_per_unit=1,
+        ),
+
+        # =====================================================================
+        # Phase 8b: Activate Networks per AP Group (ssid_mode="per_unit" only)
+        # Per-unit SSID - activate venue-wide then move to specific AP group.
+        # Uses the shared activate_network phase (requires ap_group_id).
         # NOTE: Uses activation_slot="acquire" to limit concurrent activations
         # due to R1's 15-SSID-per-AP-Group limit. The slot is held until
         # assign_aps completes to prevent too many SSIDs being "in-flight".
@@ -293,14 +320,14 @@ CloudpathImportWorkflow = Workflow(
             id="activate_network",
             name="Activate Networks",
             description=(
-                "Activate SSIDs at venue level. "
-                "Required before the SSID will be usable."
+                "Activate SSIDs at venue level then move to AP Group. "
+                "Only runs for ssid_mode='per_unit'."
             ),
             executor="activate_network",
             depends_on=["create_dpsk_network"],
             per_unit=True,
             critical=False,
-            skip_if="options.get('ssid_mode', 'none') == 'none'",
+            skip_if="options.get('ssid_mode') != 'per_unit'",
             inputs=[
                 "unit_id", "unit_number", "network_id", "ssid_name",
                 "already_activated", "is_venue_wide",
@@ -375,6 +402,7 @@ CloudpathImportWorkflow = Workflow(
             depends_on=[
                 "update_identity_descriptions",
                 "create_access_policies",
+                "activate_venue_wide",
                 "activate_network",
                 "assign_aps",
                 "configure_lan_ports",

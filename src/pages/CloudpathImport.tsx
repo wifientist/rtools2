@@ -695,6 +695,19 @@ function CloudpathImport() {
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h3 className="text-xl font-semibold mb-4">Step 1: Upload Cloudpath Export</h3>
 
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+          <p className="font-medium mb-2">Before uploading, you need to extract your DPSK data from Cloudpath:</p>
+          <ol className="list-decimal list-inside space-y-1 ml-1">
+            <li>Grab the export script from{" "}
+              <a href="https://github.com/wifientist/cloudpath_extractor" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline hover:text-blue-900">
+                github.com/wifientist/cloudpath_extractor
+              </a>
+            </li>
+            <li>Follow instructions for the <span className="font-semibold">"Fast DPSK-Only Mode"</span></li>
+            <li>Save the JSON extraction for upload below</li>
+          </ol>
+        </div>
+
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Upload Cloudpath export file (.json or .txt):

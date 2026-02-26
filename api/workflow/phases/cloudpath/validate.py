@@ -398,9 +398,25 @@ class ValidateCloudpathPhase(PhaseExecutor):
             f"{unit_coverage:.0%} coverage"
         )
 
-        # Allow user to override detected scenario
+        # Check SSID creation mode: 'none', 'single', 'per_unit'
+        ssid_mode = options.get('ssid_mode', 'none')
+        passphrases_only = ssid_mode == 'none'
+        create_networks = ssid_mode in ('single', 'per_unit')
+        per_unit_ssid = ssid_mode == 'per_unit'
+
+        # Determine import_mode (Scenario A or B)
+        # User's ssid_mode selection takes priority over auto-detection:
+        #   ssid_mode="single" → Scenario A (property-wide)
+        #   ssid_mode="per_unit" → Scenario B (per-unit)
+        #   ssid_mode="none" → use auto-detection or explicit override
         forced_scenario = options.get('import_scenario')
-        if forced_scenario and forced_scenario in ("A", "B"):
+        if ssid_mode == 'single':
+            import_mode = "A"
+            await self.emit(f"Using Scenario A (property-wide) per ssid_mode selection")
+        elif ssid_mode == 'per_unit':
+            import_mode = "B"
+            await self.emit(f"Using Scenario B (per-unit) per ssid_mode selection")
+        elif forced_scenario and forced_scenario in ("A", "B"):
             import_mode = forced_scenario
             await self.emit(f"Using user-selected scenario: {import_mode}")
         else:
@@ -414,12 +430,6 @@ class ValidateCloudpathPhase(PhaseExecutor):
         actions: List[ResourceAction] = []
         networks_to_create = 0  # Track networks to create for summary
         actual_unit_count = unit_count  # From scenario detection (unique units with unit SSIDs)
-
-        # Check SSID creation mode: 'none', 'single', 'per_unit'
-        ssid_mode = options.get('ssid_mode', 'none')
-        passphrases_only = ssid_mode == 'none'
-        create_networks = ssid_mode in ('single', 'per_unit')
-        per_unit_ssid = ssid_mode == 'per_unit'
 
         # AP Group settings (only used when ssid_mode='per_unit')
         ap_group_prefix = options.get('ap_group_prefix', '')
