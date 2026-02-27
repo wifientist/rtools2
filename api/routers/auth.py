@@ -16,7 +16,6 @@ from services.signup_service import generate_and_store_signup_otp, verify_signup
 from utils.email import send_otp_email_via_api
 from utils.audit import log_login, log_user_creation
 from constants.roles import role_hierarchy
-from constants.access import MIGRATION_DASHBOARD_DOMAINS
 from models.signup_attempt import SignupAttempt
 
 logger = logging.getLogger(__name__)
@@ -222,11 +221,15 @@ async def signup_verify_otp(payload: LoginOtpSchema, request: Request, db: Sessi
 @router.get("/status")
 def auth_status(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("session")
+    has_refresh = request.cookies.get("refresh_token") is not None
+
     if not token:
+        logger.warning(f"[/auth/status] No session cookie | has_refresh={has_refresh}")
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     payload = verify_access_token(token)
     if not payload:
+        logger.warning(f"[/auth/status] Token verification failed | has_refresh={has_refresh}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Get user to fetch controller information
@@ -272,7 +275,7 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
         "secondary_controller_id": user.secondary_controller_id,
         "secondary_controller_name": secondary_controller_name,
         "feature_access": {
-            "migration_dashboard": is_super or user_domain in MIGRATION_DASHBOARD_DOMAINS,
+            "migration_dashboard": True,
         },
     })
 
@@ -284,23 +287,37 @@ def refresh_access_token(request: Request, db: Session = Depends(get_db)):
     Refresh token lasts 7 days, access token lasts 60 minutes.
     """
     refresh_token = request.cookies.get("refresh_token")
+    has_session = request.cookies.get("session") is not None
+
     if not refresh_token:
+        logger.warning(f"[/auth/refresh] No refresh_token cookie | has_session={has_session}")
         raise HTTPException(status_code=401, detail="No refresh token provided")
 
     # Verify refresh token
     payload = verify_access_token(refresh_token, db)
-    if not payload or payload.get("type") != "refresh":
+    if not payload:
+        logger.warning("[/auth/refresh] Refresh token verification failed (expired or invalid)")
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    if payload.get("type") != "refresh":
+        logger.warning(f"[/auth/refresh] Token type mismatch: expected 'refresh', got '{payload.get('type')}'")
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    # Get user from database
-    user_id = payload.get("sub")
+    # Get user from database (sub is stored as string per JWT spec, convert back to int)
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        logger.warning(f"[/auth/refresh] Invalid user_id in refresh token: {payload.get('sub')}")
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
+        logger.warning(f"[/auth/refresh] User not found for id={user_id}")
         raise HTTPException(status_code=401, detail="User not found")
 
     # Generate new access token (refresh token stays the same)
     from security import create_user_token
     new_access_token = create_user_token(user)
+
+    logger.info(f"[/auth/refresh] Success | user={user.email} user_id={user_id}")
 
     response = JSONResponse(content={"message": "Access token refreshed"})
     response.set_cookie(

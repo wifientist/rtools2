@@ -1,5 +1,6 @@
+import logging
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
+from jose import JWTError, ExpiredSignatureError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
@@ -9,7 +10,9 @@ from models.user import User
 import os
 import uuid
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv()
+
+logger = logging.getLogger("auth.debug")
 
 # 📌 Load environment variables
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
@@ -61,7 +64,7 @@ def create_refresh_token(user_id: int):
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     jti = str(uuid.uuid4())
     to_encode = {
-        "sub": user_id,
+        "sub": str(user_id),  # JWT spec requires sub to be a string
         "exp": expire,
         "jti": jti,
         "type": "refresh"
@@ -131,12 +134,35 @@ def verify_access_token(token: str, db: Session = None) -> dict:
     try:
         payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
 
+        token_type = payload.get("type", "unknown")
+        jti = payload.get("jti", "none")
+        exp = payload.get("exp")
+        sub = payload.get("sub")
+
         # Check if token is revoked (if db session provided)
         if db and is_token_revoked(payload.get("jti"), db):
+            logger.warning(f"[VERIFY] Token revoked | type={token_type} sub={sub} jti={jti[:8]}...")
             return None
 
+        logger.info(f"[VERIFY] Token valid | type={token_type} sub={sub} jti={jti[:8]}...")
         return payload  # Contains { "sub": email, "role": ..., ... }
-    except JWTError:
+    except ExpiredSignatureError:
+        # Decode WITHOUT verification to see what expired
+        try:
+            expired_payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM],
+                                         options={"verify_exp": False})
+            exp_ts = expired_payload.get("exp")
+            exp_dt = datetime.utcfromtimestamp(exp_ts) if exp_ts else None
+            now = datetime.utcnow()
+            expired_ago = (now - exp_dt).total_seconds() if exp_dt else None
+            logger.error(f"[VERIFY] Token EXPIRED | type={expired_payload.get('type')} "
+                         f"sub={expired_payload.get('sub')} expired_at={exp_dt} "
+                         f"expired_ago={expired_ago:.0f}s jti={expired_payload.get('jti', 'none')[:8]}...")
+        except Exception:
+            logger.error("[VERIFY] Token EXPIRED (could not decode payload for details)")
+        return None
+    except JWTError as e:
+        logger.error(f"[VERIFY] JWT error | error={type(e).__name__}: {e}")
         return None
 
 

@@ -70,7 +70,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const refreshAccessToken = async (): Promise<boolean> => {
     // If refresh already in progress, return that promise to prevent race conditions
     if (refreshPromiseRef.current) {
-      console.log("Refresh already in progress, waiting...");
       return refreshPromiseRef.current;
     }
 
@@ -82,14 +81,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         });
 
         if (response.ok) {
-          console.log("Access token refreshed successfully");
           return true;
         } else {
-          console.warn("Failed to refresh access token");
           return false;
         }
-      } catch (error) {
-        console.error("Error refreshing token:", error);
+      } catch {
         return false;
       } finally {
         refreshPromiseRef.current = null;
@@ -113,13 +109,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!response.ok) {
         // If auth check fails, try to refresh the access token (with retry)
         if (response.status === 401) {
-          console.log("Access token expired, attempting refresh...");
           let refreshed = await refreshAccessToken();
 
           if (!refreshed) {
             // First attempt failed — wait briefly and retry once more
             // (handles transient network blips or race conditions)
-            console.warn("First refresh attempt failed, retrying in 2s...");
             await new Promise(resolve => setTimeout(resolve, 2000));
             refreshed = await refreshAccessToken();
           }
@@ -129,13 +123,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return checkAuth();
           }
         }
-
-        let errorMsg = "Unknown error";
-        try {
-          const errorData = await response.json();
-          errorMsg = errorData.error || errorData.detail || errorMsg;
-        } catch { /* response body may already be consumed */ }
-        console.warn("Auth check failed:", errorMsg);
 
         setIsAuthenticated(false);
         setUserRole(null);
@@ -160,11 +147,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserId(data.id);
       setCompanyId(data.company_id ?? null);
       setFeatureAccess(data.feature_access ?? { migration_dashboard: false });
-
-      // Log beta flag changes to help debug any unexpected disabling
-      if (data.beta_enabled !== undefined) {
-        console.log(`[AuthContext] Beta flag set to: ${data.beta_enabled}`);
-      }
       setBetaEnabled(data.beta_enabled || false);
       setAlphaEnabled(data.alpha_enabled || false);
 
@@ -187,7 +169,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const secondaryController = controllersData.find((c: any) => c.id === data.secondary_controller_id);
         setSecondaryControllerName(secondaryController ? secondaryController.name : null);
       } else {
-        console.error("Failed to fetch controllers");
         setControllers([]);
         setActiveControllerName(null);
         setSecondaryControllerName(null);
@@ -200,13 +181,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         const rolesData = await rolesResponse.json();
         setRoleHierarchy(rolesData.hierarchy);
       } else {
-        console.warn("Failed to fetch role hierarchy");
         setRoleHierarchy({});
       }
 
-    } catch (error) {
-      console.error("Auth check error:", error);
-
+    } catch {
       setIsAuthenticated(false);
       setUserRole(null);
       setUserId(null);
@@ -220,7 +198,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSecondaryControllerName(null);
       setControllers([]);
       setRoleHierarchy({});
-
     }
   };
 
@@ -245,7 +222,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         lastRefreshTime = Date.now();
       } else {
         // Refresh failed — schedule a retry so we don't silently lose the session
-        console.warn("Auto-refresh failed, retrying in 60s...");
         retryTimeoutId = setTimeout(doRefresh, RETRY_DELAY);
       }
       return success;
@@ -255,7 +231,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       intervalId = setInterval(() => {
         // Only refresh if page is visible (prevents throttled background timers)
         if (document.visibilityState === 'visible') {
-          console.log("Auto-refreshing access token...");
           doRefresh();
         }
       }, REFRESH_INTERVAL);
@@ -268,9 +243,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (timeSinceRefresh > REFRESH_INTERVAL) {
           // Access token likely expired while tab was backgrounded.
           // Refresh it first, then re-check auth status.
-          console.log("Tab became visible after idle, refreshing token...");
           const success = await doRefresh();
-          if (success) checkAuth();
+          if (success) {
+            checkAuth();
+          }
         }
       }
     };
@@ -294,8 +270,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       await checkAuth();
 
-    } catch (error) {
-      console.error("Logout failed", error);
+    } catch {
+      // Logout failed — checkAuth will handle the state
     }
   };
 

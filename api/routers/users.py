@@ -8,6 +8,10 @@ from crud.crud_users import get_user_by_email, get_user, create_user
 from dependencies import get_db, get_current_user
 from decorators import require_role
 from models.user import User, RoleEnum
+from models.audit_log import AuditLog
+from models.revoked_token import RevokedToken
+from models.controller import Controller
+from models.fileshare import FileFolder, FileSubfolder, FolderPermission, SharedFile, FileshareAuditLog
 from pydantic import BaseModel, EmailStr
 from utils.audit import log_audit_event
 
@@ -253,6 +257,53 @@ def delete_user_endpoint(
         )
 
     user_email = user.email
+
+    # --- Clean up all FK references before deleting the user ---
+
+    # Audit logs: nullify references (columns are nullable)
+    db.query(AuditLog).filter(AuditLog.actor_id == user_id).update(
+        {"actor_id": None}, synchronize_session=False
+    )
+    db.query(AuditLog).filter(AuditLog.target_user_id == user_id).update(
+        {"target_user_id": None}, synchronize_session=False
+    )
+
+    # Revoked tokens: delete user's tokens, nullify revoked_by references
+    db.query(RevokedToken).filter(RevokedToken.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(RevokedToken).filter(RevokedToken.revoked_by == user_id).update(
+        {"revoked_by": None}, synchronize_session=False
+    )
+
+    # Controllers: delete all controllers owned by this user
+    db.query(Controller).filter(Controller.user_id == user_id).delete(
+        synchronize_session=False
+    )
+
+    # Fileshare: clean up permissions, files, subfolders, folders
+    # FolderPermission.user_id has ondelete=CASCADE so those auto-delete,
+    # but granted_by_id does not — delete those permission records
+    db.query(FolderPermission).filter(FolderPermission.granted_by_id == user_id).delete(
+        synchronize_session=False
+    )
+    # Fileshare audit logs
+    db.query(FileshareAuditLog).filter(FileshareAuditLog.user_id == user_id).delete(
+        synchronize_session=False
+    )
+    # Shared files uploaded by this user
+    db.query(SharedFile).filter(SharedFile.uploaded_by_id == user_id).delete(
+        synchronize_session=False
+    )
+    # Subfolders created by this user
+    db.query(FileSubfolder).filter(FileSubfolder.created_by_id == user_id).delete(
+        synchronize_session=False
+    )
+    # Folders created by this user
+    db.query(FileFolder).filter(FileFolder.created_by_id == user_id).delete(
+        synchronize_session=False
+    )
+
     db.delete(user)
     db.commit()
 
@@ -261,8 +312,8 @@ def delete_user_endpoint(
         db=db,
         action="user_deleted",
         actor=current_user,
-        target_user_id=user_id,
-        details={"email": user_email},
+        target_user_id=None,
+        details={"deleted_user_id": user_id, "email": user_email},
         request=request
     )
 
