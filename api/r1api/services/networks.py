@@ -10,6 +10,27 @@ from r1api.constants import (
 logger = logging.getLogger(__name__)
 
 
+def _merge_advanced_settings(wlan_settings: dict, advanced: dict) -> None:
+    """
+    Deep-merge advanced settings from field_mappings.build_r1_advanced_settings()
+    into the wlan_settings dict for an R1 network creation payload.
+
+    The `advanced` dict has wlan-level keys (e.g. "managementFrameProtection")
+    and nested objects (e.g. "advancedCustomization": {"enableFastRoaming": True}).
+    This function deep-merges nested dicts rather than overwriting them.
+    """
+    for key, value in advanced.items():
+        if isinstance(value, dict) and isinstance(wlan_settings.get(key), dict):
+            # Deep merge nested dicts (e.g. advancedCustomization)
+            _merge_advanced_settings(wlan_settings[key], value)
+        elif isinstance(value, dict) and key not in wlan_settings:
+            # New nested dict — copy it in
+            wlan_settings[key] = value
+        else:
+            # Scalar or new key — set directly
+            wlan_settings[key] = value
+
+
 class NetworksService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
@@ -324,6 +345,7 @@ class NetworksService:
         security_type: str = "WPA3",
         vlan_id: int = 1,
         description: str = None,
+        advanced_customization: dict = None,
         wait_for_completion: bool = True
     ):
         """
@@ -338,6 +360,8 @@ class NetworksService:
             security_type: One of: WPA3, WPA2, WPA2/WPA3 (default: WPA3)
             vlan_id: VLAN ID (1-4094, default: 1)
             description: Optional description
+            advanced_customization: Optional dict of advanced settings to merge into wlan
+                (from field_mappings.build_r1_advanced_settings)
             wait_for_completion: If True, wait for async task to complete (default: True)
 
         Returns:
@@ -367,6 +391,10 @@ class NetworksService:
         else:
             # Fallback for other types (WPA, etc.)
             wlan_settings["passphrase"] = passphrase
+
+        # Merge advanced settings (MFP, rate limits, radio, RADIUS options, etc.)
+        if advanced_customization:
+            _merge_advanced_settings(wlan_settings, advanced_customization)
 
         # Build payload for PSK network
         payload = {
@@ -412,6 +440,153 @@ class NetworksService:
             return result
         else:
             logger.error(f"Failed to create network: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def create_open_wifi_network(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        name: str,
+        ssid: str,
+        vlan_id: int = 1,
+        description: str = None,
+        advanced_customization: dict = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Create an Open WiFi network (no authentication) in RuckusONE.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID where network will be created
+            name: Network name (internal identifier, 2-32 chars)
+            ssid: SSID broadcast name
+            vlan_id: VLAN ID (1-4094, default: 1)
+            description: Optional description
+            advanced_customization: Optional dict of advanced settings to merge into wlan
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Created network object with 'id' field
+        """
+        wlan_settings = {
+            "ssid": ssid,
+            "wlanSecurity": "Open",
+            "vlanId": int(vlan_id),
+            "enabled": True,
+        }
+
+        if advanced_customization:
+            _merge_advanced_settings(wlan_settings, advanced_customization)
+
+        payload = {
+            "type": WifiNetworkType.OPEN,
+            "name": name,
+            "wlan": wlan_settings,
+        }
+
+        if description:
+            payload["description"] = description
+
+        if self.client.ec_type == "MSP":
+            response = self.client.post("/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
+        else:
+            response = self.client.post("/wifiNetworks", payload=payload)
+
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+                    created_network = await self.find_wifi_network_by_name(tenant_id, venue_id, name)
+                    if created_network:
+                        return created_network
+                    else:
+                        logger.warning(f"Task completed but could not find created open network '{name}'")
+                        return result
+
+            return result
+        else:
+            logger.error(f"Failed to create open network: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    async def create_aaa_wifi_network(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        name: str,
+        ssid: str,
+        vlan_id: int = 1,
+        security_type: str = "WPA2Enterprise",
+        description: str = None,
+        advanced_customization: dict = None,
+        wait_for_completion: bool = True
+    ):
+        """
+        Create an AAA (Enterprise 802.1X) WiFi network in RuckusONE.
+
+        Note: RADIUS profile must be linked separately after creation via
+        link_radius_to_network() on the RadiusProfileService.
+
+        Args:
+            tenant_id: Tenant/EC ID
+            venue_id: Venue ID where network will be created
+            name: Network name (internal identifier, 2-32 chars)
+            ssid: SSID broadcast name
+            vlan_id: VLAN ID (1-4094, default: 1)
+            security_type: "WPA2Enterprise" or "WPA3" (default: WPA2Enterprise)
+            description: Optional description
+            advanced_customization: Optional dict of advanced settings to merge into wlan
+            wait_for_completion: If True, wait for async task to complete
+
+        Returns:
+            Created network object with 'id' field
+        """
+        wlan_settings = {
+            "ssid": ssid,
+            "wlanSecurity": security_type,
+            "vlanId": int(vlan_id),
+            "enabled": True,
+        }
+
+        if advanced_customization:
+            _merge_advanced_settings(wlan_settings, advanced_customization)
+
+        payload = {
+            "type": WifiNetworkType.AAA,
+            "name": name,
+            "wlan": wlan_settings,
+        }
+
+        if description:
+            payload["description"] = description
+
+        if self.client.ec_type == "MSP":
+            response = self.client.post("/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
+        else:
+            response = self.client.post("/wifiNetworks", payload=payload)
+
+        if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            result = response.json() if response.content else {"status": "accepted"}
+
+            if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+                    created_network = await self.find_wifi_network_by_name(tenant_id, venue_id, name)
+                    if created_network:
+                        return created_network
+                    else:
+                        logger.warning(f"Task completed but could not find created AAA network '{name}'")
+                        return result
+
+            return result
+        else:
+            logger.error(f"Failed to create AAA network: {response.status_code} - {response.text}")
             response.raise_for_status()
             return None
 
@@ -651,9 +826,10 @@ class NetworksService:
         venue_id: str,
         name: str,
         ssid: str,
-        dpsk_service_id: str,
+        dpsk_service_id: str = None,
         vlan_id: int = 1,
         description: str = None,
+        advanced_customization: dict = None,
         wait_for_completion: bool = True
     ):
         """
@@ -674,6 +850,7 @@ class NetworksService:
             dpsk_service_id: DPSK pool/service ID (for logging only - link via PUT)
             vlan_id: Default VLAN (fallback when passphrase has no VLAN)
             description: Optional description
+            advanced_customization: Optional dict of advanced settings to merge into wlan
             wait_for_completion: Wait for async task to complete
 
         Returns:
@@ -686,6 +863,9 @@ class NetworksService:
             "vlanId": int(vlan_id),
             "enabled": True,
         }
+
+        if advanced_customization:
+            _merge_advanced_settings(wlan_settings, advanced_customization)
 
         # Build payload for DPSK network
         # useDpskService MUST be true to enable DPSK service linking

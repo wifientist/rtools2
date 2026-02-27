@@ -58,9 +58,14 @@ def create_sz_client_from_controller(controller_id: int, db: Session) -> SZClien
     if not username or not password:
         raise HTTPException(status_code=400, detail="SmartZone credentials not configured for this controller")
 
-    # Create SmartZone client
-    # Use the sz_version field as API version (e.g., v11_1, v12_0, v13_0)
-    api_version = controller.sz_version if controller.sz_version else "v12_0"
+    # Create SmartZone client — version must be set on the controller record
+    if not controller.sz_version:
+        raise HTTPException(
+            status_code=400,
+            detail=f"SmartZone controller '{controller.name}' has no API version configured. "
+                   f"Set sz_version (e.g., 'v13_1' for 7.1.x, 'v11_1' for 6.1.x)."
+        )
+    api_version = controller.sz_version
 
     return SZClient(
         host=controller.sz_host,

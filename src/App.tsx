@@ -38,6 +38,8 @@ import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathImport from "@/pages/CloudpathImport";
 import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
+import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
+import MigrationAudit from "@/pages/MigrationAudit";
 import JobMonitor from "@/pages/JobMonitor";
 import JobList from "@/pages/JobList";
 import SZAudit from "@/pages/SZAudit";
@@ -87,6 +89,8 @@ const App = () => {
           <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />
           <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
+          <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
+          <Route path="/migration-audit" element={<AlphaRoute element={<MigrationAudit />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />

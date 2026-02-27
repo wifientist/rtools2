@@ -33,6 +33,9 @@ from models.fileshare import (
 from models.migration_dashboard_settings import MigrationDashboardSettings
 from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
 
+# SZ Config Migration
+from models.sz_migration_session import SZMigrationSession
+
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
     'PendingSignupOtp', 'RevokedToken', 'AuditLog', 'SignupAttempt',
@@ -46,4 +49,6 @@ __all__ = [
     'SharedFile', 'FileshareAuditLog', 'PermissionType',
     # Migration Dashboard
     'MigrationDashboardSettings', 'MigrationDashboardSnapshot',
+    # SZ Config Migration
+    'SZMigrationSession',
 ]

@@ -99,7 +99,7 @@ class SmartZoneControllerCreate(BaseModel):
     sz_use_https: bool = Field(default=True, description="Use HTTPS")
     sz_username: str = Field(..., description="API username")
     sz_password: str = Field(..., description="API password")
-    sz_version: Optional[str] = Field(None, description="Controller version (e.g., '6.1', '7.0')")
+    sz_version: str = Field(..., description="API version (e.g., 'v13_1' for 7.1.x, 'v11_1' for 6.1.x)")
 
     @field_validator("sz_host")
     @classmethod

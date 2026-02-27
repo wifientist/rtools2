@@ -124,6 +124,37 @@ class WlanService:
 
         return all_wlans
 
+    async def get_all_wlan_groups_paginated(
+        self,
+        zone_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all WLAN Groups in a zone across all pages.
+
+        Args:
+            zone_id: Zone UUID
+
+        Returns:
+            List of all WLAN Group objects (with members inline)
+        """
+        all_groups = []
+        page = 1
+
+        while True:
+            groups = await self.get_wlan_groups_by_zone(zone_id, page=page)
+
+            if not groups:
+                break
+
+            all_groups.extend(groups)
+            page += 1
+
+            if page > 100:
+                logger.warning(f"Hit page limit (100) when fetching WLAN Groups for zone {zone_id}")
+                break
+
+        return all_groups
+
     @staticmethod
     def extract_auth_type(wlan: Dict[str, Any]) -> str:
         """

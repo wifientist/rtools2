@@ -17,6 +17,8 @@ from szapi.services.switches import SwitchService
 from szapi.services.wlans import WlanService
 from szapi.services.apgroups import ApGroupService
 from szapi.services.system import SystemService
+from szapi.services.aaa import AAAService
+from szapi.services.policies import PoliciesService
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +83,10 @@ class SZClient:
         host: str,
         username: str,
         password: str,
+        api_version: str,
         port: int = 8443,
         use_https: bool = True,
         verify_ssl: bool = False,
-        api_version: str = "v12_0",
         rate_limit: float = 100.0
     ):
         """
@@ -147,6 +149,8 @@ class SZClient:
         self.wlans = WlanService(self)
         self.apgroups = ApGroupService(self)
         self.system = SystemService(self)
+        self.aaa = AAAService(self)
+        self.policies = PoliciesService(self)
 
         logger.info(f"SZClient initialized for {host}:{port} with API version {api_version}, rate limit {rate_limit}/s")
 

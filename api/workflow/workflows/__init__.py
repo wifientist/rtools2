@@ -120,6 +120,13 @@ import workflow.phases.cloudpath.activate_venue_wide  # noqa: F401
 # Access policies (reusable across workflows)
 import workflow.phases.create_access_policies  # noqa: F401
 
+# SZ → R1 Migration phases
+import workflow.phases.sz_migration.validate  # noqa: F401
+import workflow.phases.sz_migration.create_radius  # noqa: F401
+import workflow.phases.sz_migration.create_networks  # noqa: F401
+import workflow.phases.sz_migration.configure_dpsk  # noqa: F401
+import workflow.phases.sz_migration.activate_ssids  # noqa: F401
+
 # ============================================================================
 # Register workflow definitions
 # ============================================================================
@@ -143,3 +150,7 @@ register_workflow(APLanPortConfigWorkflow)
 # Cloudpath Import Workflow
 from workflow.workflows.cloudpath_import import CloudpathImportWorkflow  # noqa: F401
 register_workflow(CloudpathImportWorkflow)
+
+# SZ → R1 Migration Workflow
+from workflow.workflows.sz_to_r1_migration import SZtoR1MigrationWorkflow  # noqa: F401
+register_workflow(SZtoR1MigrationWorkflow)

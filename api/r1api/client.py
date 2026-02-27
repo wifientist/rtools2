@@ -19,6 +19,7 @@ from r1api.services.identity import IdentityService
 from r1api.services.policy_sets import PolicySetService
 from r1api.services.radius_attributes import RadiusAttributeService
 from r1api.services.ethernet_port_profiles import EthernetPortProfileService
+from r1api.services.radius_profiles import RadiusProfileService
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, ec_type=None, region=None):
@@ -59,6 +60,7 @@ class R1Client:
         self.policy_sets = PolicySetService(self)
         self.radius_attributes = RadiusAttributeService(self)
         self.ethernet_port_profiles = EthernetPortProfileService(self)
+        self.radius_profiles = RadiusProfileService(self)
 
         logger.info(f"R1Client initialized: tenant_id={tenant_id}, ec_type={self.ec_type}, host={self.host}")
 

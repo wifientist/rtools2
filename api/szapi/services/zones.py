@@ -141,6 +141,21 @@ class ZoneService:
 
         return None  # Zone-level external IP typically not directly exposed
 
+    async def get_zone_full_details(self, zone_id: str) -> Dict[str, Any]:
+        """
+        Get full zone details including radioConfig and country code.
+        Same endpoint as get_zone_details but explicitly returns all fields
+        needed for migration: radioConfig per radio, countryCode, defaults.
+
+        Args:
+            zone_id: Zone UUID
+
+        Returns:
+            Complete zone detail object (77+ properties)
+        """
+        endpoint = f"/{self.client.api_version}/rkszones/{zone_id}"
+        return await self.client._request("GET", endpoint)
+
     async def get_all_zones_with_domains(self) -> List[Dict[str, Any]]:
         """
         Get all zones across all domains with domain information included

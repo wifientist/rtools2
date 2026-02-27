@@ -16,27 +16,29 @@ let refreshPromise: Promise<boolean> | null = null;
 async function refreshAccessToken(): Promise<boolean> {
   // If refresh already in progress, wait for it
   if (refreshPromise) {
-    console.log('[api] Refresh already in progress, waiting...');
+    console.log('[api]', new Date().toISOString(), 'Refresh already in-flight, reusing promise');
     return refreshPromise;
   }
 
   refreshPromise = (async () => {
     try {
-      console.log('[api] Attempting token refresh...');
+      console.log('[api]', new Date().toISOString(), 'Attempting token refresh...');
       const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
       });
 
       if (response.ok) {
-        console.log('[api] Token refreshed successfully');
+        console.log('[api]', new Date().toISOString(), 'Token refresh SUCCESS');
         return true;
       } else {
-        console.warn('[api] Token refresh failed:', response.status);
+        let detail = '';
+        try { detail = (await response.json()).detail; } catch { /* ignore */ }
+        console.warn('[api]', new Date().toISOString(), `Token refresh FAILED status=${response.status} detail=${detail}`);
         return false;
       }
     } catch (error) {
-      console.error('[api] Token refresh error:', error);
+      console.error('[api]', new Date().toISOString(), 'Token refresh NETWORK ERROR:', error);
       return false;
     } finally {
       refreshPromise = null;
@@ -50,7 +52,7 @@ async function refreshAccessToken(): Promise<boolean> {
  * Redirect to login page (used when refresh fails)
  */
 function redirectToLogin() {
-  console.log('[api] Redirecting to login...');
+  console.warn('[api]', new Date().toISOString(), 'redirectToLogin() called — stack:', new Error().stack);
   window.location.href = '/login';
 }
 
@@ -81,16 +83,17 @@ export async function apiFetch(
 
   // Handle 401 Unauthorized
   if (response.status === 401 && !skipAuthRetry) {
-    console.log('[api] Got 401, attempting refresh and retry...');
+    console.warn('[api]', new Date().toISOString(), `Got 401 on ${options.method || 'GET'} ${url} — attempting refresh and retry...`);
 
     const refreshed = await refreshAccessToken();
 
     if (refreshed) {
       // Retry the original request with fresh token
-      console.log('[api] Retrying original request after refresh...');
+      console.log('[api]', new Date().toISOString(), `Retrying ${url} after successful refresh`);
       return fetch(url, fetchOptions);
     } else {
       // Refresh failed - redirect to login
+      console.error('[api]', new Date().toISOString(), `Refresh failed for ${url} — redirecting to login`);
       redirectToLogin();
       // Return original response (caller may handle this)
       return response;

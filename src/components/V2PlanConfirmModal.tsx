@@ -31,7 +31,8 @@ interface ConflictItem {
 
 interface ActionItem {
   resource_type: string;
-  resource_name: string;
+  resource_name?: string;
+  name?: string;
   action: string;
   details?: string;
 }
@@ -325,7 +326,7 @@ const V2PlanConfirmModal = ({
                             </span>
                             <span>
                               <span className="font-medium">
-                                {action.resource_name}
+                                {action.resource_name || action.name}
                               </span>
                               <span className="text-blue-500 ml-1">
                                 ({action.resource_type})
@@ -359,7 +360,7 @@ const V2PlanConfirmModal = ({
                             </span>
                             <span>
                               <span className="font-medium">
-                                {action.resource_name}
+                                {action.resource_name || action.name}
                               </span>
                               <span className="text-green-500 ml-1">
                                 ({action.resource_type})

@@ -14,6 +14,25 @@ class SystemService:
     def __init__(self, client):
         self.client = client  # back-reference to main SZClient
 
+    async def get_api_info(self) -> Dict[str, Any]:
+        """
+        Get API version information from the controller.
+
+        Calls GET /wsg/api/public/apiInfo (no version prefix) to discover
+        which API versions the controller supports.
+
+        Returns:
+            API info object (typically contains supported API versions)
+        """
+        endpoint = "/apiInfo"
+        try:
+            result = await self.client._request("GET", endpoint)
+            logger.info(f"Retrieved apiInfo: {result}")
+            return result
+        except Exception as e:
+            logger.warning(f"Could not fetch /apiInfo: {e}")
+            return {}
+
     async def get_cluster_info(self) -> Dict[str, Any]:
         """
         Get cluster information including management IP and cluster state
