@@ -19,7 +19,6 @@ from models.controller import Controller
 from models.migration_dashboard_settings import MigrationDashboardSettings
 from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
 from clients.r1_client import create_r1_client_from_controller, validate_controller_access
-from constants.access import MIGRATION_DASHBOARD_DOMAINS
 from dependencies import get_db, get_current_user
 
 logger = logging.getLogger(__name__)
@@ -59,13 +58,6 @@ class SnapshotBackfillRequest(BaseModel):
 
 
 # ---------- Helpers ----------
-
-def _check_dashboard_access(current_user: User):
-    """Raise 403 if user is not a super and their domain isn't allowed."""
-    user_domain = current_user.company.domain if current_user.company else None
-    if current_user.role != RoleEnum.super and user_domain not in MIGRATION_DASHBOARD_DOMAINS:
-        raise HTTPException(status_code=403, detail="Access restricted")
-
 
 def _summarize_statuses(status_counts: dict[str, int]) -> dict[str, int]:
     """
@@ -175,7 +167,6 @@ def get_settings(
 ):
     """Get dashboard settings for a controller (returns defaults if none saved)."""
     logger.info(f"[dashboard] GET settings controller={controller_id} user={current_user.email}")
-    _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 
     settings = _get_settings(controller_id, db)
@@ -196,7 +187,6 @@ def update_settings(
 ):
     """Upsert dashboard settings for a controller."""
     logger.info(f"[dashboard] PUT settings controller={controller_id} user={current_user.email} body={body.dict()}")
-    _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 
     settings = _get_settings(controller_id, db)
@@ -229,7 +219,6 @@ def get_snapshots(
 ):
     """Get historical snapshots for a controller (default 30 days, max 365)."""
     logger.info(f"[dashboard] GET snapshots controller={controller_id} days={days} user={current_user.email}")
-    _check_dashboard_access(current_user)
     validate_controller_access(controller_id, current_user, db)
 
     cutoff = datetime.utcnow() - timedelta(days=days)
@@ -535,12 +524,9 @@ async def get_migration_progress(
 
     Returns AP counts and venue counts per EC tenant, plus totals.
     Requires an MSP-type RuckusONE controller.
-    Access restricted to specific companies and super users.
-
     Ignored tenants (from settings) are still returned but excluded from totals.
     """
     logger.info(f"[dashboard] GET progress controller={controller_id} user={current_user.email}")
-    _check_dashboard_access(current_user)
 
     controller = validate_controller_access(controller_id, current_user, db)
 

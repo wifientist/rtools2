@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
   BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown,
-  AlertCircle, Wifi, WifiOff, MapPin, Building2, Target, ShieldX, Settings, X, EyeOff, Users,
+  AlertCircle, Wifi, WifiOff, MapPin, Building2, Target, Settings, X, EyeOff, Users,
   Plus, Trash2, Calendar,
 } from "lucide-react";
 
@@ -211,7 +211,7 @@ function getMessage(pct: number): string {
 }
 
 const MigrationDashboard = () => {
-  const { controllers, featureAccess, userRole } = useAuth();
+  const { controllers, userRole } = useAuth();
 
   const mspControllers = controllers.filter(
     (c) => c.controller_subtype === "MSP"
@@ -491,20 +491,6 @@ const MigrationDashboard = () => {
       setDeletingSnapshot(null);
     }
   };
-
-  if (!featureAccess.migration_dashboard) {
-    return (
-      <div className="max-w-4xl mx-auto py-16 text-center">
-        <ShieldX size={48} className="mx-auto text-gray-300 mb-4" />
-        <h2 className="text-xl font-semibold text-gray-700 mb-2">
-          Access Restricted
-        </h2>
-        <p className="text-gray-500">
-          The Migration Dashboard is restricted to authorized users.
-        </p>
-      </div>
-    );
-  }
 
   if (mspControllers.length === 0) {
     return (
