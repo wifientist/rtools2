@@ -120,6 +120,26 @@ export interface ClientLimitationsData extends ClientCapabilities {
   isBottleneck: boolean;
 }
 
+export interface LatencyJitterData {
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  jitterMs: number;
+  packetLossPercent: number;
+  diagnosis: string;
+  isBottleneck: boolean;
+}
+
+export interface BandContextData {
+  connectedBand: '2.4GHz' | '5GHz' | '6GHz';
+  connectedChannel: number;
+  channelWidth: number;
+  bssid: string;
+  apName: string;
+  bandSteeringEnabled: boolean;
+  availableBands: ('2.4GHz' | '5GHz' | '6GHz')[];
+  diagnosis: string;
+}
+
 export interface DiagnosticData {
   summary: SpeedScoreSummary;
   linkQuality: LinkQualityData;
@@ -127,6 +147,8 @@ export interface DiagnosticData {
   interference: InterferenceData;
   backhaul: BackhaulData;
   clientLimitations: ClientLimitationsData;
+  latencyJitter?: LatencyJitterData;
+  bandContext?: BandContextData;
 }
 
 /**

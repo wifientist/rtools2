@@ -29,8 +29,8 @@ function ClientLimitationsSection({ data, viewMode, context }: ClientLimitations
       <div className="flex items-center gap-3 mb-4">
         <div className="text-3xl">📱</div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Step 5: Client Device Limitations</h2>
-          <p className="text-gray-600">Is the device itself holding back performance?</p>
+          <h2 className="text-2xl font-bold text-gray-900">Step 1: Device Capabilities</h2>
+          <p className="text-gray-600">What is this device actually capable of?</p>
         </div>
       </div>
 
@@ -160,7 +160,7 @@ function ClientLimitationsSection({ data, viewMode, context }: ClientLimitations
 
             <div className="text-sm text-gray-700 bg-gray-50 border border-gray-300 rounded p-3">
               💡 <strong>Note:</strong> This is the ceiling for this specific device. Actual speeds depend on
-              signal quality, airtime, interference, and backhaul—all covered in previous sections.
+              signal quality, airtime, interference, and backhaul—all covered in upcoming sections.
             </div>
           </div>
 
@@ -185,7 +185,7 @@ function ClientLimitationsSection({ data, viewMode, context }: ClientLimitations
                     <th className="text-left p-2 font-semibold text-gray-700">Generation</th>
                     <th className="text-left p-2 font-semibold text-gray-700">Standard</th>
                     <th className="text-left p-2 font-semibold text-gray-700">Year</th>
-                    <th className="text-left p-2 font-semibold text-gray-700">Typical Max</th>
+                    <th className="text-left p-2 font-semibold text-gray-700">Theoretical Max</th>
                   </tr>
                 </thead>
                 <tbody>

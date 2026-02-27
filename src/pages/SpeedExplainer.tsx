@@ -7,6 +7,9 @@ import PhyVsRealSection from '@/components/speed-explainer/PhyVsRealSection';
 import InterferenceSection from '@/components/speed-explainer/InterferenceSection';
 import BackhaulSection from '@/components/speed-explainer/BackhaulSection';
 import ClientLimitationsSection from '@/components/speed-explainer/ClientLimitationsSection';
+import SpeedNeedsSection from '@/components/speed-explainer/SpeedNeedsSection';
+import LatencyJitterSection from '@/components/speed-explainer/LatencyJitterSection';
+import BandContextSection from '@/components/speed-explainer/BandContextSection';
 import type { DiagnosticData } from '@/types/speedExplainer';
 import type {
   SpeedExplainerContext,
@@ -37,7 +40,7 @@ function SpeedExplainer() {
 
   // Load mock scenarios from imported JSON on component mount
   useEffect(() => {
-    const data = mockScenariosData as MockScenariosFile;
+    const data = mockScenariosData as unknown as MockScenariosFile;
     setMockScenarios(data.scenarios);
 
     // Auto-select the first scenario
@@ -217,10 +220,14 @@ function SpeedExplainer() {
           <p className="text-gray-700 leading-relaxed">
             When you run a speed test and see "slow" results, the cause could be anywhere in a chain of systems:
             your device's Wi-Fi radio, signal strength, channel congestion, interference, the access point itself,
-            your network's backhaul, or even your internet connection. This page helps you understand which part
-            is the real bottleneck—using <strong>{dataMode === 'demo' ? 'example data to demonstrate the concept' : 'live data from your network'}</strong>.
+            your network's backhaul, or even your internet connection. And sometimes the answer isn't that your
+            speed is slow—it's that speed isn't the right metric for what you're experiencing. This page helps
+            you understand what actually matters and where the real bottleneck is, using <strong>{dataMode === 'demo' ? 'example data to demonstrate the concept' : 'live data from your network'}</strong>.
           </p>
         </div>
+
+        {/* What Speed Do You Actually Need? */}
+        <SpeedNeedsSection viewMode={viewMode} />
 
         {loading && (
           <div className="flex justify-center items-center py-12">
@@ -236,7 +243,37 @@ function SpeedExplainer() {
               context={context}
             />
 
-            {/* Step 1: Link Quality */}
+            {/* Band & Connection Context */}
+            {diagnosticData.bandContext && (
+              <div className="mb-6">
+                <BandContextSection
+                  data={diagnosticData.bandContext}
+                  viewMode={viewMode}
+                />
+              </div>
+            )}
+
+            {/* Step 1: Device Capabilities (sets the ceiling) */}
+            <div className="mb-6">
+              <ClientLimitationsSection
+                data={diagnosticData.clientLimitations}
+                viewMode={viewMode}
+                context={context}
+              />
+            </div>
+
+            {/* Step 2: Latency & Jitter */}
+            {diagnosticData.latencyJitter && (
+              <div className="mb-6">
+                <LatencyJitterSection
+                  data={diagnosticData.latencyJitter}
+                  viewMode={viewMode}
+                  context={context}
+                />
+              </div>
+            )}
+
+            {/* Step 3: Signal & Link Quality */}
             <div className="mb-6">
               <LinkQualitySection
                 data={diagnosticData.linkQuality}
@@ -245,7 +282,7 @@ function SpeedExplainer() {
               />
             </div>
 
-            {/* Step 2: PHY vs Reality */}
+            {/* Step 4: PHY vs Reality */}
             <div className="mb-6">
               <PhyVsRealSection
                 data={diagnosticData.phyVsReal}
@@ -254,7 +291,7 @@ function SpeedExplainer() {
               />
             </div>
 
-            {/* Step 3: Interference & Retries */}
+            {/* Step 5: Interference & Contention */}
             <div className="mb-6">
               <InterferenceSection
                 data={diagnosticData.interference}
@@ -263,19 +300,10 @@ function SpeedExplainer() {
               />
             </div>
 
-            {/* Step 4: Backhaul */}
+            {/* Step 6: Backhaul */}
             <div className="mb-6">
               <BackhaulSection
                 data={diagnosticData.backhaul}
-                viewMode={viewMode}
-                context={context}
-              />
-            </div>
-
-            {/* Step 5: Client Limitations */}
-            <div className="mb-6">
-              <ClientLimitationsSection
-                data={diagnosticData.clientLimitations}
                 viewMode={viewMode}
                 context={context}
               />

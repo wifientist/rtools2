@@ -33,16 +33,6 @@ export default function WhatIsRoamingSection({ data, viewMode }: Props) {
         What Is Roaming?
       </h3>
 
-      {/* Simple explanation */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <p className="text-gray-700 leading-relaxed">
-          <strong>Roaming</strong> is when your device switches from one access point (AP) to another
-          while maintaining your connection. The key insight: <strong className="text-blue-700">your device
-          decides when to roam, not the network</strong>. This is why some devices "stick" to distant APs
-          even when a closer one is available.
-        </p>
-      </div>
-
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-50 rounded-lg p-4 text-center">

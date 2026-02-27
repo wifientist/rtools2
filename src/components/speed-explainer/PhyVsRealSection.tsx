@@ -31,7 +31,7 @@ function PhyVsRealSection({ data, viewMode, context }: PhyVsRealSectionProps) {
       <div className="flex items-center gap-3 mb-4">
         <div className="text-3xl">⚡</div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Step 2: PHY Rate vs. Reality</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Step 4: PHY Rate vs. Reality</h2>
           <p className="text-gray-600">Why actual throughput is always less than the theoretical maximum</p>
         </div>
       </div>

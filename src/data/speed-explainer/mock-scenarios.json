@@ -73,6 +73,212 @@
           "deviceProfile": "Demo iPhone 14",
           "diagnosis": "Device supports Wi-Fi 5 with 2 spatial streams and 80 MHz channels. Modern enough for good performance. Not a limiting factor.",
           "isBottleneck": false
+        },
+        "latencyJitter": {
+          "avgLatencyMs": 12,
+          "p95LatencyMs": 28,
+          "jitterMs": 4,
+          "packetLossPercent": 0.3,
+          "diagnosis": "Latency and jitter are well within acceptable ranges for video calls and real-time apps. P95 latency of 28ms means even worst-case response times are excellent.",
+          "isBottleneck": false
+        },
+        "bandContext": {
+          "connectedBand": "5GHz",
+          "connectedChannel": 36,
+          "channelWidth": 80,
+          "bssid": "00:11:22:33:44:55",
+          "apName": "AP-Office-2F",
+          "bandSteeringEnabled": true,
+          "availableBands": ["2.4GHz", "5GHz"],
+          "diagnosis": "Device is on 5 GHz — good choice for speed. Band steering is active, which helped guide this device to the faster band."
+        }
+      }
+    },
+    {
+      "id": "legacy-device-bottleneck",
+      "name": "Demo Surface Go 2 - Legacy Device Bottleneck",
+      "description": "Budget tablet with Wi-Fi 4 (1x1) stuck on 2.4 GHz — the device itself is the ceiling",
+      "context": {
+        "scopeType": "client",
+        "scopeId": "demo-client-456",
+        "scopeName": "Demo Surface Go 2",
+        "timeWindow": "15min"
+      },
+      "data": {
+        "summary": {
+          "score": "poor",
+          "scoreValue": 34,
+          "primaryBottleneck": {
+            "type": "client",
+            "severity": "high",
+            "description": "Device is Wi-Fi 4 (1x1) on 2.4 GHz — maximum realistic throughput is ~40 Mbps",
+            "recommendation": "This device's hardware is the limiting factor. Upgrading to a Wi-Fi 5 or 6 device would dramatically improve speeds."
+          },
+          "quickSignals": {
+            "signal": { "status": "fair", "detail": "RSSI -72 dBm, SNR 18 dB" },
+            "wifiLoad": { "status": "fair", "detail": "65% airtime utilization" },
+            "retries": { "status": "poor", "detail": "22% retry rate" },
+            "backhaul": { "status": "good", "detail": "180/500 Mbps used" }
+          },
+          "tldr": "This device is severely limited by its own hardware. It only supports Wi-Fi 4 with a single antenna on 2.4 GHz, capping realistic throughput around 40 Mbps regardless of how good the network is. The high retry rate on the crowded 2.4 GHz band makes things worse."
+        },
+        "linkQuality": {
+          "rssi": -72,
+          "snr": 18,
+          "mcsMode": "MCS 5 / 1SS @ 20 MHz",
+          "mcsHistogram": { "2": 80, "3": 190, "4": 310, "5": 420, "6": 150, "7": 30 },
+          "diagnosis": "Signal is adequate but not strong (-72 dBm). SNR of 18 dB is marginal — the 2.4 GHz band is noisy. The device fluctuates between MCS 3-6, rarely reaching MCS 7. Signal quality is contributing to the problem but the device's 1x1 limitation is the bigger issue.",
+          "isBottleneck": true
+        },
+        "phyVsReal": {
+          "expectedPhyCeiling": 72,
+          "actualThroughputBest": 38,
+          "efficiency": 53,
+          "airtimeUtilization": 65,
+          "airtimeBreakdown": { "data": 35, "management": 12, "retries": 14, "other": 4 },
+          "clientsOnRadio": 18,
+          "avgPerClientAirtime": 3.6
+        },
+        "interference": {
+          "retryRate": 22,
+          "failureRate": 6,
+          "currentChannel": 6,
+          "channelWidth": 20,
+          "neighborApCount": 14,
+          "recentDfsEvents": 0,
+          "noiseFloor": -82,
+          "diagnosis": "The 2.4 GHz band is very crowded with 14 neighbor APs on or near channel 6. Retry rate is high at 22%, wasting significant airtime. This is a secondary bottleneck after the device's hardware limitations.",
+          "isBottleneck": true
+        },
+        "backhaul": {
+          "wanCapacityEstimate": 500,
+          "wanUsagePeak": 180,
+          "wanUsageAvg": 95,
+          "uplinkType": "fiber",
+          "uplinkSpeed": 1000,
+          "diagnosis": "Backhaul has plenty of headroom at 36% peak utilization. Not a factor for this device's slow speeds.",
+          "isBottleneck": false
+        },
+        "clientLimitations": {
+          "streams": 1,
+          "maxWidthMhz": 20,
+          "wifiGeneration": "Wi-Fi 4",
+          "maxRealisticThroughput": 40,
+          "deviceProfile": "Demo Surface Go 2",
+          "diagnosis": "This device only supports Wi-Fi 4 (802.11n) with a single spatial stream and 20 MHz channels. Its theoretical maximum is 72 Mbps, but real-world throughput tops out around 40 Mbps under ideal conditions. This is the primary bottleneck — no amount of network optimization will overcome the device's hardware ceiling.",
+          "isBottleneck": true
+        },
+        "latencyJitter": {
+          "avgLatencyMs": 45,
+          "p95LatencyMs": 120,
+          "jitterMs": 28,
+          "packetLossPercent": 2.1,
+          "diagnosis": "Latency is elevated (45ms average, 120ms at P95) due to the congested 2.4 GHz channel and high retry rate. Jitter of 28ms and 2.1% packet loss will cause noticeable quality issues on video calls.",
+          "isBottleneck": true
+        },
+        "bandContext": {
+          "connectedBand": "2.4GHz",
+          "connectedChannel": 6,
+          "channelWidth": 20,
+          "bssid": "AA:BB:CC:DD:EE:01",
+          "apName": "AP-Lobby-1F",
+          "bandSteeringEnabled": true,
+          "availableBands": ["2.4GHz", "5GHz"],
+          "diagnosis": "Device is stuck on 2.4 GHz because it doesn't support 5 GHz. Band steering can't help here — the device simply lacks the hardware. The 2.4 GHz band is crowded and limited to 20 MHz channels."
+        }
+      }
+    },
+    {
+      "id": "backhaul-saturated",
+      "name": "Demo MacBook Pro 16\" - Backhaul Saturated",
+      "description": "High-end laptop with great Wi-Fi, but the internet pipe is maxed out during peak hours",
+      "context": {
+        "scopeType": "client",
+        "scopeId": "demo-client-789",
+        "scopeName": "Demo MacBook Pro 16\"",
+        "timeWindow": "1hour"
+      },
+      "data": {
+        "summary": {
+          "score": "fair",
+          "scoreValue": 48,
+          "primaryBottleneck": {
+            "type": "backhaul",
+            "severity": "high",
+            "description": "Internet uplink is at 92% capacity — the WAN connection is the bottleneck, not Wi-Fi",
+            "recommendation": "Upgrade the internet plan or implement QoS policies to prioritize critical traffic during peak hours."
+          },
+          "quickSignals": {
+            "signal": { "status": "good", "detail": "RSSI -58 dBm, SNR 35 dB" },
+            "wifiLoad": { "status": "good", "detail": "32% airtime utilization" },
+            "retries": { "status": "good", "detail": "4% retry rate" },
+            "backhaul": { "status": "poor", "detail": "275/300 Mbps used" }
+          },
+          "tldr": "This device has excellent Wi-Fi — strong signal, modern hardware, low interference. The problem is upstream: the 300 Mbps internet connection is nearly saturated at 92% during peak hours. Everyone in the office is competing for the same internet pipe."
+        },
+        "linkQuality": {
+          "rssi": -58,
+          "snr": 35,
+          "mcsMode": "MCS 11 / 2SS @ 160 MHz",
+          "mcsHistogram": { "9": 85, "10": 320, "11": 890 },
+          "diagnosis": "Excellent signal strength (-58 dBm) and SNR (35 dB). The device is consistently using MCS 10-11, the highest rates available. The radio link is not a bottleneck at all.",
+          "isBottleneck": false
+        },
+        "phyVsReal": {
+          "expectedPhyCeiling": 2402,
+          "actualThroughputBest": 280,
+          "efficiency": 12,
+          "airtimeUtilization": 32,
+          "airtimeBreakdown": { "data": 24, "management": 4, "retries": 2, "other": 2 },
+          "clientsOnRadio": 6,
+          "avgPerClientAirtime": 5.3
+        },
+        "interference": {
+          "retryRate": 4,
+          "failureRate": 1,
+          "currentChannel": 52,
+          "channelWidth": 160,
+          "neighborApCount": 2,
+          "recentDfsEvents": 1,
+          "noiseFloor": -95,
+          "diagnosis": "Very clean RF environment with only 2 neighbor APs and a low noise floor. Retry rate of 4% is excellent. One DFS event was detected recently but had minimal impact. Interference is not a factor.",
+          "isBottleneck": false
+        },
+        "backhaul": {
+          "wanCapacityEstimate": 300,
+          "wanUsagePeak": 275,
+          "wanUsageAvg": 210,
+          "uplinkType": "copper",
+          "uplinkSpeed": 1000,
+          "diagnosis": "The 300 Mbps internet plan is the clear bottleneck. Peak usage hits 275 Mbps (92% of capacity), and average usage is 210 Mbps (70%). The gigabit Ethernet uplink has headroom, but the ISP plan does not. This is why speed tests show ~280 Mbps despite the Wi-Fi link being capable of 2.4 Gbps.",
+          "isBottleneck": true
+        },
+        "clientLimitations": {
+          "streams": 2,
+          "maxWidthMhz": 160,
+          "wifiGeneration": "Wi-Fi 6E",
+          "maxRealisticThroughput": 1800,
+          "deviceProfile": "Demo MacBook Pro 16\"",
+          "diagnosis": "This is a high-end device with Wi-Fi 6E, 2 spatial streams, and 160 MHz channel support. It's capable of up to 1.8 Gbps in real-world conditions. The device hardware is absolutely not the limiting factor here.",
+          "isBottleneck": false
+        },
+        "latencyJitter": {
+          "avgLatencyMs": 68,
+          "p95LatencyMs": 210,
+          "jitterMs": 42,
+          "packetLossPercent": 1.8,
+          "diagnosis": "Latency is elevated (68ms avg, 210ms at P95) because the saturated backhaul link is causing bufferbloat — packets queue up waiting for bandwidth. Jitter of 42ms and 1.8% packet loss are causing noticeable quality drops on Zoom calls, especially during peak hours.",
+          "isBottleneck": true
+        },
+        "bandContext": {
+          "connectedBand": "6GHz",
+          "connectedChannel": 37,
+          "channelWidth": 160,
+          "bssid": "CC:DD:EE:FF:00:11",
+          "apName": "AP-Exec-3F",
+          "bandSteeringEnabled": false,
+          "availableBands": ["2.4GHz", "5GHz", "6GHz"],
+          "diagnosis": "Device is on the 6 GHz band — the fastest and cleanest available spectrum. This is ideal for this Wi-Fi 6E laptop. Band steering is not needed since 6 GHz is only visible to compatible devices."
         }
       }
     }

@@ -29,7 +29,7 @@ function BackhaulSection({ data, viewMode, context }: BackhaulSectionProps) {
       <div className="flex items-center gap-3 mb-4">
         <div className="text-3xl">🌐</div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Step 4: Backhaul & Uplink</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Step 6: Backhaul & Uplink</h2>
           <p className="text-gray-600">Is your internet connection or network uplink the bottleneck?</p>
         </div>
       </div>

@@ -15,12 +15,29 @@ import type {
 } from '@/types/roamingExplainer';
 import mockScenariosData from '@/data/roaming-explainer/mock-scenarios.json';
 
+const DEPLOYMENT_META: Record<string, { label: string; icon: string }> = {
+  mdu: { label: 'Multi-Dwelling Unit', icon: '🏢' },
+  enterprise: { label: 'Enterprise / Campus', icon: '🏫' },
+  hospitality: { label: 'Hospitality', icon: '🏨' },
+  education: { label: 'Education', icon: '🎓' },
+  warehouse: { label: 'Warehouse / Industrial', icon: '🏭' },
+};
+
 function RoamingExplainer() {
   const [viewMode, setViewMode] = useState<ViewMode>('simple');
   const [dataMode, setDataMode] = useState<DataMode>('demo');
   const [diagnosticData, setDiagnosticData] = useState<RoamingDiagnosticData | null>(null);
   const [mockScenarios, setMockScenarios] = useState<RoamingScenario[]>([]);
   const [selectedScenario, setSelectedScenario] = useState<string | null>(null);
+
+  const currentScenario = mockScenarios.find(s => s.id === selectedScenario);
+
+  const scenariosByCategory = mockScenarios.reduce<Record<string, RoamingScenario[]>>((acc, scenario) => {
+    const cat = scenario.category;
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(scenario);
+    return acc;
+  }, {});
 
   // Load mock scenarios on mount
   useEffect(() => {
@@ -105,18 +122,20 @@ function RoamingExplainer() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Why Won't My Device Roam?</h1>
-          <p className="text-gray-600 mt-1">Understanding WiFi roaming, sticky clients, and MDU challenges</p>
+          <p className="text-gray-600 mt-1">Understanding WiFi roaming, sticky clients, and deployment-specific challenges</p>
         </div>
 
         {/* Demo Mode Banner */}
         {dataMode === 'demo' && (
           <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 mb-6">
             <div className="flex items-start gap-3 mb-4">
-              <span className="text-3xl">🏢</span>
+              <span className="text-3xl">{DEPLOYMENT_META[currentScenario?.category || 'mdu'].icon}</span>
               <div className="flex-1">
-                <h3 className="font-semibold text-purple-900">Demo Mode - MDU Scenarios</h3>
+                <h3 className="font-semibold text-purple-900">
+                  Demo Mode — {DEPLOYMENT_META[currentScenario?.category || 'mdu'].label}
+                </h3>
                 <p className="text-purple-700 text-sm">
-                  Explore common roaming problems in multi-dwelling unit environments with example data.
+                  Explore common roaming problems across different deployment environments with example data.
                 </p>
               </div>
             </div>
@@ -132,15 +151,19 @@ function RoamingExplainer() {
                   onChange={(e) => setSelectedScenario(e.target.value)}
                   className="w-full border border-purple-300 rounded px-3 py-2 text-sm bg-white text-purple-900"
                 >
-                  {mockScenarios.map((scenario) => (
-                    <option key={scenario.id} value={scenario.id}>
-                      {scenario.name}
-                    </option>
+                  {Object.entries(scenariosByCategory).map(([category, scenarios]) => (
+                    <optgroup key={category} label={DEPLOYMENT_META[category as keyof typeof DEPLOYMENT_META]?.label || category}>
+                      {scenarios.map((scenario) => (
+                        <option key={scenario.id} value={scenario.id}>
+                          {scenario.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
-                {mockScenarios.find(s => s.id === selectedScenario)?.description && (
+                {currentScenario?.description && (
                   <p className="text-xs text-purple-600 mt-2">
-                    {mockScenarios.find(s => s.id === selectedScenario)?.description}
+                    {currentScenario.description}
                   </p>
                 )}
               </div>
@@ -169,7 +192,8 @@ function RoamingExplainer() {
           </p>
           <p className="text-gray-700 leading-relaxed">
             This page helps you understand why devices stick to distant APs, what the 802.11k/v/r standards
-            do to help, and why <strong className="text-orange-700">MDU deployments are particularly challenging</strong>.
+            do to help, and how <strong className="text-orange-700">different deployment environments</strong> present
+            unique roaming challenges.
           </p>
         </div>
 
@@ -200,13 +224,15 @@ function RoamingExplainer() {
               />
             </div>
 
-            {/* MDU Problems */}
-            <div className="mb-6">
-              <MDUProblemsSection
-                data={diagnosticData.mduProblems}
-                viewMode={viewMode}
-              />
-            </div>
+            {/* MDU Problems — only shown for MDU deployments */}
+            {diagnosticData.mduProblems && currentScenario?.category === 'mdu' && (
+              <div className="mb-6">
+                <MDUProblemsSection
+                  data={diagnosticData.mduProblems}
+                  viewMode={viewMode}
+                />
+              </div>
+            )}
 
             {/* Troubleshooting */}
             <div className="mb-6">
@@ -218,33 +244,6 @@ function RoamingExplainer() {
           </>
         )}
 
-        {/* Quick Reference Card */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-lg p-6 text-white">
-          <h3 className="text-xl font-bold mb-4">Quick Reference: 802.11k/v/r</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <div className="text-2xl mb-2">📋 802.11k</div>
-              <div className="font-semibold mb-1">Neighbor Reports</div>
-              <p className="text-sm text-blue-100">
-                APs tell clients about nearby APs, reducing scan time when the client decides to roam.
-              </p>
-            </div>
-            <div>
-              <div className="text-2xl mb-2">🔀 802.11v</div>
-              <div className="font-semibold mb-1">BSS Transition</div>
-              <p className="text-sm text-blue-100">
-                APs can suggest a better AP to connect to. Helps nudge sticky clients to roam.
-              </p>
-            </div>
-            <div>
-              <div className="text-2xl mb-2">⚡ 802.11r</div>
-              <div className="font-semibold mb-1">Fast Transition</div>
-              <p className="text-sm text-blue-100">
-                Pre-negotiates security keys. Reduces roam time from ~400ms to &lt;50ms. Critical for VoIP.
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

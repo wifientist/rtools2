@@ -28,7 +28,7 @@ function LinkQualitySection({ data, viewMode, context }: LinkQualitySectionProps
       <div className="flex items-center gap-3 mb-4">
         <div className="text-3xl">📶</div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Step 1: Signal & Link Quality</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Step 3: Signal & Link Quality</h2>
           <p className="text-gray-600">How strong is the radio connection between device and AP?</p>
         </div>
       </div>

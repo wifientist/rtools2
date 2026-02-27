@@ -138,7 +138,7 @@ export interface RoamingDiagnosticData {
   };
   whatIsRoaming: WhatIsRoamingData;
   stickyClients: StickyClientsData;
-  mduProblems: MduProblemsData;
+  mduProblems?: MduProblemsData;
   troubleshooting: TroubleshootingData;
 }
 
@@ -147,7 +147,7 @@ export interface RoamingScenario {
   id: string;
   name: string;
   description: string;
-  category: 'mdu' | 'enterprise' | 'hospitality' | 'education';
+  category: 'mdu' | 'enterprise' | 'hospitality' | 'education' | 'warehouse';
   data: RoamingDiagnosticData;
 }
 

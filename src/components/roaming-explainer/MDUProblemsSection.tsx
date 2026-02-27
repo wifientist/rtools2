@@ -38,17 +38,6 @@ export default function MDUProblemsSection({ data, viewMode }: Props) {
         MDU-Specific Issues
       </h3>
 
-      {/* Explanation */}
-      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
-        <p className="text-gray-700 leading-relaxed">
-          <strong>Multi-Dwelling Units</strong> (apartments, condos, hotels) present unique roaming challenges.
-          Dense AP deployment, thin walls, and vertical signal bleed create situations where clients can
-          "see" many APs but connect to the wrong one. Common issues include <strong className="text-purple-700">hallway huggers</strong> (clients
-          sticking to hallway APs from inside units) and <strong className="text-purple-700">floor bleeders</strong> (clients connecting
-          to APs on different floors).
-        </p>
-      </div>
-
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-50 rounded-lg p-4 text-center">

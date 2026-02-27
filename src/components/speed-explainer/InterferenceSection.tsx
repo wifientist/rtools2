@@ -21,7 +21,7 @@ function InterferenceSection({ data, viewMode, context }: InterferenceSectionPro
       <div className="flex items-center gap-3 mb-4">
         <div className="text-3xl">📡</div>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Step 3: Interference & Contention</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Step 5: Interference & Contention</h2>
           <p className="text-gray-600">Are there too many devices competing for airtime?</p>
         </div>
       </div>

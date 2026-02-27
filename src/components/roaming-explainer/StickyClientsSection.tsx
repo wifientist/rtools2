@@ -35,16 +35,6 @@ export default function StickyClientsSection({ data, viewMode }: Props) {
         Sticky Clients
       </h3>
 
-      {/* Explanation */}
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
-        <p className="text-gray-700 leading-relaxed">
-          <strong>Sticky clients</strong> are devices that refuse to roam to a better AP, even when one is
-          available nearby. This happens because <strong className="text-orange-700">clients control roaming decisions</strong>,
-          and many devices (especially IoT) have very conservative roaming thresholds—sometimes staying
-          connected until signal is nearly unusable.
-        </p>
-      </div>
-
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <div className={`rounded-lg p-4 text-center ${data.totalStickyClients > 10 ? 'bg-red-50' : data.totalStickyClients > 5 ? 'bg-yellow-50' : 'bg-green-50'}`}>
