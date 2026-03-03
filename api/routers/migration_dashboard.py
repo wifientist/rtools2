@@ -208,6 +208,130 @@ def update_settings(
     )
 
 
+# ---------- Report schedule endpoints ----------
+
+
+class ReportScheduleResponse(BaseModel):
+    enabled: bool = False
+    frequency: str = "weekly"
+    day_of_week: int = 0
+    recipients: list[str] = []
+
+
+class ReportScheduleUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    frequency: Optional[str] = None
+    day_of_week: Optional[int] = None
+    recipients: Optional[list[str]] = None
+
+
+@router.get("/report-schedule/{controller_id}", response_model=ReportScheduleResponse)
+def get_report_schedule(
+    controller_id: int = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get report schedule for a controller (returns defaults if none configured)."""
+    from models.scheduled_report import ScheduledReport
+
+    logger.info(f"[dashboard] GET report-schedule controller={controller_id} user={current_user.email}")
+    validate_controller_access(controller_id, current_user, db)
+
+    report = (
+        db.query(ScheduledReport)
+        .filter(
+            ScheduledReport.report_type == "migration",
+            ScheduledReport.context_id == str(controller_id),
+        )
+        .first()
+    )
+    if report:
+        return ReportScheduleResponse(
+            enabled=report.enabled,
+            frequency=report.frequency,
+            day_of_week=report.day_of_week,
+            recipients=report.recipients,
+        )
+    return ReportScheduleResponse()
+
+
+@router.put("/report-schedule/{controller_id}", response_model=ReportScheduleResponse)
+def update_report_schedule(
+    body: ReportScheduleUpdate,
+    controller_id: int = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upsert report schedule for a controller."""
+    from models.scheduled_report import ScheduledReport
+
+    logger.info(f"[dashboard] PUT report-schedule controller={controller_id} user={current_user.email} body={body.dict()}")
+    validate_controller_access(controller_id, current_user, db)
+
+    report = (
+        db.query(ScheduledReport)
+        .filter(
+            ScheduledReport.report_type == "migration",
+            ScheduledReport.context_id == str(controller_id),
+        )
+        .first()
+    )
+    if not report:
+        report = ScheduledReport(
+            report_type="migration",
+            context_id=str(controller_id),
+            owner_id=current_user.id,
+        )
+        db.add(report)
+
+    if body.enabled is not None:
+        report.enabled = body.enabled
+    if body.frequency is not None:
+        report.frequency = body.frequency
+    if body.day_of_week is not None:
+        report.day_of_week = body.day_of_week
+    if body.recipients is not None:
+        report.recipients = body.recipients
+
+    db.commit()
+    db.refresh(report)
+
+    return ReportScheduleResponse(
+        enabled=report.enabled,
+        frequency=report.frequency,
+        day_of_week=report.day_of_week,
+        recipients=report.recipients,
+    )
+
+
+@router.post("/report/{controller_id}/send")
+async def send_report_now(
+    controller_id: int = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Manually trigger a migration report for testing."""
+    from models.scheduled_report import ScheduledReport
+    from services.report_engine import generate_and_send_report
+
+    logger.info(f"[dashboard] Manual report trigger controller={controller_id} user={current_user.email}")
+    validate_controller_access(controller_id, current_user, db)
+
+    report = (
+        db.query(ScheduledReport)
+        .filter(
+            ScheduledReport.report_type == "migration",
+            ScheduledReport.context_id == str(controller_id),
+        )
+        .first()
+    )
+    if not report or not report.recipients:
+        raise HTTPException(status_code=400, detail="No report recipients configured. Save a schedule with recipients first.")
+
+    result = await generate_and_send_report(report, db)
+    return result
+
+
 # ---------- Snapshots endpoint ----------
 
 @router.get("/snapshots/{controller_id}")
@@ -362,7 +486,7 @@ async def fetch_controller_progress(
     if not ec_list:
         empty_data = {
             "total_aps": 0, "total_venues": 0, "total_clients": 0,
-            "total_ecs": 0, "errors": 0,
+            "total_switches": 0, "total_ecs": 0, "errors": 0,
             "status_summary": {"operational": 0, "offline": 0},
             "status_counts": {}, "tenants": [],
         }
@@ -377,17 +501,18 @@ async def fetch_controller_progress(
         ap_count = 0
         venue_count = 0
         client_count = 0
+        switch_count = 0
         status_counts: dict[str, int] = {}
         error = None
 
         async with semaphore:
             try:
-                ap_result, venue_result, client_result = await asyncio.gather(
+                ap_result, venue_result, client_result, switch_result = await asyncio.gather(
                     asyncio.to_thread(
                         r1_client.post,
                         "/venues/aps/query",
                         payload={
-                            "fields": ["status"],
+                            "fields": ["status", "venueName", "venueId"],
                             "page": 0,
                             "pageSize": 5000,
                         },
@@ -408,8 +533,20 @@ async def fetch_controller_progress(
                         },
                         override_tenant_id=tenant_id,
                     ),
+                    asyncio.to_thread(
+                        r1_client.post,
+                        "/venues/switches/query",
+                        payload={
+                            "fields": ["serialNumber"],
+                            "page": 0,
+                            "pageSize": 1,
+                        },
+                        override_tenant_id=tenant_id,
+                    ),
                     return_exceptions=True,
                 )
+
+                venue_map: dict[str, dict] = {}
 
                 if not isinstance(ap_result, Exception) and ap_result.ok:
                     ap_data = ap_result.json()
@@ -417,17 +554,50 @@ async def fetch_controller_progress(
                     for ap in ap_data.get("data", []):
                         s = ap.get("status", "Unknown")
                         status_counts[s] = status_counts.get(s, 0) + 1
+
+                        # Group by venue
+                        vid = ap.get("venueId", "unknown")
+                        vname = ap.get("venueName", "Unknown Venue")
+                        if vid not in venue_map:
+                            venue_map[vid] = {
+                                "venue_id": vid,
+                                "venue_name": vname,
+                                "ap_count": 0,
+                                "operational": 0,
+                                "offline": 0,
+                            }
+                        venue_map[vid]["ap_count"] += 1
+                        if s.startswith("2_"):
+                            venue_map[vid]["operational"] += 1
+                        else:
+                            venue_map[vid]["offline"] += 1
                 elif isinstance(ap_result, Exception):
                     error = str(ap_result)
 
                 if not isinstance(venue_result, Exception) and venue_result.ok:
                     venue_data = venue_result.json()
+                    venue_list = []
                     if isinstance(venue_data, list):
+                        venue_list = venue_data
                         venue_count = len(venue_data)
                     elif isinstance(venue_data, dict):
-                        venue_count = venue_data.get(
-                            "totalCount", len(venue_data.get("data", []))
-                        )
+                        venue_list = venue_data.get("data", [])
+                        venue_count = venue_data.get("totalCount", len(venue_list))
+
+                    # Build name lookup and enrich venue_map / add 0-AP venues
+                    for v in venue_list:
+                        vid = v.get("id", "")
+                        vname = v.get("name", "Unknown Venue")
+                        if vid in venue_map:
+                            venue_map[vid]["venue_name"] = vname
+                        else:
+                            venue_map[vid] = {
+                                "venue_id": vid,
+                                "venue_name": vname,
+                                "ap_count": 0,
+                                "operational": 0,
+                                "offline": 0,
+                            }
                 elif isinstance(venue_result, Exception) and not error:
                     error = str(venue_result)
 
@@ -436,6 +606,12 @@ async def fetch_controller_progress(
                     client_count = client_data.get("totalCount", 0)
                 elif isinstance(client_result, Exception) and not error:
                     error = str(client_result)
+
+                if not isinstance(switch_result, Exception) and switch_result.ok:
+                    switch_data = switch_result.json()
+                    switch_count = switch_data.get("totalCount", 0)
+                elif isinstance(switch_result, Exception) and not error:
+                    error = str(switch_result)
 
             except Exception as e:
                 logger.warning(f"Error fetching stats for EC '{tenant_name}': {e}")
@@ -447,8 +623,10 @@ async def fetch_controller_progress(
             "ap_count": ap_count,
             "venue_count": venue_count,
             "client_count": client_count,
+            "switch_count": switch_count,
             "status_summary": _summarize_statuses(status_counts),
             "status_counts": status_counts,
+            "venue_stats": sorted(venue_map.values(), key=lambda v: v["ap_count"], reverse=True),
             "error": error,
         }
 
@@ -465,9 +643,9 @@ async def fetch_controller_progress(
             tenant = {
                 "id": ec_list[i]["id"],
                 "name": ec_list[i].get("name", "Unknown"),
-                "ap_count": 0, "venue_count": 0, "client_count": 0,
+                "ap_count": 0, "venue_count": 0, "client_count": 0, "switch_count": 0,
                 "status_summary": {"operational": 0, "offline": 0},
-                "status_counts": {}, "error": str(result),
+                "status_counts": {}, "venue_stats": [], "error": str(result),
             }
         else:
             tenant = result
@@ -478,6 +656,7 @@ async def fetch_controller_progress(
     total_aps = sum(t["ap_count"] for t in active)
     total_venues = sum(t["venue_count"] for t in active)
     total_clients = sum(t["client_count"] for t in active)
+    total_switches = sum(t.get("switch_count", 0) for t in active)
     errors = sum(1 for t in tenants if t.get("error"))
 
     total_summary = {"operational": 0, "offline": 0}
@@ -492,6 +671,7 @@ async def fetch_controller_progress(
         "total_aps": total_aps,
         "total_venues": total_venues,
         "total_clients": total_clients,
+        "total_switches": total_switches,
         "total_ecs": len(tenants),
         "errors": errors,
         "status_summary": total_summary,
@@ -501,7 +681,7 @@ async def fetch_controller_progress(
 
     logger.info(
         f"[dashboard] Progress for controller={controller_id}: "
-        f"{total_aps} APs, {total_summary['operational']} online, "
+        f"{total_aps} APs, {total_switches} SWs, {total_summary['operational']} online, "
         f"{total_venues} venues, {total_clients} clients, {len(tenants)} ECs, {errors} errors"
     )
 

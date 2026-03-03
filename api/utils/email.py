@@ -1,6 +1,8 @@
 import logging
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 import os
 import boto3
 from botocore.exceptions import ClientError
@@ -176,3 +178,60 @@ RUCKUS.Tools Fileshare
             success_count += 1
 
     logger.info(f"Report notifications sent: {success_count}/{len(to_emails)}")
+
+
+def send_email_with_attachment(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    attachment_bytes: bytes,
+    attachment_filename: str,
+) -> bool:
+    """
+    Send an email with a file attachment via Amazon SES raw email.
+
+    Args:
+        to_email: Recipient email address
+        subject: Email subject
+        text_body: Plain text body
+        html_body: HTML body
+        attachment_bytes: Raw bytes of the attachment
+        attachment_filename: Filename for the attachment (e.g. "report.pdf")
+
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    if not FROM_EMAIL:
+        logger.error("FROM_EMAIL not configured")
+        return False
+
+    ses = get_ses_client()
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = FROM_EMAIL
+    msg["To"] = to_email
+
+    # Body (text + HTML alternative)
+    body_part = MIMEMultipart("alternative")
+    body_part.attach(MIMEText(text_body, "plain", "utf-8"))
+    body_part.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(body_part)
+
+    # Attachment
+    att = MIMEApplication(attachment_bytes)
+    att.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+    msg.attach(att)
+
+    try:
+        response = ses.send_raw_email(
+            Source=FROM_EMAIL,
+            Destinations=[to_email],
+            RawMessage={"Data": msg.as_string()},
+        )
+        logger.info(f"Email with attachment sent via SES. MessageId: {response['MessageId']}")
+        return True
+    except ClientError as e:
+        logger.error(f"SES raw email error: {e.response['Error']['Message']}")
+        return False

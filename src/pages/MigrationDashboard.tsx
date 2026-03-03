@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
   BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown,
-  AlertCircle, Wifi, WifiOff, MapPin, Building2, Target, Settings, X, EyeOff, Users,
+  AlertCircle, Wifi, WifiOff, MapPin, Target, Settings, X, EyeOff, Users, Network, Printer,
   Plus, Trash2, Calendar,
 } from "lucide-react";
 
@@ -13,14 +13,24 @@ interface StatusSummary {
   offline: number;
 }
 
+interface VenueStats {
+  venue_id: string;
+  venue_name: string;
+  ap_count: number;
+  operational: number;
+  offline: number;
+}
+
 interface ECTenantStats {
   id: string;
   name: string;
   ap_count: number;
   venue_count: number;
   client_count: number;
+  switch_count: number;
   status_summary: StatusSummary;
   status_counts: Record<string, number>;
+  venue_stats: VenueStats[];
   error: string | null;
   ignored: boolean;
 }
@@ -29,6 +39,7 @@ interface DashboardData {
   total_aps: number;
   total_venues: number;
   total_clients: number;
+  total_switches: number;
   total_ecs: number;
   errors: number;
   status_summary: StatusSummary;
@@ -42,6 +53,7 @@ interface DashboardSettings {
 }
 
 type SortField = "name" | "ap_count" | "venue_count";
+type VenueSortField = "venue_name" | "tenant_name" | "ap_count" | "operational" | "offline";
 
 const STATUS_LABELS: Record<string, string> = {
   "1_01_NeverContactedCloud": "Never Contacted Cloud",
@@ -237,6 +249,23 @@ const MigrationDashboard = () => {
   const [settingsIgnored, setSettingsIgnored] = useState<Set<string>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
 
+  // Report schedule
+  const [reportEnabled, setReportEnabled] = useState(false);
+  const [reportFrequency, setReportFrequency] = useState("weekly");
+  const [reportDayOfWeek, setReportDayOfWeek] = useState(0);
+  const [reportRecipients, setReportRecipients] = useState<string[]>([]);
+  const [recipientInput, setRecipientInput] = useState("");
+  const [savingReport, setSavingReport] = useState(false);
+  const [sendingTestReport, setSendingTestReport] = useState(false);
+  const [testReportStatus, setTestReportStatus] = useState<string | null>(null);
+
+  // Venue filter, sort & pagination
+  const [venueFilterTenants, setVenueFilterTenants] = useState<Set<string>>(new Set());
+  const [venueSortField, setVenueSortField] = useState<VenueSortField>("ap_count");
+  const [venueSortDir, setVenueSortDir] = useState<"asc" | "desc">("desc");
+  const [venuePage, setVenuePage] = useState(0);
+  const VENUE_PAGE_SIZE = 25;
+
   // Backfill
   const emptyBackfillRow = (): BackfillRow => ({
     date: "", total_aps: "", operational_aps: "", total_venues: "", total_clients: "", total_ecs: "",
@@ -284,6 +313,13 @@ const MigrationDashboard = () => {
         if (progressJson.settings) {
           setSettings(progressJson.settings);
         }
+        // Initialize venue filter with all non-ignored tenant names
+        const tenantNames = new Set<string>(
+          (progressJson.data?.tenants ?? [])
+            .filter((t: ECTenantStats) => !t.ignored)
+            .map((t: ECTenantStats) => t.name)
+        );
+        setVenueFilterTenants(tenantNames);
         setSnapshots(snapshotJson.data ?? []);
         setLoading(false);
       })
@@ -349,6 +385,24 @@ const MigrationDashboard = () => {
     );
   };
 
+  const handleVenueSort = (field: VenueSortField) => {
+    if (venueSortField === field) {
+      setVenueSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setVenueSortField(field);
+      setVenueSortDir(field === "venue_name" || field === "tenant_name" ? "asc" : "desc");
+    }
+  };
+
+  const VenueSortIcon = ({ field }: { field: VenueSortField }) => {
+    if (venueSortField !== field) return null;
+    return venueSortDir === "asc" ? (
+      <ChevronUp size={14} className="inline ml-1" />
+    ) : (
+      <ChevronDown size={14} className="inline ml-1" />
+    );
+  };
+
   // Inline target editing (saves to DB)
   const saveTarget = async () => {
     const val = parseInt(targetInput, 10);
@@ -378,7 +432,22 @@ const MigrationDashboard = () => {
   const openSettings = () => {
     setSettingsTarget(String(target));
     setSettingsIgnored(new Set(settings?.ignored_tenant_ids ?? []));
+    setTestReportStatus(null);
     setShowSettings(true);
+    // Fetch report schedule
+    if (controllerID) {
+      fetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
+        credentials: "include",
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          setReportEnabled(data.enabled ?? false);
+          setReportFrequency(data.frequency ?? "weekly");
+          setReportDayOfWeek(data.day_of_week ?? 0);
+          setReportRecipients(data.recipients ?? []);
+        })
+        .catch(() => {});
+    }
   };
 
   // Save full settings
@@ -408,6 +477,61 @@ const MigrationDashboard = () => {
       // Keep panel open on error
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  // Report schedule helpers
+  const addRecipient = () => {
+    const email = recipientInput.trim().toLowerCase();
+    if (email && email.includes("@") && !reportRecipients.includes(email)) {
+      setReportRecipients([...reportRecipients, email]);
+      setRecipientInput("");
+    }
+  };
+  const removeRecipient = (email: string) => {
+    setReportRecipients(reportRecipients.filter((r) => r !== email));
+  };
+  const saveReportSchedule = async () => {
+    if (!controllerID) return;
+    setSavingReport(true);
+    try {
+      await fetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: reportEnabled,
+          frequency: reportFrequency,
+          day_of_week: reportDayOfWeek,
+          recipients: reportRecipients,
+        }),
+      });
+    } catch {
+      // silent
+    } finally {
+      setSavingReport(false);
+    }
+  };
+  const sendTestReport = async () => {
+    if (!controllerID) return;
+    setSendingTestReport(true);
+    setTestReportStatus(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/migration-dashboard/report/${controllerID}/send`,
+        { method: "POST", credentials: "include" }
+      );
+      if (res.ok) {
+        const result = await res.json();
+        setTestReportStatus(`Report sent to ${result.emails_sent} recipient(s)`);
+      } else {
+        const err = await res.json().catch(() => ({ detail: "Request failed" }));
+        setTestReportStatus(`Error: ${err.detail || "Request failed"}`);
+      }
+    } catch {
+      setTestReportStatus("Error: Network request failed");
+    } finally {
+      setSendingTestReport(false);
     }
   };
 
@@ -524,7 +648,7 @@ const MigrationDashboard = () => {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 no-print">
           {mspControllers.length > 1 && (
             <select
               value={controllerID ?? ""}
@@ -546,6 +670,19 @@ const MigrationDashboard = () => {
             <Settings size={16} />
           </button>
           <button
+            onClick={() => {
+              const prev = document.title;
+              document.title = "Ruckus.Tools Migration Dashboard";
+              window.print();
+              document.title = prev;
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm"
+            title="Print / Save as PDF"
+          >
+            <Printer size={16} />
+            PDF
+          </button>
+          <button
             onClick={() => controllerID && fetchData(controllerID)}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 text-sm disabled:opacity-50"
@@ -556,9 +693,14 @@ const MigrationDashboard = () => {
         </div>
       </div>
 
+      {/* Print-only footer — fixed position repeats on every printed page */}
+      <div className="hidden print:block fixed bottom-0 left-0 right-0 text-center text-xs text-gray-400 py-2">
+        Exported: {new Date().toLocaleString()}
+      </div>
+
       {/* Settings Panel */}
       {showSettings && (
-        <div className="bg-white rounded-xl shadow-lg border mb-6 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-lg border mb-6 overflow-hidden no-print">
           <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <Settings size={18} /> Dashboard Settings
@@ -643,6 +785,123 @@ const MigrationDashboard = () => {
                 <span className="text-xs text-gray-400">
                   {settingsIgnored.size} tenant{settingsIgnored.size > 1 ? "s" : ""} will be excluded from totals
                 </span>
+              )}
+            </div>
+
+            {/* Scheduled Reports */}
+            <hr className="border-gray-200" />
+            <div>
+              <label className="flex items-center gap-3 mb-4">
+                <input
+                  type="checkbox"
+                  checked={reportEnabled}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    setReportEnabled(enabled);
+                    if (!enabled && controllerID) {
+                      fetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
+                        method: "PUT",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ enabled: false }),
+                      }).catch(() => {});
+                    }
+                  }}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Enable Scheduled Email Report
+                </span>
+              </label>
+
+              {reportEnabled && (
+                <div className="space-y-4 ml-7">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Frequency</label>
+                      <select
+                        value={reportFrequency}
+                        onChange={(e) => setReportFrequency(e.target.value)}
+                        className="w-36 px-3 py-2 border rounded-lg text-sm"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly (1st)</option>
+                      </select>
+                    </div>
+                    {reportFrequency === "weekly" && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Day</label>
+                        <select
+                          value={reportDayOfWeek}
+                          onChange={(e) => setReportDayOfWeek(parseInt(e.target.value))}
+                          className="w-36 px-3 py-2 border rounded-lg text-sm"
+                        >
+                          {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+                            .map((day, i) => <option key={i} value={i}>{day}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400">Reports are sent at 06:00 UTC</p>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Recipients</label>
+                    <div className="flex items-center gap-2 mb-2">
+                      <input
+                        type="email"
+                        value={recipientInput}
+                        onChange={(e) => setRecipientInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addRecipient(); } }}
+                        placeholder="email@example.com"
+                        className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                      />
+                      <button
+                        onClick={addRecipient}
+                        className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    {reportRecipients.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {reportRecipients.map((email) => (
+                          <span
+                            key={email}
+                            className="inline-flex items-center gap-1 text-xs bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-full px-2.5 py-1"
+                          >
+                            {email}
+                            <button onClick={() => removeRecipient(email)} className="hover:text-indigo-900">
+                              <X size={12} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={saveReportSchedule}
+                      disabled={savingReport}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-50"
+                    >
+                      {savingReport ? "Saving..." : "Save Schedule"}
+                    </button>
+                    <button
+                      onClick={sendTestReport}
+                      disabled={sendingTestReport || reportRecipients.length === 0}
+                      className="px-4 py-2 bg-white border border-indigo-300 text-indigo-600 rounded-lg hover:bg-indigo-50 text-sm disabled:opacity-50"
+                    >
+                      {sendingTestReport ? "Sending..." : "Send Test Report"}
+                    </button>
+                    {testReportStatus && (
+                      <span className={`text-xs ${testReportStatus.startsWith("Error") ? "text-red-500" : "text-green-600"}`}>
+                        {testReportStatus}
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -853,7 +1112,7 @@ const MigrationDashboard = () => {
                     Target: {target.toLocaleString()} APs
                     <Pencil
                       size={12}
-                      className="inline ml-1 opacity-0 group-hover:opacity-100 transition"
+                      className="inline ml-1 opacity-0 group-hover:opacity-100 transition no-print"
                     />
                   </span>
                 )}
@@ -913,6 +1172,12 @@ const MigrationDashboard = () => {
               color="amber"
             />
             <MetricCard
+              icon={<Network size={24} />}
+              label="Total SWs"
+              value={(data.total_switches ?? 0).toLocaleString()}
+              color="teal"
+            />
+            <MetricCard
               icon={<MapPin size={24} />}
               label="Total Venues"
               value={data.total_venues.toLocaleString()}
@@ -923,12 +1188,6 @@ const MigrationDashboard = () => {
               label="Clients"
               value={(data.total_clients ?? 0).toLocaleString()}
               color="blue"
-            />
-            <MetricCard
-              icon={<Building2 size={24} />}
-              label="EC Tenants"
-              value={data.total_ecs.toLocaleString()}
-              color="teal"
             />
           </div>
 
@@ -972,7 +1231,7 @@ const MigrationDashboard = () => {
           )}
 
           {/* EC Breakdown Table */}
-          <div className="bg-white rounded-xl shadow overflow-hidden">
+          <div className="bg-white rounded-xl shadow overflow-hidden print:break-before-page">
             <div className="px-6 py-4 border-b border-gray-100">
               <h2 className="text-lg font-semibold text-gray-800">
                 Tenant Breakdown
@@ -992,21 +1251,21 @@ const MigrationDashboard = () => {
                       EC Tenant <SortIcon field="name" />
                     </th>
                     <th
-                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                       onClick={() => handleSort("ap_count")}
                     >
                       APs <SortIcon field="ap_count" />
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Operational
                     </th>
                     <th
-                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
                       onClick={() => handleSort("venue_count")}
                     >
                       Venues <SortIcon field="venue_count" />
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Clients
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1050,10 +1309,10 @@ const MigrationDashboard = () => {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-3 text-sm text-right font-mono text-gray-700">
+                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
                           {tenant.ap_count.toLocaleString()}
                         </td>
-                        <td className="px-6 py-3 text-sm text-right font-mono">
+                        <td className="px-6 py-3 text-sm text-center font-mono">
                           {(() => {
                             const op = tenant.status_summary?.operational ?? 0;
                             const pct = tenant.ap_count > 0 ? (op / tenant.ap_count) * 100 : 0;
@@ -1067,10 +1326,10 @@ const MigrationDashboard = () => {
                             );
                           })()}
                         </td>
-                        <td className="px-6 py-3 text-sm text-right font-mono text-gray-700">
+                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
                           {tenant.venue_count.toLocaleString()}
                         </td>
-                        <td className="px-6 py-3 text-sm text-right font-mono text-gray-700">
+                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
                           {(tenant.client_count ?? 0).toLocaleString()}
                         </td>
                         <td className="px-6 py-3">
@@ -1095,11 +1354,204 @@ const MigrationDashboard = () => {
               </table>
             </div>
           </div>
+
+          {/* Venue Breakdown Table */}
+          {(() => {
+            const allVenues: (VenueStats & { tenant_name: string })[] = [];
+            const tenantNames: string[] = [];
+            for (const t of data.tenants) {
+              if (t.ignored) continue;
+              tenantNames.push(t.name);
+              for (const v of t.venue_stats ?? []) {
+                allVenues.push({ ...v, tenant_name: t.name });
+              }
+            }
+            if (allVenues.length === 0) return null;
+            const filtered = allVenues
+              .filter((v) => venueFilterTenants.has(v.tenant_name))
+              .sort((a, b) => {
+                const dir = venueSortDir === "asc" ? 1 : -1;
+                if (venueSortField === "venue_name" || venueSortField === "tenant_name") {
+                  return dir * a[venueSortField].localeCompare(b[venueSortField]);
+                }
+                return dir * (a[venueSortField] - b[venueSortField]);
+              });
+            return (
+              <div className="bg-white rounded-xl shadow overflow-hidden mt-6 print:break-before-page">
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <h2 className="text-lg font-semibold text-gray-800">
+                    Venue Breakdown
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {filtered.length} of {allVenues.length} venues
+                  </p>
+                  {/* Tenant filter chips */}
+                  <div className="flex items-center gap-2 mt-3 flex-wrap no-print">
+                    <button
+                      onClick={() => { setVenueFilterTenants(new Set(tenantNames)); setVenuePage(0); }}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      All
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      onClick={() => { setVenueFilterTenants(new Set()); setVenuePage(0); }}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      None
+                    </button>
+                    <span className="text-gray-300 mr-1">|</span>
+                    {tenantNames.map((name) => {
+                      const active = venueFilterTenants.has(name);
+                      return (
+                        <button
+                          key={name}
+                          onClick={() => {
+                            setVenueFilterTenants((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(name)) next.delete(name);
+                              else next.add(name);
+                              return next;
+                            });
+                            setVenuePage(0);
+                          }}
+                          className={`inline-flex items-center gap-1 text-xs border rounded-full px-2.5 py-1 transition-colors ${
+                            active
+                              ? "bg-blue-50 border-blue-200 text-blue-700"
+                              : "bg-gray-50 border-gray-200 text-gray-400"
+                          }`}
+                        >
+                          <span>{name}</span>
+                          {active && <X size={11} className="opacity-60" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                        <th
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                          onClick={() => handleVenueSort("venue_name")}
+                        >
+                          Venue <VenueSortIcon field="venue_name" />
+                        </th>
+                        <th
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                          onClick={() => handleVenueSort("tenant_name")}
+                        >
+                          EC Tenant <VenueSortIcon field="tenant_name" />
+                        </th>
+                        <th
+                          className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                          onClick={() => handleVenueSort("ap_count")}
+                        >
+                          APs <VenueSortIcon field="ap_count" />
+                        </th>
+                        <th
+                          className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                          onClick={() => handleVenueSort("operational")}
+                        >
+                          Operational <VenueSortIcon field="operational" />
+                        </th>
+                        <th
+                          className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                          onClick={() => handleVenueSort("offline")}
+                        >
+                          Offline <VenueSortIcon field="offline" />
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    {/* Screen: paginated rows */}
+                    <tbody className="divide-y divide-gray-100 print:hidden">
+                      {filtered.slice(venuePage * VENUE_PAGE_SIZE, (venuePage + 1) * VENUE_PAGE_SIZE).map((v, idx) => (
+                        <VenueRow key={`${v.venue_id}-${v.tenant_name}`} v={v} idx={venuePage * VENUE_PAGE_SIZE + idx} />
+                      ))}
+                    </tbody>
+                    {/* Print: all rows */}
+                    <tbody className="divide-y divide-gray-100 hidden print:table-row-group">
+                      {filtered.map((v, idx) => (
+                        <VenueRow key={`${v.venue_id}-${v.tenant_name}`} v={v} idx={idx} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Pagination controls */}
+                {filtered.length > VENUE_PAGE_SIZE && (() => {
+                  const totalPages = Math.ceil(filtered.length / VENUE_PAGE_SIZE);
+                  const start = venuePage * VENUE_PAGE_SIZE + 1;
+                  const end = Math.min((venuePage + 1) * VENUE_PAGE_SIZE, filtered.length);
+                  return (
+                    <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-sm no-print">
+                      <span className="text-gray-500">
+                        Showing {start}–{end} of {filtered.length} venues
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setVenuePage((p) => Math.max(0, p - 1))}
+                          disabled={venuePage === 0}
+                          className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-gray-600">
+                          Page {venuePage + 1} of {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setVenuePage((p) => Math.min(totalPages - 1, p + 1))}
+                          disabled={venuePage >= totalPages - 1}
+                          className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
   );
 };
+
+// Venue table row
+function VenueRow({ v, idx }: { v: VenueStats & { tenant_name: string }; idx: number }) {
+  const pct = v.ap_count > 0 ? (v.operational / v.ap_count) * 100 : 0;
+  let statusLabel = "Pending";
+  let statusColor = "text-gray-500 bg-gray-100";
+  if (pct === 100) {
+    statusLabel = "Migrated";
+    statusColor = "text-green-700 bg-green-100";
+  } else if (pct > 0) {
+    statusLabel = "In Progress";
+    statusColor = "text-amber-700 bg-amber-100";
+  }
+  return (
+    <tr className="hover:bg-gray-50 transition-colors">
+      <td className="px-6 py-3 text-sm text-gray-400">{idx + 1}</td>
+      <td className="px-6 py-3 text-sm font-medium text-gray-800">{v.venue_name}</td>
+      <td className="px-6 py-3 text-sm text-gray-500">{v.tenant_name}</td>
+      <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">{v.ap_count.toLocaleString()}</td>
+      <td className="px-6 py-3 text-sm text-center font-mono text-green-600">{v.operational.toLocaleString()}</td>
+      <td className="px-6 py-3 text-sm text-center font-mono text-gray-500">{v.offline.toLocaleString()}</td>
+      <td className="px-6 py-3">
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
+          {statusLabel}
+          {pct > 0 && pct < 100 && (
+            <span className="ml-1 text-xs opacity-70">({pct.toFixed(0)}%)</span>
+          )}
+        </span>
+      </td>
+    </tr>
+  );
+}
 
 // Metric card component
 function MetricCard({

@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Migration Report — {{ controller_name }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #1f2937; font-size: 13px; padding: 40px;
+    }
+
+    /* Header */
+    .header { margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; }
+    .header h1 { font-size: 22px; color: #111827; }
+    .header .subtitle { font-size: 14px; color: #6b7280; margin-top: 4px; }
+    .header .timestamp { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+
+    /* Progress section */
+    .progress-section {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+      padding: 24px; margin-bottom: 20px;
+    }
+    .progress-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    .progress-target {
+      font-size: 13px; color: #6b7280;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .progress-target svg { flex-shrink: 0; }
+    .progress-message { font-size: 13px; font-weight: 500; color: #4b5563; font-style: italic; }
+
+    /* Progress bar */
+    .progress-container {
+      background: #f3f4f6; border-radius: 24px; height: 44px;
+      position: relative; overflow: hidden;
+    }
+    .progress-bar {
+      height: 44px; border-radius: 24px;
+      background: linear-gradient(90deg, #2563eb, #6366f1);
+    }
+    .progress-bar.complete {
+      background: linear-gradient(90deg, #22c55e, #34d399);
+    }
+    .progress-label {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 700; color: #1f2937;
+    }
+    /* Milestone markers */
+    .milestone {
+      position: absolute; top: 0; height: 44px;
+      border-left: 1px dashed #d1d5db; opacity: 0.4;
+    }
+
+    /* Metric tiles */
+    .metrics-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 12px; margin-bottom: 20px;
+    }
+    .metric-card {
+      background: #fff; border: 1px solid #e5e7eb;
+      border-radius: 10px; padding: 16px;
+    }
+    .metric-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 10px;
+    }
+    .metric-icon.blue { background: #eff6ff; color: #2563eb; }
+    .metric-icon.teal { background: #f0fdfa; color: #0d9488; }
+    .metric-icon.amber { background: #fffbeb; color: #d97706; }
+    .metric-icon.purple { background: #faf5ff; color: #9333ea; }
+    .metric-value { font-size: 22px; font-weight: 700; color: #111827; }
+    .metric-label { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+    /* Period cards (30/60/90) */
+    .period-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 12px; margin-bottom: 20px;
+    }
+    .period-card {
+      background: #fff; border: 1px solid #e5e7eb;
+      border-radius: 10px; padding: 16px;
+    }
+    .period-card .title {
+      font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 10px;
+    }
+    .period-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 3px 0; font-size: 12px;
+    }
+    .period-row .label { color: #6b7280; }
+    .period-row .value {
+      font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+      font-weight: 500;
+    }
+
+    /* AP Status Breakdown */
+    .status-section {
+      background: #fff; border: 1px solid #e5e7eb;
+      border-radius: 10px; padding: 16px; margin-bottom: 20px;
+    }
+    .status-section h3 {
+      font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 12px;
+    }
+    .status-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    }
+    .status-chip {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 10px; background: #f9fafb; border-radius: 8px;
+      font-size: 11px;
+    }
+    .status-chip .count {
+      font-family: 'SF Mono', 'Consolas', 'Courier New', monospace;
+      font-weight: 600; color: #1f2937; margin-left: 8px;
+    }
+
+    /* Section cards */
+    .section {
+      margin-top: 24px; background: white;
+      border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;
+    }
+    .section-header {
+      padding: 14px 18px; border-bottom: 1px solid #f3f4f6;
+    }
+    .section-header h2 { font-size: 15px; font-weight: 600; color: #1f2937; }
+    .section-header .count { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: #f9fafb; text-align: left;
+      padding: 8px 14px; font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #6b7280; border-bottom: 1px solid #e5e7eb;
+    }
+    td {
+      padding: 8px 14px; font-size: 12px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .font-mono { font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; }
+    .text-green { color: #16a34a; }
+    .text-amber { color: #d97706; }
+    .text-red { color: #dc2626; }
+    .text-gray { color: #6b7280; }
+    .text-muted { color: #9ca3af; }
+    .ignored td { opacity: 0.4; }
+    .ignored .name { text-decoration: line-through; }
+
+    /* Status badges */
+    .badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 9999px; font-size: 10px; font-weight: 500;
+    }
+    .badge-pending { background: #f3f4f6; color: #6b7280; }
+    .badge-progress { background: #fef3c7; color: #92400e; }
+    .badge-migrated { background: #d1fae5; color: #065f46; }
+
+    /* Page breaks */
+    .page-break { page-break-before: always; }
+
+    /* Footer */
+    .footer {
+      margin-top: 32px; text-align: center;
+      font-size: 10px; color: #9ca3af;
+      border-top: 1px solid #e5e7eb; padding-top: 12px;
+    }
+
+    /* Prevent row splits */
+    tr { page-break-inside: avoid; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <h1>Migration Dashboard Report</h1>
+    <div class="subtitle">{{ controller_name }} — SZ to R1 Migration Progress</div>
+    <div class="timestamp">Generated: {{ generated_at }}</div>
+  </div>
+
+  <!-- Progress Section -->
+  <div class="progress-section">
+    <div class="progress-meta">
+      <div class="progress-target">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+        </svg>
+        Target: {{ "{:,}".format(target_aps) }} APs
+      </div>
+      <div class="progress-message">{{ message }}</div>
+    </div>
+    <div class="progress-container" style="position: relative;">
+      <div class="progress-bar {% if percentage >= 100 %}complete{% endif %}"
+           style="width: {{ [percentage, 100] | min }}%"></div>
+      <div class="progress-label">
+        {{ "{:,}".format(total_aps) }} / {{ "{:,}".format(target_aps) }} APs
+        ({{ "%.1f" | format(percentage) }}%)
+      </div>
+      <div class="milestone" style="left: 25%"></div>
+      <div class="milestone" style="left: 50%"></div>
+      <div class="milestone" style="left: 75%"></div>
+    </div>
+  </div>
+
+  <!-- Metrics Grid -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-icon blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(total_aps) }}</div>
+      <div class="metric-label">Total APs</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon teal">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(operational) }}</div>
+      <div class="metric-label">Operational</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon amber">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(offline) }}</div>
+      <div class="metric-label">Offline</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon teal">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(total_switches) }}</div>
+      <div class="metric-label">Total SWs</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon purple">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(total_venues) }}</div>
+      <div class="metric-label">Total Venues</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(total_clients) }}</div>
+      <div class="metric-label">Clients</div>
+    </div>
+  </div>
+
+  <!-- 30/60/90 Day Period Cards -->
+  {% if period_cards %}
+  <div class="period-grid">
+    {% for card in period_cards %}
+    <div class="period-card">
+      <div class="title">{{ card.label }}</div>
+      {% for row in card.rows %}
+      <div class="period-row">
+        <span class="label">{{ row.label }}</span>
+        <span class="value" style="color: {{ row.color }}">{{ row.value }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- AP Status Breakdown -->
+  {% if status_breakdown %}
+  <div class="status-section">
+    <h3>AP Status Breakdown</h3>
+    <div class="status-grid">
+      {% for s in status_breakdown %}
+      <div class="status-chip">
+        <span style="color: {{ s.color }}">{{ s.label }}</span>
+        <span class="count">{{ "{:,}".format(s.count) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Tenant Breakdown -->
+  <div class="section page-break">
+    <div class="section-header">
+      <h2>Tenant Breakdown</h2>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>EC Tenant</th>
+          <th class="text-center">APs</th>
+          <th class="text-center">Operational</th>
+          <th class="text-center">Venues</th>
+          <th class="text-center">Clients</th>
+          <th class="text-center">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tenants %}
+        <tr{% if t.ignored %} class="ignored"{% endif %}>
+          <td class="text-muted">{{ loop.index }}</td>
+          <td class="name">
+            {{ t.name }}
+            {% if t.ignored %} <span class="text-muted">(ignored)</span>{% endif %}
+            {% if t.error %} <span class="text-red">⚠</span>{% endif %}
+          </td>
+          <td class="text-center font-mono">{{ "{:,}".format(t.ap_count) }}</td>
+          <td class="text-center font-mono">
+            {% set op = t.status_summary.operational | default(0) %}
+            {% set pct = (op / t.ap_count * 100) if t.ap_count > 0 else 0 %}
+            <span class="{% if pct >= 90 %}text-green{% elif pct >= 50 %}text-amber{% else %}text-red{% endif %}">
+              {{ "{:,}".format(op) }}
+              <span class="text-muted" style="font-size: 10px;">({{ "%.0f" | format(pct) }}%)</span>
+            </span>
+          </td>
+          <td class="text-center font-mono">{{ "{:,}".format(t.venue_count) }}</td>
+          <td class="text-center font-mono">{{ "{:,}".format(t.client_count | default(0)) }}</td>
+          <td class="text-center font-mono">{{ "%.1f" | format(t.share_pct) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Venue Breakdown (new page) -->
+  {% if venues %}
+  <div class="section page-break">
+    <div class="section-header">
+      <h2>Venue Breakdown</h2>
+      <div class="count">{{ venues | length }} venues</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Venue</th>
+          <th>EC Tenant</th>
+          <th class="text-center">APs</th>
+          <th class="text-center">Operational</th>
+          <th class="text-center">Offline</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in venues %}
+        <tr>
+          <td class="text-muted">{{ loop.index }}</td>
+          <td>{{ v.venue_name }}</td>
+          <td class="text-gray">{{ v.tenant_name }}</td>
+          <td class="text-center font-mono">{{ "{:,}".format(v.ap_count) }}</td>
+          <td class="text-center font-mono text-green">{{ "{:,}".format(v.operational) }}</td>
+          <td class="text-center font-mono text-gray">{{ "{:,}".format(v.offline) }}</td>
+          <td>
+            {% if v.pct == 100 %}
+              <span class="badge badge-migrated">Migrated</span>
+            {% elif v.pct > 0 %}
+              <span class="badge badge-progress">In Progress ({{ "%.0f" | format(v.pct) }}%)</span>
+            {% else %}
+              <span class="badge badge-pending">Pending</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    Ruckus.Tools Migration Dashboard &mdash; {{ generated_at }}
+  </div>
+
+</body>
+</html>
