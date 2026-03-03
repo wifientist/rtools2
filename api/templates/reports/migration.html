@@ -372,7 +372,7 @@
           <td class="text-center font-mono text-green">{{ "{:,}".format(v.operational) }}</td>
           <td class="text-center font-mono text-gray">{{ "{:,}".format(v.offline) }}</td>
           <td>
-            {% if v.pct == 100 %}
+            {% if v.pct >= 95 %}
               <span class="badge badge-migrated">Migrated</span>
             {% elif v.pct > 0 %}
               <span class="badge badge-progress">In Progress ({{ "%.0f" | format(v.pct) }}%)</span>

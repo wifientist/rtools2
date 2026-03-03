@@ -1526,7 +1526,7 @@ function VenueRow({ v, idx }: { v: VenueStats & { tenant_name: string }; idx: nu
   const pct = v.ap_count > 0 ? (v.operational / v.ap_count) * 100 : 0;
   let statusLabel = "Pending";
   let statusColor = "text-gray-500 bg-gray-100";
-  if (pct === 100) {
+  if (pct >= 95) {
     statusLabel = "Migrated";
     statusColor = "text-green-700 bg-green-100";
   } else if (pct > 0) {
