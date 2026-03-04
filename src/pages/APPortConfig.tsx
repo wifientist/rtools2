@@ -3,6 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
+import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -76,24 +77,8 @@ interface ConfigureResult {
     failed: number;
     skipped: number;
   };
-  dry_run: boolean;
   job_id?: string;
 }
-
-// Batch configuration options
-interface BatchConfig {
-  max_concurrent_aps: number;
-  max_concurrent_api_calls: number;
-  poll_interval_seconds: number;
-  max_poll_seconds: number;
-}
-
-const DEFAULT_BATCH_CONFIG: BatchConfig = {
-  max_concurrent_aps: 20,
-  max_concurrent_api_calls: 20,
-  poll_interval_seconds: 3,
-  max_poll_seconds: 120,
-};
 
 
 // Port config cell component - same as Per-Unit SSID
@@ -203,22 +188,16 @@ function APPortConfig() {
   const [modelPortConfigs, setModelPortConfigs] = useState<ModelPortConfigs>(DEFAULT_PORT_CONFIGS);
 
   // Results
-  const [configuring, setConfiguring] = useState(false);
   const [result, setResult] = useState<ConfigureResult | null>(null);
   const [error, setError] = useState("");
-
-  // Batch config state (always use batch mode with workflow jobs)
-  const [showBatchOptions, setShowBatchOptions] = useState(false);
-  const [batchConfig, setBatchConfig] = useState<BatchConfig>(DEFAULT_BATCH_CONFIG);
 
   // Job monitor modal state (uses workflow job framework)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [showJobModal, setShowJobModal] = useState(false);
 
-  // V2 plan/confirm state
+  // V2 plan/confirm modal state
   const [v2JobId, setV2JobId] = useState<string | null>(null);
-  const [v2PlanStatus, setV2PlanStatus] = useState<string | null>(null); // null | VALIDATING | AWAITING_CONFIRMATION | FAILED
-  const [v2PlanResult, setV2PlanResult] = useState<any>(null);
+  const [showV2PlanModal, setShowV2PlanModal] = useState(false);
 
   // Handle venue selection
   const handleVenueSelect = (id: string | null, venue: any) => {
@@ -298,110 +277,8 @@ function APPortConfig() {
     setCsvError("");
   };
 
-  // Get port config for a model category
-  const getPortConfigsForModel = (model: string): PortConfig[] | null => {
-    const uplinkPort = portConfigMetadata?.model_uplink_ports[model];
-
-    if (uplinkPort === 'LAN1') {
-      return modelPortConfigs.one_port_lan1_uplink;
-    } else if (uplinkPort === 'LAN2') {
-      return modelPortConfigs.one_port_lan2_uplink;
-    } else if (uplinkPort === 'LAN3') {
-      return modelPortConfigs.two_port;
-    } else if (uplinkPort === 'LAN5') {
-      return modelPortConfigs.four_port;
-    }
-    return null; // No configurable ports
-  };
-
-  // Build configuration payload
-  const buildConfigPayload = async () => {
-    if (apVlanMappings.length === 0) {
-      throw new Error("Please import AP→VLAN mappings first");
-    }
-
-    // Fetch APs to get their models
-    const url = effectiveTenantId
-      ? `${API_BASE_URL}/ap-port-config/${activeControllerId}/venue/${venueId}/aps?tenant_id=${effectiveTenantId}`
-      : `${API_BASE_URL}/ap-port-config/${activeControllerId}/venue/${venueId}/aps`;
-
-    const response = await fetch(url, { credentials: "include" });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch APs: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const venueAps = data.aps || [];
-
-    // Create lookup by name and serial
-    const apLookup = new Map<string, any>();
-    for (const ap of venueAps) {
-      if (ap.name) apLookup.set(ap.name.toLowerCase(), ap);
-      if (ap.serial) apLookup.set(ap.serial.toLowerCase(), ap);
-    }
-
-    // Build individual AP configs
-    const apConfigs: any[] = [];
-    const notFound: string[] = [];
-
-    for (const mapping of apVlanMappings) {
-      const ap = apLookup.get(mapping.ap_identifier.toLowerCase());
-
-      if (!ap) {
-        notFound.push(mapping.ap_identifier);
-        continue;
-      }
-
-      if (!ap.has_configurable_ports) {
-        continue; // Skip APs without configurable ports
-      }
-
-      const portConfigs = getPortConfigsForModel(ap.model);
-      if (!portConfigs) continue;
-
-      // Build port config for this AP
-      const apPortConfig: Record<string, any> = {
-        ap_identifier: ap.name || ap.serial,
-      };
-
-      portConfigs.forEach((config, idx) => {
-        const portKey = `lan${idx + 1}`;
-
-        if (config.mode === 'ignore' || config.mode === 'uplink') {
-          // Don't include - will be ignored
-          return;
-        }
-
-        if (config.mode === 'match') {
-          // Use VLAN from CSV mapping
-          apPortConfig[portKey] = { mode: 'specific', vlan: mapping.vlan };
-        } else if (config.mode === 'specific') {
-          // Use specific VLAN from config
-          apPortConfig[portKey] = { mode: 'specific', vlan: config.vlan };
-        } else if (config.mode === 'disable') {
-          apPortConfig[portKey] = { mode: 'disable' };
-        }
-      });
-
-      // Only add if there are port configs
-      if (Object.keys(apPortConfig).length > 1) {
-        apConfigs.push(apPortConfig);
-      }
-    }
-
-    if (notFound.length > 0) {
-      console.warn(`APs not found in venue: ${notFound.join(', ')}`);
-    }
-
-    if (apConfigs.length === 0) {
-      throw new Error("No APs with port configurations to apply. Check that APs exist in the venue and have configurable ports.");
-    }
-
-    return { ap_configs: apConfigs, not_found: notFound };
-  };
-
-  // Configure ports - always uses workflow job framework for consistency
-  const handleConfigure = async (dryRun: boolean = false) => {
+  // V2 plan/confirm flow
+  const handlePlanAndApply = async () => {
     if (!venueId || !activeControllerId) {
       setError("Please select a venue first");
       return;
@@ -411,153 +288,50 @@ function APPortConfig() {
       return;
     }
 
-    setConfiguring(true);
     setError("");
     setResult(null);
 
     try {
-      const { ap_configs, not_found } = await buildConfigPayload();
+      // Transform CSV mappings into V2 units format
+      const units = apVlanMappings.map(m => ({
+        unit_number: m.ap_identifier,
+        ap_identifiers: [m.ap_identifier],
+        default_vlan: String(m.vlan),
+      }));
 
-      if (dryRun) {
-        // Dry run uses sequential endpoint (no job needed)
-        const response = await fetch(`${API_BASE_URL}/ap-port-config/${activeControllerId}/configure`, {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            venue_id: venueId,
-            ...(effectiveTenantId && { tenant_id: effectiveTenantId }),
-            ap_configs,
-            dry_run: true
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || `Configuration failed: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        if (not_found.length > 0) {
-          data.not_found = not_found;
-        }
-        setResult(data);
-        setConfiguring(false);
-
-      } else {
-        // V2 plan/confirm flow
-        // Transform CSV mappings into V2 units format
-        const units = apVlanMappings.map(m => ({
-          unit_number: m.ap_identifier,
-          ap_identifiers: [m.ap_identifier],
-          default_vlan: String(m.vlan),
-        }));
-
-        const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/plan`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            controller_id: activeControllerId,
-            venue_id: venueId,
-            ...(effectiveTenantId && { tenant_id: effectiveTenantId }),
-            units,
-            model_port_configs: modelPortConfigs,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || `Plan failed: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        setV2JobId(data.job_id);
-        setV2PlanStatus("VALIDATING");
-        setV2PlanResult(null);
-        setConfiguring(false);
-
-        // Start polling for plan results
-        pollV2Plan(data.job_id);
-      }
-
-    } catch (err: any) {
-      setError(err.message || "Configuration failed");
-      setConfiguring(false);
-    }
-  };
-
-  // V2: Poll plan results
-  const pollV2Plan = async (jobId: string) => {
-    const maxAttempts = 60; // 60 * 2s = 2min timeout
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/${jobId}/plan`, {
-          credentials: "include",
-        });
-        if (!response.ok) continue;
-
-        const data = await response.json();
-        setV2PlanStatus(data.status);
-
-        if (data.status === "AWAITING_CONFIRMATION") {
-          setV2PlanResult(data);
-          return;
-        }
-        if (data.status === "FAILED") {
-          setV2PlanResult(data);
-          setError("Validation failed. Check conflicts below.");
-          return;
-        }
-      } catch {
-        // Continue polling on network errors
-      }
-    }
-    setError("Validation timed out. Please try again.");
-    setV2PlanStatus("FAILED");
-  };
-
-  // V2: Confirm plan and start execution
-  const confirmV2Plan = async () => {
-    if (!v2JobId) return;
-
-    setConfiguring(true);
-    setError("");
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/${v2JobId}/confirm`, {
+      const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/plan`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          controller_id: activeControllerId,
+          venue_id: venueId,
+          ...(effectiveTenantId && { tenant_id: effectiveTenantId }),
+          units,
+          model_port_configs: modelPortConfigs,
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Confirm failed: ${response.statusText}`);
+        throw new Error(errorData.detail || `Plan failed: ${response.statusText}`);
       }
 
-      // Open job monitor for execution tracking
-      setCurrentJobId(v2JobId);
-      setShowJobModal(true);
-      setV2PlanStatus(null);
-      setV2PlanResult(null);
-      setV2JobId(null);
+      const data = await response.json();
+      setV2JobId(data.job_id);
+      setShowV2PlanModal(true);
+
     } catch (err: any) {
-      setError(err.message || "Confirm failed");
-    } finally {
-      setConfiguring(false);
+      setError(err.message || "Configuration failed");
     }
   };
 
-  // Cancel V2 plan
-  const cancelV2Plan = () => {
+  // V2: Handle confirm from plan modal — open job monitor
+  const handleV2Confirm = (jobId: string) => {
+    setShowV2PlanModal(false);
+    setCurrentJobId(jobId);
+    setShowJobModal(true);
     setV2JobId(null);
-    setV2PlanStatus(null);
-    setV2PlanResult(null);
   };
 
   // Handle job modal close
@@ -581,7 +355,6 @@ function APPortConfig() {
           failed: jobResult.summary.failed || 0,
           skipped: jobResult.summary.skipped || 0,
         },
-        dry_run: false,
         job_id: jobResult.job_id,
       });
     }
@@ -909,102 +682,13 @@ function APPortConfig() {
           <div className="bg-white rounded-lg shadow p-4 mb-6">
             <h2 className="text-lg font-semibold mb-4">4. Apply Configuration</h2>
 
-            {/* Advanced Options (collapsible) */}
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={() => setShowBatchOptions(!showBatchOptions)}
-                className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
-              >
-                {showBatchOptions ? '▼' : '▶'} Advanced Options
-              </button>
-
-              {showBatchOptions && (
-                <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Max Concurrent APs
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={batchConfig.max_concurrent_aps}
-                      onChange={(e) => setBatchConfig({
-                        ...batchConfig,
-                        max_concurrent_aps: parseInt(e.target.value) || 20
-                      })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Max API Calls/sec
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={batchConfig.max_concurrent_api_calls}
-                      onChange={(e) => setBatchConfig({
-                        ...batchConfig,
-                        max_concurrent_api_calls: parseInt(e.target.value) || 20
-                      })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Poll Interval (sec)
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={batchConfig.poll_interval_seconds}
-                      onChange={(e) => setBatchConfig({
-                        ...batchConfig,
-                        poll_interval_seconds: parseInt(e.target.value) || 3
-                      })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Max Poll Time (sec)
-                    </label>
-                    <input
-                      type="number"
-                      min="30"
-                      max="600"
-                      value={batchConfig.max_poll_seconds}
-                      onChange={(e) => setBatchConfig({
-                        ...batchConfig,
-                        max_poll_seconds: parseInt(e.target.value) || 120
-                      })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-4">
-              <button
-                onClick={() => handleConfigure(true)}
-                disabled={configuring || !canApply}
-                className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:opacity-50"
-              >
-                {configuring ? "Processing..." : "Preview Changes (Dry Run)"}
-              </button>
-              <button
-                onClick={() => handleConfigure(false)}
-                disabled={configuring || !canApply || v2PlanStatus === "VALIDATING"}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {configuring ? "Starting..." : v2PlanStatus === "VALIDATING" ? "Validating..." : `Plan & Apply (${apVlanMappings.length} APs)`}
-              </button>
-            </div>
+            <button
+              onClick={handlePlanAndApply}
+              disabled={!canApply}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {`Plan & Apply (${apVlanMappings.length} APs)`}
+            </button>
 
             {!canApply && (
               <p className="text-sm text-gray-500 mt-3">
@@ -1017,98 +701,11 @@ function APPortConfig() {
             )}
           </div>
 
-          {/* V2 Plan Review */}
-          {v2PlanStatus && (
-            <div className={`rounded-lg shadow p-4 mb-6 ${
-              v2PlanStatus === "VALIDATING" ? "bg-blue-50 border border-blue-200" :
-              v2PlanStatus === "AWAITING_CONFIRMATION" ? "bg-green-50 border border-green-200" :
-              "bg-red-50 border border-red-200"
-            }`}>
-              <h2 className="text-lg font-semibold mb-4">
-                {v2PlanStatus === "VALIDATING" ? "Validating Configuration..." :
-                 v2PlanStatus === "AWAITING_CONFIRMATION" ? "Plan Ready — Review & Confirm" :
-                 "Validation Failed"}
-              </h2>
-
-              {v2PlanStatus === "VALIDATING" && (
-                <div className="flex items-center gap-3 text-blue-700">
-                  <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full" />
-                  <span>Checking AP port capabilities and building execution plan...</span>
-                </div>
-              )}
-
-              {v2PlanStatus === "AWAITING_CONFIRMATION" && v2PlanResult && (
-                <>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-2xl font-bold text-blue-600">{v2PlanResult.unit_count}</div>
-                      <div className="text-sm text-gray-600">Units (APs)</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-2xl font-bold text-green-600">{v2PlanResult.estimated_api_calls}</div>
-                      <div className="text-sm text-gray-600">Estimated API Calls</div>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 text-center">
-                      <div className="text-2xl font-bold text-purple-600">{v2PlanResult.valid ? "Valid" : "Invalid"}</div>
-                      <div className="text-sm text-gray-600">Status</div>
-                    </div>
-                  </div>
-
-                  {v2PlanResult.conflicts?.length > 0 && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                      <h3 className="font-medium text-yellow-800 mb-2">Warnings</h3>
-                      <ul className="text-sm text-yellow-700 list-disc list-inside">
-                        {v2PlanResult.conflicts.map((c: any, i: number) => (
-                          <li key={i}>{c.description}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <div className="flex gap-3">
-                    <button
-                      onClick={confirmV2Plan}
-                      disabled={configuring || !v2PlanResult.valid}
-                      className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 font-medium"
-                    >
-                      {configuring ? "Starting..." : "Confirm & Apply"}
-                    </button>
-                    <button
-                      onClick={cancelV2Plan}
-                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {v2PlanStatus === "FAILED" && v2PlanResult && (
-                <>
-                  {v2PlanResult.conflicts?.length > 0 && (
-                    <ul className="text-sm text-red-700 list-disc list-inside mb-4">
-                      {v2PlanResult.conflicts.map((c: any, i: number) => (
-                        <li key={i}>{c.description}</li>
-                      ))}
-                    </ul>
-                  )}
-                  <button
-                    onClick={cancelV2Plan}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                  >
-                    Dismiss
-                  </button>
-                </>
-              )}
-            </div>
-          )}
 
           {/* Results */}
           {result && (
-            <div className={`rounded-lg shadow p-4 mb-6 ${result.dry_run ? 'bg-yellow-50 border border-yellow-200' : 'bg-green-50 border border-green-200'}`}>
-              <h2 className="text-lg font-semibold mb-4">
-                {result.dry_run ? "Preview Results (Dry Run)" : "Configuration Results"}
-              </h2>
+            <div className="rounded-lg shadow p-4 mb-6 bg-green-50 border border-green-200">
+              <h2 className="text-lg font-semibold mb-4">Configuration Results</h2>
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                 <div className="text-center">
@@ -1146,7 +743,7 @@ function APPortConfig() {
               {result.configured.length > 0 && (
                 <div className="mt-4">
                   <h3 className="font-medium text-green-700 mb-2">
-                    {result.dry_run ? "APs to Configure:" : "Configured APs:"} ({result.configured.length})
+                    Configured APs: ({result.configured.length})
                   </h3>
                   <div className="max-h-48 overflow-y-auto">
                     <table className="w-full text-sm border border-green-200">
@@ -1219,6 +816,18 @@ function APPortConfig() {
             </div>
           )}
         </>
+      )}
+
+      {/* V2 Plan Confirmation Modal */}
+      {v2JobId && (
+        <V2PlanConfirmModal
+          jobId={v2JobId}
+          isOpen={showV2PlanModal}
+          workflowName="ap_lan_port_config"
+          onClose={() => { setShowV2PlanModal(false); setV2JobId(null); }}
+          onConfirm={handleV2Confirm}
+          apiPrefix="/ap-port-config/v2"
+        />
       )}
 
       {/* Job Monitor Modal */}

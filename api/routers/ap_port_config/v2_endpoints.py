@@ -76,6 +76,8 @@ class V2PlanResult(BaseModel):
     summary: Dict[str, Any] = {}
     conflicts: list = []
     estimated_api_calls: int = 0
+    actions: list = []
+    ap_match_summary: Dict[str, Any] = {}
 
 
 class V2ConfirmResponse(BaseModel):
@@ -316,8 +318,22 @@ async def get_plan(
         result.estimated_api_calls = (
             vr.summary.total_api_calls if vr.summary else 0
         )
-        result.total_aps = (
-            vr.summary.total_api_calls if vr.summary else 0
+        result.actions = [
+            {
+                **a.model_dump(),
+                "details": "; ".join(a.notes) if a.notes else None,
+            }
+            for a in vr.actions
+        ]
+
+        # Get enriched AP matching data from phase outputs
+        phase_outputs = job.global_phase_results.get(
+            "validate_lan_ports", {}
+        )
+        ap_match = phase_outputs.get("ap_match_summary", {})
+        result.ap_match_summary = ap_match
+        result.total_aps = ap_match.get(
+            "total_csv_aps", len(job.units)
         )
 
     return result

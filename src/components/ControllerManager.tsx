@@ -315,7 +315,7 @@ export default function ControllerManager() {
                   onChange={(e) => setFormData(prev => ({ ...prev, controller_subtype: e.target.value }))}
                   className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
                 >
-                  <option value="EC">EC (Enterprise Controller)</option>
+                  <option value="EC">EC (End Customer)</option>
                   <option value="MSP">MSP (Managed Service Provider)</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">Select MSP for MSP tenant types with access to MSP-specific features</p>
@@ -452,7 +452,7 @@ export default function ControllerManager() {
                           onChange={(e) => setFormData(prev => ({ ...prev, controller_subtype: e.target.value }))}
                           className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-300"
                         >
-                          <option value="EC">EC (Enterprise Controller)</option>
+                          <option value="EC">EC (End Customer)</option>
                           <option value="MSP">MSP (Managed Service Provider)</option>
                         </select>
                       </div>

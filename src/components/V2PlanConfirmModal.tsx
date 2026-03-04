@@ -46,6 +46,7 @@ interface PlanResult {
   unit_count: number;
   estimated_api_calls: number;
   actions: ActionItem[];
+  ap_match_summary?: Record<string, any>;
 }
 
 interface V2PlanConfirmModalProps {
@@ -189,6 +190,10 @@ const V2PlanConfirmModal = ({
   const reuseActions = plan?.actions?.filter(
     (a) => a.action === 'reuse' || a.action === 'exists'
   ) || [];
+  const configureActions = plan?.actions?.filter(
+    (a) => a.action === 'configure'
+  ) || [];
+  const apMatch = plan?.ap_match_summary;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -283,27 +288,85 @@ const V2PlanConfirmModal = ({
                 </div>
               </div>
 
-              {/* Validation summary details */}
-              {plan.summary && Object.keys(plan.summary).length > 0 && (
+              {/* AP Match Summary (for port config workflows) */}
+              {apMatch && Object.keys(apMatch).length > 0 ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                    Validation Summary
+                    AP Matching Results
                   </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {Object.entries(plan.summary).map(([key, value]) => (
-                      <div key={key} className="text-sm">
-                        <span className="text-gray-500">
-                          {key.replace(/_/g, ' ')}:
-                        </span>{' '}
-                        <span className="font-medium text-gray-800">
-                          {typeof value === 'object'
-                            ? JSON.stringify(value)
-                            : String(value)}
-                        </span>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                    <div className="bg-white rounded p-2 text-center border">
+                      <div className="text-lg font-bold text-blue-600">
+                        {apMatch.matched ?? 0}
                       </div>
-                    ))}
+                      <div className="text-xs text-gray-500">Matched</div>
+                    </div>
+                    <div className="bg-white rounded p-2 text-center border">
+                      <div className="text-lg font-bold text-green-600">
+                        {apMatch.will_configure ?? 0}
+                      </div>
+                      <div className="text-xs text-gray-500">Will Configure</div>
+                    </div>
+                    <div className="bg-white rounded p-2 text-center border">
+                      <div className={`text-lg font-bold ${(apMatch.not_found ?? 0) > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                        {apMatch.not_found ?? 0}
+                      </div>
+                      <div className="text-xs text-gray-500">Not Found</div>
+                    </div>
+                    <div className="bg-white rounded p-2 text-center border">
+                      <div className="text-lg font-bold text-gray-500">
+                        {(apMatch.skipped_zero_port ?? 0) +
+                         (apMatch.skipped_no_config ?? 0)}
+                      </div>
+                      <div className="text-xs text-gray-500">Skipped</div>
+                    </div>
                   </div>
+
+                  {/* Model breakdown */}
+                  {apMatch.model_breakdown &&
+                   Object.keys(apMatch.model_breakdown).length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-gray-600 mb-1">
+                        By Model Category:
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(apMatch.model_breakdown).map(
+                          ([category, count]) => (
+                            <span
+                              key={category}
+                              className="text-xs px-2 py-1 bg-white border rounded"
+                            >
+                              {category}: <strong>{String(count)}</strong>
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                /* Generic validation summary for non-port-config workflows */
+                plan.summary && Object.keys(plan.summary).length > 0 && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                      Validation Summary
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {Object.entries(plan.summary).map(([key, value]) => (
+                        <div key={key} className="text-sm">
+                          <span className="text-gray-500">
+                            {key.replace(/_/g, ' ')}:
+                          </span>{' '}
+                          <span className="font-medium text-gray-800">
+                            {typeof value === 'object'
+                              ? JSON.stringify(value)
+                              : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
               )}
 
               {/* Actions - what will be created vs reused */}
@@ -371,6 +434,37 @@ const V2PlanConfirmModal = ({
                       </ul>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Configure actions (port config workflows) */}
+              {configureActions.length > 0 && (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-purple-800 mb-2">
+                    Will Configure ({configureActions.length})
+                  </h4>
+                  <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {configureActions.map((action, idx) => (
+                      <li
+                        key={idx}
+                        className="text-xs text-purple-700 flex items-start gap-1.5"
+                      >
+                        <span className="text-purple-400 mt-0.5 flex-shrink-0">
+                          ~
+                        </span>
+                        <span>
+                          <span className="font-medium">
+                            {action.resource_name || action.name}
+                          </span>
+                          {action.details && (
+                            <span className="text-purple-500 ml-1">
+                              - {action.details}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
