@@ -1,7 +1,7 @@
 """
 Scheduled job: Report dispatcher.
 
-Runs daily at 06:00 UTC. Checks all enabled scheduled reports and
+Runs daily at 12:30 UTC. Checks all enabled scheduled reports and
 generates/emails those that are due based on their frequency settings.
 """
 import logging
@@ -133,8 +133,8 @@ async def ensure_registered(scheduler) -> None:
         name="Report Dispatcher",
         callable_path="jobs.report_dispatcher_job:run_report_dispatcher",
         trigger_type="cron",
-        trigger_config={"hour": 6, "minute": 0},
+        trigger_config={"hour": 12, "minute": 30},
         owner_type="reports",
-        description="Daily at 06:00 UTC: generates and emails PDF reports for enabled schedules",
+        description="Daily at 12:30 UTC: generates and emails PDF reports for enabled schedules",
     )
-    logger.info(f"Registered report dispatcher job '{JOB_ID}' (daily at 06:00 UTC)")
+    logger.info(f"Registered report dispatcher job '{JOB_ID}' (daily at 12:30 UTC)")
