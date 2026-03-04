@@ -52,6 +52,33 @@ interface DashboardSettings {
   ignored_tenant_ids: string[];
 }
 
+interface MoversVenue {
+  venue_id: string;
+  venue_name: string;
+  tenant_name: string;
+  ap_count: number;
+  operational: number;
+  current_status: string;
+}
+
+interface MoversData {
+  baseline_date: string | null;
+  current_date: string;
+  days: number;
+  transitions: {
+    new: MoversVenue[];
+    pending_to_in_progress: MoversVenue[];
+    pending_to_migrated: MoversVenue[];
+    in_progress_to_migrated: MoversVenue[];
+  };
+  summary: {
+    new: number;
+    pending_to_in_progress: number;
+    pending_to_migrated: number;
+    in_progress_to_migrated: number;
+  };
+}
+
 type SortField = "name" | "ap_count" | "venue_count";
 type VenueSortField = "venue_name" | "tenant_name" | "ap_count" | "operational" | "offline";
 
@@ -275,6 +302,11 @@ const MigrationDashboard = () => {
   const [savingBackfill, setSavingBackfill] = useState(false);
   const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null);
 
+  // Movers & Shakers
+  const [moversData, setMoversData] = useState<MoversData | null>(null);
+  const [moversDays, setMoversDays] = useState(30);
+  const [moversLoading, setMoversLoading] = useState(false);
+
   const target = settings?.target_aps ?? 180000;
 
   // Auto-select first MSP controller
@@ -346,6 +378,26 @@ const MigrationDashboard = () => {
     const timer = setTimeout(() => setAnimatedPct(pct), 100);
     return () => clearTimeout(timer);
   }, [data, target]);
+
+  // Fetch movers data when controller or day window changes
+  useEffect(() => {
+    if (!controllerID) return;
+    const abortController = new AbortController();
+    setMoversLoading(true);
+    fetch(`${API_BASE_URL}/migration-dashboard/movers/${controllerID}?days=${moversDays}`, {
+      credentials: "include",
+      signal: abortController.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json) setMoversData(json);
+        setMoversLoading(false);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setMoversLoading(false);
+      });
+    return () => abortController.abort();
+  }, [controllerID, moversDays]);
 
   const percentage = data ? (data.total_aps / target) * 100 : 0;
   const remaining = data ? Math.max(target - data.total_aps, 0) : target;
@@ -843,7 +895,7 @@ const MigrationDashboard = () => {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400">Reports are sent at 06:00 UTC</p>
+                  <p className="text-xs text-gray-400">Reports are sent at 12:30 UTC</p>
 
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Recipients</label>
@@ -1515,6 +1567,140 @@ const MigrationDashboard = () => {
               </div>
             );
           })()}
+
+          {/* Movers & Shakers */}
+          <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">Movers &amp; Shakers</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Venue status changes over the last {moversDays} days
+                    {moversData?.baseline_date && (
+                      <span> (baseline: {new Date(moversData.baseline_date).toLocaleDateString()})</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 no-print">
+                  {[7, 30, 60, 90].map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setMoversDays(d)}
+                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        moversDays === d
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4">
+              {moversLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="animate-spin text-gray-400" size={20} />
+                  <span className="ml-2 text-sm text-gray-400">Loading transitions...</span>
+                </div>
+              ) : !moversData?.baseline_date ? (
+                <div className="flex items-center gap-2 py-6 px-4 bg-blue-50 rounded-lg">
+                  <AlertCircle size={16} className="text-blue-500 shrink-0" />
+                  <p className="text-sm text-blue-700">
+                    Venue tracking data is being collected. Check back after the next daily snapshot.
+                  </p>
+                </div>
+              ) : (() => {
+                const { transitions, summary } = moversData;
+                const total = summary.new + summary.pending_to_in_progress + summary.pending_to_migrated + summary.in_progress_to_migrated;
+                if (total === 0) {
+                  return (
+                    <p className="text-sm text-gray-400 italic py-4 text-center">
+                      No venue status changes in the last {moversDays} days.
+                    </p>
+                  );
+                }
+                // Build flat list with transition type for table rendering
+                const rows: (MoversVenue & { transition: string; sortOrder: number })[] = [
+                  ...transitions.new.map((v) => ({ ...v, transition: "New", sortOrder: 0 })),
+                  ...transitions.pending_to_in_progress.map((v) => ({ ...v, transition: "Pending \u2192 In Progress", sortOrder: 1 })),
+                  ...transitions.pending_to_migrated.map((v) => ({ ...v, transition: "Pending \u2192 Migrated", sortOrder: 2 })),
+                  ...transitions.in_progress_to_migrated.map((v) => ({ ...v, transition: "In Progress \u2192 Migrated", sortOrder: 3 })),
+                ].sort((a, b) => a.sortOrder - b.sortOrder || a.venue_name.localeCompare(b.venue_name));
+
+                const MOVERS_PAGE_SIZE = 25;
+                const transitionColors: Record<string, string> = {
+                  "New": "bg-blue-100 text-blue-700",
+                  "Pending \u2192 In Progress": "bg-amber-100 text-amber-700",
+                  "Pending \u2192 Migrated": "bg-green-100 text-green-700",
+                  "In Progress \u2192 Migrated": "bg-emerald-100 text-emerald-700",
+                };
+
+                return (
+                  <>
+                    {/* Summary badges */}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {summary.new > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                          New: {summary.new}
+                        </span>
+                      )}
+                      {summary.pending_to_in_progress > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                          Pending &rarr; In Progress: {summary.pending_to_in_progress}
+                        </span>
+                      )}
+                      {summary.pending_to_migrated > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          Pending &rarr; Migrated: {summary.pending_to_migrated}
+                        </span>
+                      )}
+                      {summary.in_progress_to_migrated > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                          In Progress &rarr; Migrated: {summary.in_progress_to_migrated}
+                        </span>
+                      )}
+                    </div>
+                    {/* Table */}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venue</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EC Tenant</th>
+                            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">APs</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {rows.slice(0, MOVERS_PAGE_SIZE).map((row, idx) => (
+                            <tr key={`${row.venue_id}-${row.transition}`} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-3 text-sm text-gray-400">{idx + 1}</td>
+                              <td className="px-4 py-3 text-sm font-medium text-gray-800">{row.venue_name}</td>
+                              <td className="px-4 py-3 text-sm text-gray-500">{row.tenant_name}</td>
+                              <td className="px-4 py-3 text-sm text-center font-mono text-gray-700">{row.ap_count.toLocaleString()}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${transitionColors[row.transition] ?? "bg-gray-100 text-gray-600"}`}>
+                                  {row.transition}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {rows.length > MOVERS_PAGE_SIZE && (
+                      <p className="text-xs text-gray-400 mt-2 px-1">
+                        Showing first {MOVERS_PAGE_SIZE} of {rows.length} transitions
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
         </>
       )}
     </div>

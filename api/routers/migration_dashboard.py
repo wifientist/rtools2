@@ -81,6 +81,16 @@ def _summarize_statuses(status_counts: dict[str, int]) -> dict[str, int]:
     return summary
 
 
+def _compute_venue_status(ap_count: int, operational: int) -> str:
+    """Compute venue migration status tier (mirrors frontend VenueRow logic)."""
+    if ap_count <= 0 or operational <= 0:
+        return "Pending"
+    pct = (operational / ap_count) * 100
+    if pct >= 95:
+        return "Migrated"
+    return "In Progress"
+
+
 def _get_settings(controller_id: int, db: Session) -> MigrationDashboardSettings | None:
     return (
         db.query(MigrationDashboardSettings)
@@ -129,6 +139,24 @@ def _maybe_capture_snapshot(
         ):
             return
 
+        # Build per-venue status data from tenant venue_stats
+        venue_data = []
+        for t in tenants:
+            if t.get("ignored"):
+                continue
+            for v in t.get("venue_stats", []):
+                ap_ct = v.get("ap_count", 0)
+                op_ct = v.get("operational", 0)
+                venue_data.append({
+                    "venue_id": v["venue_id"],
+                    "venue_name": v["venue_name"],
+                    "tenant_id": t["id"],
+                    "tenant_name": t["name"],
+                    "ap_count": ap_ct,
+                    "operational": op_ct,
+                    "status": _compute_venue_status(ap_ct, op_ct),
+                })
+
         snapshot = MigrationDashboardSnapshot(
             controller_id=controller_id,
             total_aps=progress_data["total_aps"],
@@ -148,6 +176,7 @@ def _maybe_capture_snapshot(
                 for t in tenants
                 if not t.get("ignored")
             ],
+            venue_data=venue_data,
         )
         db.add(snapshot)
         db.commit()
@@ -726,4 +755,125 @@ async def get_migration_progress(
         "status": "success",
         "data": progress_data,
         "settings": settings_data,
+    }
+
+
+# ---------- Movers & Shakers endpoint ----------
+
+@router.get("/movers/{controller_id}")
+async def get_venue_movers(
+    controller_id: int = Path(...),
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Compare venue statuses from N days ago to current and return transitions.
+
+    Categories: new, pending_to_in_progress, pending_to_migrated, in_progress_to_migrated.
+    """
+    logger.info(f"[dashboard] GET movers controller={controller_id} days={days} user={current_user.email}")
+
+    controller = validate_controller_access(controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Requires a RuckusONE controller")
+    if controller.controller_subtype != "MSP":
+        raise HTTPException(status_code=400, detail="Requires an MSP controller")
+
+    # Find the oldest snapshot with venue_data in the time window
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    baseline_snapshot = (
+        db.query(MigrationDashboardSnapshot)
+        .filter(
+            MigrationDashboardSnapshot.controller_id == controller_id,
+            MigrationDashboardSnapshot.captured_at >= cutoff,
+            MigrationDashboardSnapshot.venue_data.isnot(None),
+        )
+        .order_by(MigrationDashboardSnapshot.captured_at.asc())
+        .first()
+    )
+
+    if not baseline_snapshot or not baseline_snapshot.venue_data:
+        return {
+            "status": "success",
+            "baseline_date": None,
+            "current_date": datetime.utcnow().isoformat(),
+            "days": days,
+            "transitions": {
+                "new": [],
+                "pending_to_in_progress": [],
+                "pending_to_migrated": [],
+                "in_progress_to_migrated": [],
+            },
+            "summary": {
+                "new": 0,
+                "pending_to_in_progress": 0,
+                "pending_to_migrated": 0,
+                "in_progress_to_migrated": 0,
+            },
+        }
+
+    # Build baseline lookup: venue_id → entry
+    baseline_map: dict[str, dict] = {
+        v["venue_id"]: v for v in baseline_snapshot.venue_data
+    }
+
+    # Get current live data
+    progress_data, tenants, _ = await fetch_controller_progress(controller_id, db)
+
+    # Build current venue list from live data
+    current_venues: list[dict] = []
+    for t in tenants:
+        if t.get("ignored"):
+            continue
+        for v in t.get("venue_stats", []):
+            ap_ct = v.get("ap_count", 0)
+            op_ct = v.get("operational", 0)
+            current_venues.append({
+                "venue_id": v["venue_id"],
+                "venue_name": v["venue_name"],
+                "tenant_name": t["name"],
+                "ap_count": ap_ct,
+                "operational": op_ct,
+                "current_status": _compute_venue_status(ap_ct, op_ct),
+            })
+
+    # Compare and categorize transitions
+    transitions: dict[str, list] = {
+        "new": [],
+        "pending_to_in_progress": [],
+        "pending_to_migrated": [],
+        "in_progress_to_migrated": [],
+    }
+
+    for venue in current_venues:
+        vid = venue["venue_id"]
+        old = baseline_map.get(vid)
+
+        if old is None:
+            transitions["new"].append(venue)
+            continue
+
+        old_status = old.get("status", "Pending")
+        new_status = venue["current_status"]
+
+        if old_status == new_status:
+            continue
+
+        if old_status == "Pending" and new_status == "In Progress":
+            transitions["pending_to_in_progress"].append(venue)
+        elif old_status == "Pending" and new_status == "Migrated":
+            transitions["pending_to_migrated"].append(venue)
+        elif old_status == "In Progress" and new_status == "Migrated":
+            transitions["in_progress_to_migrated"].append(venue)
+
+    summary = {k: len(v) for k, v in transitions.items()}
+
+    return {
+        "status": "success",
+        "baseline_date": baseline_snapshot.captured_at.isoformat(),
+        "current_date": datetime.utcnow().isoformat(),
+        "days": days,
+        "transitions": transitions,
+        "summary": summary,
     }
