@@ -4,7 +4,7 @@ Scheduled job: Daily migration dashboard snapshot.
 Polls all MSP controllers that have dashboard settings configured
 and captures a snapshot of migration progress.
 
-Runs daily at 13:00 UTC (~8 AM EST / ~7 AM CST).
+Runs daily at 12:00 UTC (~7 AM EST / ~6 AM CST).
 """
 
 import logging
@@ -88,11 +88,18 @@ async def run_daily_snapshot() -> Dict[str, Any]:
         db.close()
 
 
+TRIGGER_CONFIG = {"hour": 12, "minute": 0}
+
+
 async def ensure_registered(scheduler) -> None:
-    """Register the daily snapshot job if it doesn't already exist."""
+    """Register or update the daily snapshot job."""
     existing = await scheduler.get_job(JOB_ID)
     if existing:
-        logger.info(f"Snapshot job '{JOB_ID}' already registered")
+        if existing.trigger_config != TRIGGER_CONFIG:
+            await scheduler.update_job(JOB_ID, trigger_config=TRIGGER_CONFIG)
+            logger.info(f"Updated snapshot job trigger to {TRIGGER_CONFIG}")
+        else:
+            logger.info(f"Snapshot job '{JOB_ID}' already registered")
         return
 
     await scheduler.register_job(
@@ -100,8 +107,8 @@ async def ensure_registered(scheduler) -> None:
         name="Migration Dashboard Daily Snapshot",
         callable_path="jobs.migration_snapshot_job:run_daily_snapshot",
         trigger_type="cron",
-        trigger_config={"hour": 13, "minute": 0},
+        trigger_config=TRIGGER_CONFIG,
         owner_type="migration_dashboard",
-        description="Polls MSP controllers daily at 13:00 UTC and captures migration progress snapshots",
+        description="Polls MSP controllers daily at 12:00 UTC and captures migration progress snapshots",
     )
-    logger.info(f"Registered snapshot job '{JOB_ID}' (daily at 13:00 UTC)")
+    logger.info(f"Registered snapshot job '{JOB_ID}' (daily at 12:00 UTC)")
