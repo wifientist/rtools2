@@ -19,7 +19,6 @@ class MigrationDashboardSnapshot(Base):
     total_clients = Column(Integer, nullable=False)
     total_ecs = Column(Integer, nullable=False)
     tenant_data = Column(JSON, nullable=False)
-    venue_data = Column(JSON, nullable=True)
     captured_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     controller = relationship("Controller")

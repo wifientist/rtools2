@@ -18,6 +18,7 @@ from models.user import User, RoleEnum
 from models.controller import Controller
 from models.migration_dashboard_settings import MigrationDashboardSettings
 from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
+from models.venue_migration_history import VenueMigrationHistory
 from clients.r1_client import create_r1_client_from_controller, validate_controller_access
 from dependencies import get_db, get_current_user
 
@@ -91,6 +92,84 @@ def _compute_venue_status(ap_count: int, operational: int) -> str:
     return "In Progress"
 
 
+def _upsert_venue_history(
+    controller_id: int, tenants: list[dict], db: Session
+) -> None:
+    """Update venue_migration_history rows from live tenant/venue data."""
+    now = datetime.utcnow()
+
+    # Load existing rows keyed by venue_id
+    existing = {
+        row.venue_id: row
+        for row in db.query(VenueMigrationHistory).filter(
+            VenueMigrationHistory.controller_id == controller_id
+        ).all()
+    }
+
+    # Build current venue set from live data
+    seen_venue_ids: set[str] = set()
+    for t in tenants:
+        if t.get("ignored"):
+            continue
+        for v in t.get("venue_stats", []):
+            vid = v["venue_id"]
+            seen_venue_ids.add(vid)
+            ap_ct = v.get("ap_count", 0)
+            op_ct = v.get("operational", 0)
+            new_status = _compute_venue_status(ap_ct, op_ct)
+
+            row = existing.get(vid)
+            if row is None:
+                # New venue — insert
+                row = VenueMigrationHistory(
+                    controller_id=controller_id,
+                    venue_id=vid,
+                    venue_name=v["venue_name"],
+                    tenant_id=t["id"],
+                    tenant_name=t["name"],
+                    ap_count=ap_ct,
+                    operational=op_ct,
+                    status=new_status,
+                    pending_at=now,
+                )
+                # Stamp transition dates if already past Pending
+                if new_status in ("In Progress", "Migrated"):
+                    row.in_progress_at = now
+                if new_status == "Migrated":
+                    row.migrated_at = now
+                db.add(row)
+            else:
+                # Existing venue — update counts and check for status transition
+                row.ap_count = ap_ct
+                row.operational = op_ct
+                row.venue_name = v["venue_name"]
+                row.tenant_id = t["id"]
+                row.tenant_name = t["name"]
+
+                if row.status != new_status:
+                    row.status = new_status
+                    if new_status == "In Progress" and not row.in_progress_at:
+                        row.in_progress_at = now
+                    elif new_status == "Migrated" and not row.migrated_at:
+                        row.migrated_at = now
+                    # Clear removed_at if venue reappears
+                    if row.removed_at and new_status != "Removed":
+                        row.removed_at = None
+
+    # Mark venues no longer in live data as Removed
+    for vid, row in existing.items():
+        if vid not in seen_venue_ids and row.status != "Removed":
+            row.status = "Removed"
+            if not row.removed_at:
+                row.removed_at = now
+
+    try:
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to upsert venue history for controller {controller_id}: {e}")
+        db.rollback()
+
+
 def _get_settings(controller_id: int, db: Session) -> MigrationDashboardSettings | None:
     return (
         db.query(MigrationDashboardSettings)
@@ -139,24 +218,6 @@ def _maybe_capture_snapshot(
         ):
             return
 
-        # Build per-venue status data from tenant venue_stats
-        venue_data = []
-        for t in tenants:
-            if t.get("ignored"):
-                continue
-            for v in t.get("venue_stats", []):
-                ap_ct = v.get("ap_count", 0)
-                op_ct = v.get("operational", 0)
-                venue_data.append({
-                    "venue_id": v["venue_id"],
-                    "venue_name": v["venue_name"],
-                    "tenant_id": t["id"],
-                    "tenant_name": t["name"],
-                    "ap_count": ap_ct,
-                    "operational": op_ct,
-                    "status": _compute_venue_status(ap_ct, op_ct),
-                })
-
         snapshot = MigrationDashboardSnapshot(
             controller_id=controller_id,
             total_aps=progress_data["total_aps"],
@@ -176,11 +237,13 @@ def _maybe_capture_snapshot(
                 for t in tenants
                 if not t.get("ignored")
             ],
-            venue_data=venue_data,
         )
         db.add(snapshot)
         db.commit()
         logger.info(f"Captured snapshot for controller {controller_id}")
+
+        # Upsert venue migration history rows
+        _upsert_venue_history(controller_id, tenants, db)
     except Exception as e:
         logger.warning(f"Failed to capture snapshot for controller {controller_id}: {e}")
         db.rollback()
@@ -780,98 +843,47 @@ async def get_venue_movers(
     if controller.controller_subtype != "MSP":
         raise HTTPException(status_code=400, detail="Requires an MSP controller")
 
-    # Find the oldest snapshot with venue_data in the time window
     cutoff = datetime.utcnow() - timedelta(days=days)
-    baseline_snapshot = (
-        db.query(MigrationDashboardSnapshot)
-        .filter(
-            MigrationDashboardSnapshot.controller_id == controller_id,
-            MigrationDashboardSnapshot.captured_at >= cutoff,
-            MigrationDashboardSnapshot.venue_data.isnot(None),
-        )
-        .order_by(MigrationDashboardSnapshot.captured_at.asc())
-        .first()
-    )
+    VMH = VenueMigrationHistory
 
-    if not baseline_snapshot or not baseline_snapshot.venue_data:
+    # Query venues by transition type within the time window
+    base = db.query(VMH).filter(VMH.controller_id == controller_id)
+
+    def _to_venue(row: VenueMigrationHistory) -> dict:
         return {
-            "status": "success",
-            "baseline_date": None,
-            "current_date": datetime.utcnow().isoformat(),
-            "days": days,
-            "transitions": {
-                "new": [],
-                "pending_to_in_progress": [],
-                "pending_to_migrated": [],
-                "in_progress_to_migrated": [],
-            },
-            "summary": {
-                "new": 0,
-                "pending_to_in_progress": 0,
-                "pending_to_migrated": 0,
-                "in_progress_to_migrated": 0,
-            },
+            "venue_id": row.venue_id,
+            "venue_name": row.venue_name,
+            "tenant_name": row.tenant_name,
+            "ap_count": row.ap_count,
+            "operational": row.operational,
+            "current_status": row.status,
         }
 
-    # Build baseline lookup: venue_id → entry
-    baseline_map: dict[str, dict] = {
-        v["venue_id"]: v for v in baseline_snapshot.venue_data
+    new_venues = base.filter(VMH.pending_at >= cutoff).all()
+    p_to_ip = base.filter(
+        VMH.in_progress_at >= cutoff,
+        VMH.in_progress_at != VMH.pending_at,  # exclude venues that were born In Progress
+    ).all()
+    p_to_m = base.filter(
+        VMH.migrated_at >= cutoff,
+        VMH.in_progress_at.is_(None),
+    ).all()
+    ip_to_m = base.filter(
+        VMH.migrated_at >= cutoff,
+        VMH.in_progress_at.isnot(None),
+    ).all()
+
+    transitions = {
+        "new": [_to_venue(r) for r in new_venues],
+        "pending_to_in_progress": [_to_venue(r) for r in p_to_ip],
+        "pending_to_migrated": [_to_venue(r) for r in p_to_m],
+        "in_progress_to_migrated": [_to_venue(r) for r in ip_to_m],
     }
-
-    # Get current live data
-    progress_data, tenants, _ = await fetch_controller_progress(controller_id, db)
-
-    # Build current venue list from live data
-    current_venues: list[dict] = []
-    for t in tenants:
-        if t.get("ignored"):
-            continue
-        for v in t.get("venue_stats", []):
-            ap_ct = v.get("ap_count", 0)
-            op_ct = v.get("operational", 0)
-            current_venues.append({
-                "venue_id": v["venue_id"],
-                "venue_name": v["venue_name"],
-                "tenant_name": t["name"],
-                "ap_count": ap_ct,
-                "operational": op_ct,
-                "current_status": _compute_venue_status(ap_ct, op_ct),
-            })
-
-    # Compare and categorize transitions
-    transitions: dict[str, list] = {
-        "new": [],
-        "pending_to_in_progress": [],
-        "pending_to_migrated": [],
-        "in_progress_to_migrated": [],
-    }
-
-    for venue in current_venues:
-        vid = venue["venue_id"]
-        old = baseline_map.get(vid)
-
-        if old is None:
-            transitions["new"].append(venue)
-            continue
-
-        old_status = old.get("status", "Pending")
-        new_status = venue["current_status"]
-
-        if old_status == new_status:
-            continue
-
-        if old_status == "Pending" and new_status == "In Progress":
-            transitions["pending_to_in_progress"].append(venue)
-        elif old_status == "Pending" and new_status == "Migrated":
-            transitions["pending_to_migrated"].append(venue)
-        elif old_status == "In Progress" and new_status == "Migrated":
-            transitions["in_progress_to_migrated"].append(venue)
-
     summary = {k: len(v) for k, v in transitions.items()}
 
     return {
         "status": "success",
-        "baseline_date": baseline_snapshot.captured_at.isoformat(),
+        "baseline_date": cutoff.isoformat(),
         "current_date": datetime.utcnow().isoformat(),
         "days": days,
         "transitions": transitions,
