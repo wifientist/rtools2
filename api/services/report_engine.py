@@ -161,6 +161,7 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
     total_venues = ctx.get("total_venues", 0)
     total_clients = ctx.get("total_clients", 0)
     message = ctx.get("message", "")
+
     active_24h = ctx.get("active_24h", [])
     pending_24h = ctx.get("pending_24h", [])
 

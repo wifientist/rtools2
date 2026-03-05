@@ -1,7 +1,7 @@
 """
 Scheduled job: Report dispatcher.
 
-Runs daily at 12:30 UTC. Checks all enabled scheduled reports and
+Runs weekdays at 12:30 UTC. Checks all enabled scheduled reports and
 generates/emails those that are due based on their frequency settings.
 """
 import logging
@@ -21,13 +21,16 @@ def _is_report_due(report: ScheduledReport, now: datetime) -> bool:
     Check whether a report should be sent today.
 
     Frequency rules:
-    - daily: send every day
+    - daily: send on weekdays (Mon-Fri)
     - weekly: send on the configured day_of_week (0=Mon, 6=Sun)
     - monthly: send on the 1st of each month
     """
     freq = report.frequency
 
-    if freq == "weekly":
+    if freq == "daily":
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            return False
+    elif freq == "weekly":
         if now.weekday() != report.day_of_week:
             return False
     elif freq == "monthly":
@@ -121,7 +124,7 @@ async def run_report_dispatcher() -> Dict[str, Any]:
         db.close()
 
 
-TRIGGER_CONFIG = {"hour": 12, "minute": 30}
+TRIGGER_CONFIG = {"hour": 12, "minute": 30, "day_of_week": "mon-fri"}
 
 
 async def ensure_registered(scheduler) -> None:
@@ -145,6 +148,6 @@ async def ensure_registered(scheduler) -> None:
         trigger_type="cron",
         trigger_config=TRIGGER_CONFIG,
         owner_type="reports",
-        description="Daily at 12:30 UTC: generates and emails PDF reports for enabled schedules",
+        description="Weekdays at 12:30 UTC: generates and emails PDF reports for enabled schedules",
     )
-    logger.info(f"Registered report dispatcher job '{JOB_ID}' (daily at 12:30 UTC)")
+    logger.info(f"Registered report dispatcher job '{JOB_ID}' (weekdays at 12:30 UTC)")
