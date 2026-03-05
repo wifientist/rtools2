@@ -178,21 +178,18 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
 </div>
 """
 
-    # Send to each recipient
-    success_count = 0
-    for email in report.recipients:
-        if send_email_with_attachment(
-            to_email=email,
-            subject=subject,
-            text_body=text_body,
-            html_body=html_body,
-            attachment_bytes=pdf_bytes,
-            attachment_filename=filename,
-        ):
-            success_count += 1
+    # Send single email with all recipients in To:
+    sent = send_email_with_attachment(
+        to_email=report.recipients,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        attachment_bytes=pdf_bytes,
+        attachment_filename=filename,
+    )
 
     logger.info(
-        f"Report emails sent: {success_count}/{len(report.recipients)} "
+        f"Report email {'sent' if sent else 'FAILED'} to {len(report.recipients)} recipient(s) "
         f"for {report.report_type} context={report.context_id}"
     )
 
@@ -200,6 +197,6 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
         "status": "success",
         "report_type": report.report_type,
         "context_id": report.context_id,
-        "emails_sent": success_count,
+        "emails_sent": len(report.recipients) if sent else 0,
         "emails_total": len(report.recipients),
     }

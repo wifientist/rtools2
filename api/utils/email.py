@@ -181,7 +181,7 @@ RUCKUS.Tools Fileshare
 
 
 def send_email_with_attachment(
-    to_email: str,
+    to_email,
     subject: str,
     text_body: str,
     html_body: str,
@@ -192,7 +192,7 @@ def send_email_with_attachment(
     Send an email with a file attachment via Amazon SES raw email.
 
     Args:
-        to_email: Recipient email address
+        to_email: Recipient email address (str) or list of addresses
         subject: Email subject
         text_body: Plain text body
         html_body: HTML body
@@ -206,12 +206,15 @@ def send_email_with_attachment(
         logger.error("FROM_EMAIL not configured")
         return False
 
+    # Normalise to list
+    recipients = to_email if isinstance(to_email, list) else [to_email]
+
     ses = get_ses_client()
 
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = FROM_EMAIL
-    msg["To"] = to_email
+    msg["To"] = ", ".join(recipients)
 
     # Body (text + HTML alternative)
     body_part = MIMEMultipart("alternative")
@@ -227,10 +230,10 @@ def send_email_with_attachment(
     try:
         response = ses.send_raw_email(
             Source=FROM_EMAIL,
-            Destinations=[to_email],
+            Destinations=recipients,
             RawMessage={"Data": msg.as_string()},
         )
-        logger.info(f"Email with attachment sent via SES. MessageId: {response['MessageId']}")
+        logger.info(f"Email with attachment sent via SES to {len(recipients)} recipient(s). MessageId: {response['MessageId']}")
         return True
     except ClientError as e:
         logger.error(f"SES raw email error: {e.response['Error']['Message']}")

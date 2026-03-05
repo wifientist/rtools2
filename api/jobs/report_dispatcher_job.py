@@ -121,11 +121,21 @@ async def run_report_dispatcher() -> Dict[str, Any]:
         db.close()
 
 
+TRIGGER_CONFIG = {"hour": 12, "minute": 30}
+
+
 async def ensure_registered(scheduler) -> None:
-    """Register the daily report dispatcher if it doesn't already exist."""
+    """Register or update the daily report dispatcher job."""
     existing = await scheduler.get_job(JOB_ID)
     if existing:
-        logger.info(f"Report dispatcher job '{JOB_ID}' already registered")
+        # Update trigger config if it has drifted from the code definition
+        if existing.trigger_config != TRIGGER_CONFIG:
+            await scheduler.update_job(JOB_ID, trigger_config=TRIGGER_CONFIG)
+            logger.info(
+                f"Updated report dispatcher trigger to {TRIGGER_CONFIG}"
+            )
+        else:
+            logger.info(f"Report dispatcher job '{JOB_ID}' already registered")
         return
 
     await scheduler.register_job(
@@ -133,7 +143,7 @@ async def ensure_registered(scheduler) -> None:
         name="Report Dispatcher",
         callable_path="jobs.report_dispatcher_job:run_report_dispatcher",
         trigger_type="cron",
-        trigger_config={"hour": 12, "minute": 30},
+        trigger_config=TRIGGER_CONFIG,
         owner_type="reports",
         description="Daily at 12:30 UTC: generates and emails PDF reports for enabled schedules",
     )
