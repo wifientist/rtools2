@@ -8,6 +8,10 @@ Fetches the current venue list from R1 (for IDs, tenant mappings, AP counts),
 then inserts a row per venue with transition dates based on known migration
 windows and current live status.
 """
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import asyncio
 from datetime import datetime, date, timedelta
 
