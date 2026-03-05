@@ -823,19 +823,31 @@ async def get_migration_progress(
 
 # ---------- Movers & Shakers endpoint ----------
 
+def _compute_cutoff(days: Optional[int] = None, since: Optional[str] = None) -> datetime:
+    """Compute the cutoff datetime from either days or a named anchor like 'sunday'."""
+    if since == "sunday":
+        now = datetime.utcnow()
+        days_since_sunday = (now.weekday() + 1) % 7  # Monday=0 → 1, Sunday=6 → 0
+        sunday = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_sunday)
+        return sunday
+    return datetime.utcnow() - timedelta(days=days or 30)
+
+
 @router.get("/movers/{controller_id}")
 async def get_venue_movers(
     controller_id: int = Path(...),
-    days: int = Query(30, ge=1, le=365),
+    days: Optional[int] = Query(None, ge=1, le=365),
+    since: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Compare venue statuses from N days ago to current and return transitions.
+    Compare venue statuses from N days ago (or since a named anchor) to current and return transitions.
 
     Categories: new, pending_to_in_progress, pending_to_migrated, in_progress_to_migrated.
+    Use `since=sunday` for week-to-date, or `days=N` for a rolling window.
     """
-    logger.info(f"[dashboard] GET movers controller={controller_id} days={days} user={current_user.email}")
+    logger.info(f"[dashboard] GET movers controller={controller_id} days={days} since={since} user={current_user.email}")
 
     controller = validate_controller_access(controller_id, current_user, db)
     if controller.controller_type != "RuckusONE":
@@ -843,11 +855,17 @@ async def get_venue_movers(
     if controller.controller_subtype != "MSP":
         raise HTTPException(status_code=400, detail="Requires an MSP controller")
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = _compute_cutoff(days, since)
     VMH = VenueMigrationHistory
+
+    # Exclude ignored tenants
+    settings = db.query(MigrationDashboardSettings).filter_by(controller_id=controller_id).first()
+    ignored_ids = set(settings.ignored_tenant_ids) if settings and settings.ignored_tenant_ids else set()
 
     # Query venues by transition type within the time window
     base = db.query(VMH).filter(VMH.controller_id == controller_id)
+    if ignored_ids:
+        base = base.filter(VMH.tenant_id.notin_(ignored_ids))
 
     def _to_venue(row: VenueMigrationHistory) -> dict:
         return {
@@ -857,6 +875,9 @@ async def get_venue_movers(
             "ap_count": row.ap_count,
             "operational": row.operational,
             "current_status": row.status,
+            "pending_at": row.pending_at.isoformat() if row.pending_at else None,
+            "in_progress_at": row.in_progress_at.isoformat() if row.in_progress_at else None,
+            "migrated_at": row.migrated_at.isoformat() if row.migrated_at else None,
         }
 
     new_venues = base.filter(VMH.pending_at >= cutoff).all()

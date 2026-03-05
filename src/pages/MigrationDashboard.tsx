@@ -59,6 +59,9 @@ interface MoversVenue {
   ap_count: number;
   operational: number;
   current_status: string;
+  pending_at: string | null;
+  in_progress_at: string | null;
+  migrated_at: string | null;
 }
 
 interface MoversData {
@@ -81,6 +84,9 @@ interface MoversData {
 
 type SortField = "name" | "ap_count" | "venue_count";
 type VenueSortField = "venue_name" | "tenant_name" | "ap_count" | "operational" | "offline";
+type MoversSortField = "venue_name" | "tenant_name" | "ap_count" | "current_status" | "pending_at" | "migrated_at";
+
+const MOVERS_STATUSES = ["Pending", "In Progress", "Migrated", "Removed"] as const;
 
 const STATUS_LABELS: Record<string, string> = {
   "1_01_NeverContactedCloud": "Never Contacted Cloud",
@@ -304,8 +310,12 @@ const MigrationDashboard = () => {
 
   // Movers & Shakers
   const [moversData, setMoversData] = useState<MoversData | null>(null);
-  const [moversDays, setMoversDays] = useState(30);
+  const [moversFilter, setMoversFilter] = useState<string>("wtd");
   const [moversLoading, setMoversLoading] = useState(false);
+  const [moversPage, setMoversPage] = useState(0);
+  const [moversFilterStatuses, setMoversFilterStatuses] = useState<Set<string>>(new Set(MOVERS_STATUSES));
+  const [moversSortField, setMoversSortField] = useState<MoversSortField>("venue_name");
+  const [moversSortDir, setMoversSortDir] = useState<"asc" | "desc">("asc");
 
   const target = settings?.target_aps ?? 180000;
 
@@ -379,12 +389,13 @@ const MigrationDashboard = () => {
     return () => clearTimeout(timer);
   }, [data, target]);
 
-  // Fetch movers data when controller or day window changes
+  // Fetch movers data when controller or filter changes
   useEffect(() => {
     if (!controllerID) return;
     const abortController = new AbortController();
     setMoversLoading(true);
-    fetch(`${API_BASE_URL}/migration-dashboard/movers/${controllerID}?days=${moversDays}`, {
+    const qs = moversFilter === "wtd" ? "since=sunday" : `days=${moversFilter}`;
+    fetch(`${API_BASE_URL}/migration-dashboard/movers/${controllerID}?${qs}`, {
       credentials: "include",
       signal: abortController.signal,
     })
@@ -397,7 +408,7 @@ const MigrationDashboard = () => {
         if (err.name !== "AbortError") setMoversLoading(false);
       });
     return () => abortController.abort();
-  }, [controllerID, moversDays]);
+  }, [controllerID, moversFilter]);
 
   const percentage = data ? (data.total_aps / target) * 100 : 0;
   const remaining = data ? Math.max(target - data.total_aps, 0) : target;
@@ -449,6 +460,25 @@ const MigrationDashboard = () => {
   const VenueSortIcon = ({ field }: { field: VenueSortField }) => {
     if (venueSortField !== field) return null;
     return venueSortDir === "asc" ? (
+      <ChevronUp size={14} className="inline ml-1" />
+    ) : (
+      <ChevronDown size={14} className="inline ml-1" />
+    );
+  };
+
+  const handleMoversSort = (field: MoversSortField) => {
+    if (moversSortField === field) {
+      setMoversSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setMoversSortField(field);
+      setMoversSortDir(field === "venue_name" || field === "tenant_name" || field === "current_status" ? "asc" : "desc");
+    }
+    setMoversPage(0);
+  };
+
+  const MoversSortIcon = ({ field }: { field: MoversSortField }) => {
+    if (moversSortField !== field) return null;
+    return moversSortDir === "asc" ? (
       <ChevronUp size={14} className="inline ml-1" />
     ) : (
       <ChevronDown size={14} className="inline ml-1" />
@@ -1282,128 +1312,270 @@ const MigrationDashboard = () => {
             </div>
           )}
 
-          {/* EC Breakdown Table */}
-          <div className="bg-white rounded-xl shadow overflow-hidden print:break-before-page">
+          {/* Movers & Shakers */}
+          <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
             <div className="px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800">
-                Tenant Breakdown
-              </h2>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">Movers &amp; Shakers</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Venue status changes — {moversFilter === "wtd" ? "Week to Date" : moversFilter === "1" ? "Last 24 hours" : `Last ${moversFilter} days`}
+                    {moversData?.baseline_date && (
+                      <span> (baseline: {new Date(moversData.baseline_date).toLocaleDateString()})</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 no-print">
+                  {[
+                    { key: "1", label: "24h" },
+                    { key: "wtd", label: "WTD" },
+                    { key: "30", label: "30d" },
+                    { key: "60", label: "60d" },
+                    { key: "90", label: "90d" },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => { setMoversFilter(key); setMoversPage(0); }}
+                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                        moversFilter === key
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Status filter chips */}
+              <div className="flex items-center gap-2 mt-3 flex-wrap no-print">
+                <button
+                  onClick={() => { setMoversFilterStatuses(new Set(MOVERS_STATUSES)); setMoversPage(0); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  All
+                </button>
+                <span className="text-gray-300">|</span>
+                <button
+                  onClick={() => { setMoversFilterStatuses(new Set()); setMoversPage(0); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  None
+                </button>
+                <span className="text-gray-300 mr-1">|</span>
+                {MOVERS_STATUSES.map((status) => {
+                  const active = moversFilterStatuses.has(status);
+                  const chipColors: Record<string, string> = {
+                    "Pending": active ? "bg-gray-100 border-gray-300 text-gray-700" : "bg-gray-50 border-gray-200 text-gray-400",
+                    "In Progress": active ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-gray-50 border-gray-200 text-gray-400",
+                    "Migrated": active ? "bg-green-50 border-green-200 text-green-700" : "bg-gray-50 border-gray-200 text-gray-400",
+                    "Removed": active ? "bg-red-50 border-red-200 text-red-700" : "bg-gray-50 border-gray-200 text-gray-400",
+                  };
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => {
+                        setMoversFilterStatuses((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(status)) next.delete(status);
+                          else next.add(status);
+                          return next;
+                        });
+                        setMoversPage(0);
+                      }}
+                      className={`inline-flex items-center gap-1 text-xs border rounded-full px-2.5 py-1 transition-colors ${chipColors[status]}`}
+                    >
+                      <span>{status}</span>
+                      {active && <X size={11} className="opacity-60" />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      #
-                    </th>
-                    <th
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                      onClick={() => handleSort("name")}
-                    >
-                      EC Tenant <SortIcon field="name" />
-                    </th>
-                    <th
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                      onClick={() => handleSort("ap_count")}
-                    >
-                      APs <SortIcon field="ap_count" />
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Operational
-                    </th>
-                    <th
-                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
-                      onClick={() => handleSort("venue_count")}
-                    >
-                      Venues <SortIcon field="venue_count" />
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Clients
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Share
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {sortedTenants.map((tenant, idx) => {
-                    const allAps = data.tenants.reduce((s, t) => s + t.ap_count, 0);
-                    const share =
-                      allAps > 0
-                        ? (tenant.ap_count / allAps) * 100
-                        : 0;
-                    return (
-                      <tr
-                        key={tenant.id}
-                        className={`hover:bg-gray-50 transition-colors ${tenant.ignored ? "opacity-40" : ""}`}
-                      >
-                        <td className="px-6 py-3 text-sm text-gray-400">
-                          {idx + 1}
-                        </td>
-                        <td className="px-6 py-3 text-sm font-medium text-gray-800">
-                          <span className={tenant.ignored ? "line-through" : ""}>
-                            {tenant.name}
-                          </span>
-                          {tenant.ignored && (
-                            <span className="ml-2 text-gray-400" title="Ignored — excluded from totals">
-                              <EyeOff size={14} className="inline -mt-0.5" />
-                            </span>
-                          )}
-                          {tenant.error && (
-                            <span
-                              className="ml-2 text-red-400"
-                              title={tenant.error}
+            <div className="px-6 py-4">
+              {moversLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="animate-spin text-gray-400" size={20} />
+                  <span className="ml-2 text-sm text-gray-400">Loading transitions...</span>
+                </div>
+              ) : !moversData?.baseline_date ? (
+                <div className="flex items-center gap-2 py-6 px-4 bg-blue-50 rounded-lg">
+                  <AlertCircle size={16} className="text-blue-500 shrink-0" />
+                  <p className="text-sm text-blue-700">
+                    Venue tracking data is being collected. Check back after the next daily snapshot.
+                  </p>
+                </div>
+              ) : (() => {
+                const { transitions, summary } = moversData;
+                const total = summary.new + summary.pending_to_in_progress + summary.pending_to_migrated + summary.in_progress_to_migrated;
+                if (total === 0) {
+                  return (
+                    <p className="text-sm text-gray-400 italic py-4 text-center">
+                      No venue status changes {moversFilter === "wtd" ? "this week" : moversFilter === "1" ? "in the last 24 hours" : `in the last ${moversFilter} days`}.
+                    </p>
+                  );
+                }
+                // Deduplicate by venue_id — a venue can appear in multiple transition buckets
+                const seen = new Map<string, MoversVenue>();
+                for (const v of [
+                  ...transitions.new,
+                  ...transitions.pending_to_in_progress,
+                  ...transitions.pending_to_migrated,
+                  ...transitions.in_progress_to_migrated,
+                ]) {
+                  seen.set(v.venue_id, v); // last write wins (highest transition)
+                }
+                const allRows = Array.from(seen.values());
+                const rows = allRows
+                  .filter((v) => moversFilterStatuses.has(v.current_status))
+                  .sort((a, b) => {
+                    const dir = moversSortDir === "asc" ? 1 : -1;
+                    if (moversSortField === "venue_name" || moversSortField === "tenant_name" || moversSortField === "current_status") {
+                      return dir * (a[moversSortField] ?? "").localeCompare(b[moversSortField] ?? "");
+                    }
+                    if (moversSortField === "pending_at" || moversSortField === "migrated_at") {
+                      const aVal = a[moversSortField] ?? "";
+                      const bVal = b[moversSortField] ?? "";
+                      return dir * aVal.localeCompare(bVal);
+                    }
+                    return dir * ((a[moversSortField] ?? 0) - (b[moversSortField] ?? 0));
+                  });
+
+                const MOVERS_PAGE_SIZE = 25;
+                const statusColors: Record<string, string> = {
+                  "Pending": "bg-gray-100 text-gray-700",
+                  "In Progress": "bg-amber-100 text-amber-700",
+                  "Migrated": "bg-green-100 text-green-700",
+                  "Removed": "bg-red-100 text-red-700",
+                };
+
+                return (
+                  <>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {summary.new > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                          New: {summary.new}
+                        </span>
+                      )}
+                      {summary.pending_to_in_progress > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                          Pending &rarr; In Progress: {summary.pending_to_in_progress}
+                        </span>
+                      )}
+                      {summary.pending_to_migrated > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          Pending &rarr; Migrated: {summary.pending_to_migrated}
+                        </span>
+                      )}
+                      {summary.in_progress_to_migrated > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                          In Progress &rarr; Migrated: {summary.in_progress_to_migrated}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mb-2">{rows.length} of {allRows.length} venues</p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
+                            <th
+                              className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                              onClick={() => handleMoversSort("venue_name")}
                             >
-                              <AlertCircle
-                                size={14}
-                                className="inline -mt-0.5"
-                              />
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
-                          {tenant.ap_count.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-center font-mono">
-                          {(() => {
-                            const op = tenant.status_summary?.operational ?? 0;
-                            const pct = tenant.ap_count > 0 ? (op / tenant.ap_count) * 100 : 0;
+                              Venue <MoversSortIcon field="venue_name" />
+                            </th>
+                            <th
+                              className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                              onClick={() => handleMoversSort("tenant_name")}
+                            >
+                              EC Tenant <MoversSortIcon field="tenant_name" />
+                            </th>
+                            <th
+                              className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                              onClick={() => handleMoversSort("ap_count")}
+                            >
+                              APs <MoversSortIcon field="ap_count" />
+                            </th>
+                            <th
+                              className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                              onClick={() => handleMoversSort("pending_at")}
+                            >
+                              Pending <MoversSortIcon field="pending_at" />
+                            </th>
+                            <th
+                              className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                              onClick={() => handleMoversSort("migrated_at")}
+                            >
+                              Migrated <MoversSortIcon field="migrated_at" />
+                            </th>
+                            <th
+                              className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                              onClick={() => handleMoversSort("current_status")}
+                            >
+                              Status <MoversSortIcon field="current_status" />
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {rows.slice(moversPage * MOVERS_PAGE_SIZE, (moversPage + 1) * MOVERS_PAGE_SIZE).map((row, idx) => {
+                            const pct = row.ap_count > 0 ? (row.operational / row.ap_count) * 100 : 0;
                             return (
-                              <span className={pct >= 90 ? "text-green-600" : pct >= 50 ? "text-amber-600" : "text-red-500"}>
-                                {op.toLocaleString()}
-                                <span className="text-xs text-gray-400 ml-1">
-                                  ({pct.toFixed(0)}%)
+                            <tr key={row.venue_id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-3 text-sm text-gray-400">{moversPage * MOVERS_PAGE_SIZE + idx + 1}</td>
+                              <td className="px-4 py-3 text-sm font-medium text-gray-800">{row.venue_name}</td>
+                              <td className="px-4 py-3 text-sm text-gray-500">{row.tenant_name}</td>
+                              <td className="px-4 py-3 text-sm text-center font-mono text-gray-700">{row.ap_count.toLocaleString()}</td>
+                              <td className="px-4 py-3 text-sm text-center text-gray-500">{row.pending_at ? new Date(row.pending_at).toLocaleDateString() : "—"}</td>
+                              <td className="px-4 py-3 text-sm text-center text-gray-500">{row.migrated_at ? new Date(row.migrated_at).toLocaleDateString() : "—"}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[row.current_status] ?? "bg-gray-100 text-gray-600"}`}>
+                                  {row.current_status}
+                                  {pct > 0 && pct < 100 && (
+                                    <span className="ml-1 text-xs opacity-70">({pct.toFixed(0)}%)</span>
+                                  )}
                                 </span>
-                              </span>
+                              </td>
+                            </tr>
                             );
-                          })()}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
-                          {tenant.venue_count.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
-                          {(tenant.client_count ?? 0).toLocaleString()}
-                        </td>
-                        <td className="px-6 py-3">
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {rows.length > MOVERS_PAGE_SIZE && (() => {
+                      const totalPages = Math.ceil(rows.length / MOVERS_PAGE_SIZE);
+                      const start = moversPage * MOVERS_PAGE_SIZE + 1;
+                      const end = Math.min((moversPage + 1) * MOVERS_PAGE_SIZE, rows.length);
+                      return (
+                        <div className="mt-3 flex items-center justify-between text-sm no-print">
+                          <span className="text-gray-500 text-xs">
+                            Showing {start}–{end} of {rows.length} transitions
+                          </span>
                           <div className="flex items-center gap-2">
-                            <div className="w-24 bg-gray-100 rounded-full h-2">
-                              <div
-                                className="h-2 rounded-full bg-indigo-400"
-                                style={{
-                                  width: `${Math.min(share, 100)}%`,
-                                }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-500 w-12">
-                              {share.toFixed(1)}%
+                            <button
+                              onClick={() => setMoversPage((p) => Math.max(0, p - 1))}
+                              disabled={moversPage === 0}
+                              className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            <span className="text-gray-600 text-xs">
+                              Page {moversPage + 1} of {totalPages}
                             </span>
+                            <button
+                              onClick={() => setMoversPage((p) => Math.min(totalPages - 1, p + 1))}
+                              disabled={moversPage >= totalPages - 1}
+                              className="px-3 py-1 border rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -1568,137 +1740,128 @@ const MigrationDashboard = () => {
             );
           })()}
 
-          {/* Movers & Shakers */}
-          <div className="bg-white rounded-xl shadow overflow-hidden mt-6">
+          {/* EC Breakdown Table */}
+          <div className="bg-white rounded-xl shadow overflow-hidden mt-6 print:break-before-page">
             <div className="px-6 py-4 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-800">Movers &amp; Shakers</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Venue status changes over the last {moversDays} days
-                    {moversData?.baseline_date && (
-                      <span> (baseline: {new Date(moversData.baseline_date).toLocaleDateString()})</span>
-                    )}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 no-print">
-                  {[7, 30, 60, 90].map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setMoversDays(d)}
-                      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                        moversDays === d
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      {d}d
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <h2 className="text-lg font-semibold text-gray-800">
+                Tenant Breakdown
+              </h2>
             </div>
-            <div className="px-6 py-4">
-              {moversLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <RefreshCw className="animate-spin text-gray-400" size={20} />
-                  <span className="ml-2 text-sm text-gray-400">Loading transitions...</span>
-                </div>
-              ) : !moversData?.baseline_date ? (
-                <div className="flex items-center gap-2 py-6 px-4 bg-blue-50 rounded-lg">
-                  <AlertCircle size={16} className="text-blue-500 shrink-0" />
-                  <p className="text-sm text-blue-700">
-                    Venue tracking data is being collected. Check back after the next daily snapshot.
-                  </p>
-                </div>
-              ) : (() => {
-                const { transitions, summary } = moversData;
-                const total = summary.new + summary.pending_to_in_progress + summary.pending_to_migrated + summary.in_progress_to_migrated;
-                if (total === 0) {
-                  return (
-                    <p className="text-sm text-gray-400 italic py-4 text-center">
-                      No venue status changes in the last {moversDays} days.
-                    </p>
-                  );
-                }
-                // Build flat list with transition type for table rendering
-                const rows: (MoversVenue & { transition: string; sortOrder: number })[] = [
-                  ...transitions.new.map((v) => ({ ...v, transition: "New", sortOrder: 0 })),
-                  ...transitions.pending_to_in_progress.map((v) => ({ ...v, transition: "Pending \u2192 In Progress", sortOrder: 1 })),
-                  ...transitions.pending_to_migrated.map((v) => ({ ...v, transition: "Pending \u2192 Migrated", sortOrder: 2 })),
-                  ...transitions.in_progress_to_migrated.map((v) => ({ ...v, transition: "In Progress \u2192 Migrated", sortOrder: 3 })),
-                ].sort((a, b) => a.sortOrder - b.sortOrder || a.venue_name.localeCompare(b.venue_name));
-
-                const MOVERS_PAGE_SIZE = 25;
-                const transitionColors: Record<string, string> = {
-                  "New": "bg-blue-100 text-blue-700",
-                  "Pending \u2192 In Progress": "bg-amber-100 text-amber-700",
-                  "Pending \u2192 Migrated": "bg-green-100 text-green-700",
-                  "In Progress \u2192 Migrated": "bg-emerald-100 text-emerald-700",
-                };
-
-                return (
-                  <>
-                    {/* Summary badges */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {summary.new > 0 && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                          New: {summary.new}
-                        </span>
-                      )}
-                      {summary.pending_to_in_progress > 0 && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                          Pending &rarr; In Progress: {summary.pending_to_in_progress}
-                        </span>
-                      )}
-                      {summary.pending_to_migrated > 0 && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                          Pending &rarr; Migrated: {summary.pending_to_migrated}
-                        </span>
-                      )}
-                      {summary.in_progress_to_migrated > 0 && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                          In Progress &rarr; Migrated: {summary.in_progress_to_migrated}
-                        </span>
-                      )}
-                    </div>
-                    {/* Table */}
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Venue</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EC Tenant</th>
-                            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">APs</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {rows.slice(0, MOVERS_PAGE_SIZE).map((row, idx) => (
-                            <tr key={`${row.venue_id}-${row.transition}`} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3 text-sm text-gray-400">{idx + 1}</td>
-                              <td className="px-4 py-3 text-sm font-medium text-gray-800">{row.venue_name}</td>
-                              <td className="px-4 py-3 text-sm text-gray-500">{row.tenant_name}</td>
-                              <td className="px-4 py-3 text-sm text-center font-mono text-gray-700">{row.ap_count.toLocaleString()}</td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${transitionColors[row.transition] ?? "bg-gray-100 text-gray-600"}`}>
-                                  {row.transition}
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      #
+                    </th>
+                    <th
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("name")}
+                    >
+                      EC Tenant <SortIcon field="name" />
+                    </th>
+                    <th
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("ap_count")}
+                    >
+                      APs <SortIcon field="ap_count" />
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Operational
+                    </th>
+                    <th
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700"
+                      onClick={() => handleSort("venue_count")}
+                    >
+                      Venues <SortIcon field="venue_count" />
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Clients
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Share
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {sortedTenants.map((tenant, idx) => {
+                    const allAps = data.tenants.reduce((s, t) => s + t.ap_count, 0);
+                    const share =
+                      allAps > 0
+                        ? (tenant.ap_count / allAps) * 100
+                        : 0;
+                    return (
+                      <tr
+                        key={tenant.id}
+                        className={`hover:bg-gray-50 transition-colors ${tenant.ignored ? "opacity-40" : ""}`}
+                      >
+                        <td className="px-6 py-3 text-sm text-gray-400">
+                          {idx + 1}
+                        </td>
+                        <td className="px-6 py-3 text-sm font-medium text-gray-800">
+                          <span className={tenant.ignored ? "line-through" : ""}>
+                            {tenant.name}
+                          </span>
+                          {tenant.ignored && (
+                            <span className="ml-2 text-gray-400" title="Ignored — excluded from totals">
+                              <EyeOff size={14} className="inline -mt-0.5" />
+                            </span>
+                          )}
+                          {tenant.error && (
+                            <span
+                              className="ml-2 text-red-400"
+                              title={tenant.error}
+                            >
+                              <AlertCircle
+                                size={14}
+                                className="inline -mt-0.5"
+                              />
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
+                          {tenant.ap_count.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-center font-mono">
+                          {(() => {
+                            const op = tenant.status_summary?.operational ?? 0;
+                            const pct = tenant.ap_count > 0 ? (op / tenant.ap_count) * 100 : 0;
+                            return (
+                              <span className={pct >= 90 ? "text-green-600" : pct >= 50 ? "text-amber-600" : "text-red-500"}>
+                                {op.toLocaleString()}
+                                <span className="text-xs text-gray-400 ml-1">
+                                  ({pct.toFixed(0)}%)
                                 </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {rows.length > MOVERS_PAGE_SIZE && (
-                      <p className="text-xs text-gray-400 mt-2 px-1">
-                        Showing first {MOVERS_PAGE_SIZE} of {rows.length} transitions
-                      </p>
-                    )}
-                  </>
-                );
-              })()}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
+                          {tenant.venue_count.toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-center font-mono text-gray-700">
+                          {(tenant.client_count ?? 0).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-gray-100 rounded-full h-2">
+                              <div
+                                className="h-2 rounded-full bg-indigo-400"
+                                style={{
+                                  width: `${Math.min(share, 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500 w-12">
+                              {share.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </>

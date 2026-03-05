@@ -18,7 +18,7 @@ from datetime import datetime, date, timedelta
 from database import SessionLocal
 from models.venue_migration_history import VenueMigrationHistory
 
-CONTROLLER_ID = 23
+CONTROLLER_ID = int(sys.argv[1]) if len(sys.argv) > 1 else 23
 
 # Known migration window start dates (Pending → In Progress)
 MIGRATION_DATES = {

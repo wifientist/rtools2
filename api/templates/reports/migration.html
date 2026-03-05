@@ -299,6 +299,98 @@
   </div>
   {% endif %}
 
+  <!-- Movers & Shakers (week to date) -->
+  {% if movers_total > 0 %}
+  <div class="status-section">
+    <h3>Movers &amp; Shakers ({{ movers_cutoff_label }})</h3>
+
+    {% if active_venues %}
+    <div style="margin-bottom: 16px;">
+      <div style="font-size: 12px; font-weight: 600; color: #16a34a; margin-bottom: 6px;">
+        Migrating &amp; Migrated Venues ({{ active_venues | length }})
+      </div>
+      {% for v in active_venues %}
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; font-size: 11px; background: #f9fafb; border-radius: 6px; margin-bottom: 2px;">
+        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px;">
+          {{ v.venue_name }} <span class="text-muted">— {{ v.tenant_name }}</span>
+        </span>
+        <span style="display: flex; align-items: center; gap: 8px; white-space: nowrap; flex-shrink: 0;">
+          <span class="font-mono">{{ "{:,}".format(v.operational) }}/{{ "{:,}".format(v.ap_count) }}</span>
+          {% if v.status == "Migrated" %}
+            <span class="badge badge-migrated">Migrated{% if v.migrated_at %} {{ v.migrated_at }}{% endif %}</span>
+          {% elif v.status == "Pending" %}
+            <span class="badge badge-pending">Pending</span>
+          {% else %}
+            <span class="badge badge-progress">In Progress {{ "%.0f" | format(v.pct) }}%</span>
+          {% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if new_pending %}
+    <div>
+      <div style="font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px;">
+        New Pending Venues ({{ new_pending | length }})
+      </div>
+      {% for v in new_pending %}
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; font-size: 11px; background: #f9fafb; border-radius: 6px; margin-bottom: 2px;">
+        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px;">
+          {{ v.venue_name }} <span class="text-muted">— {{ v.tenant_name }}</span>
+        </span>
+        <span class="font-mono" style="white-space: nowrap; flex-shrink: 0;">{{ "{:,}".format(v.ap_count) }} APs</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Venue Breakdown -->
+  {% if venues %}
+  <div class="section page-break">
+    <div class="section-header">
+      <h2>Venue Breakdown</h2>
+      <div class="count">{{ venues | length }} venues</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Venue</th>
+          <th>EC Tenant</th>
+          <th class="text-center">APs</th>
+          <th class="text-center">Operational</th>
+          <th class="text-center">Offline</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in venues %}
+        <tr>
+          <td class="text-muted">{{ loop.index }}</td>
+          <td>{{ v.venue_name }}</td>
+          <td class="text-gray">{{ v.tenant_name }}</td>
+          <td class="text-center font-mono">{{ "{:,}".format(v.ap_count) }}</td>
+          <td class="text-center font-mono text-green">{{ "{:,}".format(v.operational) }}</td>
+          <td class="text-center font-mono text-gray">{{ "{:,}".format(v.offline) }}</td>
+          <td>
+            {% if v.pct >= 95 %}
+              <span class="badge badge-migrated">Migrated</span>
+            {% elif v.pct > 0 %}
+              <span class="badge badge-progress">In Progress ({{ "%.0f" | format(v.pct) }}%)</span>
+            {% else %}
+              <span class="badge badge-pending">Pending</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <!-- Tenant Breakdown -->
   <div class="section page-break">
     <div class="section-header">
@@ -342,50 +434,6 @@
       </tbody>
     </table>
   </div>
-
-  <!-- Venue Breakdown (new page) -->
-  {% if venues %}
-  <div class="section page-break">
-    <div class="section-header">
-      <h2>Venue Breakdown</h2>
-      <div class="count">{{ venues | length }} venues</div>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Venue</th>
-          <th>EC Tenant</th>
-          <th class="text-center">APs</th>
-          <th class="text-center">Operational</th>
-          <th class="text-center">Offline</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for v in venues %}
-        <tr>
-          <td class="text-muted">{{ loop.index }}</td>
-          <td>{{ v.venue_name }}</td>
-          <td class="text-gray">{{ v.tenant_name }}</td>
-          <td class="text-center font-mono">{{ "{:,}".format(v.ap_count) }}</td>
-          <td class="text-center font-mono text-green">{{ "{:,}".format(v.operational) }}</td>
-          <td class="text-center font-mono text-gray">{{ "{:,}".format(v.offline) }}</td>
-          <td>
-            {% if v.pct >= 95 %}
-              <span class="badge badge-migrated">Migrated</span>
-            {% elif v.pct > 0 %}
-              <span class="badge badge-progress">In Progress ({{ "%.0f" | format(v.pct) }}%)</span>
-            {% else %}
-              <span class="badge badge-pending">Pending</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
 
   <div class="footer">
     Ruckus.Tools Migration Dashboard &mdash; {{ generated_at }}

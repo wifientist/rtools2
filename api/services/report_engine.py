@@ -69,6 +69,59 @@ async def generate_report_pdf(report_type: str, context_id: str, db: Session) ->
     return pdf_bytes, template_context
 
 
+def _build_movers_24h_html(active: list, pending: list) -> str:
+    """Build an HTML snippet for the 24h movers summary in the email body."""
+    if not active and not pending:
+        return ""
+
+    rows_html = []
+
+    if active:
+        rows_html.append(
+            f'<div style="font-size: 12px; font-weight: 600; color: #16a34a; margin-bottom: 6px;">'
+            f'Migrating &amp; Migrated ({len(active)})</div>'
+        )
+        for v in active:
+            op, ap = v["operational"], v["ap_count"]
+            status = v.get("status", "")
+            if status == "Migrated":
+                badge = '<span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:10px;font-weight:500;background:#d1fae5;color:#065f46;">Migrated</span>'
+                if v.get("migrated_at"):
+                    badge = f'<span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:10px;font-weight:500;background:#d1fae5;color:#065f46;">Migrated {v["migrated_at"]}</span>'
+            else:
+                p = (op / ap * 100) if ap > 0 else 0
+                badge = f'<span style="display:inline-block;padding:2px 8px;border-radius:9999px;font-size:10px;font-weight:500;background:#fef3c7;color:#92400e;">In Progress {p:.0f}%</span>'
+            rows_html.append(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 10px;font-size:11px;background:#f9fafb;border-radius:6px;margin-bottom:2px;">'
+                f'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:12px;">'
+                f'{v["venue_name"]} <span style="color:#9ca3af;">— {v["tenant_name"]}</span></span>'
+                f'<span style="display:flex;align-items:center;gap:8px;white-space:nowrap;flex-shrink:0;">'
+                f'<span style="font-family:monospace;">{op:,}/{ap:,}</span> {badge}</span></div>'
+            )
+
+    if pending:
+        if active:
+            rows_html.append('<div style="margin-top: 10px;"></div>')
+        rows_html.append(
+            f'<div style="font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px;">'
+            f'New Pending ({len(pending)})</div>'
+        )
+        for v in pending:
+            rows_html.append(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 10px;font-size:11px;background:#f9fafb;border-radius:6px;margin-bottom:2px;">'
+                f'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:12px;">'
+                f'{v["venue_name"]} <span style="color:#9ca3af;">— {v["tenant_name"]}</span></span>'
+                f'<span style="font-family:monospace;white-space:nowrap;flex-shrink:0;">{v["ap_count"]:,} APs</span></div>'
+            )
+
+    content = "\n".join(rows_html)
+    return (
+        f'<div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:20px;">'
+        f'<h3 style="font-size:13px;font-weight:600;color:#374151;margin:0 0 12px 0;">Movers &amp; Shakers (Last 24h)</h3>'
+        f'{content}</div>'
+    )
+
+
 async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict:
     """
     Full pipeline: fetch data → render template → PDF → email attachment.
@@ -108,6 +161,22 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
     total_venues = ctx.get("total_venues", 0)
     total_clients = ctx.get("total_clients", 0)
     message = ctx.get("message", "")
+    active_24h = ctx.get("active_24h", [])
+    pending_24h = ctx.get("pending_24h", [])
+
+    # Build text movers summary
+    movers_text_lines = []
+    if active_24h:
+        movers_text_lines.append(f"\nMovers & Shakers (Last 24h):")
+        movers_text_lines.append(f"  Migrating & Migrated ({len(active_24h)}):")
+        for v in active_24h:
+            p = (v["operational"] / v["ap_count"] * 100) if v["ap_count"] > 0 else 0
+            movers_text_lines.append(f"    {v['venue_name']} — {v['operational']:,}/{v['ap_count']:,} ({v['status']})")
+    if pending_24h:
+        movers_text_lines.append(f"  New Pending ({len(pending_24h)}):")
+        for v in pending_24h:
+            movers_text_lines.append(f"    {v['venue_name']} — {v['ap_count']:,} APs")
+    movers_text = "\n".join(movers_text_lines) if movers_text_lines else ""
 
     text_body = (
         f"{display_name} Report — {report_label}\n"
@@ -115,7 +184,8 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
         f"Progress: {total_aps:,} / {target_aps:,} APs ({pct:.1f}%)\n"
         f"{message}\n\n"
         f"Total APs: {total_aps:,}  |  Operational: {operational:,}  |  Offline: {offline:,}\n"
-        f"Switches: {total_switches:,}  |  Venues: {total_venues:,}  |  Clients: {total_clients:,}\n\n"
+        f"Switches: {total_switches:,}  |  Venues: {total_venues:,}  |  Clients: {total_clients:,}\n"
+        f"{movers_text}\n\n"
         f"Full report attached as PDF."
     )
 
@@ -170,6 +240,8 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
       </td>
     </tr>
   </table>
+
+  {_build_movers_24h_html(active_24h, pending_24h)}
 
   <p style="font-size: 13px; color: #6b7280;">Full report attached as PDF.</p>
 

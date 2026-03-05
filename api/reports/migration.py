@@ -104,6 +104,7 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
     from routers.migration_dashboard import fetch_controller_progress
     from models.controller import Controller
     from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
+    from models.venue_migration_history import VenueMigrationHistory
 
     controller_id = int(context_id)
     progress_data, tenants, settings_data = await fetch_controller_progress(
@@ -179,6 +180,74 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
                 ],
             })
 
+    # Movers & Shakers — venue transitions since Sunday (week-to-date)
+    from routers.migration_dashboard import _compute_cutoff
+    movers_cutoff = _compute_cutoff(since="sunday")
+    VMH = VenueMigrationHistory
+    from models.migration_dashboard_settings import MigrationDashboardSettings
+    mds = db.query(MigrationDashboardSettings).filter_by(controller_id=controller_id).first()
+    ignored_ids = set(mds.ignored_tenant_ids) if mds and mds.ignored_tenant_ids else set()
+    base_q = db.query(VMH).filter(VMH.controller_id == controller_id)
+    if ignored_ids:
+        base_q = base_q.filter(VMH.tenant_id.notin_(ignored_ids))
+
+    def _venue_row(row):
+        pct = (row.operational / row.ap_count * 100) if row.ap_count > 0 else 0
+        return {
+            "venue_name": row.venue_name,
+            "tenant_name": row.tenant_name,
+            "ap_count": row.ap_count,
+            "operational": row.operational,
+            "pct": pct,
+            "status": row.status,
+            "migrated_at": row.migrated_at.strftime("%m/%d") if row.migrated_at else None,
+        }
+
+    # Active venues: migrating (in progress) or migrated this week
+    migrating = [_venue_row(r) for r in base_q.filter(
+        VMH.in_progress_at >= movers_cutoff,
+        VMH.status == "In Progress",
+    ).all()]
+    migrated = [_venue_row(r) for r in base_q.filter(
+        VMH.migrated_at >= movers_cutoff,
+    ).all()]
+    # Deduplicate (a venue could appear in both if it migrated after going in-progress)
+    seen_ids = set()
+    active_venues = []
+    for r in migrated + migrating:
+        key = r["venue_name"]  # venue_name as dedup key
+        if key not in seen_ids:
+            seen_ids.add(key)
+            active_venues.append(r)
+    active_venues.sort(key=lambda v: v["venue_name"])
+
+    # New pending venues this week
+    new_pending = [_venue_row(r) for r in base_q.filter(
+        VMH.pending_at >= movers_cutoff,
+        VMH.status == "Pending",
+    ).all()]
+    new_pending.sort(key=lambda v: v["venue_name"])
+
+    movers_total = len(active_venues) + len(new_pending)
+
+    # 24h movers for email body summary
+    cutoff_24h = datetime.utcnow() - timedelta(days=1)
+    active_24h = []
+    seen_24h = set()
+    for r in base_q.filter(VMH.migrated_at >= cutoff_24h).all():
+        if r.venue_name not in seen_24h:
+            seen_24h.add(r.venue_name)
+            active_24h.append(_venue_row(r))
+    for r in base_q.filter(VMH.in_progress_at >= cutoff_24h, VMH.status == "In Progress").all():
+        if r.venue_name not in seen_24h:
+            seen_24h.add(r.venue_name)
+            active_24h.append(_venue_row(r))
+    active_24h.sort(key=lambda v: v["venue_name"])
+    pending_24h = [_venue_row(r) for r in base_q.filter(
+        VMH.pending_at >= cutoff_24h, VMH.status == "Pending",
+    ).all()]
+    pending_24h.sort(key=lambda v: v["venue_name"])
+
     return {
         "controller_name": controller_name,
         "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
@@ -195,4 +264,10 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
         "venues": venues,
         "status_breakdown": status_breakdown,
         "period_cards": period_cards,
+        "active_venues": active_venues,
+        "new_pending": new_pending,
+        "movers_total": movers_total,
+        "movers_cutoff_label": "Since Sunday",
+        "active_24h": active_24h,
+        "pending_24h": pending_24h,
     }
