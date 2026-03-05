@@ -51,7 +51,7 @@ build_with_fallback() {
 
 # Build images with docker compose (which will use fallback Dockerfiles automatically)
 echo "🔧 Building images..."
-docker compose --env-file .env.production build --pull
+docker compose --env-file .env.production build --no-cache --pull
 
 echo "📦 Bringing up services..."
 docker compose --env-file .env.production up -d --force-recreate
