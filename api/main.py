@@ -101,7 +101,7 @@ app.add_middleware(
 )
 
 # Ensure tables exist
-models.user.Base.metadata.create_all(bind=engine)
+models.user.Base.metadata.create_all(bind=engine, checkfirst=True)
 
 # Include Routers
 app.include_router(status.router)
