@@ -435,7 +435,7 @@ class IdentityService:
         if phone_number:
             payload["phoneNumber"] = phone_number
 
-        logger.warning(f"🔍 DEBUG IDENTITY API - create_identity payload: {payload}")
+        logger.info(f"🔍 DEBUG IDENTITY API - create_identity payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.post(
@@ -491,7 +491,7 @@ class IdentityService:
         if phone_number:
             payload["phoneNumber"] = phone_number
 
-        logger.warning(f"🔍 DEBUG IDENTITY API - update_identity payload: {payload}")
+        logger.info(f"🔍 DEBUG IDENTITY API - update_identity payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.patch(

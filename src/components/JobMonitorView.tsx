@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { apiFetch } from '@/utils/api';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -158,9 +159,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       try {
         setLoading(true);
 
-        const response = await fetch(`${API_URL}/jobs/${jobId}/status`, {
-          credentials: 'include',
-        });
+        const response = await apiFetch(`${API_URL}/jobs/${jobId}/status`);
 
         if (!response.ok) {
           if (response.status === 404) {
@@ -407,13 +406,17 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         addLiveEvent('Stream closed (job finished)');
         eventSource.close();
       } else {
+        // Close the browser's auto-reconnecting EventSource — it can't handle
+        // 401s (no way to refresh tokens). We'll rely on fallback polling
+        // (which uses apiFetch with auto-refresh) to stay in sync.
+        eventSource.close();
         setSseReconnects(prev => prev + 1);
-        addLiveEvent('⚠️ Stream disconnected, auto-reconnecting...');
+        addLiveEvent('⚠️ Stream disconnected, polling for updates...');
         // Start fallback polling while SSE is down
         if (!fallbackPollRef.current) {
           fallbackPollRef.current = setInterval(() => {
             doRefresh();
-          }, 10000); // Poll every 10s as fallback
+          }, 5000); // Poll every 5s as fallback (was 10s)
         }
       }
     };
@@ -439,9 +442,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     if (!jobId) return;
     lastRefreshRef.current = Date.now();
     try {
-      const response = await fetch(`${API_URL}/jobs/${jobId}/status`, {
-        credentials: 'include',
-      });
+      const response = await apiFetch(`${API_URL}/jobs/${jobId}/status`);
       if (response.ok) {
         const data = await response.json();
         setJobStatus(data);
@@ -484,7 +485,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     setLiveEvents(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 50));
   };
 
-  const reconnectSSE = () => {
+  const reconnectSSE = async () => {
     // Close existing connection
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -494,9 +495,15 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       clearInterval(fallbackPollRef.current);
       fallbackPollRef.current = null;
     }
-    // Create new connection
+    // Proactively refresh the token before reconnecting SSE
+    // (EventSource can't handle 401s itself)
     setSseStatus('connecting');
-    addLiveEvent('🔄 Manual reconnect...');
+    addLiveEvent('🔄 Refreshing auth and reconnecting...');
+    try {
+      await apiFetch(`${API_URL}/jobs/${jobId}/status`);
+    } catch {
+      // If this fails, the SSE will fail too — fallback polling will kick in
+    }
     const newEventSource = new EventSource(
       `${API_URL}/jobs/${jobId}/stream`,
       { withCredentials: true }

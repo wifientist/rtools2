@@ -166,17 +166,43 @@ def verify_access_token(token: str, db: Session = None) -> dict:
         return None
 
 
-### 🚫 Check if Token is Revoked
+### 🚫 Check if Token is Revoked (with in-memory cache to reduce DB load)
+_revocation_cache: dict[str, tuple[bool, float]] = {}
+_REVOCATION_CACHE_TTL = 30  # seconds — short enough to catch revocations quickly
+
 def is_token_revoked(jti: str, db: Session) -> bool:
     """
     Check if a token has been revoked by looking up its JTI in the database.
+    Uses a short-lived in-memory cache to avoid hammering the DB connection pool
+    during high-frequency polling (SSE fallback, job status refreshes).
     """
+    import time
+
     if not jti:
         return False
 
+    # Check cache first
+    cached = _revocation_cache.get(jti)
+    if cached:
+        is_revoked, cached_at = cached
+        if time.time() - cached_at < _REVOCATION_CACHE_TTL:
+            return is_revoked
+
     from models.revoked_token import RevokedToken
     revoked = db.query(RevokedToken).filter(RevokedToken.jti == jti).first()
-    return revoked is not None
+    is_revoked = revoked is not None
+
+    # Cache the result (evict old entries periodically)
+    now = time.time()
+    _revocation_cache[jti] = (is_revoked, now)
+
+    # Lazy eviction: clear stale entries when cache grows
+    if len(_revocation_cache) > 500:
+        stale = [k for k, (_, t) in _revocation_cache.items() if now - t > _REVOCATION_CACHE_TTL]
+        for k in stale:
+            del _revocation_cache[k]
+
+    return is_revoked
 
 
 ### 🗑️ Revoke Token
