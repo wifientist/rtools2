@@ -43,6 +43,7 @@ import MigrationAudit from "@/pages/MigrationAudit";
 import JobMonitor from "@/pages/JobMonitor";
 import JobList from "@/pages/JobList";
 import SZAudit from "@/pages/SZAudit";
+import APPopAndSwap from "@/pages/APPopAndSwap";
 import DangerZone from "@/pages/DangerZone";
 import FilesharePage from "@/pages/Fileshare/FilesharePage";
 import FolderView from "@/pages/Fileshare/FolderView";
@@ -76,6 +77,7 @@ const App = () => {
           <Route path="/ap-port-config" element={<ProtectedRoute element={<APPortConfig />} />} />
           <Route path="/ap-rename" element={<ProtectedRoute element={<APRename />} />} />
           <Route path="/bulk-wlan" element={<ProtectedRoute element={<BulkWlanEdit />} />} />
+          <Route path="/pop-swap" element={<AlphaRoute element={<APPopAndSwap />} />} />
           <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />

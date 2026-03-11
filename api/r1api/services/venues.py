@@ -2243,3 +2243,155 @@ class VenueService:
             response.raise_for_status()
             return None
 
+    # ========== Pop and Swap: AP Settings GET/PUT Methods ==========
+
+    async def _get_ap_setting(self, tenant_id: str, venue_id: str, serial_number: str, setting_path: str):
+        """Generic GET for an AP-level setting endpoint."""
+        try:
+            url = f"/venues/{venue_id}/aps/{serial_number}/{setting_path}"
+            if self.client.ec_type == "MSP":
+                response = self.client.get(url, override_tenant_id=tenant_id)
+            else:
+                response = self.client.get(url)
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.debug(f"GET {setting_path} for {serial_number}: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.debug(f"Error GET {setting_path} for {serial_number}: {str(e)}")
+            return None
+
+    async def _put_ap_setting(self, tenant_id: str, venue_id: str, serial_number: str,
+                               setting_path: str, payload: dict, wait_for_completion: bool = True):
+        """Generic PUT for an AP-level setting endpoint. Handles 202 async tasks."""
+        url = f"/venues/{venue_id}/aps/{serial_number}/{setting_path}"
+        if self.client.ec_type == "MSP":
+            response = self.client.put(url, payload=payload, override_tenant_id=tenant_id)
+        else:
+            response = self.client.put(url, payload=payload)
+
+        if response.status_code in [200, 201, 202]:
+            result = response.json() if response.content else {"status": "accepted"}
+            if response.status_code == 202 and wait_for_completion:
+                request_id = result.get('requestId')
+                if request_id:
+                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+            return result
+        else:
+            logger.error(f"PUT {setting_path} for {serial_number}: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+
+    # --- Individual GET methods ---
+
+    async def get_ap_radio_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "radioSettings")
+
+    async def get_ap_network_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "networkSettings")
+
+    async def get_ap_management_vlan_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "managementTrafficVlanSettings")
+
+    async def get_ap_antenna_type_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "antennaTypeSettings")
+
+    async def get_ap_band_mode_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "bandModeSettings")
+
+    async def get_ap_bss_coloring_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "bssColoringSettings")
+
+    async def get_ap_external_antenna_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "externalAntennaSettings")
+
+    async def get_ap_dhcp_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "dhcpSettings")
+
+    async def get_ap_iot_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "iotSettings")
+
+    async def get_ap_mesh_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "meshSettings")
+
+    async def get_ap_smart_monitor_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "smartMonitorSettings")
+
+    async def get_ap_sticky_client_steering_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "stickyClientSteeringSettings")
+
+    async def get_ap_usb_port_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "usbPortSettings")
+
+    async def get_ap_client_admission_control_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "clientAdmissionControlSettings")
+
+    async def get_ap_led_settings(self, tenant_id: str, venue_id: str, serial_number: str):
+        return await self._get_ap_setting(tenant_id, venue_id, serial_number, "ledSettings")
+
+    # --- Individual PUT methods ---
+
+    async def set_ap_radio_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "radioSettings", payload, wait_for_completion)
+
+    async def set_ap_network_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "networkSettings", payload, wait_for_completion)
+
+    async def set_ap_management_vlan_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "managementTrafficVlanSettings", payload, wait_for_completion)
+
+    async def set_ap_antenna_type_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "antennaTypeSettings", payload, wait_for_completion)
+
+    async def set_ap_band_mode_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "bandModeSettings", payload, wait_for_completion)
+
+    async def set_ap_bss_coloring_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "bssColoringSettings", payload, wait_for_completion)
+
+    async def set_ap_external_antenna_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "externalAntennaSettings", payload, wait_for_completion)
+
+    async def set_ap_dhcp_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "dhcpSettings", payload, wait_for_completion)
+
+    async def set_ap_iot_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "iotSettings", payload, wait_for_completion)
+
+    async def set_ap_mesh_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "meshSettings", payload, wait_for_completion)
+
+    async def set_ap_smart_monitor_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "smartMonitorSettings", payload, wait_for_completion)
+
+    async def set_ap_sticky_client_steering_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "stickyClientSteeringSettings", payload, wait_for_completion)
+
+    async def set_ap_usb_port_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "usbPortSettings", payload, wait_for_completion)
+
+    async def set_ap_client_admission_control_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "clientAdmissionControlSettings", payload, wait_for_completion)
+
+    async def set_ap_led_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
+        return await self._put_ap_setting(tenant_id, venue_id, serial_number, "ledSettings", payload, wait_for_completion)
+
+    # --- Provisioning ---
+
+    async def provision_ap(self, tenant_id: str, serial_number: str):
+        """Provision a new AP into RuckusONE by serial number."""
+        payload = {"serialNumbers": [serial_number]}
+        if self.client.ec_type == "MSP":
+            response = self.client.post("/deviceProvisions/aps", payload=payload, override_tenant_id=tenant_id)
+        else:
+            response = self.client.post("/deviceProvisions/aps", payload=payload)
+
+        if response.status_code in [200, 201, 202]:
+            return response.json() if response.content else {"status": "accepted"}
+        else:
+            logger.error(f"Failed to provision AP {serial_number}: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+

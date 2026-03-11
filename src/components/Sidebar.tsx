@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, ArrowLeftRight } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -80,6 +80,7 @@ const Sidebar = () => {
         { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/pop-swap", icon: <ArrowLeftRight size={20} />, label: "Pop and Swap", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, rolesAllowed: ["admin","super"], requiresBeta: true },
         { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },

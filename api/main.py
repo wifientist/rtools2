@@ -32,6 +32,7 @@ from routers.scheduler_router import router as scheduler_router
 from routers.fileshare import router as fileshare_router
 from routers.migration_dashboard import router as migration_dashboard_router
 from routers.sz_migration.router import router as sz_migration_router
+from routers.ap_pop_swap import router as pop_swap_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -62,10 +63,12 @@ async def lifespan(app: FastAPI):
     from jobs.redis_cleanup_job import ensure_registered as ensure_redis_cleanup
     from jobs.signup_attempt_cleanup_job import ensure_registered as ensure_signup_cleanup
     from jobs.report_dispatcher_job import ensure_registered as ensure_report_dispatcher
+    from routers.ap_pop_swap.background_poller import ensure_registered as ensure_pop_swap_poller
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
     await ensure_signup_cleanup(scheduler)
     await ensure_report_dispatcher(scheduler)
+    await ensure_pop_swap_poller(scheduler)
 
     yield
 
@@ -192,6 +195,9 @@ app.include_router(migration_dashboard_router, tags=["Migration Dashboard"])
 
 # SZ→R1 Full Configuration Migration (alpha-gated)
 app.include_router(sz_migration_router, tags=["SZ Migration"])
+
+# Pop and Swap — AP replacement tool
+app.include_router(pop_swap_router, tags=["Pop and Swap"])
 
 # Debug: Log all routes to check for conflicts
 logger.info("=== ALL ROUTES ===")
