@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { apiGet, apiPost, apiDelete, apiFetch } from '@/utils/api';
 import type {
@@ -33,12 +33,13 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const PART_SIZE = 50 * 1024 * 1024; // 50MB - must match backend
 
 const FolderView = () => {
-  const { folderSlug, subfolderSlug } = useParams<{ folderSlug: string; subfolderSlug?: string }>();
+  const { folderSlug, '*': subfolderPath } = useParams<{ folderSlug: string; '*': string }>();
+  const location = useLocation();
   const { userRole } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [folder, setFolder] = useState<FileFolder | null>(null);
-  const [subfolders, setSubfolders] = useState<FileSubfolder[]>([]);
+  const [allSubfolders, setAllSubfolders] = useState<FileSubfolder[]>([]);
   const [files, setFiles] = useState<SharedFile[]>([]);
   const [currentSubfolder, setCurrentSubfolder] = useState<FileSubfolder | null>(null);
 
@@ -67,6 +68,54 @@ const FolderView = () => {
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const isSuper = userRole === 'super';
+
+  // Parse the subfolder path segments from the URL
+  const pathSegments = useMemo(() => {
+    if (!subfolderPath) return [];
+    return subfolderPath.split('/').filter(Boolean);
+  }, [subfolderPath]);
+
+  // Build tree structure from flat subfolder list
+  const subfolderTree = useMemo(() => {
+    const byParent = new Map<number | null, FileSubfolder[]>();
+    for (const sf of allSubfolders) {
+      const parentId = sf.parent_subfolder_id;
+      const existing = byParent.get(parentId) || [];
+      existing.push(sf);
+      byParent.set(parentId, existing);
+    }
+    return byParent;
+  }, [allSubfolders]);
+
+  // Get child subfolders of a given parent (null = root level)
+  const getChildSubfolders = useCallback((parentId: number | null) => {
+    return subfolderTree.get(parentId) || [];
+  }, [subfolderTree]);
+
+  // Resolve current subfolder from URL path segments
+  const resolveSubfolder = useCallback((segments: string[], subs: FileSubfolder[]): FileSubfolder | null => {
+    if (segments.length === 0) return null;
+    let current: FileSubfolder | null = null;
+    let parentId: number | null = null;
+    for (const slug of segments) {
+      current = subs.find(s => s.slug === slug && s.parent_subfolder_id === parentId) || null;
+      if (!current) return null;
+      parentId = current.id;
+    }
+    return current;
+  }, []);
+
+  // Build breadcrumb trail from current subfolder
+  const breadcrumbs = useMemo(() => {
+    if (!currentSubfolder) return [];
+    const trail: FileSubfolder[] = [];
+    let current: FileSubfolder | undefined = currentSubfolder;
+    while (current) {
+      trail.unshift(current);
+      current = allSubfolders.find(s => s.id === current!.parent_subfolder_id);
+    }
+    return trail;
+  }, [currentSubfolder, allSubfolders]);
 
   // Toggle subfolder expansion
   const toggleSubfolder = (subfolderId: number) => {
@@ -99,7 +148,12 @@ const FolderView = () => {
     return { rootFiles, filesBySubfolder };
   }, [files]);
 
-  // Fetch folder data
+  // Build URL path for a subfolder
+  const getSubfolderUrl = useCallback((subfolder: FileSubfolder) => {
+    return `/fileshare/${folderSlug}/${subfolder.path}`;
+  }, [folderSlug]);
+
+  // Fetch folder data (only when folder slug changes, not on subfolder navigation)
   const fetchData = async () => {
     if (!folderSlug) return;
     setLoading(true);
@@ -116,29 +170,14 @@ const FolderView = () => {
       }
       setFolder(currentFolder);
 
-      // Get subfolders
-      const subs = await apiGet<FileSubfolder[]>(`${API_BASE_URL}/fileshare/folders/${currentFolder.id}/subfolders`);
-      setSubfolders(subs);
-      // Expand all subfolders by default
+      // Get ALL subfolders and files in parallel
+      const [subs, fileList] = await Promise.all([
+        apiGet<FileSubfolder[]>(`${API_BASE_URL}/fileshare/folders/${currentFolder.id}/subfolders?all=true`),
+        apiGet<SharedFile[]>(`${API_BASE_URL}/fileshare/folders/${currentFolder.id}/files`),
+      ]);
+
+      setAllSubfolders(subs);
       setExpandedSubfolders(new Set(subs.map(s => s.id)));
-
-      // Find current subfolder if in subfolder view
-      let subfolderId: number | undefined;
-      if (subfolderSlug) {
-        const sub = subs.find(s => s.slug === subfolderSlug);
-        if (sub) {
-          setCurrentSubfolder(sub);
-          subfolderId = sub.id;
-        }
-      } else {
-        setCurrentSubfolder(null);
-      }
-
-      // Get files
-      const filesUrl = subfolderId
-        ? `${API_BASE_URL}/fileshare/folders/${currentFolder.id}/files?subfolder_id=${subfolderId}`
-        : `${API_BASE_URL}/fileshare/folders/${currentFolder.id}/files`;
-      const fileList = await apiGet<SharedFile[]>(filesUrl);
       setFiles(fileList);
     } catch (err: any) {
       setError(err.message || 'Failed to load folder');
@@ -147,9 +186,20 @@ const FolderView = () => {
     }
   };
 
+  // Full refetch only when the folder changes
   useEffect(() => {
     fetchData();
-  }, [folderSlug, subfolderSlug]);
+  }, [folderSlug]);
+
+  // Resolve current subfolder from URL path (no API call needed)
+  useEffect(() => {
+    if (allSubfolders.length > 0) {
+      const resolved = resolveSubfolder(pathSegments, allSubfolders);
+      setCurrentSubfolder(resolved);
+    } else {
+      setCurrentSubfolder(null);
+    }
+  }, [subfolderPath, allSubfolders]);
 
   // Fetch terms of service
   const fetchTerms = async () => {
@@ -350,16 +400,20 @@ const FolderView = () => {
   return (
     <div className="p-4 max-w-6xl mx-auto">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-gray-500 mb-4">
+      <nav className="flex items-center gap-2 text-sm text-gray-500 mb-4 flex-wrap">
         <Link to="/fileshare" className="hover:text-blue-600">Fileshare</Link>
-        <ChevronRight className="w-4 h-4" />
+        <ChevronRight className="w-4 h-4 flex-shrink-0" />
         <Link to={`/fileshare/${folder.slug}`} className="hover:text-blue-600">{folder.name}</Link>
-        {currentSubfolder && (
-          <>
-            <ChevronRight className="w-4 h-4" />
-            <span className="text-gray-900">{currentSubfolder.name}</span>
-          </>
-        )}
+        {breadcrumbs.map((bc, i) => (
+          <span key={bc.id} className="flex items-center gap-2">
+            <ChevronRight className="w-4 h-4 flex-shrink-0" />
+            {i === breadcrumbs.length - 1 ? (
+              <span className="text-gray-900">{bc.name}</span>
+            ) : (
+              <Link to={getSubfolderUrl(bc)} className="hover:text-blue-600">{bc.name}</Link>
+            )}
+          </span>
+        ))}
       </nav>
 
       {/* Header */}
@@ -374,6 +428,22 @@ const FolderView = () => {
           )}
         </div>
         <div className="flex gap-2">
+          {getChildSubfolders(currentSubfolder?.id ?? null).length > 0 && (
+            <>
+              <button
+                onClick={() => setExpandedSubfolders(new Set(allSubfolders.map(s => s.id)))}
+                className="px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg text-sm"
+              >
+                Expand all
+              </button>
+              <button
+                onClick={() => setExpandedSubfolders(new Set())}
+                className="px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg text-sm"
+              >
+                Collapse all
+              </button>
+            </>
+          )}
           <button
             onClick={fetchData}
             className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg flex items-center gap-2"
@@ -428,253 +498,264 @@ const FolderView = () => {
         </div>
       )}
 
-      {/* Tree View - Subfolders with files, then root files */}
-      {!currentSubfolder ? (
-        <div className="space-y-4">
-          {/* Subfolders with their files */}
-          {subfolders.map((sub) => {
-            const subFiles = filesBySubfolder.get(sub.id) || [];
-            const isExpanded = expandedSubfolders.has(sub.id);
+      {/* Content: child subfolders + files at current level */}
+      <div className="space-y-4">
+        {/* Child subfolders at this level */}
+        {getChildSubfolders(currentSubfolder?.id ?? null).map((sub) => {
+          const subFiles = filesBySubfolder.get(sub.id) || [];
+          const childCount = getChildSubfolders(sub.id).length;
+          const isExpanded = expandedSubfolders.has(sub.id);
+          const itemCount = subFiles.length + childCount;
 
-            return (
-              <div key={sub.id} className="bg-white rounded-lg shadow overflow-hidden">
-                {/* Subfolder header - clickable to expand/collapse */}
-                <button
-                  onClick={() => toggleSubfolder(sub.id)}
-                  className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+          return (
+            <div key={sub.id} className="bg-white rounded-lg shadow overflow-hidden">
+              {/* Subfolder header */}
+              <button
+                onClick={() => toggleSubfolder(sub.id)}
+                className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                  <Folder className="w-5 h-5 text-yellow-500" />
+                  <span className="font-medium text-gray-900">{sub.name}</span>
+                  <span className="text-sm text-gray-500">
+                    ({subFiles.length} file{subFiles.length !== 1 ? 's' : ''}
+                    {childCount > 0 && `, ${childCount} folder${childCount !== 1 ? 's' : ''}`})
+                  </span>
+                </div>
+                <Link
+                  to={getSubfolderUrl(sub)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm text-blue-600 hover:underline"
                 >
-                  <div className="flex items-center gap-3">
-                    <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                    <Folder className="w-5 h-5 text-yellow-500" />
-                    <span className="font-medium text-gray-900">{sub.name}</span>
-                    <span className="text-sm text-gray-500">({subFiles.length} files)</span>
-                  </div>
-                  <Link
-                    to={`/fileshare/${folder.slug}/${sub.slug}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    Open folder →
-                  </Link>
-                </button>
+                  Open folder &rarr;
+                </Link>
+              </button>
 
-                {/* Subfolder files */}
-                {isExpanded && subFiles.length > 0 && (
-                  <div className="divide-y">
-                    {subFiles.map((file) => (
-                      <div key={file.id} className="px-4 py-3 pl-12 flex items-center justify-between hover:bg-gray-50">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl">{getFileIcon(file.content_type)}</span>
-                          <div>
-                            <div className="font-medium text-gray-900">{file.filename}</div>
-                            <div className="text-xs text-gray-500 flex items-center gap-1">
-                              {formatBytes(file.size_bytes)} · {file.uploaded_by_email} · {formatDate(file.uploaded_at)} · <Clock className="w-3 h-3" /> Expires {formatDate(file.expires_at)} · {file.download_count} downloads
+              {/* Expanded content: child subfolders + files */}
+              {isExpanded && (
+                <div>
+                  {/* Nested child subfolders */}
+                  {getChildSubfolders(sub.id).map((child) => {
+                    const childFiles = filesBySubfolder.get(child.id) || [];
+                    const grandchildCount = getChildSubfolders(child.id).length;
+                    const isChildExpanded = expandedSubfolders.has(child.id);
+                    const childItemCount = childFiles.length + grandchildCount;
+
+                    return (
+                      <div key={child.id} className="border-t border-gray-100">
+                        <div className="px-4 py-2 pl-10 flex items-center justify-between hover:bg-gray-50">
+                          <button
+                            onClick={() => toggleSubfolder(child.id)}
+                            className="flex items-center gap-2 flex-1"
+                          >
+                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isChildExpanded ? '' : '-rotate-90'}`} />
+                            <Folder className="w-4 h-4 text-yellow-500" />
+                            <span className="text-sm font-medium text-gray-700">{child.name}</span>
+                            <span className="text-xs text-gray-400">
+                              ({childFiles.length} file{childFiles.length !== 1 ? 's' : ''}
+                              {grandchildCount > 0 && `, ${grandchildCount} folder${grandchildCount !== 1 ? 's' : ''}`})
+                            </span>
+                          </button>
+                          <Link
+                            to={getSubfolderUrl(child)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-blue-600 hover:underline ml-2"
+                          >
+                            Open &rarr;
+                          </Link>
+                        </div>
+
+                        {/* Expanded child content */}
+                        {isChildExpanded && childFiles.length > 0 && (
+                          <div className="divide-y">
+                            {childFiles.map((file) => (
+                              <div key={file.id} className="px-4 py-2 pl-20 flex items-center justify-between hover:bg-gray-50">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-lg">{getFileIcon(file.content_type)}</span>
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">{file.filename}</div>
+                                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                                      {formatBytes(file.size_bytes)} · {formatDate(file.uploaded_at)} · {file.download_count} downloads
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {folder.can_download && (
+                                    <button
+                                      onClick={() => handleDownload(file)}
+                                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                                      title="Download"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  {(isSuper || file.uploaded_by_email === folder.created_by_email) && (
+                                    <button
+                                      onClick={() => handleDelete(file)}
+                                      className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Grandchild subfolders shown as links */}
+                        {isChildExpanded && getChildSubfolders(child.id).map((grandchild) => (
+                          <Link
+                            key={grandchild.id}
+                            to={getSubfolderUrl(grandchild)}
+                            className="px-4 py-2 pl-20 flex items-center gap-2 hover:bg-gray-50 border-t border-gray-50"
+                          >
+                            <Folder className="w-3.5 h-3.5 text-yellow-500" />
+                            <span className="text-xs font-medium text-gray-600">{grandchild.name}</span>
+                          </Link>
+                        ))}
+
+                        {isChildExpanded && childItemCount === 0 && (
+                          <div className="px-4 py-2 pl-20 text-xs text-gray-400 italic">
+                            Empty folder
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Files in this subfolder */}
+                  {subFiles.length > 0 && (
+                    <div className="divide-y">
+                      {subFiles.map((file) => (
+                        <div key={file.id} className="px-4 py-3 pl-12 flex items-center justify-between hover:bg-gray-50">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl">{getFileIcon(file.content_type)}</span>
+                            <div>
+                              <div className="font-medium text-gray-900">{file.filename}</div>
+                              <div className="text-xs text-gray-500 flex items-center gap-1">
+                                {formatBytes(file.size_bytes)} · {file.uploaded_by_email} · {formatDate(file.uploaded_at)} · <Clock className="w-3 h-3" /> Expires {formatDate(file.expires_at)} · {file.download_count} downloads
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {folder.can_download && (
+                          <div className="flex items-center gap-2">
+                            {folder.can_download && (
+                              <button
+                                onClick={() => handleDownload(file)}
+                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                                title="Download"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                            )}
                             <button
-                              onClick={() => handleDownload(file)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                              title="Download"
+                              onClick={() => setShowReportModal(file)}
+                              className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
+                              title="Report file"
                             >
-                              <Download className="w-4 h-4" />
+                              <Flag className="w-4 h-4" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => setShowReportModal(file)}
-                            className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
-                            title="Report file"
-                          >
-                            <Flag className="w-4 h-4" />
-                          </button>
-                          {(isSuper || file.uploaded_by_email === folder.created_by_email) && (
-                            <button
-                              onClick={() => handleDelete(file)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
+                            {(isSuper || file.uploaded_by_email === folder.created_by_email) && (
+                              <button
+                                onClick={() => handleDelete(file)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
 
-                {/* Empty subfolder message */}
-                {isExpanded && subFiles.length === 0 && (
-                  <div className="px-4 py-3 pl-12 text-sm text-gray-500 italic">
-                    No files in this subfolder
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  {/* Empty state */}
+                  {itemCount === 0 && (
+                    <div className="px-4 py-3 pl-12 text-sm text-gray-500 italic">
+                      Empty folder
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
-          {/* Divider if both subfolders and root files exist */}
-          {subfolders.length > 0 && rootFiles.length > 0 && (
-            <div className="border-t border-gray-200 my-4" />
-          )}
+        {/* Divider if both subfolders and root files exist at this level */}
+        {getChildSubfolders(currentSubfolder?.id ?? null).length > 0 && rootFiles.length > 0 && (
+          <div className="border-t border-gray-200 my-4" />
+        )}
 
-          {/* Root files */}
-          {rootFiles.length > 0 && (
-            <div className="bg-white rounded-lg shadow overflow-hidden">
+        {/* Files at this level (not in any subfolder, or direct files in current subfolder) */}
+        {files.filter(f => f.subfolder_id === (currentSubfolder?.id ?? null)).length > 0 && (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            {!currentSubfolder && (
               <div className="px-4 py-3 bg-gray-50 border-b">
-                <span className="font-medium text-gray-700">Root Files ({rootFiles.length})</span>
+                <span className="font-medium text-gray-700">
+                  Files ({files.filter(f => f.subfolder_id === null).length})
+                </span>
               </div>
-              <div className="divide-y">
-                {rootFiles.map((file) => (
-                  <div key={file.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{getFileIcon(file.content_type)}</span>
-                      <div>
-                        <div className="font-medium text-gray-900">{file.filename}</div>
-                        <div className="text-xs text-gray-500">
-                          {formatBytes(file.size_bytes)} · {file.uploaded_by_email} · {formatDate(file.uploaded_at)} · <Clock className="w-3 h-3 inline" /> Expires {formatDate(file.expires_at)} · {file.download_count} downloads
-                        </div>
+            )}
+            <div className="divide-y">
+              {files.filter(f => f.subfolder_id === (currentSubfolder?.id ?? null)).map((file) => (
+                <div key={file.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{getFileIcon(file.content_type)}</span>
+                    <div>
+                      <div className="font-medium text-gray-900">{file.filename}</div>
+                      <div className="text-xs text-gray-500">
+                        {formatBytes(file.size_bytes)} · {file.uploaded_by_email} · {formatDate(file.uploaded_at)} · <Clock className="w-3 h-3 inline" /> Expires {formatDate(file.expires_at)} · {file.download_count} downloads
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {folder.can_download && (
-                        <button
-                          onClick={() => handleDownload(file)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setShowReportModal(file)}
-                        className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
-                        title="Report file"
-                      >
-                        <Flag className="w-4 h-4" />
-                      </button>
-                      {(isSuper || file.uploaded_by_email === folder.created_by_email) && (
-                        <button
-                          onClick={() => handleDelete(file)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
                   </div>
-                ))}
-              </div>
+                  <div className="flex items-center gap-2">
+                    {folder.can_download && (
+                      <button
+                        onClick={() => handleDownload(file)}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                        title="Download"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowReportModal(file)}
+                      className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
+                      title="Report file"
+                    >
+                      <Flag className="w-4 h-4" />
+                    </button>
+                    {(isSuper || file.uploaded_by_email === folder.created_by_email) && (
+                      <button
+                        onClick={() => handleDelete(file)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Empty state */}
-          {subfolders.length === 0 && rootFiles.length === 0 && (
-            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-              <File className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>No files or subfolders yet</p>
-              {folder.can_upload && (
-                <p className="text-sm mt-1">Upload a file to get started</p>
-              )}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Subfolder view - show files in table format */
-        <div>
-          <h2 className="text-lg font-semibold text-gray-800 mb-3">
-            Files {files.length > 0 && `(${files.length})`}
-          </h2>
-
-          {files.length === 0 ? (
-            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-              <File className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-              <p>No files in this subfolder</p>
-              {folder.can_upload && (
-                <p className="text-sm mt-1">Upload a file to get started</p>
-              )}
-            </div>
-          ) : (
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">File</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Size</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Uploaded</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Expires</th>
-                    <th className="text-right px-4 py-3 text-sm font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {files.map((file) => (
-                    <tr key={file.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{getFileIcon(file.content_type)}</span>
-                          <div>
-                            <div className="font-medium text-gray-900">{file.filename}</div>
-                            <div className="text-xs text-gray-500 flex items-center gap-2">
-                              <User className="w-3 h-3" />
-                              {file.uploaded_by_email}
-                              <span className="text-gray-300">|</span>
-                              <Download className="w-3 h-3" />
-                              {file.download_count} downloads
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {formatBytes(file.size_bytes)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {formatDate(file.uploaded_at)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatDate(file.expires_at)}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          {folder.can_download && (
-                            <button
-                              onClick={() => handleDownload(file)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                              title="Download"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setShowReportModal(file)}
-                            className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg"
-                            title="Report file"
-                          >
-                            <Flag className="w-4 h-4" />
-                          </button>
-                          {(isSuper || file.uploaded_by_email === folder.created_by_email) && (
-                            <button
-                              onClick={() => handleDelete(file)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+        {/* Empty state */}
+        {getChildSubfolders(currentSubfolder?.id ?? null).length === 0 &&
+         files.filter(f => f.subfolder_id === (currentSubfolder?.id ?? null)).length === 0 && (
+          <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+            <File className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p>No files or subfolders yet</p>
+            {folder.can_upload && (
+              <p className="text-sm mt-1">Upload a file to get started</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Terms of Service Modal */}
       {showTermsModal && (

@@ -46,6 +46,7 @@ import SZAudit from "@/pages/SZAudit";
 import APPopAndSwap from "@/pages/APPopAndSwap";
 import BulkAPTagging from "@/pages/BulkAPTagging";
 import DangerZone from "@/pages/DangerZone";
+import DataStudioExport from "@/pages/DataStudioExport";
 import FilesharePage from "@/pages/Fileshare/FilesharePage";
 import FolderView from "@/pages/Fileshare/FolderView";
 import FileshareAdmin from "@/pages/Fileshare/FileshareAdmin";
@@ -87,14 +88,14 @@ const App = () => {
           <Route path="/danger-zone" element={<BetaRoute element={<DangerZone />} />} />
           <Route path="/fileshare" element={<ProtectedRoute element={<FilesharePage />} />} />
           <Route path="/fileshare/admin" element={<AdminRoute element={<FileshareAdmin />} />} />
-          <Route path="/fileshare/:folderSlug" element={<ProtectedRoute element={<FolderView />} />} />
-          <Route path="/fileshare/:folderSlug/:subfolderSlug" element={<ProtectedRoute element={<FolderView />} />} />
+          <Route path="/fileshare/:folderSlug/*" element={<ProtectedRoute element={<FolderView />} />} />
           <Route path="/jobs" element={<ProtectedRoute element={<JobList />} />} />
           <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />
           <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
           <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
           <Route path="/migration-audit" element={<AlphaRoute element={<MigrationAudit />} />} />
+          <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />

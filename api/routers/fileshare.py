@@ -79,15 +79,19 @@ class FolderResponse(BaseModel):
 class SubfolderCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     slug: str = Field(..., min_length=1, max_length=50, pattern=r'^[a-z0-9-]+$')
+    parent_subfolder_id: Optional[int] = None
 
 
 class SubfolderResponse(BaseModel):
     id: int
     folder_id: int
+    parent_subfolder_id: Optional[int] = None
     name: str
     slug: str
+    path: str = ""
     created_at: datetime
     file_count: int = 0
+    child_count: int = 0
 
     class Config:
         from_attributes = True
@@ -515,10 +519,12 @@ def delete_folder(
 @router.get("/folders/{folder_id}/subfolders", response_model=list[SubfolderResponse])
 def list_subfolders(
     folder_id: int,
+    parent_subfolder_id: Optional[int] = None,
+    all: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """List subfolders in a folder."""
+    """List subfolders in a folder. By default returns root-level only; use parent_subfolder_id to list children, or all=true for flat list."""
     folder = db.query(FileFolder).filter(FileFolder.id == folder_id).first()
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
@@ -526,16 +532,24 @@ def list_subfolders(
     if not check_download_permission(db, current_user, folder):
         raise HTTPException(status_code=403, detail="No access to this folder")
 
+    query = db.query(FileSubfolder).filter(FileSubfolder.folder_id == folder_id)
+    if not all:
+        query = query.filter(FileSubfolder.parent_subfolder_id == parent_subfolder_id)
+    subfolders = query.order_by(FileSubfolder.name).all()
+
     return [
         SubfolderResponse(
             id=sf.id,
             folder_id=sf.folder_id,
+            parent_subfolder_id=sf.parent_subfolder_id,
             name=sf.name,
             slug=sf.slug,
+            path=sf.subfolder_path,
             created_at=sf.created_at,
-            file_count=len(sf.files)
+            file_count=len(sf.files),
+            child_count=len(sf.children),
         )
-        for sf in folder.subfolders
+        for sf in subfolders
     ]
 
 
@@ -547,21 +561,32 @@ def create_subfolder(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a subfolder (super only)."""
+    """Create a subfolder (super only). Optionally nested under a parent subfolder."""
     folder = db.query(FileFolder).filter(FileFolder.id == folder_id).first()
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
 
-    # Check slug uniqueness within folder
+    # Validate parent subfolder if specified
+    if subfolder_data.parent_subfolder_id:
+        parent = db.query(FileSubfolder).filter(
+            FileSubfolder.id == subfolder_data.parent_subfolder_id,
+            FileSubfolder.folder_id == folder_id,
+        ).first()
+        if not parent:
+            raise HTTPException(status_code=404, detail="Parent subfolder not found")
+
+    # Check slug uniqueness within same parent
     existing = db.query(FileSubfolder).filter(
         FileSubfolder.folder_id == folder_id,
-        FileSubfolder.slug == subfolder_data.slug
+        FileSubfolder.parent_subfolder_id == subfolder_data.parent_subfolder_id,
+        FileSubfolder.slug == subfolder_data.slug,
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Subfolder with this slug already exists in this folder")
+        raise HTTPException(status_code=400, detail="Subfolder with this slug already exists at this level")
 
     subfolder = FileSubfolder(
         folder_id=folder_id,
+        parent_subfolder_id=subfolder_data.parent_subfolder_id,
         name=subfolder_data.name,
         slug=subfolder_data.slug,
         created_by_id=current_user.id,
@@ -571,15 +596,18 @@ def create_subfolder(
     db.commit()
     db.refresh(subfolder)
 
-    logger.info(f"Subfolder created: {folder.slug}/{subfolder.slug} by {current_user.email}")
+    logger.info(f"Subfolder created: {folder.slug}/{subfolder.subfolder_path} by {current_user.email}")
 
     return SubfolderResponse(
         id=subfolder.id,
         folder_id=subfolder.folder_id,
+        parent_subfolder_id=subfolder.parent_subfolder_id,
         name=subfolder.name,
         slug=subfolder.slug,
+        path=subfolder.subfolder_path,
         created_at=subfolder.created_at,
-        file_count=0
+        file_count=0,
+        child_count=0,
     )
 
 
@@ -590,19 +618,23 @@ def delete_subfolder(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Delete a subfolder (super only). Must be empty."""
+    """Delete a subfolder (super only). Must be empty (no files or child subfolders)."""
     subfolder = db.query(FileSubfolder).filter(FileSubfolder.id == subfolder_id).first()
     if not subfolder:
         raise HTTPException(status_code=404, detail="Subfolder not found")
 
+    if len(subfolder.children) > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete subfolder with child subfolders. Delete children first.")
+
     if len(subfolder.files) > 0:
         raise HTTPException(status_code=400, detail="Cannot delete subfolder with files. Delete files first.")
 
+    path = subfolder.subfolder_path
     folder_slug = subfolder.folder.slug
     db.delete(subfolder)
     db.commit()
 
-    logger.info(f"Subfolder deleted: {folder_slug}/{subfolder.slug} by {current_user.email}")
+    logger.info(f"Subfolder deleted: {folder_slug}/{path} by {current_user.email}")
     return None
 
 
@@ -746,7 +778,7 @@ def list_files(
             folder_id=f.folder_id,
             folder_slug=f.folder.slug,
             subfolder_id=f.subfolder_id,
-            subfolder_slug=f.subfolder.slug if f.subfolder else None,
+            subfolder_slug=f.subfolder.subfolder_path if f.subfolder else None,
             filename=f.filename,
             size_bytes=f.size_bytes,
             content_type=f.content_type,
@@ -797,7 +829,7 @@ def initiate_upload(
         ).first()
         if not subfolder:
             raise HTTPException(status_code=404, detail="Subfolder not found")
-        subfolder_slug = subfolder.slug
+        subfolder_slug = subfolder.subfolder_path
 
     # Check quota
     if folder.used_bytes + upload_data.size_bytes > folder.quota_bytes:
@@ -895,7 +927,7 @@ def complete_upload(
         log_fileshare_action(
             db, current_user, 'upload',
             shared_file.filename, folder.slug,
-            shared_file.subfolder.slug if shared_file.subfolder else None,
+            shared_file.subfolder.subfolder_path if shared_file.subfolder else None,
             shared_file.id, shared_file.size_bytes, request=request
         )
 
@@ -949,7 +981,7 @@ def confirm_single_upload(
     log_fileshare_action(
         db, current_user, 'upload',
         shared_file.filename, folder.slug,
-        shared_file.subfolder.slug if shared_file.subfolder else None,
+        shared_file.subfolder.subfolder_path if shared_file.subfolder else None,
         shared_file.id, size, request=request
     )
 
@@ -996,7 +1028,7 @@ def get_download_url(
     log_fileshare_action(
         db, current_user, 'download',
         shared_file.filename, folder.slug,
-        shared_file.subfolder.slug if shared_file.subfolder else None,
+        shared_file.subfolder.subfolder_path if shared_file.subfolder else None,
         shared_file.id, shared_file.size_bytes, request=request
     )
 
@@ -1043,7 +1075,7 @@ def delete_file(
     log_fileshare_action(
         db, current_user, 'delete',
         shared_file.filename, folder.slug,
-        shared_file.subfolder.slug if shared_file.subfolder else None,
+        shared_file.subfolder.subfolder_path if shared_file.subfolder else None,
         shared_file.id, shared_file.size_bytes, request=request
     )
 
@@ -1270,21 +1302,20 @@ def adopt_orphaned_file(
     if file_size is None:
         raise HTTPException(status_code=404, detail="File not found in S3")
 
-    # Parse S3 key: files/{folder_slug}/{subfolder_slug?}/{file_uuid}/{filename}
-    # or: files/{folder_slug}/{file_uuid}/{filename}
+    # Parse S3 key: files/{folder_slug}/{subfolder_path?}/{file_uuid}/{filename}
+    # Minimum: files/{folder_slug}/{file_uuid}/{filename} (4 parts)
+    # With subfolder: files/{folder_slug}/{sub_slug}/{file_uuid}/{filename} (5 parts)
+    # Nested: files/{folder_slug}/{parent_slug}/{child_slug}/{file_uuid}/{filename} (6+ parts)
     parts = s3_key.split('/')
     if len(parts) < 4 or parts[0] != 'files':
         raise HTTPException(status_code=400, detail=f"Invalid S3 key format: {s3_key}")
 
     folder_slug = parts[1]
     filename = parts[-1]
+    file_uuid = parts[-2]
 
-    # Determine if there's a subfolder (5 parts = with subfolder, 4 parts = without)
-    subfolder_slug = None
-    if len(parts) == 5:
-        subfolder_slug = parts[2]
-    elif len(parts) != 4:
-        raise HTTPException(status_code=400, detail=f"Invalid S3 key format: {s3_key}")
+    # Everything between folder_slug and file_uuid is the subfolder path
+    subfolder_slugs = parts[2:-2]  # Empty list if no subfolder
 
     # Look up folder
     folder = db.query(FileFolder).filter(FileFolder.slug == folder_slug).first()
@@ -1294,18 +1325,23 @@ def adopt_orphaned_file(
             detail=f"Folder '{folder_slug}' not found. Create the folder first."
         )
 
-    # Look up subfolder if specified
+    # Walk the subfolder path to find the leaf subfolder
     subfolder = None
-    if subfolder_slug:
-        subfolder = db.query(FileSubfolder).filter(
-            FileSubfolder.folder_id == folder.id,
-            FileSubfolder.slug == subfolder_slug
-        ).first()
-        if not subfolder:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Subfolder '{subfolder_slug}' not found in folder '{folder_slug}'. Create the subfolder first."
-            )
+    if subfolder_slugs:
+        parent_id = None
+        for slug_part in subfolder_slugs:
+            subfolder = db.query(FileSubfolder).filter(
+                FileSubfolder.folder_id == folder.id,
+                FileSubfolder.parent_subfolder_id == parent_id,
+                FileSubfolder.slug == slug_part,
+            ).first()
+            if not subfolder:
+                path_so_far = "/".join(subfolder_slugs)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Subfolder path '{path_so_far}' not found in folder '{folder_slug}'. Create the subfolder first."
+                )
+            parent_id = subfolder.id
 
     # Guess content type from filename
     content_type, _ = mimetypes.guess_type(filename)
@@ -1339,7 +1375,7 @@ def adopt_orphaned_file(
         id=new_file.id,
         filename=filename,
         folder_slug=folder_slug,
-        subfolder_slug=subfolder_slug,
+        subfolder_slug="/".join(subfolder_slugs) if subfolder_slugs else None,
         size_bytes=file_size
     )
 
@@ -1447,7 +1483,7 @@ def report_file(
         file_id=shared_file.id,
         filename=shared_file.filename,
         folder_slug=folder.slug,
-        subfolder_slug=shared_file.subfolder.slug if shared_file.subfolder else None,
+        subfolder_slug=shared_file.subfolder.subfolder_path if shared_file.subfolder else None,
         file_size_bytes=shared_file.size_bytes,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get('user-agent', '')[:500]

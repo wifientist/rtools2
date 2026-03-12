@@ -36,6 +36,9 @@ from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
 # SZ Config Migration
 from models.sz_migration_session import SZMigrationSession
 
+# Data Studio Export
+from models.data_studio_export import DataStudioExportConfig, DataStudioExportRun
+
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
     'PendingSignupOtp', 'RevokedToken', 'AuditLog', 'SignupAttempt',
@@ -51,4 +54,6 @@ __all__ = [
     'MigrationDashboardSettings', 'MigrationDashboardSnapshot',
     # SZ Config Migration
     'SZMigrationSession',
+    # Data Studio Export
+    'DataStudioExportConfig', 'DataStudioExportRun',
 ]

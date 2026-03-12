@@ -53,8 +53,8 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):  #token: 
         exp_dt = datetime.utcfromtimestamp(exp) if exp else None
         now = datetime.utcnow()
         remaining = (exp_dt - now).total_seconds() if exp_dt else None
-        logger.info(f"[AUTH] Token decoded | endpoint={endpoint} email={email} type={token_type} "
-                     f"exp={exp_dt} remaining={remaining:.0f}s jti={jti[:8]}...")
+        logger.debug(f"[AUTH] Token decoded | endpoint={endpoint} email={email} type={token_type} "
+                      f"exp={exp_dt} remaining={remaining:.0f}s jti={jti[:8]}...")
 
         if email is None or role is None:
             logger.warning(f"[AUTH 401] Token missing email/role | endpoint={endpoint} email={email} role={role}")

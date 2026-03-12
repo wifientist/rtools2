@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/utils/api';
 import type {
   FileFolder,
+  FileSubfolder,
   FolderPermission,
   AuditLogEntry
 } from '@/types/fileshare';
@@ -74,7 +75,8 @@ const FileshareAdmin = () => {
 
   // Create subfolder modal
   const [showCreateSubfolder, setShowCreateSubfolder] = useState<number | null>(null);
-  const [newSubfolder, setNewSubfolder] = useState({ name: '', slug: '' });
+  const [folderSubfolders, setFolderSubfolders] = useState<FileSubfolder[]>([]);
+  const [newSubfolder, setNewSubfolder] = useState({ name: '', slug: '', parent_subfolder_id: '' });
 
   // Permissions modal
   const [showPermissions, setShowPermissions] = useState<FileFolder | null>(null);
@@ -233,6 +235,18 @@ const FileshareAdmin = () => {
     }
   };
 
+  // Open create subfolder modal and fetch existing subfolders for the folder
+  const openCreateSubfolder = async (folderId: number) => {
+    setShowCreateSubfolder(folderId);
+    setNewSubfolder({ name: '', slug: '', parent_subfolder_id: '' });
+    try {
+      const subs = await apiGet<FileSubfolder[]>(`${API_BASE_URL}/fileshare/folders/${folderId}/subfolders?all=true`);
+      setFolderSubfolders(subs);
+    } catch {
+      setFolderSubfolders([]);
+    }
+  };
+
   // Create subfolder
   const handleCreateSubfolder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,10 +255,12 @@ const FileshareAdmin = () => {
     try {
       await apiPost(`${API_BASE_URL}/fileshare/folders/${showCreateSubfolder}/subfolders`, {
         name: newSubfolder.name,
-        slug: newSubfolder.slug
+        slug: newSubfolder.slug,
+        parent_subfolder_id: newSubfolder.parent_subfolder_id ? parseInt(newSubfolder.parent_subfolder_id) : null,
       });
       setShowCreateSubfolder(null);
-      setNewSubfolder({ name: '', slug: '' });
+      setNewSubfolder({ name: '', slug: '', parent_subfolder_id: '' });
+      setFolderSubfolders([]);
       await fetchData();
     } catch (err: any) {
       setError(err.message || 'Failed to create subfolder');
@@ -406,7 +422,7 @@ const FileshareAdmin = () => {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => setShowCreateSubfolder(folder.id)}
+                        onClick={() => openCreateSubfolder(folder.id)}
                         className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center gap-1"
                       >
                         <Plus className="w-4 h-4" />
@@ -822,6 +838,21 @@ const FileshareAdmin = () => {
               </button>
             </div>
             <form onSubmit={handleCreateSubfolder} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Parent Subfolder</label>
+                <select
+                  value={newSubfolder.parent_subfolder_id}
+                  onChange={(e) => setNewSubfolder({ ...newSubfolder, parent_subfolder_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Root level</option>
+                  {folderSubfolders.map((sf) => (
+                    <option key={sf.id} value={sf.id}>
+                      {sf.path ? `/${sf.path}` : sf.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                 <input

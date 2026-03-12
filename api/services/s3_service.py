@@ -375,6 +375,33 @@ class S3Service:
         """
         return math.ceil(file_size / self.PART_SIZE)
 
+    def put_object(self, key: str, body: bytes, content_type: str = "text/csv") -> bool:
+        """
+        Upload bytes directly to S3 from the backend.
+
+        Args:
+            key: S3 object key
+            body: File content as bytes
+            content_type: MIME type of the file
+
+        Returns:
+            True if uploaded successfully
+        """
+        self._ensure_configured()
+
+        try:
+            self._client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=body,
+                ContentType=content_type
+            )
+            logger.info(f"Uploaded object directly: {key} ({len(body)} bytes)")
+            return True
+        except ClientError as e:
+            logger.error(f"Failed to upload object {key}: {e}")
+            return False
+
     def should_use_multipart(self, file_size: int) -> bool:
         """
         Determine if multipart upload should be used.

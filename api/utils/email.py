@@ -238,3 +238,59 @@ def send_email_with_attachment(
     except ClientError as e:
         logger.error(f"SES raw email error: {e.response['Error']['Message']}")
         return False
+
+
+def send_email_with_attachments(
+    to_email,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    attachments: list[tuple[bytes, str]],
+) -> bool:
+    """
+    Send an email with multiple file attachments via Amazon SES raw email.
+
+    Args:
+        to_email: Recipient email address (str) or list of addresses
+        subject: Email subject
+        text_body: Plain text body
+        html_body: HTML body
+        attachments: List of (file_bytes, filename) tuples
+
+    Returns:
+        True if email sent successfully, False otherwise
+    """
+    if not FROM_EMAIL:
+        logger.error("FROM_EMAIL not configured")
+        return False
+
+    recipients = to_email if isinstance(to_email, list) else [to_email]
+
+    ses = get_ses_client()
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = FROM_EMAIL
+    msg["To"] = ", ".join(recipients)
+
+    body_part = MIMEMultipart("alternative")
+    body_part.attach(MIMEText(text_body, "plain", "utf-8"))
+    body_part.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(body_part)
+
+    for file_bytes, filename in attachments:
+        att = MIMEApplication(file_bytes)
+        att.add_header("Content-Disposition", "attachment", filename=filename)
+        msg.attach(att)
+
+    try:
+        response = ses.send_raw_email(
+            Source=FROM_EMAIL,
+            Destinations=recipients,
+            RawMessage={"Data": msg.as_string()},
+        )
+        logger.info(f"Email with {len(attachments)} attachment(s) sent via SES to {len(recipients)} recipient(s). MessageId: {response['MessageId']}")
+        return True
+    except ClientError as e:
+        logger.error(f"SES raw email error: {e.response['Error']['Message']}")
+        return False

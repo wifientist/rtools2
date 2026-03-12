@@ -37,11 +37,12 @@ class FileFolder(Base):
 
 
 class FileSubfolder(Base):
-    """Subfolders for organization (inherit parent permissions)"""
+    """Subfolders for organization (inherit parent permissions). Supports nesting."""
     __tablename__ = "file_subfolders"
 
     id = Column(Integer, primary_key=True, index=True)
     folder_id = Column(Integer, ForeignKey("file_folders.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_subfolder_id = Column(Integer, ForeignKey("file_subfolders.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(100), nullable=False)  # "vsz_backups"
     slug = Column(String(50), nullable=False)  # "vsz-backups"
 
@@ -50,11 +51,25 @@ class FileSubfolder(Base):
 
     # Relationships
     folder = relationship("FileFolder", back_populates="subfolders")
+    parent = relationship("FileSubfolder", remote_side="FileSubfolder.id", back_populates="children")
+    children = relationship("FileSubfolder", back_populates="parent", cascade="all, delete-orphan")
     created_by = relationship("User", foreign_keys=[created_by_id])
     files = relationship("SharedFile", back_populates="subfolder", cascade="all, delete-orphan")
 
+    @property
+    def subfolder_path(self) -> str:
+        """Build the full slug path by walking up the parent chain (e.g. 'data-studio/mdu-customers')."""
+        if not self.slug:
+            return ""
+        parts = [self.slug]
+        current = self.parent
+        while current and current.slug:
+            parts.append(current.slug)
+            current = current.parent
+        return "/".join(reversed(parts))
+
     __table_args__ = (
-        UniqueConstraint('folder_id', 'slug', name='uq_subfolder_slug'),
+        UniqueConstraint('folder_id', 'parent_subfolder_id', 'slug', name='uq_subfolder_slug'),
     )
 
 

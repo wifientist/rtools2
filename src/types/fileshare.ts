@@ -20,10 +20,13 @@ export interface FileFolder {
 export interface FileSubfolder {
   id: number;
   folder_id: number;
+  parent_subfolder_id: number | null;
   name: string;
   slug: string;
+  path: string;
   created_at: string;
   file_count: number;
+  child_count: number;
 }
 
 export interface SharedFile {
