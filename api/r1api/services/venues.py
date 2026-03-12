@@ -115,10 +115,11 @@ class VenueService:
         name: str = None,
         description: str = None,
         ap_group_id: str = None,
+        tags: list = None,
         wait_for_completion: bool = True
     ):
         """
-        Update an AP's properties (name, description, AP group).
+        Update an AP's properties (name, description, AP group, tags).
 
         Args:
             tenant_id: Tenant/EC ID
@@ -127,6 +128,7 @@ class VenueService:
             name: New AP name (optional)
             description: New AP description (optional)
             ap_group_id: New AP Group ID to assign (optional)
+            tags: List of tag strings to set on the AP (optional)
             wait_for_completion: If True, wait for async task to complete (default: True)
 
         Returns:
@@ -143,6 +145,8 @@ class VenueService:
             payload["description"] = description
         if ap_group_id is not None:
             payload["apGroupId"] = ap_group_id
+        if tags is not None:
+            payload["tags"] = tags
 
         logger.info(f"Updating AP {serial_number}: {payload}")
 

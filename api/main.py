@@ -33,6 +33,7 @@ from routers.fileshare import router as fileshare_router
 from routers.migration_dashboard import router as migration_dashboard_router
 from routers.sz_migration.router import router as sz_migration_router
 from routers.ap_pop_swap import router as pop_swap_router
+from routers.bulk_ap_tagging import router as bulk_ap_tagging_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -198,6 +199,8 @@ app.include_router(sz_migration_router, tags=["SZ Migration"])
 
 # Pop and Swap — AP replacement tool
 app.include_router(pop_swap_router, tags=["Pop and Swap"])
+
+app.include_router(bulk_ap_tagging_router, tags=["Bulk AP Tagging"])
 
 # Debug: Log all routes to check for conflicts
 logger.info("=== ALL ROUTES ===")
