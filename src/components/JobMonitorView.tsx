@@ -129,6 +129,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
   const [cancelling, setCancelling] = useState(false);
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [sseReconnects, setSseReconnects] = useState(0);
+  const [retryCount, setRetryCount] = useState(0);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastRefreshRef = useRef<number>(0);
@@ -184,7 +185,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     if (jobId) {
       fetchJobStatus();
     }
-  }, [jobId]);
+  }, [jobId, retryCount]);
 
   // Set up SSE streaming for live updates
   useEffect(() => {
@@ -707,14 +708,25 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
           <h2 className="text-xl font-bold text-red-800 mb-2">Error</h2>
           <p className="text-red-600">{error}</p>
-          {onClose && (
+          <div className="flex gap-2 mt-4">
             <button
-              onClick={onClose}
-              className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              onClick={() => {
+                setError(null);
+                setRetryCount(prev => prev + 1);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
-              Close
+              Retry
             </button>
-          )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Close
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
