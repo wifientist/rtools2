@@ -10,19 +10,42 @@ from fastapi import Depends
 
 logger = logging.getLogger(__name__)
 
+MAX_OTP_ATTEMPTS = 5
+
+# In-memory tracker: {email: failed_attempt_count}
+_signup_otp_attempt_counts: dict[str, int] = {}
+
 
 def verify_signup_otp(email: str, otp_code: str, db: Session = Depends(get_db)) -> bool:
     pending = db.query(PendingSignupOtp).filter_by(email=email).first()
     if not pending:
         return False
-    if pending.otp_code != otp_code:
-        return False
-    if pending.otp_expires_at < datetime.utcnow():
+
+    # Check if too many failed attempts — burn the OTP
+    attempts = _signup_otp_attempt_counts.get(email, 0)
+    if attempts >= MAX_OTP_ATTEMPTS:
+        db.delete(pending)
+        db.commit()
+        _signup_otp_attempt_counts.pop(email, None)
+        logger.warning(f"Signup OTP burned for {email} after {MAX_OTP_ATTEMPTS} failed attempts")
         return False
 
-    # OTP is valid, delete the pending record
+    if pending.otp_expires_at < datetime.utcnow():
+        db.delete(pending)
+        db.commit()
+        _signup_otp_attempt_counts.pop(email, None)
+        return False
+
+    if pending.otp_code != otp_code:
+        _signup_otp_attempt_counts[email] = attempts + 1
+        remaining = MAX_OTP_ATTEMPTS - attempts - 1
+        logger.warning(f"Failed signup OTP attempt for {email} ({remaining} attempts remaining)")
+        return False
+
+    # Success — delete pending record and clear counter
     db.delete(pending)
     db.commit()
+    _signup_otp_attempt_counts.pop(email, None)
 
     logger.info(f'Signup OTP verified for {email}')
 
@@ -41,5 +64,9 @@ def generate_and_store_signup_otp(email: str, db: Session = Depends(get_db)):
         db.add(pending)
 
     db.commit()
-    logger.info(f'Signup OTP generated for {email}: {otp}')
+
+    # Reset attempt counter when a new OTP is issued
+    _signup_otp_attempt_counts.pop(email, None)
+
+    logger.info(f'Signup OTP generated for {email}')
     return otp

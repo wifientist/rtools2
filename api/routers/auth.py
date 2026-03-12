@@ -61,17 +61,17 @@ async def login_otp(payload: LoginOtpSchema, request: Request, db: Session = Dep
 
         response = JSONResponse(content={"message": "Login successful"})
 
-        # Set access token (cookie lives 7 days; JWT expiry is the real security boundary)
+        # Set access token cookie (matches JWT expiry — refresh flow renews it silently)
         response.set_cookie(
             key="session",
             value=tokens["access_token"],
             httponly=True,
             secure=is_production(),
             samesite="Strict",
-            max_age=7 * 24 * 60 * 60  # 7 days (matches refresh token)
+            max_age=60 * 60  # 60 minutes (matches ACCESS_TOKEN_EXPIRE_MINUTES)
         )
 
-        # Set refresh token (7 days)
+        # Set refresh token (7 days — this is what keeps the user logged in for a week)
         response.set_cookie(
             key="refresh_token",
             value=tokens["refresh_token"],
@@ -196,17 +196,17 @@ async def signup_verify_otp(payload: LoginOtpSchema, request: Request, db: Sessi
 
     response = JSONResponse(content={"message": "Signup and login successful"})
 
-    # Set access token (cookie lives 7 days; JWT expiry is the real security boundary)
+    # Set access token cookie (matches JWT expiry — refresh flow renews it silently)
     response.set_cookie(
         key="session",
         value=tokens["access_token"],
         httponly=True,
         secure=is_production(),
         samesite="Strict",
-        max_age=7 * 24 * 60 * 60  # 7 days (matches refresh token)
+        max_age=60 * 60  # 60 minutes (matches ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
-    # Set refresh token (7 days)
+    # Set refresh token (7 days — this is what keeps the user logged in for a week)
     response.set_cookie(
         key="refresh_token",
         value=tokens["refresh_token"],
@@ -326,7 +326,7 @@ def refresh_access_token(request: Request, db: Session = Depends(get_db)):
         httponly=True,
         secure=is_production(),
         samesite="Strict",
-        max_age=7 * 24 * 60 * 60  # 7 days (matches refresh token)
+        max_age=60 * 60  # 60 minutes (matches ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
     return response

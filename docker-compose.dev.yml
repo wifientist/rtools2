@@ -20,7 +20,7 @@ services:
     volumes:
       - postgres_data_dev:/var/lib/postgresql/data
     ports:
-      - "5435:5432"
+      - "127.0.0.1:5435:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -38,7 +38,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}  # Optional: Set in .env for password protection
     ports:
-      - "6381:6379"  # Host:6380 -> Container:6379 (avoid conflict with host Redis)
+      - "127.0.0.1:6381:6379"  # Loopback only; avoid conflict with host Redis
     volumes:
       - redis_data_dev:/data
     healthcheck:
