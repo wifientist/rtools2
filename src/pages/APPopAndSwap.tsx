@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import { apiFetch } from "@/utils/api";
@@ -29,6 +29,8 @@ interface PreviewPair {
   old_ap_model: string | null;
   old_ap_status: string | null;
   settings_count: number;
+  captured_settings: string[];
+  failed_settings: string[];
   warnings: string[];
   errors: string[];
   valid: boolean;
@@ -57,6 +59,25 @@ interface SwapRecord {
 type Tab = "new-swap" | "pending";
 type WizardStep = "venue" | "select-aps" | "map-new" | "options" | "preview" | "result";
 
+const SETTING_LABELS: Record<string, string> = {
+  radio_settings: "Radio Settings",
+  network_settings: "Network Settings",
+  management_vlan_settings: "Management VLAN",
+  antenna_type_settings: "Antenna Type",
+  band_mode_settings: "Band Mode",
+  bss_coloring_settings: "BSS Coloring",
+  external_antenna_settings: "External Antenna",
+  dhcp_settings: "DHCP Settings",
+  iot_settings: "IoT Settings",
+  mesh_settings: "Mesh Settings",
+  smart_monitor_settings: "Smart Monitor",
+  sticky_client_steering_settings: "Sticky Client Steering",
+  usb_port_settings: "USB Port",
+  client_admission_control_settings: "Client Admission Control",
+  led_settings: "LED Settings",
+  lan_port_settings: "LAN Port Settings",
+};
+
 function APPopAndSwap() {
   const {
     activeControllerId,
@@ -84,6 +105,10 @@ function APPopAndSwap() {
   const [cleanupAction, setCleanupAction] = useState<"none" | "unassign" | "remove">("none");
   const [previewPairs, setPreviewPairs] = useState<PreviewPair[]>([]);
   const [applyResult, setApplyResult] = useState<any>(null);
+
+  // Preview expanded/refresh
+  const [expandedPreviewSerial, setExpandedPreviewSerial] = useState<string | null>(null);
+  const [refreshingSerial, setRefreshingSerial] = useState<string | null>(null);
 
   // Loading/error
   const [loading, setLoading] = useState(false);
@@ -204,6 +229,40 @@ function APPopAndSwap() {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // Refresh single AP snapshot
+  // ============================================================================
+  const refreshSnapshot = async (serial: string) => {
+    if (!activeControllerId || !venueId) return;
+    setRefreshingSerial(serial);
+    try {
+      const res = await apiFetch(
+        `${API_BASE_URL}/pop-swap/${activeControllerId}/venue/${venueId}/snapshot/${serial}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setPreviewPairs((prev) =>
+          prev.map((p) =>
+            p.old_serial === serial
+              ? {
+                  ...p,
+                  old_ap_status: data.status,
+                  captured_settings: data.captured_settings || [],
+                  failed_settings: data.failed_settings || [],
+                  settings_count: data.settings_count || 0,
+                  warnings: p.warnings.filter((w) => !w.includes("stale data") && !w.includes("Could not capture")),
+                }
+              : p
+          )
+        );
+      }
+    } catch {
+      // Silently fail — existing preview data remains
+    } finally {
+      setRefreshingSerial(null);
     }
   };
 
@@ -654,23 +713,81 @@ function APPopAndSwap() {
                   </thead>
                   <tbody>
                     {previewPairs.map((p) => (
-                      <tr key={p.old_serial} className="border-t">
-                        <td className="px-3 py-2">
-                          <div className="font-medium">{p.old_ap_name || p.old_serial}</div>
-                          <div className="text-xs text-gray-400 font-mono">{p.old_serial}</div>
-                        </td>
-                        <td className="px-3 py-2">{p.old_ap_model}</td>
-                        <td className="px-3 py-2">{p.old_ap_group_name}</td>
-                        <td className="px-3 py-2 font-mono text-xs">{p.new_serial}</td>
-                        <td className="px-3 py-2">~{p.settings_count}</td>
-                        <td className="px-3 py-2">
-                          {p.valid ? (
-                            <span className="text-green-600 text-xs">Ready</span>
-                          ) : (
-                            <span className="text-red-600 text-xs">Invalid</span>
-                          )}
-                        </td>
-                      </tr>
+                      <Fragment key={p.old_serial}>
+                        <tr
+                          className="border-t cursor-pointer hover:bg-gray-50"
+                          onClick={() => setExpandedPreviewSerial(expandedPreviewSerial === p.old_serial ? null : p.old_serial)}
+                        >
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{p.old_ap_name || p.old_serial}</div>
+                            <div className="text-xs text-gray-400 font-mono">{p.old_serial}</div>
+                          </td>
+                          <td className="px-3 py-2">{p.old_ap_model}</td>
+                          <td className="px-3 py-2">{p.old_ap_group_name}</td>
+                          <td className="px-3 py-2 font-mono text-xs">{p.new_serial}</td>
+                          <td className="px-3 py-2">
+                            <span className="cursor-pointer text-blue-600 hover:underline">
+                              {p.settings_count} setting{p.settings_count !== 1 ? "s" : ""}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {p.valid ? (
+                              <span className="text-green-600 text-xs">Ready</span>
+                            ) : (
+                              <span className="text-red-600 text-xs">Invalid</span>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedPreviewSerial === p.old_serial && (
+                          <tr key={`${p.old_serial}-detail`} className="bg-gray-50">
+                            <td colSpan={6} className="px-4 py-3">
+                              <div className="text-xs space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-gray-700">Settings to inherit:</span>
+                                  {p.warnings.some((w) => w.includes("stale data") || w.includes("Could not capture")) && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); refreshSnapshot(p.old_serial); }}
+                                      disabled={refreshingSerial === p.old_serial}
+                                      className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 border border-yellow-300 rounded hover:bg-yellow-200 disabled:opacity-50"
+                                    >
+                                      {refreshingSerial === p.old_serial ? "Refreshing..." : "Refresh Snapshot"}
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-gray-600 mb-1">
+                                  <span className="font-medium">AP Group:</span>
+                                  <span>{p.old_ap_group_name || "—"}</span>
+                                </div>
+                                {p.captured_settings.length > 0 ? (
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1">
+                                    {p.captured_settings.map((s) => (
+                                      <span key={s} className="flex items-center gap-1 text-green-700">
+                                        <span className="text-green-500">&#10003;</span>
+                                        {SETTING_LABELS[s] || s}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-gray-400 italic">No settings captured yet</p>
+                                )}
+                                {p.failed_settings.length > 0 && (
+                                  <div className="mt-1">
+                                    <span className="font-medium text-red-600">Failed to capture:</span>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-1 mt-1">
+                                      {p.failed_settings.map((s) => (
+                                        <span key={s} className="flex items-center gap-1 text-red-500">
+                                          <span>&#10007;</span>
+                                          {SETTING_LABELS[s] || s}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -682,7 +799,18 @@ function APPopAndSwap() {
                   <p className="font-medium text-yellow-800 mb-1">Warnings:</p>
                   <ul className="list-disc list-inside text-yellow-700">
                     {previewPairs.flatMap((p) => p.warnings.map((w, i) => (
-                      <li key={`${p.old_serial}-${i}`}>{p.old_ap_name || p.old_serial}: {w}</li>
+                      <li key={`${p.old_serial}-${i}`} className="flex items-center gap-2">
+                        <span>{p.old_ap_name || p.old_serial}: {w}</span>
+                        {w.includes("stale data") && (
+                          <button
+                            onClick={() => refreshSnapshot(p.old_serial)}
+                            disabled={refreshingSerial === p.old_serial}
+                            className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 border border-yellow-300 rounded hover:bg-yellow-200 disabled:opacity-50"
+                          >
+                            {refreshingSerial === p.old_serial ? "Refreshing..." : "Refresh"}
+                          </button>
+                        )}
+                      </li>
                     )))}
                   </ul>
                 </div>

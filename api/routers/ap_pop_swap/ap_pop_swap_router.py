@@ -121,8 +121,18 @@ async def preview_swap(
             if pair.old_ap_status and pair.old_ap_status.lower() != "online":
                 pair.warnings.append(f"Old AP is {pair.old_ap_status} — snapshot may have stale data")
 
-            # Estimate settings count (we'll capture the real count during apply)
-            pair.settings_count = 16  # Approximate: 15 settings + LAN ports
+            # Capture a real snapshot to show which settings will be inherited
+            try:
+                snapshot = await capture_ap_snapshot(
+                    venues_service, tenant_id, venue_id, mapping.old_serial, ap_info=old_ap
+                )
+                pair.captured_settings = snapshot.get("captured_settings", [])
+                pair.failed_settings = snapshot.get("failed_settings", [])
+                pair.settings_count = len(pair.captured_settings)
+            except Exception as e:
+                logger.warning(f"Preview snapshot failed for {mapping.old_serial}: {e}")
+                pair.settings_count = 0
+                pair.warnings.append("Could not capture settings snapshot")
 
         # Check if new AP is already in venue (warning, not error)
         new_ap = ap_lookup.get(mapping.new_serial)
@@ -141,6 +151,57 @@ async def preview_swap(
         total_invalid=total_invalid,
         warnings=warnings,
     )
+
+
+@router.get("/{controller_id}/venue/{venue_id}/snapshot/{serial_number}")
+async def snapshot_single_ap(
+    controller_id: int,
+    venue_id: str,
+    serial_number: str,
+    r1_client: R1Client = Depends(get_dynamic_r1_client),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Re-capture a config snapshot for a single AP.
+
+    Used by the refresh button when preview shows stale data.
+    Returns the AP's current status and list of captured/failed settings.
+    """
+    tenant_id = r1_client.tenant_id
+    venues_service = r1_client.venues
+
+    # Get current AP info
+    all_aps = await venues_service.get_aps_by_tenant_venue(tenant_id, venue_id)
+    if isinstance(all_aps, dict) and "data" in all_aps:
+        ap_list = all_aps["data"]
+    elif isinstance(all_aps, list):
+        ap_list = all_aps
+    else:
+        ap_list = []
+
+    ap_info = None
+    for ap in ap_list:
+        if ap.get("serialNumber") == serial_number:
+            ap_info = ap
+            break
+
+    if not ap_info:
+        raise HTTPException(status_code=404, detail=f"AP {serial_number} not found in venue")
+
+    snapshot = await capture_ap_snapshot(
+        venues_service, tenant_id, venue_id, serial_number, ap_info=ap_info
+    )
+
+    return {
+        "serial_number": serial_number,
+        "status": ap_info.get("status", ""),
+        "name": ap_info.get("name", ""),
+        "model": ap_info.get("model", ""),
+        "ap_group_name": ap_info.get("apGroupName", ""),
+        "captured_settings": snapshot.get("captured_settings", []),
+        "failed_settings": snapshot.get("failed_settings", []),
+        "settings_count": len(snapshot.get("captured_settings", [])),
+    }
 
 
 @router.post("/{controller_id}/venue/{venue_id}/apply")

@@ -46,6 +46,8 @@ class SwapPairPreview(BaseModel):
     old_ap_model: Optional[str] = None
     old_ap_status: Optional[str] = None
     settings_count: int = 0
+    captured_settings: List[str] = Field(default_factory=list)
+    failed_settings: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
     valid: bool = True
