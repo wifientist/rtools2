@@ -16,8 +16,11 @@ from services.data_studio_scraper import ScraperSession
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s - %(message)s")
 
-TENANT_ID = "4566d293776b4059a824edde6661da50"
-REPORT_NAME = "Access Points"
+DEBUG_DIR = "/app/debug"
+os.makedirs(DEBUG_DIR, exist_ok=True)
+
+TENANT_ID = "1c396989c8d349bfa377d230c1be6d56"
+REPORT_NAME = "[rt] AP Status"
 USERNAME = os.environ.get("RUCKUS_WEB_USER", "")
 PASSWORD = os.environ.get("RUCKUS_WEB_PASS", "")
 
@@ -55,7 +58,7 @@ async def main():
             print(f"\nExtracted {csv_count} CSV files:")
             for name, data in result.csv_files.items():
                 safe_name = name.replace("/", "_")
-                path = f"/app/test_export_{safe_name}"
+                path = f"{DEBUG_DIR}/test_export_{safe_name}"
                 with open(path, "wb") as f:
                     f.write(data)
                 lines = data.decode("utf-8", errors="replace").split("\n")
@@ -66,14 +69,14 @@ async def main():
                 print(f"  Saved to {path}")
 
         if result.pdf_bytes:
-            with open("/app/test_export.pdf", "wb") as f:
+            with open(f"{DEBUG_DIR}/test_export.pdf", "wb") as f:
                 f.write(result.pdf_bytes)
-            print(f"\nPDF saved to /app/test_export.pdf")
+            print(f"\nPDF saved to {DEBUG_DIR}/test_export.pdf")
 
         if result.screenshot_bytes:
-            with open("/app/test_export_error.png", "wb") as f:
+            with open(f"{DEBUG_DIR}/test_export_error.png", "wb") as f:
                 f.write(result.screenshot_bytes)
-            print(f"\nError screenshot saved to /app/test_export_error.png")
+            print(f"\nError screenshot saved to {DEBUG_DIR}/test_export_error.png")
 
     finally:
         await session.close()

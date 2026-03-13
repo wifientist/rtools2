@@ -14,6 +14,9 @@ REPORT_NAME = "Access Points"
 USERNAME = os.environ.get("RUCKUS_WEB_USER", "")
 PASSWORD = os.environ.get("RUCKUS_WEB_PASS", "")
 
+DEBUG_DIR = "/app/debug"
+os.makedirs(DEBUG_DIR, exist_ok=True)
+
 
 async def login_and_goto_report(page):
     """Login and navigate to the target Superset dashboard."""
@@ -291,8 +294,8 @@ async def main():
             print("No kebab/more buttons found")
 
         # ── Screenshot ──
-        await page.screenshot(path="/app/debug_ds_export.png", full_page=True)
-        print(f"\nScreenshot: /app/debug_ds_export.png")
+        await page.screenshot(path=f"{DEBUG_DIR}/debug_ds_export.png", full_page=True)
+        print(f"\nScreenshot: {DEBUG_DIR}/debug_ds_export.png")
 
         await browser.close()
         print("\nDone!")

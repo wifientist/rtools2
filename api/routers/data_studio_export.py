@@ -232,10 +232,23 @@ async def trigger_export(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Manually trigger an export for a specific config."""
+    """Manually trigger an export for a specific config. Rate limited to once per 5 minutes."""
     config = _get_config_or_404(config_id, db)
     if not config.enabled:
         raise HTTPException(status_code=400, detail="Config is disabled. Enable it first.")
+
+    # Atomic cooldown via Redis SET NX + EX — no race condition across workers
+    cooldown_seconds = 300  # 5 minutes
+    from redis_client import get_redis_client
+    r = await get_redis_client()
+    lock_key = f"ds_export_cooldown:{config_id}"
+    acquired = await r.set(lock_key, "1", nx=True, ex=cooldown_seconds)
+    if not acquired:
+        ttl = await r.ttl(lock_key)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Export triggered too recently. Try again in {ttl} seconds.",
+        )
 
     from jobs.data_studio_export_job import export_single_config
     # Run in background so the endpoint returns immediately

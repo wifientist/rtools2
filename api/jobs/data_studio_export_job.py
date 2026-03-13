@@ -305,17 +305,15 @@ async def _process_config(db, s3, config: DataStudioExportConfig) -> Dict[str, A
                     _cleanup_old_exports(db, s3, config.id, tenant_id, config.retention_count, folder)
 
                 else:
-                    # Upload debug screenshot if available
-                    screenshot_key = None
                     if result.screenshot_bytes:
-                        screenshot_key = _upload_screenshot(
-                            s3, folder.slug, tenant_slug, result.screenshot_bytes
+                        logger.warning(
+                            f"Export failed for tenant {tenant_id} with debug screenshot "
+                            f"({len(result.screenshot_bytes)} bytes) — not persisted"
                         )
 
                     _record_run(
                         db, config.id, tc, "failed",
                         error=result.error,
-                        screenshot_key=screenshot_key,
                         duration=result.duration_seconds,
                     )
                     config_result["failed"] += 1
@@ -359,7 +357,6 @@ def _record_run(
     shared_file_id: int = None,
     file_size: int = None,
     filename: str = None,
-    screenshot_key: str = None,
     duration: float = None,
     file_count: int = None,
 ):
@@ -371,7 +368,6 @@ def _record_run(
         tenant_name=tenant_config.get("tenant_name"),
         status=status,
         error_message=error,
-        screenshot_s3_key=screenshot_key,
         s3_key=s3_key,
         shared_file_id=shared_file_id,
         file_size_bytes=file_size,
@@ -383,17 +379,6 @@ def _record_run(
     db.add(run)
     db.commit()
 
-
-def _upload_screenshot(s3, folder_slug: str, tenant_slug: str, screenshot_bytes: bytes) -> Optional[str]:
-    """Upload a debug screenshot to S3."""
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
-    key = f"files/{folder_slug}/data-studio/{tenant_slug}/debug/screenshot_{timestamp}.png"
-    try:
-        s3.put_object(key, screenshot_bytes, "image/png")
-        return key
-    except Exception as e:
-        logger.warning(f"Failed to upload debug screenshot: {e}")
-        return None
 
 
 
