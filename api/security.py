@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta
 from jose import JWTError, ExpiredSignatureError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
@@ -20,9 +19,6 @@ AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 60 minutes (refresh token handles seamless renewal)
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days (weekly OTP)
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Default to development for safety
-
-# 🔑 Password hashing setup
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # 📌 OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -116,14 +112,6 @@ def decode_access_token(token: str):
         return payload.get("sub")  # Returns email
     except JWTError:
         return None
-
-# ### 🔐 Hash Password
-# def get_password_hash(password: str) -> str:
-#     return pwd_context.hash(password)
-
-# ### 🔐 Verify Password
-# def verify_password(plain_password: str, hashed_password: str) -> bool:
-#     return pwd_context.verify(plain_password, hashed_password)
 
 ### 🔐 Verify Access Token
 def verify_access_token(token: str, db: Session = None) -> dict:
