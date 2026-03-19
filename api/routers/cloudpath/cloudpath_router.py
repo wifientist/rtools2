@@ -431,11 +431,24 @@ async def _fetch_identity_passphrase_data(
 
         page = 0
         page_size = 500
+        total_expected = None
         while True:
             identities_response = await r1_client.identity.get_identities_in_group(
                 group_id=ig_id, tenant_id=tenant_id, page=page, size=page_size
             )
             identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
+
+            if page == 0:
+                total_expected = identities_response.get('totalElements', identities_response.get('totalItems')) if isinstance(identities_response, dict) else None
+                total_pages = identities_response.get('totalPages') if isinstance(identities_response, dict) else None
+                is_last = identities_response.get('last') if isinstance(identities_response, dict) else None
+                logger.info(
+                    f"Identity pagination for '{ig_name}': "
+                    f"totalElements={total_expected}, totalPages={total_pages}, "
+                    f"page_size={page_size}, first_page_count={len(identities)}, "
+                    f"is_last={is_last}, "
+                    f"response_keys={list(identities_response.keys()) if isinstance(identities_response, dict) else 'not_dict'}"
+                )
 
             for identity in identities:
                 username = identity.get('name')
@@ -447,13 +460,21 @@ async def _fetch_identity_passphrase_data(
                         'dpsk_pool_id': pool_id
                     }
 
-            if len(identities) < page_size:
+            # Use R1's 'last' flag if available, otherwise fall back to page size check
+            is_last_page = identities_response.get('last') if isinstance(identities_response, dict) else None
+            if is_last_page is True:
+                break
+            if is_last_page is None and len(identities) < page_size:
+                break
+            if not identities:
                 break
             page += 1
             if page > 2000:  # Safety limit (~1M identities)
                 break
 
-        logger.info(f"Fetched {len([k for k in identity_map if k[1] == pool_id])} identities for group '{ig_name}'")
+        fetched_count = len([k for k in identity_map if k[1] == pool_id])
+        logger.info(f"Fetched {fetched_count} identities for group '{ig_name}'"
+                     + (f" (R1 reports {total_expected} total)" if total_expected else ""))
 
     # Build passphrase map (paginated — R1 caps page size around 2000)
     passphrase_map = {}
@@ -463,11 +484,25 @@ async def _fetch_identity_passphrase_data(
 
         page = 1  # get_passphrases is 1-based
         page_size = 500
+        total_expected = None
         while True:
             passphrases_response = await r1_client.dpsk.get_passphrases(
                 pool_id=pool_id, tenant_id=tenant_id, page=page, size=page_size
             )
             passphrases = passphrases_response.get('content', passphrases_response.get('data', []))
+
+            # Log pagination metadata from R1
+            if page == 1:
+                total_expected = passphrases_response.get('totalElements', passphrases_response.get('totalItems'))
+                total_pages = passphrases_response.get('totalPages')
+                is_last = passphrases_response.get('last')
+                logger.info(
+                    f"Passphrase pagination for '{pool_name}': "
+                    f"totalElements={total_expected}, totalPages={total_pages}, "
+                    f"page_size={page_size}, first_page_count={len(passphrases)}, "
+                    f"is_last={is_last}, "
+                    f"response_keys={list(passphrases_response.keys()) if isinstance(passphrases_response, dict) else 'not_dict'}"
+                )
 
             for pp in passphrases:
                 username = pp.get('username') or pp.get('userName')
@@ -479,13 +514,21 @@ async def _fetch_identity_passphrase_data(
                         'dpsk_pool_name': pool_name
                     }
 
-            if len(passphrases) < page_size:
+            # Use R1's 'last' flag if available, otherwise fall back to page size check
+            is_last_page = passphrases_response.get('last', None)
+            if is_last_page is True:
+                break
+            if is_last_page is None and len(passphrases) < page_size:
+                break
+            if not passphrases:
                 break
             page += 1
             if page > 2000:  # Safety limit (~1M passphrases)
                 break
 
-        logger.info(f"Fetched {len([k for k in passphrase_map if k[1] == pool_id])} passphrases for pool '{pool_name}'")
+        fetched_count = len([k for k in passphrase_map if k[1] == pool_id])
+        logger.info(f"Fetched {fetched_count} passphrases for pool '{pool_name}'"
+                     + (f" (R1 reports {total_expected} total)" if total_expected else ""))
 
     # Join data
     all_keys = set(identity_map.keys()) | set(passphrase_map.keys())
