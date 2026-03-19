@@ -482,7 +482,7 @@ async def _fetch_identity_passphrase_data(
         pool_id = pool.get('id')
         pool_name = pool.get('name', 'Unknown')
 
-        page = 1  # get_passphrases is 1-based
+        page = 0  # Spring Data GET endpoints are 0-based
         page_size = 500
         total_expected = None
         while True:

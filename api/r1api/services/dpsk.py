@@ -222,7 +222,7 @@ class DpskService:
         self,
         pool_id: str,
         tenant_id: str = None,
-        page: int = 1,
+        page: int = 0,
         size: int = 100,
         sort: str = None
     ):
@@ -232,7 +232,7 @@ class DpskService:
         Args:
             pool_id: DPSK pool ID
             tenant_id: Tenant/EC ID (required for MSP)
-            page: Page number (1-based, default: 1)
+            page: Page number (0-based, Spring Data style)
             size: Page size
             sort: Optional sort criteria (e.g., "userName,asc")
 
