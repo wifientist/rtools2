@@ -645,7 +645,7 @@ function CloudpathImport() {
     const hasJsonGuids = filteredIdentityData.some(r => r.cloudpath_guid_json);
     const headers = [
       'dpsk_pool_name', 'dpsk_pool_id', 'username', 'passphrase',
-      'r1_description', // cloudpath_guid from R1 identity description
+      'cloudpath_guid',
       ...(hasJsonGuids ? ['cloudpath_guid_json'] : []),
       'identity_id', 'passphrase_id', 'identity_group_name'
     ];
@@ -653,8 +653,7 @@ function CloudpathImport() {
       headers.join(','),
       ...filteredIdentityData.map(row =>
         headers.map(h => {
-          // r1_description maps to the cloudpath_guid field from R1
-          const val = (h === 'r1_description' ? row.cloudpath_guid : row[h]) || '';
+          const val = row[h] || '';
           // Escape quotes and wrap in quotes if contains comma
           if (val.includes(',') || val.includes('"') || val.includes('\n')) {
             return `"${val.replace(/"/g, '""')}"`;
@@ -1741,7 +1740,7 @@ function CloudpathImport() {
                             Passphrase
                           </th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            {cloudpathGuidMap ? 'R1 Description' : 'Cloudpath GUID'}
+                            Cloudpath GUID
                           </th>
                           {cloudpathGuidMap && (
                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
