@@ -70,12 +70,26 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
         """Update identity descriptions with Cloudpath GUIDs and set VLANs."""
         passphrases = inputs.created_passphrases
 
-        # Filter to only passphrases that have identity_id
-        to_update = [
-            p for p in passphrases
-            if p.get('identity_id') and p.get('cloudpath_guid')
-            and not p.get('skipped', False)
-        ]
+        # Filter to passphrases that need identity description updates:
+        # 1. Newly created passphrases (not skipped) with identity_id
+        # 2. Existing/skipped passphrases where the GUID is missing from the
+        #    identity description (enables idempotent re-runs)
+        to_update = []
+        for p in passphrases:
+            guid = p.get('cloudpath_guid')
+            if not guid:
+                continue
+
+            # Case 1: newly created passphrase with identity_id from creation
+            if not p.get('skipped', False) and p.get('identity_id'):
+                to_update.append(p)
+            # Case 2: skipped passphrase that needs description update (re-run)
+            elif p.get('skipped', False) and p.get('needs_description_update', False):
+                existing_id = p.get('existing_identity_id')
+                if existing_id:
+                    # Use the existing identity_id for the update call
+                    p = {**p, 'identity_id': existing_id}
+                    to_update.append(p)
 
         # Count how many have VLANs to set
         with_vlan = [p for p in to_update if p.get('vlan_id') is not None]
@@ -200,21 +214,33 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
         """Validate identity update inputs."""
         passphrases = inputs.created_passphrases
 
-        to_update = [
+        # Count newly created (not skipped) with identity_id
+        new_updates = [
             p for p in passphrases
             if p.get('identity_id') and p.get('cloudpath_guid')
             and not p.get('skipped', False)
         ]
+        # Count skipped passphrases that need description re-update (idempotent re-run)
+        rerun_updates = [
+            p for p in passphrases
+            if p.get('skipped', False)
+            and p.get('needs_description_update', False)
+            and p.get('existing_identity_id')
+        ]
 
-        with_vlan = [p for p in to_update if p.get('vlan_id') is not None]
+        total_updates = len(new_updates) + len(rerun_updates)
+        all_candidates = new_updates + rerun_updates
+        with_vlan = [p for p in all_candidates if p.get('vlan_id') is not None]
 
-        notes = [f"{len(to_update)} identities to update (description + GUID)"]
+        notes = [f"{len(new_updates)} new identities to update (description + GUID)"]
+        if rerun_updates:
+            notes.append(f"{len(rerun_updates)} existing identities need description fix (re-run)")
         if with_vlan:
             notes.append(f"{len(with_vlan)} with VLAN assignments")
 
         return PhaseValidation(
             valid=True,
             will_create=False,
-            estimated_api_calls=len(to_update),
+            estimated_api_calls=total_updates,
             notes=notes,
         )

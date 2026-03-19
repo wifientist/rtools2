@@ -549,12 +549,59 @@ class ValidateCloudpathPhase(PhaseExecutor):
             except Exception as e:
                 logger.warning(f"Error checking existing passphrases: {e}")
 
+        # --- Fetch existing identities for GUID description check (idempotent re-runs) ---
+        # Build username -> {identity_id, description} map so Phase 4 can skip
+        # identities that already have the correct GUID in their description field.
+        existing_identities: Dict[str, Dict[str, Any]] = {}  # username -> {id, description}
+        if ig_id and existing_passphrases:
+            try:
+                await self.emit("Fetching existing identities for description check...")
+                id_page = 0
+                id_page_size = 100
+
+                while True:
+                    id_result = await self.r1_client.identity.get_identities_in_group(
+                        group_id=ig_id,
+                        tenant_id=self.tenant_id,
+                        page=id_page,
+                        size=id_page_size,
+                    )
+                    id_items = id_result.get('content', id_result.get('data', []))
+
+                    if not id_items:
+                        break
+
+                    for identity in id_items:
+                        uname = identity.get('name', '')
+                        if uname:
+                            existing_identities[uname] = {
+                                'id': identity.get('id'),
+                                'description': identity.get('description', ''),
+                            }
+
+                    if len(id_items) < id_page_size:
+                        break
+
+                    id_page += 1
+
+                    if id_page > 5000:
+                        logger.warning("Identity pagination safety limit reached")
+                        break
+
+                if existing_identities:
+                    await self.emit(
+                        f"Found {len(existing_identities)} existing identities in group"
+                    )
+            except Exception as e:
+                logger.warning(f"Error fetching existing identities: {e}")
+
         # Count new vs existing passphrases by comparing passphrase values
         # Also build a list of passphrase dicts with 'exists' flag for create_passphrases phase
         # Track VLAN mismatches for updates
         passphrases_existing = 0
         passphrases_to_create_count = 0
         passphrases_to_update_count = 0
+        description_updates_needed = 0
         passphrases_with_exists: List[Dict[str, Any]] = []
 
         for pp in passphrases:
@@ -564,6 +611,22 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 pp_dict['exists'] = True
                 pp_dict['existing_id'] = existing_info['id']
                 pp_dict['existing_vlan_id'] = existing_info['vlan_id']
+
+                # Populate identity info for Phase 4 idempotent re-runs
+                identity_info = existing_identities.get(pp.name)
+                if identity_info:
+                    pp_dict['existing_identity_id'] = identity_info['id']
+                    pp_dict['existing_description'] = identity_info['description']
+                    # Check if description already has the correct GUID
+                    if identity_info['description'] != pp.guid:
+                        pp_dict['needs_description_update'] = True
+                        description_updates_needed += 1
+                    else:
+                        pp_dict['needs_description_update'] = False
+                else:
+                    pp_dict['existing_identity_id'] = None
+                    pp_dict['existing_description'] = None
+                    pp_dict['needs_description_update'] = False
 
                 # Check if VLAN needs update
                 if pp.vlan_id != existing_info['vlan_id']:
@@ -580,8 +643,14 @@ class ValidateCloudpathPhase(PhaseExecutor):
             else:
                 pp_dict['exists'] = False
                 pp_dict['needs_vlan_update'] = False
+                pp_dict['needs_description_update'] = False
                 passphrases_to_create_count += 1
             passphrases_with_exists.append(pp_dict)
+
+        if description_updates_needed > 0:
+            await self.emit(
+                f"Identity description updates needed: {description_updates_needed} passphrases"
+            )
 
         if passphrases_to_update_count > 0:
             await self.emit(

@@ -36,6 +36,9 @@ class PassphraseResult(BaseModel):
     skipped: bool = False
     skip_reason: Optional[str] = None
     updated: bool = False  # True if VLAN was updated on existing passphrase
+    # For idempotent re-runs: carry identity info from validate phase through to Phase 4
+    existing_identity_id: Optional[str] = None
+    needs_description_update: bool = False
 
 
 @register_phase("create_passphrases", "Create DPSK Passphrases")
@@ -139,9 +142,12 @@ class CreatePassphrasesPhase(PhaseExecutor):
                             cloudpath_guid=guid,
                             username=username,
                             passphrase_id=existing_id,
+                            identity_id=pp.get('existing_identity_id'),
                             vlan_id=vlan_id,
                             success=True,
                             updated=True,
+                            existing_identity_id=pp.get('existing_identity_id'),
+                            needs_description_update=pp.get('needs_description_update', False),
                         )
                     except Exception as e:
                         logger.error(f"Failed to update VLAN for {username}: {e}")
@@ -152,9 +158,11 @@ class CreatePassphrasesPhase(PhaseExecutor):
                             vlan_id=vlan_id,
                             success=False,
                             error=f"VLAN update failed: {e}",
+                            existing_identity_id=pp.get('existing_identity_id'),
+                            needs_description_update=pp.get('needs_description_update', False),
                         )
                 else:
-                    # No update needed, skip
+                    # No update needed, skip — but carry identity info for Phase 4 re-runs
                     return PassphraseResult(
                         cloudpath_guid=guid,
                         username=username,
@@ -162,7 +170,9 @@ class CreatePassphrasesPhase(PhaseExecutor):
                         vlan_id=vlan_id,
                         success=True,
                         skipped=True,
-                        skip_reason="Already exists in pool"
+                        skip_reason="Already exists in pool",
+                        existing_identity_id=pp.get('existing_identity_id'),
+                        needs_description_update=pp.get('needs_description_update', False),
                     )
 
             # Check if expired/inactive

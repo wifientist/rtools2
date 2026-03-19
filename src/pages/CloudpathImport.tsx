@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 import type { JobResult } from "@/components/JobMonitorModal";
@@ -93,6 +94,9 @@ function CloudpathImport() {
   const [apAssignmentError, setApAssignmentError] = useState("");
   const [apAssignmentText, setApAssignmentText] = useState("");
 
+  // Identity description options
+  const [skipIdentityDescriptions, setSkipIdentityDescriptions] = useState(true);
+
   // Access Policy Options
   const [enableAccessPolicies, setEnableAccessPolicies] = useState(false);
   const [policySetName, setPolicySetName] = useState("");
@@ -118,14 +122,17 @@ function CloudpathImport() {
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [auditError, setAuditError] = useState("");
 
-  // Identity export modal
+  // Identity export modal — two-step: "pick-pools" then "view-data"
   const [showIdentityExportModal, setShowIdentityExportModal] = useState(false);
+  const [identityModalStep, setIdentityModalStep] = useState<"pick-pools" | "view-data">("pick-pools");
   const [identityExportLoading, setIdentityExportLoading] = useState(false);
   const [identityExportData, setIdentityExportData] = useState<any[] | null>(null);
   const [identityPoolFilters, setIdentityPoolFilters] = useState<Set<string>>(new Set());
   const [poolSearchText, setPoolSearchText] = useState("");
   const [identityPage, setIdentityPage] = useState(1);
   const IDENTITY_PAGE_SIZE = 100;
+  // Pool picker state for step 1
+  const [pickerSelectedPoolIds, setPickerSelectedPoolIds] = useState<string[]>([]);
 
   // Determine tenant ID (for MSP, it's null until explicitly set; for EC, use r1_tenant_id)
   const activeController = controllers.find(c => c.id === activeControllerId);
@@ -149,12 +156,34 @@ function CloudpathImport() {
     return Array.from(poolMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [identityExportData]);
 
+  // Build username→guid map from uploaded JSON for client-side GUID enrichment
+  const cloudpathGuidMap = useMemo(() => {
+    if (!jsonData) return null;
+    const map = new Map<string, string>();
+    const dpsks: any[] = Array.isArray(jsonData) ? jsonData : (jsonData as any).dpsks || [];
+    for (const dpsk of dpsks) {
+      const name = dpsk.name || dpsk.username;
+      const guid = dpsk.guid;
+      if (name && guid) {
+        map.set(name, guid);
+      }
+    }
+    return map.size > 0 ? map : null;
+  }, [jsonData]);
+
   // Filter identity export data by selected pools (empty set = show all)
+  // Enrich with cloudpath_guid_json from uploaded JSON (always, as a separate field)
   const filteredIdentityData = useMemo(() => {
     if (!identityExportData) return [];
-    if (identityPoolFilters.size === 0) return identityExportData;
-    return identityExportData.filter(row => identityPoolFilters.has(row.dpsk_pool_id));
-  }, [identityExportData, identityPoolFilters]);
+    let data = identityPoolFilters.size === 0 ? identityExportData : identityExportData.filter(row => identityPoolFilters.has(row.dpsk_pool_id));
+    if (cloudpathGuidMap) {
+      data = data.map(row => {
+        const guid = row.username ? cloudpathGuidMap.get(row.username) : undefined;
+        return guid ? { ...row, cloudpath_guid_json: guid } : row;
+      });
+    }
+    return data;
+  }, [identityExportData, identityPoolFilters, cloudpathGuidMap]);
 
   // Filter pools by search text for the pool selector
   const searchFilteredPools = useMemo(() => {
@@ -473,6 +502,8 @@ function CloudpathImport() {
             ap_group_postfix: ssidMode === "per_unit" ? apGroupPostfix : "",
             ap_assignment_mode: ssidMode === "per_unit" && apAssignments.length > 0 ? "csv" : "skip",
             ap_assignments: ssidMode === "per_unit" ? apAssignments : [],
+            // Identity description options
+            skip_identity_descriptions: skipIdentityDescriptions,
             // Access policy options
             enable_access_policies: enableAccessPolicies,
             policy_set_name: policySetName.trim() || null,
@@ -547,11 +578,29 @@ function CloudpathImport() {
     }
   };
 
-  const handleViewIdentities = async () => {
+  const handleViewIdentities = () => {
     if (!activeControllerId) {
       setAuditError("Please select an active controller first");
       return;
     }
+    setAuditError("");
+    // Auto-select recently created pools in the picker if available
+    const createdPools = lastJobResult?.created_resources?.dpsk_pools;
+    if (createdPools && createdPools.length > 0) {
+      const poolIds = createdPools
+        .map((p: any) => p.dpsk_pool_id)
+        .filter((id: string) => id);
+      setPickerSelectedPoolIds(poolIds);
+    } else {
+      setPickerSelectedPoolIds([]);
+    }
+    setIdentityExportData(null);
+    setIdentityModalStep("pick-pools");
+    setShowIdentityExportModal(true);
+  };
+
+  const handleFetchIdentities = async (poolIds: string[] | null) => {
+    if (!activeControllerId) return;
 
     setIdentityExportLoading(true);
     setAuditError("");
@@ -563,8 +612,9 @@ function CloudpathImport() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
-          venue_id: venueId || null,  // Optional - pass null if not selected
+          venue_id: venueId || null,
           tenant_id: effectiveTenantId,
+          dpsk_pool_ids: poolIds,  // null = fetch all
         }),
       });
 
@@ -575,24 +625,14 @@ function CloudpathImport() {
 
       const result = await response.json();
       setIdentityExportData(result.data);
-
-      // Auto-select recently created pools if available from last job
-      const createdPools = lastJobResult?.created_resources?.dpsk_pools;
-      if (createdPools && createdPools.length > 0) {
-        const poolIds = createdPools
-          .map((p: any) => p.dpsk_pool_id)
-          .filter((id: string) => id);
-        setIdentityPoolFilters(new Set(poolIds));
-      } else {
-        setIdentityPoolFilters(new Set());  // Show all if no recent job
-      }
-
-      setPoolSearchText("");  // Reset pool search
-      setIdentityPage(1);  // Reset to first page
-      setShowIdentityExportModal(true);
+      setIdentityPoolFilters(new Set());  // No client-side filter needed — server already filtered
+      setPoolSearchText("");
+      setIdentityPage(1);
+      setIdentityModalStep("view-data");
     } catch (err: any) {
       console.error("Fetch identities error:", err);
       setAuditError(err.message || "An error occurred fetching identities");
+      setShowIdentityExportModal(false);
     } finally {
       setIdentityExportLoading(false);
     }
@@ -602,12 +642,19 @@ function CloudpathImport() {
     if (!filteredIdentityData || filteredIdentityData.length === 0) return;
 
     // Build CSV content using filtered data
-    const headers = ['dpsk_pool_name', 'dpsk_pool_id', 'username', 'passphrase', 'cloudpath_guid', 'identity_id', 'passphrase_id', 'identity_group_name'];
+    const hasJsonGuids = filteredIdentityData.some(r => r.cloudpath_guid_json);
+    const headers = [
+      'dpsk_pool_name', 'dpsk_pool_id', 'username', 'passphrase',
+      'r1_description', // cloudpath_guid from R1 identity description
+      ...(hasJsonGuids ? ['cloudpath_guid_json'] : []),
+      'identity_id', 'passphrase_id', 'identity_group_name'
+    ];
     const csvRows = [
       headers.join(','),
       ...filteredIdentityData.map(row =>
         headers.map(h => {
-          const val = row[h] || '';
+          // r1_description maps to the cloudpath_guid field from R1
+          const val = (h === 'r1_description' ? row.cloudpath_guid : row[h]) || '';
           // Escape quotes and wrap in quotes if contains comma
           if (val.includes(',') || val.includes('"') || val.includes('\n')) {
             return `"${val.replace(/"/g, '""')}"`;
@@ -703,7 +750,7 @@ function CloudpathImport() {
                 github.com/wifientist/cloudpath_extractor
               </a>
             </li>
-            <li>Follow instructions for the <span className="font-semibold">"Fast DPSK-Only Mode"</span></li>
+            <li>Follow the instructions in the <span className="font-semibold">--help</span> for a single DPSK pool</li>
             <li>Save the JSON extraction for upload below</li>
           </ol>
         </div>
@@ -1159,6 +1206,24 @@ function CloudpathImport() {
               </div>
             )}
 
+            {/* Skip Identity Descriptions */}
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={skipIdentityDescriptions}
+                onChange={(e) => setSkipIdentityDescriptions(e.target.checked)}
+                disabled={processing}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mt-0.5"
+              />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-gray-900">Skip Identity Description Updates</span>
+                <p className="text-xs text-gray-500">
+                  Skip writing Cloudpath GUIDs to R1 identity descriptions. This is the slowest phase (1 API call per identity).
+                  You can still view GUIDs via "View Identities" by matching against the uploaded JSON.
+                </p>
+              </div>
+            </label>
+
             {/* Expired DPSK Handling */}
             <div className="pt-2">
               <label className="block text-sm font-medium text-gray-900 mb-2">
@@ -1350,7 +1415,7 @@ function CloudpathImport() {
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          View Identities shows all identities/passphrases (optionally filtered by venue if selected)
+          View Identities lets you pick specific DPSK pools before fetching (optionally filtered by venue if selected)
         </p>
       </div>
 
@@ -1471,17 +1536,21 @@ function CloudpathImport() {
         </div>
       )}
 
-      {/* Identity Export Modal */}
-      {showIdentityExportModal && identityExportData && (
+      {/* Identity Export Modal — Two-step: pick pools, then view data */}
+      {showIdentityExportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-green-600 to-teal-600 text-white px-6 py-4 flex justify-between items-center">
               <div>
-                <h3 className="text-2xl font-bold">Identities & Passphrases</h3>
+                <h3 className="text-2xl font-bold">
+                  {identityModalStep === "pick-pools" ? "Select DPSK Pools" : "Identities & Passphrases"}
+                </h3>
                 <p className="text-green-100 text-sm">
-                  {filteredIdentityData.length} of {identityExportData.length} records
-                  {venueId ? ` at venue ${venueId}` : ' (all venues)'}
+                  {identityModalStep === "pick-pools"
+                    ? `Choose which DPSK pools to fetch${venueId ? ` at venue ${venueId}` : ''}`
+                    : `${filteredIdentityData.length} of ${identityExportData?.length ?? 0} records${venueId ? ` at venue ${venueId}` : ' (all venues)'}`
+                  }
                 </p>
               </div>
               <button
@@ -1492,227 +1561,317 @@ function CloudpathImport() {
               </button>
             </div>
 
-            {/* Filter Bar */}
-            {uniqueIdentityPools.length > 0 && (
-              <div className="bg-gray-100 px-6 py-3 border-b">
-                {/* Search and action row */}
-                <div className="flex items-center gap-4 mb-3">
-                  <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Filter by DPSK Pool:</label>
-                  <input
-                    type="text"
-                    placeholder="Search pools..."
-                    value={poolSearchText}
-                    onChange={(e) => setPoolSearchText(e.target.value)}
-                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent w-48"
-                  />
-                  <span className="text-xs text-gray-500">
-                    {searchFilteredPools.length} of {uniqueIdentityPools.length} pools
-                  </span>
-                  <div className="flex gap-2 ml-auto">
-                    {poolSearchText && searchFilteredPools.length > 0 && (
-                      <button
-                        onClick={() => {
-                          const newFilters = new Set(identityPoolFilters);
-                          searchFilteredPools.forEach(p => newFilters.add(p.id));
-                          setIdentityPoolFilters(newFilters);
-                          setIdentityPage(1);
-                        }}
-                        className="text-sm text-green-600 hover:text-green-800 underline"
-                      >
-                        Select matching ({searchFilteredPools.length})
-                      </button>
-                    )}
-                    {identityPoolFilters.size > 0 && (
-                      <button
-                        onClick={() => {
-                          setIdentityPoolFilters(new Set());
-                          setIdentityPage(1);
-                        }}
-                        className="text-sm text-red-600 hover:text-red-800 underline"
-                      >
-                        Clear all ({identityPoolFilters.size})
-                      </button>
-                    )}
-                    {identityPoolFilters.size === 0 && uniqueIdentityPools.length > 1 && !poolSearchText && (
-                      <button
-                        onClick={() => {
-                          setIdentityPoolFilters(new Set(uniqueIdentityPools.map(p => p.id)));
-                          setIdentityPage(1);
-                        }}
-                        className="text-sm text-gray-500 hover:text-gray-700 underline"
-                      >
-                        Select all
-                      </button>
-                    )}
+            {/* Step 1: Pool Picker */}
+            {identityModalStep === "pick-pools" && (
+              <>
+                <div className="overflow-auto flex-1 p-6">
+                  {identityExportLoading ? (
+                    <div className="flex flex-col items-center justify-center py-16 gap-4">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+                      <p className="text-gray-600 font-medium">
+                        Fetching identities for {pickerSelectedPoolIds.length > 0 ? `${pickerSelectedPoolIds.length} pool${pickerSelectedPoolIds.length > 1 ? 's' : ''}` : 'all pools'}...
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Select specific DPSK pools to fetch identities from, or fetch all pools at once.
+                        Filtering by pool is faster for large tenants.
+                      </p>
+                      <DpskPoolSelector
+                        controllerId={activeControllerId}
+                        tenantId={effectiveTenantId}
+                        multiSelect={true}
+                        selectedPoolIds={pickerSelectedPoolIds}
+                        onPoolsSelect={(ids) => setPickerSelectedPoolIds(ids)}
+                      />
+                    </>
+                  )}
+                </div>
+                <div className="bg-gray-50 px-6 py-4 border-t flex justify-between items-center">
+                  <div className="text-sm text-gray-500">
+                    {pickerSelectedPoolIds.length > 0
+                      ? `${pickerSelectedPoolIds.length} pool${pickerSelectedPoolIds.length > 1 ? 's' : ''} selected`
+                      : 'No pools selected'}
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleFetchIdentities(null)}
+                      disabled={identityExportLoading}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-semibold disabled:opacity-50"
+                    >
+                      Fetch All Pools
+                    </button>
+                    <button
+                      onClick={() => handleFetchIdentities(pickerSelectedPoolIds)}
+                      disabled={identityExportLoading || pickerSelectedPoolIds.length === 0}
+                      className={`px-6 py-2 rounded font-semibold ${
+                        identityExportLoading || pickerSelectedPoolIds.length === 0
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      Fetch Selected ({pickerSelectedPoolIds.length})
+                    </button>
+                    <button
+                      onClick={() => setShowIdentityExportModal(false)}
+                      disabled={identityExportLoading}
+                      className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 font-semibold disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
-                {/* Pool buttons - scrollable */}
-                <div className="max-h-32 overflow-y-auto">
-                  <div className="flex flex-wrap gap-2">
-                    {searchFilteredPools.map(pool => {
-                      const count = identityExportData.filter(r => r.dpsk_pool_id === pool.id).length;
-                      const isSelected = identityPoolFilters.has(pool.id);
-                      return (
-                        <button
-                          key={pool.id}
-                          onClick={() => {
-                            const newFilters = new Set(identityPoolFilters);
-                            if (isSelected) {
-                              newFilters.delete(pool.id);
-                            } else {
-                              newFilters.add(pool.id);
-                            }
-                            setIdentityPoolFilters(newFilters);
-                            setIdentityPage(1);
-                          }}
-                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                            isSelected
-                              ? 'bg-green-600 text-white'
-                              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          {pool.name} ({count})
-                        </button>
-                      );
-                    })}
-                    {searchFilteredPools.length === 0 && poolSearchText && (
-                      <span className="text-sm text-gray-500 italic">No pools match "{poolSearchText}"</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+              </>
             )}
 
-            {/* Modal Body */}
-            <div className="overflow-auto flex-1 p-4">
-              {filteredIdentityData.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  {identityExportData.length === 0
-                    ? "No identities or passphrases found at this venue."
-                    : "No records match the selected filter."}
-                </div>
-              ) : (
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        DPSK Pool
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Username
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Passphrase
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Cloudpath GUID
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Identity ID
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Passphrase ID
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedIdentityData.map((row, idx) => (
-                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          <div className="text-gray-900 font-medium">{row.dpsk_pool_name || '-'}</div>
-                          <div className="text-xs text-gray-400 font-mono">{row.dpsk_pool_id || ''}</div>
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-gray-900">
-                          {row.username}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
-                          {row.passphrase || <span className="text-gray-400">-</span>}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
-                          {row.cloudpath_guid || <span className="text-gray-400">-</span>}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
-                          {row.identity_id || <span className="text-gray-400">-</span>}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
-                          {row.passphrase_id || <span className="text-gray-400">-</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+            {/* Step 2: Data View */}
+            {identityModalStep === "view-data" && identityExportData && (
+              <>
+                {/* Filter Bar */}
+                {uniqueIdentityPools.length > 0 && (
+                  <div className="bg-gray-100 px-6 py-3 border-b">
+                    {/* Search and action row */}
+                    <div className="flex items-center gap-4 mb-3">
+                      <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Filter by DPSK Pool:</label>
+                      <input
+                        type="text"
+                        placeholder="Search pools..."
+                        value={poolSearchText}
+                        onChange={(e) => setPoolSearchText(e.target.value)}
+                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent w-48"
+                      />
+                      <span className="text-xs text-gray-500">
+                        {searchFilteredPools.length} of {uniqueIdentityPools.length} pools
+                      </span>
+                      <div className="flex gap-2 ml-auto">
+                        {poolSearchText && searchFilteredPools.length > 0 && (
+                          <button
+                            onClick={() => {
+                              const newFilters = new Set(identityPoolFilters);
+                              searchFilteredPools.forEach(p => newFilters.add(p.id));
+                              setIdentityPoolFilters(newFilters);
+                              setIdentityPage(1);
+                            }}
+                            className="text-sm text-green-600 hover:text-green-800 underline"
+                          >
+                            Select matching ({searchFilteredPools.length})
+                          </button>
+                        )}
+                        {identityPoolFilters.size > 0 && (
+                          <button
+                            onClick={() => {
+                              setIdentityPoolFilters(new Set());
+                              setIdentityPage(1);
+                            }}
+                            className="text-sm text-red-600 hover:text-red-800 underline"
+                          >
+                            Clear all ({identityPoolFilters.size})
+                          </button>
+                        )}
+                        {identityPoolFilters.size === 0 && uniqueIdentityPools.length > 1 && !poolSearchText && (
+                          <button
+                            onClick={() => {
+                              setIdentityPoolFilters(new Set(uniqueIdentityPools.map(p => p.id)));
+                              setIdentityPage(1);
+                            }}
+                            className="text-sm text-gray-500 hover:text-gray-700 underline"
+                          >
+                            Select all
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {/* Pool buttons - scrollable */}
+                    <div className="max-h-32 overflow-y-auto">
+                      <div className="flex flex-wrap gap-2">
+                        {searchFilteredPools.map(pool => {
+                          const count = identityExportData.filter(r => r.dpsk_pool_id === pool.id).length;
+                          const isSelected = identityPoolFilters.has(pool.id);
+                          return (
+                            <button
+                              key={pool.id}
+                              onClick={() => {
+                                const newFilters = new Set(identityPoolFilters);
+                                if (isSelected) {
+                                  newFilters.delete(pool.id);
+                                } else {
+                                  newFilters.add(pool.id);
+                                }
+                                setIdentityPoolFilters(newFilters);
+                                setIdentityPage(1);
+                              }}
+                              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                                isSelected
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              {pool.name} ({count})
+                            </button>
+                          );
+                        })}
+                        {searchFilteredPools.length === 0 && poolSearchText && (
+                          <span className="text-sm text-gray-500 italic">No pools match "{poolSearchText}"</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-            {/* Modal Footer with Pagination */}
-            <div className="bg-gray-50 px-6 py-4 border-t">
-              {/* Pagination row */}
-              {totalIdentityPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mb-3">
-                  <button
-                    onClick={() => setIdentityPage(1)}
-                    disabled={identityPage === 1}
-                    className={`px-2 py-1 text-sm rounded ${identityPage === 1 ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
-                  >
-                    ««
-                  </button>
-                  <button
-                    onClick={() => setIdentityPage(p => Math.max(1, p - 1))}
-                    disabled={identityPage === 1}
-                    className={`px-2 py-1 text-sm rounded ${identityPage === 1 ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
-                  >
-                    «
-                  </button>
-                  <span className="text-sm text-gray-600 mx-2">
-                    Page {identityPage} of {totalIdentityPages}
-                  </span>
-                  <button
-                    onClick={() => setIdentityPage(p => Math.min(totalIdentityPages, p + 1))}
-                    disabled={identityPage === totalIdentityPages}
-                    className={`px-2 py-1 text-sm rounded ${identityPage === totalIdentityPages ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
-                  >
-                    »
-                  </button>
-                  <button
-                    onClick={() => setIdentityPage(totalIdentityPages)}
-                    disabled={identityPage === totalIdentityPages}
-                    className={`px-2 py-1 text-sm rounded ${identityPage === totalIdentityPages ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
-                  >
-                    »»
-                  </button>
-                  <span className="text-xs text-gray-500 ml-2">
-                    (showing {((identityPage - 1) * IDENTITY_PAGE_SIZE) + 1}-{Math.min(identityPage * IDENTITY_PAGE_SIZE, filteredIdentityData.length)})
-                  </span>
+                {/* Modal Body */}
+                <div className="overflow-auto flex-1 p-4">
+                  {filteredIdentityData.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      {identityExportData.length === 0
+                        ? "No identities or passphrases found."
+                        : "No records match the selected filter."}
+                    </div>
+                  ) : (
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            DPSK Pool
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Username
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Passphrase
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            {cloudpathGuidMap ? 'R1 Description' : 'Cloudpath GUID'}
+                          </th>
+                          {cloudpathGuidMap && (
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Cloudpath GUID <span className="text-blue-500">(JSON)</span>
+                            </th>
+                          )}
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Identity ID
+                          </th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Passphrase ID
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {paginatedIdentityData.map((row, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <div className="text-gray-900 font-medium">{row.dpsk_pool_name || '-'}</div>
+                              <div className="text-xs text-gray-400 font-mono">{row.dpsk_pool_id || ''}</div>
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-gray-900">
+                              {row.username}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
+                              {row.passphrase || <span className="text-gray-400">-</span>}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
+                              {row.cloudpath_guid || <span className="text-gray-400">-</span>}
+                            </td>
+                            {cloudpathGuidMap && (
+                              <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-blue-600">
+                                {row.cloudpath_guid_json || <span className="text-gray-400">-</span>}
+                              </td>
+                            )}
+                            <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
+                              {row.identity_id || <span className="text-gray-400">-</span>}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
+                              {row.passphrase_id || <span className="text-gray-400">-</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
-              )}
-              {/* Actions row */}
-              <div className="flex justify-between items-center">
-                <div className="text-sm text-gray-500">
-                  {identityPoolFilters.size > 0
-                    ? `${filteredIdentityData.length} of ${identityExportData.length} records (${identityPoolFilters.size} pool${identityPoolFilters.size > 1 ? 's' : ''} selected)`
-                    : `${identityExportData.length} records`}
+
+                {/* Modal Footer with Pagination */}
+                <div className="bg-gray-50 px-6 py-4 border-t">
+                  {/* Pagination row */}
+                  {totalIdentityPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mb-3">
+                      <button
+                        onClick={() => setIdentityPage(1)}
+                        disabled={identityPage === 1}
+                        className={`px-2 py-1 text-sm rounded ${identityPage === 1 ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        ««
+                      </button>
+                      <button
+                        onClick={() => setIdentityPage(p => Math.max(1, p - 1))}
+                        disabled={identityPage === 1}
+                        className={`px-2 py-1 text-sm rounded ${identityPage === 1 ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        «
+                      </button>
+                      <span className="text-sm text-gray-600 mx-2">
+                        Page {identityPage} of {totalIdentityPages}
+                      </span>
+                      <button
+                        onClick={() => setIdentityPage(p => Math.min(totalIdentityPages, p + 1))}
+                        disabled={identityPage === totalIdentityPages}
+                        className={`px-2 py-1 text-sm rounded ${identityPage === totalIdentityPages ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        »
+                      </button>
+                      <button
+                        onClick={() => setIdentityPage(totalIdentityPages)}
+                        disabled={identityPage === totalIdentityPages}
+                        className={`px-2 py-1 text-sm rounded ${identityPage === totalIdentityPages ? 'text-gray-400' : 'text-gray-700 hover:bg-gray-200'}`}
+                      >
+                        »»
+                      </button>
+                      <span className="text-xs text-gray-500 ml-2">
+                        (showing {((identityPage - 1) * IDENTITY_PAGE_SIZE) + 1}-{Math.min(identityPage * IDENTITY_PAGE_SIZE, filteredIdentityData.length)})
+                      </span>
+                    </div>
+                  )}
+                  {/* Actions row */}
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          setIdentityExportData(null);
+                          setIdentityModalStep("pick-pools");
+                        }}
+                        className="px-4 py-2 text-sm text-green-700 bg-green-100 rounded hover:bg-green-200 font-medium"
+                      >
+                        Back to Pool Selection
+                      </button>
+                      <span className="text-sm text-gray-500">
+                        {identityPoolFilters.size > 0
+                          ? `${filteredIdentityData.length} of ${identityExportData.length} records (${identityPoolFilters.size} pool${identityPoolFilters.size > 1 ? 's' : ''} selected)`
+                          : `${identityExportData.length} records`}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleDownloadCsv}
+                        disabled={filteredIdentityData.length === 0}
+                        className={`px-4 py-2 rounded font-semibold ${
+                          filteredIdentityData.length === 0
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {identityPoolFilters.size > 0 ? `Export ${filteredIdentityData.length} to CSV` : `Export All ${identityExportData.length} to CSV`}
+                      </button>
+                      <button
+                        onClick={() => setShowIdentityExportModal(false)}
+                        className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 font-semibold"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleDownloadCsv}
-                    disabled={filteredIdentityData.length === 0}
-                    className={`px-4 py-2 rounded font-semibold ${
-                      filteredIdentityData.length === 0
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-green-600 text-white hover:bg-green-700'
-                    }`}
-                  >
-                    {identityPoolFilters.size > 0 ? `Export All ${filteredIdentityData.length} to CSV` : `Export All ${identityExportData.length} to CSV`}
-                  </button>
-                  <button
-                    onClick={() => setShowIdentityExportModal(false)}
-                    className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 font-semibold"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
