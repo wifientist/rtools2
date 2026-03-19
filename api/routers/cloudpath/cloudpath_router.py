@@ -143,7 +143,8 @@ class ExportIdentitiesRequest(BaseModel):
     controller_id: int = Field(..., description="RuckusONE controller ID")
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
     venue_id: Optional[str] = Field(None, description="Optional: Venue ID to filter by")
-    dpsk_pool_id: Optional[str] = Field(None, description="Optional: Filter to a specific DPSK pool")
+    dpsk_pool_id: Optional[str] = Field(None, description="Deprecated: use dpsk_pool_ids instead")
+    dpsk_pool_ids: Optional[List[str]] = Field(None, description="Optional: Filter to specific DPSK pool(s)")
 
 
 class IdentityExportRow(BaseModel):
@@ -380,7 +381,7 @@ async def _fetch_identity_passphrase_data(
     r1_client,
     venue_id: str = None,
     tenant_id: str = None,
-    dpsk_pool_id: str = None
+    dpsk_pool_ids: List[str] = None
 ) -> List[Dict[str, Any]]:
     """Fetch and join identity/passphrase data."""
     # Get identity groups
@@ -394,8 +395,9 @@ async def _fetch_identity_passphrase_data(
         )
     identity_groups = ig_response.get('content', []) if isinstance(ig_response, dict) else ig_response
 
-    if dpsk_pool_id:
-        identity_groups = [ig for ig in identity_groups if ig.get('dpskPoolId') == dpsk_pool_id]
+    if dpsk_pool_ids:
+        pool_id_set = set(dpsk_pool_ids)
+        identity_groups = [ig for ig in identity_groups if ig.get('dpskPoolId') in pool_id_set]
 
     # Get DPSK pools
     dpsk_pool_ids = set()
@@ -506,9 +508,14 @@ async def export_identities(
     if controller.controller_subtype == "MSP" and not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
+    # Support both legacy dpsk_pool_id (single) and new dpsk_pool_ids (list)
+    pool_ids = request.dpsk_pool_ids
+    if not pool_ids and request.dpsk_pool_id:
+        pool_ids = [request.dpsk_pool_id]
+
     try:
         data = await _fetch_identity_passphrase_data(
-            r1_client, request.venue_id, tenant_id, dpsk_pool_id=request.dpsk_pool_id
+            r1_client, request.venue_id, tenant_id, dpsk_pool_ids=pool_ids
         )
         return ExportIdentitiesResponse(venue_id=request.venue_id, total_count=len(data), data=data)
     except Exception as e:
@@ -537,9 +544,13 @@ async def export_identities_csv(
     if controller.controller_subtype == "MSP" and not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
+    pool_ids = request.dpsk_pool_ids
+    if not pool_ids and request.dpsk_pool_id:
+        pool_ids = [request.dpsk_pool_id]
+
     try:
         data = await _fetch_identity_passphrase_data(
-            r1_client, request.venue_id, tenant_id, dpsk_pool_id=request.dpsk_pool_id
+            r1_client, request.venue_id, tenant_id, dpsk_pool_ids=pool_ids
         )
 
         output = io.StringIO()

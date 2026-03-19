@@ -89,6 +89,9 @@ CloudpathImportWorkflow = Workflow(
         # LAN port configuration (optional)
         "configure_lan_ports": False,
 
+        # Identity description updates (Phase 4)
+        "skip_identity_descriptions": False,  # Skip writing Cloudpath GUIDs to R1 identity descriptions
+
         # Access policy options
         "enable_access_policies": False,  # Create adaptive policies for rate limiting
         "policy_set_name": "",  # Name for the policy set (defaults to property name)
@@ -200,6 +203,7 @@ CloudpathImportWorkflow = Workflow(
             depends_on=["create_passphrases"],
             per_unit=True,
             critical=False,  # Non-critical - import still succeeds without this
+            skip_if="options.get('skip_identity_descriptions', False)",
             inputs=[
                 "import_mode", "identity_group_id", "identity_group_ids",
                 "created_passphrases", "options"
