@@ -63,6 +63,14 @@ const Home = () => {
               documenting deployments, and creating technical diagrams.
             </p>
           </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">📦 Firmware Matrix <span className="text-xs bg-blue-200 text-blue-900 px-1.5 py-0.5 rounded">BETA</span></h3>
+            <p className="text-sm text-blue-800">
+              AP firmware support matrix across WiFi generations (5/6/6E/7) with upgrade paths
+              and compatibility information.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -75,6 +83,14 @@ const Home = () => {
             <p className="text-sm text-purple-800">
               Interactive WiFi performance diagnostics. Understand why speeds are slow by analyzing
               signal quality, airtime utilization, interference, backhaul, and client capabilities.
+            </p>
+          </div>
+
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-purple-900 mb-2">📶 Roaming Explainer</h3>
+            <p className="text-sm text-purple-800">
+              Understand WiFi roaming behavior, sticky clients, and troubleshooting across different
+              deployment scenarios including enterprise, hospitality, education, and warehouse environments.
             </p>
           </div>
         </div>
@@ -109,10 +125,50 @@ const Home = () => {
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-5">
-            <h3 className="text-lg font-semibold text-green-900 mb-2">🔄 DPSK Orchestrator</h3>
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🔌 AP Port Config</h3>
             <p className="text-sm text-green-800">
-              Automate DPSK synchronization workflows. Real-time webhook driven updates and scheduled recurring syncs between
-              Ruckus ONE source pools to a single destination pool to keep passphrases and identity groups in sync.
+              Configure per-port settings including mode and VLAN on APs across different hardware
+              models with varying port counts and uplink designations.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">✏️ AP Rename</h3>
+            <p className="text-sm text-green-800">
+              Rename access points in bulk using CSV, regex, or template-based modes to quickly
+              update AP naming conventions across your deployment.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">📡 Bulk WLAN Edit</h3>
+            <p className="text-sm text-green-800">
+              Edit WLAN settings like VLAN, security, RF band, client isolation, and WiFi 6/7
+              options across multiple networks at once.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🏷️ Bulk AP Tagging <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">BETA</span></h3>
+            <p className="text-sm text-green-800">
+              Add, remove, or set tags on multiple access points in bulk across a venue for
+              streamlined AP organization and management.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🔃 AP Pop & Swap <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">ALPHA</span></h3>
+            <p className="text-sm text-green-800">
+              Decommission old APs and swap them with new ones while preserving the AP name,
+              group assignment, and captured settings.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">📈 Data Studio Export <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">ALPHA</span></h3>
+            <p className="text-sm text-green-800">
+              Configure automated export of Data Studio reports to S3 on a scheduled interval
+              with retention policies.
             </p>
           </div>
 
