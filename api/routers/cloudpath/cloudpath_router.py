@@ -422,48 +422,70 @@ async def _fetch_identity_passphrase_data(
         except Exception:
             pass
 
-    # Build identity map
+    # Build identity map (paginated — R1 caps page size around 2000)
     identity_map = {}
     for ig in identity_groups:
         ig_id = ig.get('id')
         ig_name = ig.get('name', 'Unknown')
         pool_id = ig_to_pool_id.get(ig_id) or ig.get('dpskPoolId')
 
-        identities_response = await r1_client.identity.get_identities_in_group(
-            group_id=ig_id, tenant_id=tenant_id, page=0, size=10000
-        )
-        identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
+        page = 0
+        page_size = 500
+        while True:
+            identities_response = await r1_client.identity.get_identities_in_group(
+                group_id=ig_id, tenant_id=tenant_id, page=page, size=page_size
+            )
+            identities = identities_response.get('content', []) if isinstance(identities_response, dict) else identities_response
 
-        for identity in identities:
-            username = identity.get('name')
-            if username and pool_id:
-                identity_map[(username, pool_id)] = {
-                    'identity_id': identity.get('id') or '',
-                    'cloudpath_guid': identity.get('description') or '',
-                    'identity_group_name': ig_name,
-                    'dpsk_pool_id': pool_id
-                }
+            for identity in identities:
+                username = identity.get('name')
+                if username and pool_id:
+                    identity_map[(username, pool_id)] = {
+                        'identity_id': identity.get('id') or '',
+                        'cloudpath_guid': identity.get('description') or '',
+                        'identity_group_name': ig_name,
+                        'dpsk_pool_id': pool_id
+                    }
 
-    # Build passphrase map
+            if len(identities) < page_size:
+                break
+            page += 1
+            if page > 2000:  # Safety limit (~1M identities)
+                break
+
+        logger.info(f"Fetched {len([k for k in identity_map if k[1] == pool_id])} identities for group '{ig_name}'")
+
+    # Build passphrase map (paginated — R1 caps page size around 2000)
     passphrase_map = {}
     for pool in dpsk_pools:
         pool_id = pool.get('id')
         pool_name = pool.get('name', 'Unknown')
 
-        passphrases_response = await r1_client.dpsk.get_passphrases(
-            pool_id=pool_id, tenant_id=tenant_id, page=0, size=10000
-        )
-        passphrases = passphrases_response.get('content', passphrases_response.get('data', []))
+        page = 1  # get_passphrases is 1-based
+        page_size = 500
+        while True:
+            passphrases_response = await r1_client.dpsk.get_passphrases(
+                pool_id=pool_id, tenant_id=tenant_id, page=page, size=page_size
+            )
+            passphrases = passphrases_response.get('content', passphrases_response.get('data', []))
 
-        for pp in passphrases:
-            username = pp.get('username') or pp.get('userName')
-            if username:
-                passphrase_map[(username, pool_id)] = {
-                    'passphrase_id': pp.get('id') or '',
-                    'passphrase': pp.get('passphrase') or '',
-                    'dpsk_pool_id': pool_id or '',
-                    'dpsk_pool_name': pool_name
-                }
+            for pp in passphrases:
+                username = pp.get('username') or pp.get('userName')
+                if username:
+                    passphrase_map[(username, pool_id)] = {
+                        'passphrase_id': pp.get('id') or '',
+                        'passphrase': pp.get('passphrase') or '',
+                        'dpsk_pool_id': pool_id or '',
+                        'dpsk_pool_name': pool_name
+                    }
+
+            if len(passphrases) < page_size:
+                break
+            page += 1
+            if page > 2000:  # Safety limit (~1M passphrases)
+                break
+
+        logger.info(f"Fetched {len([k for k in passphrase_map if k[1] == pool_id])} passphrases for pool '{pool_name}'")
 
     # Join data
     all_keys = set(identity_map.keys()) | set(passphrase_map.keys())
