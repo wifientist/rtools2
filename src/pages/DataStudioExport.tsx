@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/utils/api";
-import { BarChart3, Plus, Play, Trash2, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Eye, Mail } from "lucide-react";
+import { BarChart3, Plus, Play, Trash2, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, Pencil, Mail } from "lucide-react";
 
 const API = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -316,6 +316,42 @@ const DataStudioExport = () => {
         </div>
       </div>
 
+      {/* Setup Guide */}
+      <details className="mb-6 bg-indigo-50 border border-indigo-200 rounded-lg">
+        <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-indigo-800 hover:bg-indigo-100 rounded-lg">
+          Setup Guide &amp; How It Works
+        </summary>
+        <div className="px-4 pb-4 text-sm text-indigo-900 space-y-3">
+          <div>
+            <p className="font-semibold mb-1">1. Prepare Your R1 Dashboard</p>
+            <p>In RuckusONE Data Studio, create a dashboard with the <strong>exact name</strong> you'll enter below as the Dashboard Name.
+              We recommend prefixing it with <code className="bg-indigo-100 px-1 rounded">[rt]</code> (e.g., <code className="bg-indigo-100 px-1 rounded">[rt] AP Status</code>)
+              so it's clear the dashboard is set up for rtools automation. The scraper matches the dashboard by name — any mismatch and the export will fail.</p>
+          </div>
+          <div>
+            <p className="font-semibold mb-1">2. Create an Export Config</p>
+            <p>Enter your R1 web login credentials (used by the headless browser to log in), the exact dashboard name,
+              and the tenants you want to export. Each tenant needs its Tenant ID (UUID from R1) and a friendly name.</p>
+          </div>
+          <div>
+            <p className="font-semibold mb-1">3. How Exports Run</p>
+            <p>The scheduler fires hourly and checks each config's interval setting. For each due config, it launches a headless browser,
+              logs into R1, navigates to Data Studio, switches to each tenant, and downloads the dashboard as CSV.
+              Files are uploaded to the company's fileshare under <code className="bg-indigo-100 px-1 rounded">Data Studio / &lt;tenant-name&gt;</code> and
+              old exports beyond the retention count are automatically pruned.</p>
+          </div>
+          <div>
+            <p className="font-semibold mb-1">4. Tips</p>
+            <ul className="list-disc list-inside space-y-1 ml-1">
+              <li>Dashboard names are <strong>case-sensitive</strong> — copy-paste from R1 to avoid typos</li>
+              <li>The tenant must have at least one AP with data, otherwise Data Studio has nothing to render and the export will fail</li>
+              <li>Use the <Mail size={12} className="inline" /> button to email the latest CSVs per tenant to recipients on demand</li>
+              <li>Failed exports are retried on the next scheduler tick (hourly) without resetting the interval timer</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg flex justify-between items-center">
           <span>{error}</span>
@@ -361,7 +397,7 @@ const DataStudioExport = () => {
                     <Play size={16} />
                   </button>
                   <button onClick={() => openEditModal(config)} className="p-2 text-gray-500 hover:bg-gray-100 rounded" title="Edit">
-                    <Eye size={16} />
+                    <Pencil size={16} />
                   </button>
                   <button onClick={() => { setEmailConfig(config); setEmailRecipients(""); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded" title="Email latest exports">
                     <Mail size={16} />
@@ -500,9 +536,9 @@ const DataStudioExport = () => {
                   )}
                 </div>
 
-                {/* Report Name */}
+                {/* Dashboard Name */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Report Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dashboard Name (Data Studio)</label>
                   <input
                     type="text"
                     value={formData.report_name}

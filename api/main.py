@@ -67,12 +67,14 @@ async def lifespan(app: FastAPI):
     from jobs.report_dispatcher_job import ensure_registered as ensure_report_dispatcher
     from routers.ap_pop_swap.background_poller import ensure_registered as ensure_pop_swap_poller
     from jobs.data_studio_export_job import ensure_registered as ensure_data_studio_export
+    from jobs.fileshare_cleanup_job import ensure_registered as ensure_fileshare_cleanup
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
     await ensure_signup_cleanup(scheduler)
     await ensure_report_dispatcher(scheduler)
     await ensure_pop_swap_poller(scheduler)
     await ensure_data_studio_export(scheduler)
+    await ensure_fileshare_cleanup(scheduler)
 
     yield
 

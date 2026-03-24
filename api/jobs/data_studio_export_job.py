@@ -133,16 +133,21 @@ def _cleanup_old_exports(
 
     old_runs = runs[retention_count:]
     for run in old_runs:
+        # Find SharedFile record (by ID or fallback to S3 key match)
+        shared_file = None
+        if run.shared_file_id:
+            shared_file = db.query(SharedFile).filter(SharedFile.id == run.shared_file_id).first()
+        elif run.s3_key:
+            shared_file = db.query(SharedFile).filter(SharedFile.s3_key == run.s3_key).first()
+
         # Delete S3 object
         if run.s3_key:
             s3.delete_object(run.s3_key)
 
         # Delete SharedFile record
-        if run.shared_file_id:
-            shared_file = db.query(SharedFile).filter(SharedFile.id == run.shared_file_id).first()
-            if shared_file:
-                folder.used_bytes = max(0, folder.used_bytes - (shared_file.size_bytes or 0))
-                db.delete(shared_file)
+        if shared_file:
+            folder.used_bytes = max(0, folder.used_bytes - (shared_file.size_bytes or 0))
+            db.delete(shared_file)
 
         # Delete the run record
         db.delete(run)
@@ -169,6 +174,27 @@ async def run_data_studio_export() -> Dict[str, Any]:
             return {"status": "skipped", "reason": "no_enabled_configs", "exports": 0}
 
         for config in configs:
+            # Respect per-config interval: skip if last run was too recent
+            # Use 10-minute buffer to prevent scheduler jitter from skipping at the boundary
+            if config.interval_minutes and config.interval_minutes > 60:
+                last_run = (
+                    db.query(DataStudioExportRun)
+                    .filter(
+                        DataStudioExportRun.config_id == config.id,
+                        DataStudioExportRun.status == "success",
+                    )
+                    .order_by(DataStudioExportRun.started_at.desc())
+                    .first()
+                )
+                if last_run and last_run.started_at:
+                    elapsed = (datetime.utcnow() - last_run.started_at).total_seconds() / 60
+                    if elapsed < (config.interval_minutes - 10):
+                        logger.info(
+                            f"Config {config.id}: skipping, only {elapsed:.0f}m since last run "
+                            f"(interval={config.interval_minutes}m)"
+                        )
+                        continue
+
             config_result = await _process_config(db, s3, config)
             results.append(config_result)
 
@@ -246,6 +272,7 @@ async def _process_config(db, s3, config: DataStudioExportConfig) -> Dict[str, A
 
                     # Upload each extracted CSV individually
                     uploaded_keys = []
+                    uploaded_file_ids = []
                     total_size = 0
                     csv_items = list(result.csv_files.items())
                     for idx, (csv_name, csv_bytes) in enumerate(csv_items):
@@ -279,8 +306,10 @@ async def _process_config(db, s3, config: DataStudioExportConfig) -> Dict[str, A
                             expires_at=now + timedelta(days=30),
                         )
                         db.add(shared_file)
+                        db.flush()  # Get shared_file.id
                         folder.used_bytes += len(csv_bytes)
                         uploaded_keys.append(s3_key)
+                        uploaded_file_ids.append(shared_file.id)
                         total_size += len(csv_bytes)
 
                     db.commit()
@@ -290,10 +319,11 @@ async def _process_config(db, s3, config: DataStudioExportConfig) -> Dict[str, A
                         config_result["failed"] += 1
                         continue
 
-                    # Record run with first key as primary (for backward compat)
+                    # Record run with first key/file as primary (for backward compat)
                     _record_run(
                         db, config.id, tc, "success",
                         s3_key=uploaded_keys[0],
+                        shared_file_id=uploaded_file_ids[0],
                         file_size=total_size,
                         filename=f"{report_slug}_{timestamp} ({len(uploaded_keys)} files)",
                         duration=result.duration_seconds,

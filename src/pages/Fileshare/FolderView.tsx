@@ -576,7 +576,7 @@ const FolderView = () => {
                                   <div>
                                     <div className="text-sm font-medium text-gray-900">{file.filename}</div>
                                     <div className="text-xs text-gray-500 flex items-center gap-1">
-                                      {formatBytes(file.size_bytes)} · {formatDate(file.uploaded_at)} · {file.download_count} downloads
+                                      {formatBytes(file.size_bytes)} · {file.uploaded_by_email} · {formatDate(file.uploaded_at)} · <Clock className="w-3 h-3" /> Expires {formatDate(file.expires_at)} · {file.download_count} downloads
                                     </div>
                                   </div>
                                 </div>
