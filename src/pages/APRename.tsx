@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/utils/api";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
@@ -106,7 +107,7 @@ function APRename() {
           ? `${API_BASE_URL}/ap-rename/${activeControllerId}/venue/${venueId}/aps?tenant_id=${effectiveTenantId}`
           : `${API_BASE_URL}/ap-rename/${activeControllerId}/venue/${venueId}/aps`;
 
-        const response = await fetch(url, { credentials: "include" });
+        const response = await apiFetch(url);
         if (response.ok) {
           const data = await response.json();
           setVenueAps(data.aps || []);
@@ -221,9 +222,8 @@ function APRename() {
         };
       }
 
-      const response = await fetch(`${API_BASE_URL}/ap-rename/preview`, {
+      const response = await apiFetch(`${API_BASE_URL}/ap-rename/preview`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -261,9 +261,8 @@ function APRename() {
         body.tenant_id = effectiveTenantId;
       }
 
-      const response = await fetch(`${API_BASE_URL}/ap-rename/apply`, {
+      const response = await apiFetch(`${API_BASE_URL}/ap-rename/apply`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });

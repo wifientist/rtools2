@@ -5,6 +5,7 @@ import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 import type { JobResult } from "@/components/JobMonitorModal";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -481,9 +482,8 @@ function CloudpathImport() {
 
     try {
       // V2 Flow: plan → confirm → execute
-      const response = await fetch(`${API_BASE_URL}/cloudpath-import/v2/plan`, {
+      const response = await apiFetch(`${API_BASE_URL}/cloudpath-import/v2/plan`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -552,9 +552,8 @@ function CloudpathImport() {
     setAuditData(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/cloudpath-import/audit`, {
+      const response = await apiFetch(`${API_BASE_URL}/cloudpath-import/audit`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -606,9 +605,8 @@ function CloudpathImport() {
     setAuditError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/cloudpath-import/export-identities`, {
+      const response = await apiFetch(`${API_BASE_URL}/cloudpath-import/export-identities`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -696,9 +694,8 @@ function CloudpathImport() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/cloudpath-import/cleanup`, {
+      const response = await apiFetch(`${API_BASE_URL}/cloudpath-import/cleanup`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           job_id: jobId,

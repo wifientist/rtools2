@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/utils/api';
 import { ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, Server, Wifi, Router, HardDrive, Layers, Info, Download, Link2, X, Sparkles, Zap } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -235,10 +236,9 @@ async function saveMappingsToBackend(
       }
     }
 
-    const response = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
+    const response = await apiFetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({ mappings: payload })
     });
     if (!response.ok) {
@@ -254,10 +254,9 @@ async function saveMappingsToBackend(
 async function clearZoneMappingInBackend(controllerId: number, zoneId: string) {
   try {
     const payload: Record<string, null> = { [zoneId]: null };
-    const response = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
+    const response = await apiFetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({ mappings: payload })
     });
     if (!response.ok) {
@@ -403,9 +402,8 @@ function SwitchGroupMapper({
   const fetchCandidates = async () => {
     setLoadingCandidates(true);
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/sz/audit/cache/${controllerId}/candidates?top_n=3&min_score=20`,
-        { credentials: 'include' }
+      const response = await apiFetch(
+        `${API_BASE_URL}/sz/audit/cache/${controllerId}/candidates?top_n=3&min_score=20`
       );
       if (response.ok) {
         const data = await response.json();
@@ -452,10 +450,9 @@ function SwitchGroupMapper({
     // Send explicit null for each zone to clear user_set flags
     if (Object.keys(clearPayload).length > 0) {
       try {
-        await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
+        await apiFetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/mappings`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
           body: JSON.stringify({ mappings: clearPayload })
         });
       } catch (error) {
@@ -1008,18 +1005,14 @@ export default function SZAudit() {
       for (const controllerId of selectedControllers) {
         try {
           // Fetch cache status
-          const statusResponse = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}`, {
-            credentials: 'include'
-          });
+          const statusResponse = await apiFetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}`);
           if (statusResponse.ok) {
             const data = await statusResponse.json();
             newStatus[controllerId] = data;
 
             // If there are cached zones, fetch their details
             if (data.has_cache && data.cached_zones > 0) {
-              const zonesResponse = await fetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/zones`, {
-                credentials: 'include'
-              });
+              const zonesResponse = await apiFetch(`${API_BASE_URL}/sz/audit/cache/${controllerId}/zones`);
               if (zonesResponse.ok) {
                 newCachedZones[controllerId] = await zonesResponse.json();
               }
@@ -1103,10 +1096,9 @@ export default function SZAudit() {
       for (const controllerId of controllerIds) {
         const controller = szControllers.find(c => c.id === controllerId);
         try {
-          const response = await fetch(`${API_BASE_URL}/sz/audit/async`, {
+          const response = await apiFetch(`${API_BASE_URL}/sz/audit/async`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({
               controller_id: controllerId,
               refresh_mode: refreshMode,
@@ -1155,9 +1147,7 @@ export default function SZAudit() {
 
           try {
             // Get job status
-            const statusResponse = await fetch(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/status`, {
-              credentials: 'include'
-            });
+            const statusResponse = await apiFetch(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/status`);
 
             if (!statusResponse.ok) {
               throw new Error(`Status check failed: HTTP ${statusResponse.status}`);
@@ -1184,9 +1174,7 @@ export default function SZAudit() {
               });
 
               // Fetch the result from cache (audit updates cache, we read from it)
-              const resultResponse = await fetch(`${API_BASE_URL}/sz/audit/result/${job.controller_id}`, {
-                credentials: 'include'
-              });
+              const resultResponse = await apiFetch(`${API_BASE_URL}/sz/audit/result/${job.controller_id}`);
 
               if (resultResponse.ok) {
                 const result = await resultResponse.json();
@@ -1267,9 +1255,8 @@ export default function SZAudit() {
 
   const cancelJob = async (jobId: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/sz/audit/jobs/${jobId}/cancel`, {
+      const response = await apiFetch(`${API_BASE_URL}/sz/audit/jobs/${jobId}/cancel`, {
         method: 'POST',
-        credentials: 'include'
       });
 
       if (response.ok) {

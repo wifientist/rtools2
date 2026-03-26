@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Building2, Check, X, Plus, Trash2, AlertCircle } from "lucide-react";
+import { apiFetch } from '@/utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -37,9 +38,8 @@ export default function CompanyManager() {
   const fetchCompanies = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/admin/companies`, {
+      const response = await apiFetch(`${API_BASE_URL}/admin/companies`, {
         method: "GET",
-        credentials: "include",
       });
 
       if (!response.ok) {
@@ -59,9 +59,7 @@ export default function CompanyManager() {
   // Fetch current user's role
   const fetchCurrentUserRole = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/status`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/auth/status`);
       if (response.ok) {
         const data = await response.json();
         const role = data.role || "admin";
@@ -76,9 +74,7 @@ export default function CompanyManager() {
   // Fetch rejected signup attempts (super only)
   const fetchSignupAttempts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/companies/signup-attempts`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/admin/companies/signup-attempts`);
       if (response.ok) {
         setSignupAttempts(await response.json());
       }
@@ -100,10 +96,9 @@ export default function CompanyManager() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/companies`, {
+      const response = await apiFetch(`${API_BASE_URL}/admin/companies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(formData),
       });
 
@@ -123,11 +118,10 @@ export default function CompanyManager() {
   // Approve company
   const handleApprove = async (companyId: number) => {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/admin/companies/${companyId}/approve`,
         {
           method: "POST",
-          credentials: "include",
         }
       );
 
@@ -152,11 +146,10 @@ export default function CompanyManager() {
     }
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/admin/companies/${companyId}/unapprove`,
         {
           method: "POST",
-          credentials: "include",
         }
       );
 
@@ -182,11 +175,10 @@ export default function CompanyManager() {
     }
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/admin/companies/${companyId}`,
         {
           method: "DELETE",
-          credentials: "include",
         }
       );
 

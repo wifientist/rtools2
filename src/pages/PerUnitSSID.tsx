@@ -4,6 +4,7 @@ import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -262,9 +263,7 @@ function PerUnitSSID() {
     const fetchPortConfigMetadata = async () => {
       setMetadataLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/per-unit-ssid/port-config-metadata`, {
-          credentials: "include",
-        });
+        const response = await apiFetch(`${API_BASE_URL}/per-unit-ssid/port-config-metadata`);
         if (response.ok) {
           const data = await response.json();
           setPortConfigMetadata(data);
@@ -476,9 +475,8 @@ function PerUnitSSID() {
       };
 
       // V2 Flow: plan → confirm → execute
-      const response = await fetch(`${API_BASE_URL}/per-unit-ssid/v2/plan`, {
+      const response = await apiFetch(`${API_BASE_URL}/per-unit-ssid/v2/plan`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
       });
@@ -541,9 +539,8 @@ function PerUnitSSID() {
     setPopulateResults(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/per-unit-ssid/populate`, {
+      const response = await apiFetch(`${API_BASE_URL}/per-unit-ssid/populate`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -635,9 +632,8 @@ function PerUnitSSID() {
     try {
       // Step 1: Start the async audit job
       console.log('🔍 Starting audit job...');
-      const startResponse = await fetch(`${API_BASE_URL}/per-unit-ssid/audit/start`, {
+      const startResponse = await apiFetch(`${API_BASE_URL}/per-unit-ssid/audit/start`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -670,9 +666,8 @@ function PerUnitSSID() {
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
 
         // Poll status
-        const statusResponse = await fetch(
-          `${API_BASE_URL}/per-unit-ssid/audit/${jobId}/status`,
-          { credentials: "include" }
+        const statusResponse = await apiFetch(
+          `${API_BASE_URL}/per-unit-ssid/audit/${jobId}/status`
         );
 
         if (!statusResponse.ok) {
@@ -689,9 +684,8 @@ function PerUnitSSID() {
           console.log('🔍 Audit completed, fetching results...');
           setAuditProgress("Audit complete, loading results...");
 
-          const resultResponse = await fetch(
-            `${API_BASE_URL}/per-unit-ssid/audit/${jobId}/result`,
-            { credentials: "include" }
+          const resultResponse = await apiFetch(
+            `${API_BASE_URL}/per-unit-ssid/audit/${jobId}/result`
           );
 
           if (!resultResponse.ok) {

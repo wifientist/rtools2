@@ -238,9 +238,7 @@ function DPSKOrchestrator() {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch orchestrators");
@@ -263,9 +261,8 @@ function DPSKOrchestrator() {
       if (tenantId) params.append("tenant_id", tenantId);
       params.append("include_passphrase_count", "true");
 
-      const response = await fetch(
-        `${API_BASE_URL}/r1/${controllerId}/dpsk/pools/${poolId}?${params}`,
-        { credentials: "include" }
+      const response = await apiFetch(
+        `${API_BASE_URL}/r1/${controllerId}/dpsk/pools/${poolId}?${params}`
       );
 
       if (!response.ok) {
@@ -309,9 +306,7 @@ function DPSKOrchestrator() {
       if (refreshCounts) params.append("refresh_counts", "true");
       const url = `${API_BASE_URL}/api/orchestrators/${id}${params.toString() ? `?${params}` : ""}`;
 
-      const response = await fetch(url, {
-        credentials: "include",
-      });
+      const response = await apiFetch(url);
 
       if (!response.ok) {
         throw new Error("Failed to fetch orchestrator details");
@@ -351,9 +346,8 @@ function DPSKOrchestrator() {
         })),
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -378,9 +372,8 @@ function DPSKOrchestrator() {
     if (!confirm("Are you sure you want to delete this orchestrator?")) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/${id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/${id}`, {
         method: "DELETE",
-        credentials: "include",
       });
 
       if (!response.ok) {
@@ -397,9 +390,8 @@ function DPSKOrchestrator() {
   // Trigger manual sync
   const triggerSync = async (id: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/${id}/sync`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/${id}/sync`, {
         method: "POST",
-        credentials: "include",
       });
 
       if (!response.ok) {
@@ -416,9 +408,8 @@ function DPSKOrchestrator() {
   // Toggle enabled state
   const toggleEnabled = async (id: number, currentState: boolean) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/${id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/${id}`, {
         method: "PUT",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled: !currentState }),
       });
@@ -440,9 +431,7 @@ function DPSKOrchestrator() {
   const fetchFlagged = async (id: number) => {
     setFlaggedLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/${id}/flagged`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/${id}/flagged`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch flagged items");
@@ -461,11 +450,10 @@ function DPSKOrchestrator() {
   // Resolve flagged item
   const resolveFlagged = async (orchestratorId: number, mappingId: number, action: string) => {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/api/orchestrators/${orchestratorId}/flagged/${mappingId}/resolve?action=${action}`,
         {
           method: "POST",
-          credentials: "include",
         }
       );
 
@@ -485,11 +473,10 @@ function DPSKOrchestrator() {
   const copyToSource = async (orchestratorId: number, mappingId: number, targetPoolId: string) => {
     setCopyToSourceLoading(true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/api/orchestrators/${orchestratorId}/orphans/${mappingId}/copy-to-source`,
         {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ target_pool_id: targetPoolId }),
         }
@@ -579,9 +566,8 @@ function DPSKOrchestrator() {
         ? `${API_BASE_URL}/api/orchestrators/${orchestratorId}/identity-audit/${identityId}?pool_id=${poolId}`
         : `${API_BASE_URL}/api/orchestrators/${orchestratorId}/identity-audit/${identityId}`;
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method: "DELETE",
-        credentials: "include",
       });
 
       if (!response.ok) {
@@ -601,11 +587,10 @@ function DPSKOrchestrator() {
   // Bulk delete orphan identities
   const bulkDeleteOrphanIdentities = async (orchestratorId: number, identityIds: string[], poolId?: string) => {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/api/orchestrators/${orchestratorId}/identity-audit/bulk-delete`,
         {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ identity_ids: identityIds, pool_id: poolId }),
         }
@@ -655,9 +640,8 @@ function DPSKOrchestrator() {
 
     setEditLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orchestrators/${selectedOrchestrator.id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/orchestrators/${selectedOrchestrator.id}`, {
         method: "PUT",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: editForm.name,
@@ -686,11 +670,10 @@ function DPSKOrchestrator() {
 
     setWebhookLoading(true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/api/orchestrators/${selectedOrchestrator.id}/webhook/generate-secret`,
         {
           method: "POST",
-          credentials: "include",
         }
       );
 
@@ -715,11 +698,10 @@ function DPSKOrchestrator() {
 
     setWebhookLoading(true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/api/orchestrators/${selectedOrchestrator.id}/webhook/secret`,
         {
           method: "DELETE",
-          credentials: "include",
         }
       );
 
@@ -763,11 +745,10 @@ function DPSKOrchestrator() {
     };
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE_URL}/api/orchestrators/${selectedOrchestrator.id}/source-pools`,
         {
           method: "PUT",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         }

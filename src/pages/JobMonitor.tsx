@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { apiFetch } from '@/utils/api';
 //import { API_URL } from '@/config';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -123,9 +124,7 @@ const JobMonitor = () => {
       try {
         setLoading(true);
 
-        const response = await fetch(`${API_URL}/jobs/${jobId}/status`, {
-          credentials: 'include',
-        });
+        const response = await apiFetch(`${API_URL}/jobs/${jobId}/status`);
 
         if (!response.ok) {
           if (response.status === 404) {
@@ -274,9 +273,7 @@ const JobMonitor = () => {
     if (!jobId) return;
     lastRefreshRef.current = Date.now();
     try {
-      const response = await fetch(`${API_URL}/jobs/${jobId}/status`, {
-        credentials: 'include',
-      });
+      const response = await apiFetch(`${API_URL}/jobs/${jobId}/status`);
       if (response.ok) {
         const data = await response.json();
         setJobStatus(data);

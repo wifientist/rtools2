@@ -616,9 +616,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     addLiveEvent('🛑 Requesting job cancellation...');
 
     try {
-      const response = await fetch(`${API_URL}/jobs/${jobId}/cancel`, {
+      const response = await apiFetch(`${API_URL}/jobs/${jobId}/cancel`, {
         method: 'POST',
-        credentials: 'include',
       });
 
       if (!response.ok) {

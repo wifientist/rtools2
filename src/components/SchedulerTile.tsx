@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Clock, Play, Pause, RefreshCw, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { apiFetch } from '@/utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -83,9 +84,7 @@ export default function SchedulerTile() {
   const fetchOverview = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/scheduler/overview`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/scheduler/overview`);
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);
       }
@@ -109,9 +108,8 @@ export default function SchedulerTile() {
   const handleAction = async (jobId: string, action: "trigger" | "pause" | "resume") => {
     setActionLoading(`${jobId}-${action}`);
     try {
-      const response = await fetch(`${API_BASE_URL}/scheduler/jobs/${jobId}/${action}`, {
+      const response = await apiFetch(`${API_BASE_URL}/scheduler/jobs/${jobId}/${action}`, {
         method: "POST",
-        credentials: "include",
       });
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);

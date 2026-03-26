@@ -4,6 +4,7 @@ import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import WorkflowGraph from "@/components/WorkflowGraph";
 import { ChevronDown, ChevronRight, AlertTriangle, Loader } from "lucide-react";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -132,9 +133,8 @@ export default function DangerZone() {
     setConfirmError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/cleanup/v2/plan`, {
+      const response = await apiFetch(`${API_BASE_URL}/cleanup/v2/plan`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -175,9 +175,7 @@ export default function DangerZone() {
       }
 
       try {
-        const response = await fetch(`${API_BASE_URL}/cleanup/v2/${id}/plan`, {
-          credentials: "include",
-        });
+        const response = await apiFetch(`${API_BASE_URL}/cleanup/v2/${id}/plan`);
 
         if (!response.ok) throw new Error(`Poll failed: ${response.status}`);
 
@@ -208,9 +206,8 @@ export default function DangerZone() {
     setConfirmError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/cleanup/v2/${jobId}/confirm`, {
+      const response = await apiFetch(`${API_BASE_URL}/cleanup/v2/${jobId}/confirm`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           selected_categories: Array.from(selectedCategories),

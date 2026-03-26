@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { apiFetch } from '@/utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -13,7 +14,7 @@ export function useDualEc() {
   useEffect(() => {
     async function fetchCombined() {
       try {
-        const res = await fetch(`${API_BASE_URL}/fer1agg/ec/dual`, { credentials: "include" });
+        const res = await apiFetch(`${API_BASE_URL}/fer1agg/ec/dual`);
         const json = await res.json();
 
         const active = json.data?.active || {};

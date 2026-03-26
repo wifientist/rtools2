@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiFetch } from '@/utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -28,7 +29,7 @@ export default function Option43Calculator() {
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/opt43/calculate`, {
+      const res = await apiFetch(`${API_BASE_URL}/opt43/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vendor, ip_list: ipList }),

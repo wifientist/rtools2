@@ -3,6 +3,7 @@ import { useAuth } from "@/context/AuthContext";
 import DoubleEc from "@/components/DoubleEc";
 import DoubleVenue from "@/components/DoubleVenue";
 import ObjectDiff from "@/components/ObjectDiff";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -43,15 +44,15 @@ function DiffVenue() {
         try {
           // If same tenant selected for both, use same data
           if (selectedSource === selectedDestination) {
-            const res = await fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/tenant/fulldetails?tenant_id=${selectedSource}`);
+            const res = await apiFetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/tenant/fulldetails?tenant_id=${selectedSource}`);
             const data = await res.json();
             const venues = data?.data?.venues || [];
             setSourceVenues(venues);
             setDestinationVenues(venues);
           } else {
             const [srcRes, destRes] = await Promise.all([
-              fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/tenant/fulldetails?tenant_id=${selectedSource}`),
-              fetch(`${API_BASE_URL}/fer1agg/${secondaryControllerId}/tenant/fulldetails?tenant_id=${selectedDestination}`),
+              apiFetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/tenant/fulldetails?tenant_id=${selectedSource}`),
+              apiFetch(`${API_BASE_URL}/fer1agg/${secondaryControllerId}/tenant/fulldetails?tenant_id=${selectedDestination}`),
             ]);
             const [srcData, destData] = await Promise.all([
               srcRes.json(),
@@ -79,8 +80,8 @@ function DiffVenue() {
         setLoading(true);
         try {
           const [srcRes, destRes] = await Promise.all([
-            fetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/venue/fulldetails?tenant_id=${selectedSource}&venue_id=${selectedSourceVenue}`),
-            fetch(`${API_BASE_URL}/fer1agg/${secondaryControllerId}/venue/fulldetails?tenant_id=${selectedDestination}&venue_id=${selectedDestinationVenue}`),
+            apiFetch(`${API_BASE_URL}/fer1agg/${activeControllerId}/venue/fulldetails?tenant_id=${selectedSource}&venue_id=${selectedSourceVenue}`),
+            apiFetch(`${API_BASE_URL}/fer1agg/${secondaryControllerId}/venue/fulldetails?tenant_id=${selectedDestination}&venue_id=${selectedDestinationVenue}`),
           ]);
           const [srcData, destData] = await Promise.all([
             srcRes.json(),

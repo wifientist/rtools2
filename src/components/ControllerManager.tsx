@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect } from "react";
+import { apiFetch } from '@/utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -33,10 +34,9 @@ export default function ControllerManager() {
 
   async function handleActiveControllerSelect(controllerId: number) {
     try {
-      await fetch(`${API_BASE_URL}/controllers/set-active`, {
+      await apiFetch(`${API_BASE_URL}/controllers/set-active`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ controller_id: controllerId }),
       });
       await checkAuth();
@@ -47,10 +47,9 @@ export default function ControllerManager() {
 
   async function handleSecondaryControllerSelect(controllerId: number) {
     try {
-      await fetch(`${API_BASE_URL}/controllers/set-secondary`, {
+      await apiFetch(`${API_BASE_URL}/controllers/set-secondary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ controller_id: controllerId }),
       });
       await checkAuth();
@@ -63,9 +62,8 @@ export default function ControllerManager() {
     if (!confirm("Are you sure you want to delete this controller?")) return;
 
     try {
-      await fetch(`${API_BASE_URL}/controllers/${controllerId}`, {
+      await apiFetch(`${API_BASE_URL}/controllers/${controllerId}`, {
         method: "DELETE",
-        credentials: "include",
       });
       await checkAuth();
     } catch (error) {
@@ -103,10 +101,9 @@ export default function ControllerManager() {
         sz_version: formData.sz_version,
       };
 
-      await fetch(endpoint, {
+      await apiFetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
       setShowForm(false);
@@ -193,10 +190,9 @@ export default function ControllerManager() {
         if (formData.sz_password) payload.sz_password = formData.sz_password;
       }
 
-      await fetch(`${API_BASE_URL}/controllers/${editingControllerId}`, {
+      await apiFetch(`${API_BASE_URL}/controllers/${editingControllerId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
       setEditingControllerId(null);

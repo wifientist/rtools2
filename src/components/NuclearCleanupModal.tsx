@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, AlertTriangle, Loader } from 'lucide-react';
+import { apiFetch } from '@/utils/api';
 
 interface ResourceItem {
   id: string;
@@ -55,12 +56,11 @@ const NuclearCleanupModal: React.FC<NuclearCleanupModalProps> = ({
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/cloudpath-dpsk/preview-cleanup`, {
+      const response = await apiFetch(`${API_BASE_URL}/cloudpath-dpsk/preview-cleanup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
         body: JSON.stringify({
           controller_id: controllerId,
           venue_id: venueId,

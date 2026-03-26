@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/utils/api";
 import { ArrowRight, Server, Target, AlertCircle } from "lucide-react";
 import SmartZoneDomainSelector from "@/components/SmartZoneDomainSelector";
 import SmartZoneZoneSelector from "@/components/SmartZoneZoneSelector";
@@ -210,12 +211,11 @@ function MigrateSzToR1() {
         }))
       };
 
-      const response = await fetch(`${API_BASE_URL}/migrate/sz-to-r1`, {
+      const response = await apiFetch(`${API_BASE_URL}/migrate/sz-to-r1`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: "include",
         body: JSON.stringify(payload),
       });
 
@@ -308,12 +308,11 @@ function MigrateSzToR1() {
           ap_count: totalDevices, // Total APs + Switches
         };
 
-        const response = await fetch(`${API_BASE_URL}/migrate/check-license`, {
+        const response = await apiFetch(`${API_BASE_URL}/migrate/check-license`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          credentials: "include",
           body: JSON.stringify(payload),
         });
 

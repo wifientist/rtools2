@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/utils/api";
 import {
   BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown,
   AlertCircle, Wifi, WifiOff, MapPin, Target, Settings, X, EyeOff, Users, Network, Printer,
@@ -334,16 +335,14 @@ const MigrationDashboard = () => {
     setError(null);
     setAnimatedPct(0);
 
-    const progressFetch = fetch(`${API_BASE_URL}/migration-dashboard/progress/${ctrlId}`, {
-      credentials: "include",
+    const progressFetch = apiFetch(`${API_BASE_URL}/migration-dashboard/progress/${ctrlId}`, {
       signal: abortController.signal,
     }).then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     });
 
-    const snapshotFetch = fetch(`${API_BASE_URL}/migration-dashboard/snapshots/${ctrlId}?days=365`, {
-      credentials: "include",
+    const snapshotFetch = apiFetch(`${API_BASE_URL}/migration-dashboard/snapshots/${ctrlId}?days=365`, {
       signal: abortController.signal,
     })
       .then((res) => (res.ok ? res.json() : { data: [] }))
@@ -395,8 +394,7 @@ const MigrationDashboard = () => {
     const abortController = new AbortController();
     setMoversLoading(true);
     const qs = moversFilter === "wtd" ? "since=sunday" : `days=${moversFilter}`;
-    fetch(`${API_BASE_URL}/migration-dashboard/movers/${controllerID}?${qs}`, {
-      credentials: "include",
+    apiFetch(`${API_BASE_URL}/migration-dashboard/movers/${controllerID}?${qs}`, {
       signal: abortController.signal,
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -490,11 +488,10 @@ const MigrationDashboard = () => {
     const val = parseInt(targetInput, 10);
     if (!isNaN(val) && val > 0 && controllerID) {
       try {
-        const res = await fetch(
+        const res = await apiFetch(
           `${API_BASE_URL}/migration-dashboard/settings/${controllerID}`,
           {
             method: "PUT",
-            credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ target_aps: val }),
           }
@@ -518,9 +515,7 @@ const MigrationDashboard = () => {
     setShowSettings(true);
     // Fetch report schedule
     if (controllerID) {
-      fetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
-        credentials: "include",
-      })
+      apiFetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`)
         .then((r) => r.json())
         .then((data) => {
           setReportEnabled(data.enabled ?? false);
@@ -538,11 +533,10 @@ const MigrationDashboard = () => {
     setSavingSettings(true);
     try {
       const val = parseInt(settingsTarget, 10);
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE_URL}/migration-dashboard/settings/${controllerID}`,
         {
           method: "PUT",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             target_aps: !isNaN(val) && val > 0 ? val : undefined,
@@ -577,9 +571,8 @@ const MigrationDashboard = () => {
     if (!controllerID) return;
     setSavingReport(true);
     try {
-      await fetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
+      await apiFetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
         method: "PUT",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           enabled: reportEnabled,
@@ -599,9 +592,9 @@ const MigrationDashboard = () => {
     setSendingTestReport(true);
     setTestReportStatus(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE_URL}/migration-dashboard/report/${controllerID}/send`,
-        { method: "POST", credentials: "include" }
+        { method: "POST" }
       );
       if (res.ok) {
         const result = await res.json();
@@ -655,11 +648,10 @@ const MigrationDashboard = () => {
     setSavingBackfill(true);
     setBackfillStatus(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE_URL}/migration-dashboard/snapshots/${controllerID}/backfill`,
         {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ entries }),
         }
@@ -684,9 +676,9 @@ const MigrationDashboard = () => {
     if (!controllerID) return;
     setDeletingSnapshot(snapshotId);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_BASE_URL}/migration-dashboard/snapshots/${controllerID}/${snapshotId}`,
-        { method: "DELETE", credentials: "include" }
+        { method: "DELETE" }
       );
       if (res.ok) {
         setSnapshots((prev) => prev.filter((s) => s.id !== snapshotId));
@@ -881,9 +873,8 @@ const MigrationDashboard = () => {
                     const enabled = e.target.checked;
                     setReportEnabled(enabled);
                     if (!enabled && controllerID) {
-                      fetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
+                      apiFetch(`${API_BASE_URL}/migration-dashboard/report-schedule/${controllerID}`, {
                         method: "PUT",
-                        credentials: "include",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ enabled: false }),
                       }).catch(() => {});

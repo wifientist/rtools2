@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { apiFetch } from '@/utils/api';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -48,9 +49,7 @@ const JobList = () => {
       }
 
       const url = `${API_URL}/jobs${params.toString() ? '?' + params.toString() : ''}`;
-      const response = await fetch(url, {
-        credentials: 'include',
-      });
+      const response = await apiFetch(url);
 
       if (!response.ok) {
         throw new Error('Failed to fetch jobs');
@@ -152,9 +151,8 @@ const JobList = () => {
 
     try {
       setDeleting(true);
-      const response = await fetch(`${API_URL}/jobs`, {
+      const response = await apiFetch(`${API_URL}/jobs`, {
         method: 'DELETE',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },

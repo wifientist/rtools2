@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Bell, UserCircle, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { apiFetch } from '@/utils/api';
 
 const Toolbar = () => {
   const {
@@ -42,10 +43,9 @@ const Toolbar = () => {
   const handleActiveControllerSelect = async (controllerId: number, controllerName: string) => {
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
-      const response = await fetch(`${API_BASE_URL}/controllers/set-active`, {
+      const response = await apiFetch(`${API_BASE_URL}/controllers/set-active`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ controller_id: controllerId })
       });
 
@@ -71,9 +71,8 @@ const Toolbar = () => {
 
       if (controllerId === null || controllerId === 0) {
         // Clear secondary controller
-        const response = await fetch(`${API_BASE_URL}/controllers/clear-secondary`, {
+        const response = await apiFetch(`${API_BASE_URL}/controllers/clear-secondary`, {
           method: 'POST',
-          credentials: 'include'
         });
 
         if (response.ok) {
@@ -86,10 +85,9 @@ const Toolbar = () => {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/controllers/set-secondary`, {
+      const response = await apiFetch(`${API_BASE_URL}/controllers/set-secondary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ controller_id: controllerId })
       });
 

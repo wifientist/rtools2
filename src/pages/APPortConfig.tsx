@@ -4,6 +4,7 @@ import SingleVenueSelector from "@/components/SingleVenueSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -211,9 +212,7 @@ function APPortConfig() {
     const fetchMetadata = async () => {
       if (!activeControllerId) return;
       try {
-        const response = await fetch(`${API_BASE_URL}/ap-port-config/${activeControllerId}/metadata`, {
-          credentials: "include",
-        });
+        const response = await apiFetch(`${API_BASE_URL}/ap-port-config/${activeControllerId}/metadata`);
         if (response.ok) {
           const data = await response.json();
           setPortConfigMetadata(data);
@@ -299,9 +298,8 @@ function APPortConfig() {
         default_vlan: String(m.vlan),
       }));
 
-      const response = await fetch(`${API_BASE_URL}/ap-port-config/v2/plan`, {
+      const response = await apiFetch(`${API_BASE_URL}/ap-port-config/v2/plan`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,

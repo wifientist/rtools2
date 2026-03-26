@@ -12,6 +12,7 @@ import {
   createColumnHelper,
   type FilterFn,
 } from "@tanstack/react-table";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -125,7 +126,7 @@ export default function BulkAPTagging() {
           ? `${API_BASE_URL}/bulk-ap-tagging/${activeControllerId}/venue/${venueId}/aps?tenant_id=${effectiveTenantId}`
           : `${API_BASE_URL}/bulk-ap-tagging/${activeControllerId}/venue/${venueId}/aps`;
 
-        const response = await fetch(url, { credentials: "include" });
+        const response = await apiFetch(url);
         if (response.ok) {
           const data = await response.json();
           setAps(data.aps || []);
@@ -300,9 +301,8 @@ export default function BulkAPTagging() {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/bulk-ap-tagging/preview`, {
+      const response = await apiFetch(`${API_BASE_URL}/bulk-ap-tagging/preview`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
@@ -335,9 +335,8 @@ export default function BulkAPTagging() {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/bulk-ap-tagging/apply`, {
+      const response = await apiFetch(`${API_BASE_URL}/bulk-ap-tagging/apply`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,

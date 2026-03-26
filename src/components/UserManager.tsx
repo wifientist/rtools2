@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { UserPlus, Trash2, Edit2, Shield } from "lucide-react";
+import { apiFetch } from '@/utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -47,9 +48,7 @@ export default function UserManager() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/users/`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/users/`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch users");
@@ -68,9 +67,7 @@ export default function UserManager() {
   // Fetch companies
   const fetchCompanies = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/companies`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/admin/companies`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch companies");
@@ -86,9 +83,7 @@ export default function UserManager() {
   // Fetch current user's role
   const fetchCurrentUserRole = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/status`, {
-        credentials: "include",
-      });
+      const response = await apiFetch(`${API_BASE_URL}/auth/status`);
       if (response.ok) {
         const data = await response.json();
         setCurrentUserRole(data.role || "admin");
@@ -115,10 +110,9 @@ export default function UserManager() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(`${API_BASE_URL}/users/`, {
+      const response = await apiFetch(`${API_BASE_URL}/users/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(formData),
       });
 
@@ -151,10 +145,9 @@ export default function UserManager() {
     if (!editingUser) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/${editingUser.id}`, {
+      const response = await apiFetch(`${API_BASE_URL}/users/${editingUser.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(editFormData),
       });
 
@@ -177,9 +170,8 @@ export default function UserManager() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+      const response = await apiFetch(`${API_BASE_URL}/users/${userId}`, {
         method: "DELETE",
-        credentials: "include",
       });
 
       if (!response.ok) {

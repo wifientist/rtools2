@@ -10,6 +10,7 @@ import {
   flexRender,
   createColumnHelper,
 } from "@tanstack/react-table";
+import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -459,7 +460,7 @@ export default function BulkWlanEdit() {
       ? `${API_BASE_URL}/bulk-wlan/${activeControllerId}/networks?tenant_id=${effectiveTenantId}`
       : `${API_BASE_URL}/bulk-wlan/${activeControllerId}/networks`;
 
-    fetch(url, { credentials: "include" })
+    apiFetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -486,9 +487,8 @@ export default function BulkWlanEdit() {
       for (let i = 0; i < selectedIds.length; i += FETCH_BATCH_SIZE) {
         const batch = selectedIds.slice(i, i + FETCH_BATCH_SIZE);
 
-        const res = await fetch(`${API_BASE_URL}/bulk-wlan/fetch-settings`, {
+        const res = await apiFetch(`${API_BASE_URL}/bulk-wlan/fetch-settings`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             controller_id: activeControllerId,
@@ -601,9 +601,8 @@ export default function BulkWlanEdit() {
     setShowDangerConfirm(false);
     if (!selectedIds.length || !hasChanges || !activeControllerId) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/bulk-wlan/apply`, {
+      const res = await apiFetch(`${API_BASE_URL}/bulk-wlan/apply`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
