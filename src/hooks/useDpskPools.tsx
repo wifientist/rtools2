@@ -14,9 +14,12 @@ interface DPSKPool {
 
 interface PaginatedResponse {
   data?: DPSKPool[];
+  content?: DPSKPool[];
   total?: number;
+  totalElements?: number;
   page?: number;
   pageSize?: number;
+  last?: boolean;
 }
 
 export function useDpskPools(controllerId: number | null, tenantId: string | null) {
@@ -74,13 +77,22 @@ export function useDpskPools(controllerId: number | null, tenantId: string | nul
             pagePools = json;
             hasMore = false; // Can't paginate without info
           } else if (json.data && Array.isArray(json.data)) {
-            // Paginated response with data array
+            // Paginated response with "data" array
             pagePools = json.data;
-            total = json.total || 0;
-
-            // Check if there are more pages
+            total = json.total || json.totalElements || 0;
             const fetchedSoFar = allPools.length + pagePools.length;
             hasMore = fetchedSoFar < total;
+          } else if (json.content && Array.isArray(json.content)) {
+            // Spring Data paginated response with "content" array (R1 format)
+            pagePools = json.content;
+            total = json.totalElements || json.total || 0;
+            // Use "last" flag if available, otherwise check count
+            if (json.last !== undefined) {
+              hasMore = !json.last;
+            } else {
+              const fetchedSoFar = allPools.length + pagePools.length;
+              hasMore = fetchedSoFar < total;
+            }
           } else {
             // Unknown format
             hasMore = false;

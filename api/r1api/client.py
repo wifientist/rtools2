@@ -156,8 +156,8 @@ class R1Client:
     def get(self, path, params=None, override_tenant_id=None):
         return self._request("get", path, params=params, override_tenant_id=override_tenant_id)
 
-    def post(self, path, payload=None, override_tenant_id=None):
-        return self._request("post", path, payload=payload, override_tenant_id=override_tenant_id)
+    def post(self, path, payload=None, params=None, override_tenant_id=None):
+        return self._request("post", path, payload=payload, params=params, override_tenant_id=override_tenant_id)
 
     def put(self, path, payload=None, override_tenant_id=None):
         return self._request("put", path, payload=payload, override_tenant_id=override_tenant_id)

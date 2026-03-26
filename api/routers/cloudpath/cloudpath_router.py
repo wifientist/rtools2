@@ -387,11 +387,11 @@ async def _fetch_identity_passphrase_data(
     # Get identity groups
     if venue_id:
         ig_response = await r1_client.identity.query_identity_groups(
-            tenant_id=tenant_id, filters={"venueId": [venue_id]}, page=1, size=1000
+            tenant_id=tenant_id, filters={"venueId": [venue_id]}, page=0, size=1000
         )
     else:
         ig_response = await r1_client.identity.query_identity_groups(
-            tenant_id=tenant_id, page=1, size=1000
+            tenant_id=tenant_id, page=0, size=1000
         )
     identity_groups = ig_response.get('content', []) if isinstance(ig_response, dict) else ig_response
 

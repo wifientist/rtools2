@@ -57,8 +57,8 @@ class IdentityService:
         tenant_id: str = None,
         filters: dict = None,
         search_string: str = None,
-        page: int = 1,
-        size: int = 100
+        page: int = 0,
+        size: int = 500
     ):
         """
         Query identity groups with advanced filtering
@@ -67,32 +67,37 @@ class IdentityService:
             tenant_id: Tenant/EC ID (required for MSP)
             filters: Dictionary of filters
             search_string: Optional search string
-            page: Page number (1-based, default: 1)
+            page: Page number (0-based, Spring Data style)
             size: Page size
 
         Returns:
-            Query response with identity groups
+            Query response with identity groups (Spring Data paginated)
         """
-        body = {
-            "page": page,
-            "pageSize": size
-        }
-
+        # Body contains search/filter criteria
+        body = {}
         if filters:
             body["filters"] = filters
         if search_string is not None:
             body["searchString"] = search_string
 
+        # Pagination goes in query params (Spring Data Pageable)
+        params = {
+            "page": page,
+            "size": size
+        }
+
         if self.client.ec_type == "MSP" and tenant_id:
             response = self.client.post(
                 "/identityGroups/query",
                 payload=body,
+                params=params,
                 override_tenant_id=tenant_id
             )
         else:
             response = self.client.post(
                 "/identityGroups/query",
-                payload=body
+                payload=body,
+                params=params
             )
         return self.client.safe_json(response)
 
