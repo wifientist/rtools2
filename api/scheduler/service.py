@@ -110,7 +110,16 @@ class SchedulerService:
         Execute a job and record the result.
 
         This is called by APScheduler when a job is triggered.
+        Uses a Redis distributed lock so that only one worker runs each
+        job when multiple uvicorn workers share the same scheduler.
         """
+        # Acquire a distributed lock to prevent duplicate execution across workers.
+        # If another worker already grabbed this job, silently skip.
+        lock = await self._acquire_job_lock(job_id)
+        if lock is None:
+            logger.debug(f"Job {job_id} already running on another worker, skipping")
+            return
+
         db = self._db_factory()
         run = ScheduledJobRun(job_id=job_id, started_at=datetime.utcnow(), status="running")
         db.add(run)
@@ -155,6 +164,44 @@ class SchedulerService:
 
         finally:
             db.close()
+            await self._release_job_lock(lock)
+
+    # ------------------------------------------------------------------
+    # Distributed lock helpers (Redis-based)
+    # ------------------------------------------------------------------
+
+    async def _acquire_job_lock(self, job_id: str):
+        """
+        Try to acquire a Redis lock for a job execution.
+
+        Returns the lock object on success, or None if another worker holds it.
+        The lock auto-expires after 30 minutes as a safety net.
+        """
+        try:
+            from redis_client import get_redis_client
+            redis = await get_redis_client()
+            lock = redis.lock(
+                f"scheduler:lock:{job_id}",
+                timeout=1800,       # Auto-expire after 30 min (safety net)
+                blocking=False,
+            )
+            acquired = await lock.acquire()
+            if acquired:
+                return lock
+            return None
+        except Exception as e:
+            # If Redis is down, allow the job to run (fail-open)
+            logger.warning(f"Could not acquire Redis lock for {job_id}: {e} — running anyway")
+            return "no-op"
+
+    async def _release_job_lock(self, lock):
+        """Release a previously acquired job lock."""
+        if lock is None or lock == "no-op":
+            return
+        try:
+            await lock.release()
+        except Exception as e:
+            logger.warning(f"Error releasing job lock: {e}")
 
     def _create_trigger(self, trigger_type: str, config: dict):
         """Create an APScheduler trigger from our config format."""

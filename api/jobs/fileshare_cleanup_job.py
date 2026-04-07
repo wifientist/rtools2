@@ -22,40 +22,62 @@ async def run_cleanup() -> Dict[str, Any]:
     from models.fileshare import SharedFile
     from services.s3_service import get_s3_service
 
-    db = SessionLocal()
     s3 = get_s3_service()
 
+    # --- Phase 1: query expired files, then release the connection ---
+    db = SessionLocal()
     try:
         now = datetime.utcnow()
         expired_files = db.query(SharedFile).filter(SharedFile.expires_at < now).all()
-
         if not expired_files:
             logger.info("Fileshare cleanup: no expired files found")
             return {"status": "success", "deleted": 0}
 
-        deleted = 0
-        errors = 0
+        # Collect the info we need so the session can be closed during S3 I/O
+        file_info = [
+            {"id": f.id, "s3_key": f.s3_key, "size_bytes": f.size_bytes,
+             "folder_id": f.folder_id, "upload_status": f.upload_status,
+             "filename": f.filename}
+            for f in expired_files
+        ]
+    finally:
+        db.close()
 
-        for f in expired_files:
+    # --- Phase 2: delete from S3 (no DB connection held) ---
+    s3_results = {}  # file_id -> success
+    for info in file_info:
+        try:
+            if s3.is_configured:
+                s3.delete_object(info["s3_key"])
+            s3_results[info["id"]] = True
+        except Exception as e:
+            logger.error(f"Failed to delete S3 object for file {info['id']} ({info['filename']}): {e}")
+            s3_results[info["id"]] = False
+
+    # --- Phase 3: re-open session, delete DB records for successful S3 deletes ---
+    db = SessionLocal()
+    deleted = 0
+    errors = 0
+    try:
+        for info in file_info:
+            if not s3_results.get(info["id"], False):
+                errors += 1
+                continue
             try:
-                # Delete from S3
-                if s3.is_configured:
-                    s3.delete_object(f.s3_key)
-
-                # Update folder used_bytes
+                f = db.query(SharedFile).get(info["id"])
+                if not f:
+                    continue
                 folder = f.folder
                 if folder and f.upload_status == "completed":
                     folder.used_bytes = max(0, folder.used_bytes - f.size_bytes)
-
                 db.delete(f)
                 deleted += 1
             except Exception as e:
-                logger.error(f"Failed to delete expired file {f.id} ({f.filename}): {e}")
+                logger.error(f"Failed to delete DB record for file {info['id']}: {e}")
                 errors += 1
 
         db.commit()
         logger.info(f"Fileshare cleanup: deleted {deleted} expired files, {errors} errors")
-
         return {"status": "success", "deleted": deleted, "errors": errors}
     except Exception as e:
         db.rollback()
