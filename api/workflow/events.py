@@ -66,6 +66,12 @@ class WorkflowEventPublisher:
         failed_phases = sum(1 for p in job.phase_definitions if job.global_phase_status.get(p.id) == PhaseStatus.FAILED)
         progress = job.get_progress()
 
+        # Check global_phase_results for failure counts (e.g. bulk WLAN edits)
+        actual_failed = progress.get('units_failed', 0)
+        for phase_result in job.global_phase_results.values():
+            if isinstance(phase_result, dict) and "failed" in phase_result:
+                actual_failed = max(actual_failed, len(phase_result["failed"]))
+
         await self._publish_event(job.id, "job_completed", {
             "job_id": job.id,
             "status": job.status.value if hasattr(job.status, 'value') else job.status,
@@ -75,8 +81,9 @@ class WorkflowEventPublisher:
             "failed_phases": failed_phases,
             "total_tasks": progress.get('total_work', 0),
             "completed": progress.get('completed_work', 0),
-            "failed": progress.get('units_failed', 0),
+            "failed": actual_failed,
             "progress": progress,
+            "errors": job.errors if job.errors else [],
             "duration_seconds": (
                 (job.completed_at - job.created_at).total_seconds()
                 if job.completed_at and job.created_at else None

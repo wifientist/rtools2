@@ -539,8 +539,22 @@ async def run_bulk_wlan_update(
         # Finalize
         job.global_phase_status["update_wlans"] = PhaseStatus.COMPLETED
         job.global_phase_results["update_wlans"] = results
-        job.status = JobStatus.COMPLETED
         job.completed_at = datetime.utcnow()
+
+        if results["failed"]:
+            job.status = JobStatus.PARTIAL
+            # Bubble up per-network error messages
+            for f in results["failed"]:
+                nid = f.get("network_id", "unknown")
+                err = f.get("error", "Unknown error")
+                job.errors.append(f"Network {nid}: {err}")
+
+            if results["updated"]:
+                job.global_phase_status["update_wlans"] = PhaseStatus.COMPLETED
+            else:
+                job.global_phase_status["update_wlans"] = PhaseStatus.FAILED
+        else:
+            job.status = JobStatus.COMPLETED
 
         await state_manager.save_job(job)
         await event_publisher.job_completed(job)

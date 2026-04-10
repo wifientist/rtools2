@@ -1029,35 +1029,48 @@ export default function BulkWlanEdit() {
       {/* ============= Last Job Result Banner ============= */}
       {lastResult && !showJobModal && (
         <div
-          className={`rounded-lg p-4 mb-4 text-sm flex items-center justify-between ${
+          className={`rounded-lg p-4 mb-4 text-sm ${
             lastResult.status === "COMPLETED"
               ? "bg-green-50 border border-green-200 text-green-800"
+              : lastResult.status === "PARTIAL"
+              ? "bg-yellow-50 border border-yellow-200 text-yellow-800"
               : lastResult.status === "FAILED"
               ? "bg-red-50 border border-red-200 text-red-800"
               : "bg-yellow-50 border border-yellow-200 text-yellow-800"
           }`}
         >
-          <div>
-            <span className="font-medium">
-              {lastResult.status === "COMPLETED"
-                ? "Bulk WLAN update completed successfully."
-                : lastResult.status === "FAILED"
-                ? "Bulk WLAN update failed."
-                : "Bulk WLAN update cancelled."}
-            </span>
-            {lastResult.progress?.total_tasks > 0 && (
-              <span className="ml-2">
-                {lastResult.progress.completed} of {lastResult.progress.total_tasks} networks updated
-                {lastResult.progress.failed > 0 && `, ${lastResult.progress.failed} failed`}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="font-medium">
+                {lastResult.status === "COMPLETED"
+                  ? "Bulk WLAN update completed successfully."
+                  : lastResult.status === "PARTIAL"
+                  ? "Bulk WLAN update completed with errors."
+                  : lastResult.status === "FAILED"
+                  ? "Bulk WLAN update failed."
+                  : "Bulk WLAN update cancelled."}
               </span>
-            )}
+              {lastResult.progress?.total_tasks > 0 && (
+                <span className="ml-2">
+                  {lastResult.progress.completed} of {lastResult.progress.total_tasks} networks processed
+                  {lastResult.progress.failed > 0 && `, ${lastResult.progress.failed} failed`}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setLastResult(null)}
+              className="text-xs underline opacity-70 hover:opacity-100"
+            >
+              dismiss
+            </button>
           </div>
-          <button
-            onClick={() => setLastResult(null)}
-            className="text-xs underline opacity-70 hover:opacity-100"
-          >
-            dismiss
-          </button>
+          {lastResult.errors && lastResult.errors.length > 0 && (
+            <div className="mt-2 text-xs space-y-1 border-t border-current/20 pt-2">
+              {lastResult.errors.map((err, i) => (
+                <div key={i}>{err}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

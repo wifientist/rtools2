@@ -324,14 +324,15 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.addEventListener('job_completed', async (e) => {
       const data = JSON.parse(e.data);
-      addLiveEvent(`🎉 Job completed!`);
+      const failCount = data.failed || 0;
+      addLiveEvent(failCount > 0 ? `⚠️ Job completed with ${failCount} error(s)` : `🎉 Job completed!`);
       await doRefresh();  // Immediate final refresh
       // Notify parent of completion
       if (onJobComplete) {
         onJobComplete({
           job_id: jobId,
           status: data.status || 'COMPLETED',
-          progress: data.progress || {
+          progress: {
             total_phases: data.total_phases || 0,
             completed_phases: data.completed_phases || 0,
             failed_phases: data.failed_phases || 0,
