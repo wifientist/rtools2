@@ -513,9 +513,24 @@ async def run_bulk_wlan_update(
 
                 except Exception as e:
                     logger.error(f"Failed to update network {network_id}: {e}")
+                    # Extract the actual API error message from httpx response
+                    error_msg = str(e)
+                    if hasattr(e, "response") and e.response is not None:
+                        try:
+                            body = e.response.json()
+                            api_errors = body.get("errors", [])
+                            if api_errors:
+                                error_msg = "; ".join(
+                                    err.get("message", err.get("reason", str(err)))
+                                    for err in api_errors
+                                )
+                        except Exception:
+                            pass
                     results["failed"].append({
                         "network_id": network_id,
-                        "error": str(e),
+                        "name": locals().get("name", network_id),
+                        "ssid": locals().get("ssid", ""),
+                        "error": error_msg,
                     })
 
                 finally:
@@ -545,9 +560,9 @@ async def run_bulk_wlan_update(
             job.status = JobStatus.PARTIAL
             # Bubble up per-network error messages
             for f in results["failed"]:
-                nid = f.get("network_id", "unknown")
+                label = f.get("name") or f.get("network_id", "unknown")
                 err = f.get("error", "Unknown error")
-                job.errors.append(f"Network {nid}: {err}")
+                job.errors.append(f"{label}: {err}")
 
             if results["updated"]:
                 job.global_phase_status["update_wlans"] = PhaseStatus.COMPLETED
