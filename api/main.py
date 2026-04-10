@@ -35,6 +35,7 @@ from routers.sz_migration.router import router as sz_migration_router
 from routers.ap_pop_swap import router as pop_swap_router
 from routers.bulk_ap_tagging import router as bulk_ap_tagging_router
 from routers.data_studio_export import router as data_studio_export_router
+from routers.dfs_blacklist import router as dfs_blacklist_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
     from routers.ap_pop_swap.background_poller import ensure_registered as ensure_pop_swap_poller
     from jobs.data_studio_export_job import ensure_registered as ensure_data_studio_export
     from jobs.fileshare_cleanup_job import ensure_registered as ensure_fileshare_cleanup
+    from jobs.dfs_blacklist_job import ensure_registered as ensure_dfs_blacklist
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
     await ensure_signup_cleanup(scheduler)
@@ -75,6 +77,7 @@ async def lifespan(app: FastAPI):
     await ensure_pop_swap_poller(scheduler)
     await ensure_data_studio_export(scheduler)
     await ensure_fileshare_cleanup(scheduler)
+    await ensure_dfs_blacklist(scheduler)
 
     yield
 
@@ -209,6 +212,9 @@ app.include_router(bulk_ap_tagging_router, tags=["Bulk AP Tagging"])
 
 # Data Studio Export — automated R1 Data Studio CSV exports
 app.include_router(data_studio_export_router, tags=["Data Studio Export"])
+
+# DFS Blacklist — SmartZone DFS channel monitoring (alpha-gated)
+app.include_router(dfs_blacklist_router, tags=["DFS Blacklist"])
 
 # Debug: Log all routes to check for conflicts
 logger.info("=== ALL ROUTES ===")

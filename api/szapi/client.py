@@ -19,6 +19,7 @@ from szapi.services.apgroups import ApGroupService
 from szapi.services.system import SystemService
 from szapi.services.aaa import AAAService
 from szapi.services.policies import PoliciesService
+from szapi.services.events import EventService
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,7 @@ class SZClient:
         self.system = SystemService(self)
         self.aaa = AAAService(self)
         self.policies = PoliciesService(self)
+        self.events = EventService(self)
 
         logger.info(f"SZClient initialized for {host}:{port} with API version {api_version}, rate limit {rate_limit}/s")
 
