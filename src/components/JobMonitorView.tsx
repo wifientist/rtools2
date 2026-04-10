@@ -397,7 +397,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       eventSource.close();
     });
 
-    eventSource.onerror = (err) => {
+    eventSource.onerror = async (err) => {
       console.error('SSE error:', err);
       setSseStatus('disconnected');
 
@@ -407,6 +407,32 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
         console.log('Job in terminal state, closing SSE connection');
         addLiveEvent('Stream closed (job finished)');
         eventSource.close();
+        // SSE closed before job_completed event — fetch final status and notify parent
+        if (onJobComplete) {
+          try {
+            const resp = await apiFetch(`${API_URL}/jobs/${jobId}/status`);
+            if (resp.ok) {
+              const js = await resp.json();
+              onJobComplete({
+                job_id: jobId,
+                status: js.status,
+                progress: {
+                  total_phases: js.progress?.total_phases ?? 0,
+                  completed_phases: js.progress?.completed_phases ?? 0,
+                  failed_phases: js.progress?.failed_phases ?? 0,
+                  total_tasks: js.progress?.total_tasks ?? 0,
+                  completed: js.progress?.completed ?? 0,
+                  failed: js.progress?.failed ?? 0,
+                },
+                summary: js.summary,
+                created_resources: js.created_resources,
+                errors: js.errors,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to fetch final job status:', e);
+          }
+        }
       } else {
         // Close the browser's auto-reconnecting EventSource — it can't handle
         // 401s (no way to refresh tokens). We'll rely on fallback polling
@@ -596,11 +622,37 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       newEventSource.close();
     });
 
-    newEventSource.onerror = () => {
+    newEventSource.onerror = async () => {
       setSseStatus('disconnected');
       const currentStatus = jobStatusRef.current?.status;
       if (currentStatus === 'COMPLETED' || currentStatus === 'FAILED' || currentStatus === 'PARTIAL' || currentStatus === 'CANCELLED') {
         newEventSource.close();
+        // SSE closed before job_completed event — fetch final status and notify parent
+        if (onJobComplete) {
+          try {
+            const resp = await apiFetch(`${API_URL}/jobs/${jobId}/status`);
+            if (resp.ok) {
+              const js = await resp.json();
+              onJobComplete({
+                job_id: jobId,
+                status: js.status,
+                progress: {
+                  total_phases: js.progress?.total_phases ?? 0,
+                  completed_phases: js.progress?.completed_phases ?? 0,
+                  failed_phases: js.progress?.failed_phases ?? 0,
+                  total_tasks: js.progress?.total_tasks ?? 0,
+                  completed: js.progress?.completed ?? 0,
+                  failed: js.progress?.failed ?? 0,
+                },
+                summary: js.summary,
+                created_resources: js.created_resources,
+                errors: js.errors,
+              });
+            }
+          } catch (e) {
+            console.error('Failed to fetch final job status:', e);
+          }
+        }
       } else {
         addLiveEvent('⚠️ Stream disconnected, auto-reconnecting...');
         if (!fallbackPollRef.current) {

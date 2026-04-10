@@ -165,10 +165,16 @@ def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
                 stats, total_units, defn.per_unit
             )
 
+    # Check global_phase_results for actual failure counts (e.g. bulk WLAN edits)
+    actual_failed = v2_progress.get("units_failed", 0)
+    for phase_result in job.global_phase_results.values():
+        if isinstance(phase_result, dict) and "failed" in phase_result:
+            actual_failed = max(actual_failed, len(phase_result["failed"]))
+
     progress = {
         "total_tasks": v2_progress.get("total_work", 0),
         "completed": v2_progress.get("completed_work", 0),
-        "failed": v2_progress.get("units_failed", 0),
+        "failed": actual_failed,
         "pending": v2_progress.get("units_pending", 0),
         "percent": v2_progress.get("percent", 0),
         "total_phases": v2_progress.get("total_phases", 0),
