@@ -180,9 +180,7 @@ def get_sz_active_client(
     if controller_id is None:
         raise HTTPException(status_code=400, detail="No active controller selected.")
 
-    controller = db.query(Controller).filter(Controller.id == controller_id).first()
-    if not controller:
-        raise HTTPException(status_code=404, detail="Active controller not found.")
+    controller = validate_controller_access(controller_id, current_user, db)
 
     if controller.controller_type != "SmartZone":
         raise HTTPException(

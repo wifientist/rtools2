@@ -81,6 +81,7 @@ def get_r1_active_client(
     if controller_id is None:
         raise HTTPException(status_code=400, detail="No active controller selected.")
 
+    validate_controller_access(controller_id, current_user, db)
     return create_r1_client_from_controller(controller_id, db)
 
 
@@ -90,8 +91,14 @@ def get_r1_clients(
 ):
     """Get both active and secondary R1Clients for backward compatibility."""
     logger.debug(f"get_r1_clients for user: {current_user.email}, active={current_user.active_controller_id}, secondary={current_user.secondary_controller_id}")
-    active = create_r1_client_from_controller(current_user.active_controller_id, db) if current_user.active_controller_id else None
-    secondary = create_r1_client_from_controller(current_user.secondary_controller_id, db) if current_user.secondary_controller_id else None
+    active = None
+    if current_user.active_controller_id:
+        validate_controller_access(current_user.active_controller_id, current_user, db)
+        active = create_r1_client_from_controller(current_user.active_controller_id, db)
+    secondary = None
+    if current_user.secondary_controller_id:
+        validate_controller_access(current_user.secondary_controller_id, current_user, db)
+        secondary = create_r1_client_from_controller(current_user.secondary_controller_id, db)
     return {"active": active, "secondary": secondary}
 
 # def validate_tenant_access(tenant_id: str, user: User, db: Session) -> Tenant:
