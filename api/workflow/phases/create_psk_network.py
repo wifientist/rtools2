@@ -92,6 +92,18 @@ class CreatePSKNetworkPhase(PhaseExecutor):
         # Use ActivityTracker for bulk polling if available
         use_activity_tracker = self.context.activity_tracker is not None
 
+        # Ruckus-recommended radio defaults for per-unit SSIDs:
+        # OFDM only, BSS min rate 12 Mbps, mgmt frame min rate 12 Mbps.
+        radio_defaults = {
+            "advancedCustomization": {
+                "radioCustomization": {
+                    "phyTypeConstraint": "OFDM",
+                    "bssMinimumPhyRate": "12",
+                    "managementFrameMinimumPhyRate": "12",
+                },
+            },
+        }
+
         result = await self.r1_client.networks.create_wifi_network(
             tenant_id=self.tenant_id,
             venue_id=self.venue_id,
@@ -101,6 +113,7 @@ class CreatePSKNetworkPhase(PhaseExecutor):
             security_type=inputs.security_type,
             vlan_id=int(inputs.default_vlan),
             description=f"Per-unit SSID for unit {inputs.unit_number}",
+            advanced_customization=radio_defaults,
             wait_for_completion=not use_activity_tracker,
         )
 

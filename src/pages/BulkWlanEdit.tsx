@@ -152,6 +152,7 @@ const RECOMMENDED_CHANGES: Changes = {
   clientIsolationPacketsType: "UNICAST_MULTICAST",
   applicationVisibilityEnabled: true,
   bssMinimumPhyRate: "12",
+  managementFrameMinimumPhyRate: "12",
   phyTypeConstraint: "OFDM",
   enableJoinRSSIThreshold: true,
   joinRSSIThreshold: -75,
