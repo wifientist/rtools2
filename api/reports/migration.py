@@ -32,6 +32,72 @@ STATUS_COLORS = {
     "4_": "#d97706",  # amber
 }
 
+# Friendly labels + ordering for the license per-device-type table.
+# Must mirror the frontend LICENSE_DEVICE_LABELS/ORDER in MigrationDashboard.tsx.
+LICENSE_DEVICE_LABELS = {
+    "WIFI": "APs",
+    "SWITCH": "Switches",
+    "VIRTUAL_EDGE": "Virtual Edge",
+    "IOT_CTRL": "IoT Controller",
+    "RWG": "RWG",
+    "EDGE": "Edge",
+    "LTE": "LTE",
+    "ANALYTICS": "Analytics",
+}
+LICENSE_DEVICE_ORDER = ["WIFI", "SWITCH", "VIRTUAL_EDGE", "IOT_CTRL", "RWG", "EDGE", "LTE", "ANALYTICS"]
+
+
+def _shape_license_section(raw: dict | None) -> dict | None:
+    """
+    Convert the raw EntitlementsService.get_msp_compliance_summary() output into
+    the template context shape. Returns None when there is no renderable data.
+    """
+    if not raw or raw.get("error"):
+        return None
+    total_paid = int(raw.get("total_paid") or 0)
+    used = int(raw.get("used") or 0)
+    if total_paid == 0 and used == 0:
+        return None
+
+    util_pct = (used / total_paid * 100) if total_paid > 0 else 0
+    if util_pct >= 100:
+        util_color = "#dc2626"  # red
+    elif util_pct >= 95:
+        util_color = "#d97706"  # amber
+    else:
+        util_color = "#16a34a"  # green
+
+    device_rows = []
+    for dev in raw.get("device_breakdown") or []:
+        installed = int(dev.get("installed") or 0)
+        dev_used = int(dev.get("used") or 0)
+        if installed == 0 and dev_used == 0:
+            continue
+        dtype = dev.get("device_type") or ""
+        device_rows.append(
+            {
+                "label": LICENSE_DEVICE_LABELS.get(dtype, dtype),
+                "installed": installed,
+                "used": dev_used,
+                "order": LICENSE_DEVICE_ORDER.index(dtype)
+                if dtype in LICENSE_DEVICE_ORDER
+                else 99,
+            }
+        )
+    device_rows.sort(key=lambda r: r["order"])
+
+    available = int(raw.get("available") or 0)
+    return {
+        "total_paid": total_paid,
+        "used": used,
+        "available": available,
+        "expiring_soon": int(raw.get("expiring_soon") or 0),
+        "next_expiration_date": raw.get("next_expiration_date"),
+        "utilization_pct": util_pct,
+        "utilization_color": util_color,
+        "device_rows": device_rows,
+    }
+
 
 def _get_message(pct: float) -> str:
     if pct >= 100: return "All APs have entered the building!"
@@ -105,6 +171,8 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
     from models.controller import Controller
     from models.migration_dashboard_snapshot import MigrationDashboardSnapshot
     from models.venue_migration_history import VenueMigrationHistory
+    from clients.r1_client import create_r1_client_from_controller
+    import asyncio as _asyncio
 
     controller_id = int(context_id)
     progress_data, tenants, settings_data = await fetch_controller_progress(
@@ -113,6 +181,18 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
 
     controller = db.query(Controller).get(controller_id)
     controller_name = controller.name if controller else f"Controller {controller_id}"
+
+    # License compliance — best-effort, never fail the whole report on a miss.
+    license_section = None
+    try:
+        r1_client = create_r1_client_from_controller(controller_id, db)
+        raw_license = await _asyncio.to_thread(
+            r1_client.entitlements.get_msp_compliance_summary
+        )
+        license_section = _shape_license_section(raw_license)
+    except Exception:
+        logger.exception("Failed to fetch license compliance for report")
+        license_section = None
 
     target_aps = settings_data.get("target_aps", 180000)
     total_aps = progress_data["total_aps"]
@@ -270,4 +350,5 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
         "movers_cutoff_label": "Since Sunday",
         "active_24h": active_24h,
         "pending_24h": pending_24h,
+        "license_section": license_section,
     }

@@ -4,7 +4,7 @@ import { apiFetch } from "@/utils/api";
 import {
   BarChart3, RefreshCw, Pencil, Check, ChevronUp, ChevronDown,
   AlertCircle, Wifi, WifiOff, MapPin, Target, Settings, X, EyeOff, Users, Network, Printer,
-  Plus, Trash2, Calendar,
+  Plus, Trash2, Calendar, Shield,
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -52,6 +52,42 @@ interface DashboardSettings {
   target_aps: number;
   ignored_tenant_ids: string[];
 }
+
+interface LicenseDeviceBreakdown {
+  device_type: string;
+  installed: number;
+  used: number;
+}
+
+interface LicenseSummary {
+  license_type: string | null;
+  tenant_name?: string | null;
+  total_paid?: number;
+  used?: number;
+  available?: number;
+  expiring_soon?: number;
+  next_expiration_date?: string | null;
+  consolidated_sku_enabled?: boolean;
+  extended_trial_enabled?: boolean;
+  device_breakdown?: LicenseDeviceBreakdown[];
+  self_licenses?: number;
+  error?: string;
+}
+
+// Friendly labels + ordering for the license per-device-type table.
+// R1 buckets APs under WIFI and switches under SWITCH; the rest are usually zero
+// but we still render any non-zero row we get back.
+const LICENSE_DEVICE_LABELS: Record<string, string> = {
+  WIFI: "APs",
+  SWITCH: "Switches",
+  VIRTUAL_EDGE: "Virtual Edge",
+  IOT_CTRL: "IoT Controller",
+  RWG: "RWG",
+  EDGE: "Edge",
+  LTE: "LTE",
+  ANALYTICS: "Analytics",
+};
+const LICENSE_DEVICE_ORDER = ["WIFI", "SWITCH", "VIRTUAL_EDGE", "IOT_CTRL", "RWG", "EDGE", "LTE", "ANALYTICS"];
 
 interface MoversVenue {
   venue_id: string;
@@ -310,6 +346,8 @@ const MigrationDashboard = () => {
   const [deletingSnapshot, setDeletingSnapshot] = useState<number | null>(null);
 
   // Movers & Shakers
+  const [licenseData, setLicenseData] = useState<LicenseSummary | null>(null);
+  const [licenseLoading, setLicenseLoading] = useState(false);
   const [moversData, setMoversData] = useState<MoversData | null>(null);
   const [moversFilter, setMoversFilter] = useState<string>("wtd");
   const [moversLoading, setMoversLoading] = useState(false);
@@ -387,6 +425,26 @@ const MigrationDashboard = () => {
     const timer = setTimeout(() => setAnimatedPct(pct), 100);
     return () => clearTimeout(timer);
   }, [data, target]);
+
+  // Fetch license summary when controller changes
+  useEffect(() => {
+    if (!controllerID) return;
+    const abortController = new AbortController();
+    setLicenseLoading(true);
+    setLicenseData(null);
+    apiFetch(`${API_BASE_URL}/migration-dashboard/licenses/${controllerID}`, {
+      signal: abortController.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (json && json.data) setLicenseData(json.data);
+        setLicenseLoading(false);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setLicenseLoading(false);
+      });
+    return () => abortController.abort();
+  }, [controllerID]);
 
   // Fetch movers data when controller or filter changes
   useEffect(() => {
@@ -1294,6 +1352,130 @@ const MigrationDashboard = () => {
             </div>
           )}
 
+          {/* License Compliance */}
+          <div className="bg-white rounded-xl shadow p-5 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Shield size={16} className="text-gray-500" />
+                <h3 className="text-sm font-semibold text-gray-700">License Compliance</h3>
+              </div>
+              {licenseLoading && (
+                <span className="text-xs text-gray-400">Loading…</span>
+              )}
+            </div>
+
+            {!licenseLoading && licenseData && !licenseData.error && (
+              <>
+                {/* Top-line cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <LicenseStatCard
+                    label="Total Paid"
+                    value={licenseData.total_paid ?? 0}
+                    tone="neutral"
+                  />
+                  <LicenseStatCard
+                    label="In Use"
+                    value={licenseData.used ?? 0}
+                    tone="neutral"
+                  />
+                  <LicenseStatCard
+                    label="Available"
+                    value={licenseData.available ?? 0}
+                    tone={
+                      (licenseData.available ?? 0) === 0
+                        ? "red"
+                        : (licenseData.available ?? 0) < (licenseData.total_paid ?? 0) * 0.05
+                          ? "amber"
+                          : "green"
+                    }
+                  />
+                  <LicenseStatCard
+                    label="Expiring Soon"
+                    value={licenseData.expiring_soon ?? 0}
+                    tone={(licenseData.expiring_soon ?? 0) > 0 ? "amber" : "neutral"}
+                    sub={licenseData.next_expiration_date ?? undefined}
+                  />
+                </div>
+
+                {/* Utilization bar */}
+                {(licenseData.total_paid ?? 0) > 0 && (
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                      <span>Utilization</span>
+                      <span className="font-mono">
+                        {(
+                          ((licenseData.used ?? 0) / (licenseData.total_paid ?? 1)) *
+                          100
+                        ).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          (licenseData.used ?? 0) >= (licenseData.total_paid ?? 0)
+                            ? "bg-red-500"
+                            : (licenseData.used ?? 0) >= (licenseData.total_paid ?? 0) * 0.95
+                              ? "bg-amber-500"
+                              : "bg-green-500"
+                        }`}
+                        style={{
+                          width: `${Math.min(
+                            ((licenseData.used ?? 0) / (licenseData.total_paid ?? 1)) * 100,
+                            100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Per-device-type breakdown */}
+                {licenseData.device_breakdown && licenseData.device_breakdown.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                      By Device Type
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {[...licenseData.device_breakdown]
+                        .filter((d) => (d.installed ?? 0) > 0 || (d.used ?? 0) > 0)
+                        .sort((a, b) => {
+                          const ai = LICENSE_DEVICE_ORDER.indexOf(a.device_type);
+                          const bi = LICENSE_DEVICE_ORDER.indexOf(b.device_type);
+                          return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+                        })
+                        .map((d) => (
+                          <div
+                            key={d.device_type}
+                            className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg"
+                          >
+                            <span className="text-sm text-gray-700">
+                              {LICENSE_DEVICE_LABELS[d.device_type] ?? d.device_type}
+                            </span>
+                            <span className="text-sm font-mono text-gray-800">
+                              {d.used.toLocaleString()}
+                              <span className="text-gray-400"> / {d.installed.toLocaleString()}</span>
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!licenseLoading && licenseData?.error && (
+              <div className="text-xs text-gray-500 italic">
+                License data unavailable: {licenseData.error}
+              </div>
+            )}
+
+            {!licenseLoading && !licenseData && (
+              <div className="text-xs text-gray-400 italic">
+                No license data available.
+              </div>
+            )}
+          </div>
+
           {/* Errors banner */}
           {data.errors > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6 flex items-center gap-2 text-sm text-amber-700">
@@ -1860,6 +2042,35 @@ const MigrationDashboard = () => {
     </div>
   );
 };
+
+// License stat card used in the License Compliance section
+function LicenseStatCard({
+  label,
+  value,
+  tone,
+  sub,
+}: {
+  label: string;
+  value: number;
+  tone: "neutral" | "green" | "amber" | "red";
+  sub?: string;
+}) {
+  const toneClasses: Record<string, string> = {
+    neutral: "bg-gray-50 text-gray-800",
+    green: "bg-green-50 text-green-700",
+    amber: "bg-amber-50 text-amber-700",
+    red: "bg-red-50 text-red-700",
+  };
+  return (
+    <div className={`rounded-lg p-3 ${toneClasses[tone]}`}>
+      <div className="text-xs uppercase tracking-wide opacity-70">{label}</div>
+      <div className="text-xl font-mono font-semibold mt-0.5">
+        {value.toLocaleString()}
+      </div>
+      {sub && <div className="text-xs opacity-60 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
 
 // Venue table row
 function VenueRow({ v, idx }: { v: VenueStats & { tenant_name: string }; idx: number }) {

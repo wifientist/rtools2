@@ -809,6 +809,43 @@ async def fetch_controller_progress(
 
 # ---------- Progress endpoint ----------
 
+@router.get("/licenses/{controller_id}")
+async def get_migration_licenses(
+    controller_id: int = Path(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get MSP-wide license compliance summary for a controller.
+
+    Returns total paid / used / available license counts, upcoming
+    expirations, and a per-device-type breakdown (WIFI/SWITCH/etc).
+    Intended for a dedicated Licenses tab on the Migration Dashboard.
+
+    Refresh cadence is independent from /progress so the license tab
+    doesn't force the expensive per-venue AP fanout on every load.
+    """
+    logger.info(f"[dashboard] GET licenses controller={controller_id} user={current_user.email}")
+
+    controller = validate_controller_access(controller_id, current_user, db)
+
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Requires a RuckusONE controller")
+    if controller.controller_subtype != "MSP":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requires an MSP controller. '{controller.name}' is type '{controller.controller_subtype}'.",
+        )
+
+    r1_client = create_r1_client_from_controller(controller_id, db)
+    summary = await asyncio.to_thread(r1_client.entitlements.get_msp_compliance_summary)
+
+    return {
+        "status": "success",
+        "data": summary,
+    }
+
+
 @router.get("/progress/{controller_id}")
 async def get_migration_progress(
     controller_id: int = Path(...),

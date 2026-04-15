@@ -300,6 +300,72 @@
   </div>
   {% endif %}
 
+  <!-- License Compliance -->
+  {% if license_section %}
+  <div class="status-section">
+    <h3>License Compliance</h3>
+
+    <!-- Top-line stat grid -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px;">
+      <div style="background: #f9fafb; border-radius: 8px; padding: 10px;">
+        <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">Total Paid</div>
+        <div style="font-size: 18px; font-weight: 700; color: #1f2937; margin-top: 2px;" class="font-mono">
+          {{ "{:,}".format(license_section.total_paid) }}
+        </div>
+      </div>
+      <div style="background: #f9fafb; border-radius: 8px; padding: 10px;">
+        <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">In Use</div>
+        <div style="font-size: 18px; font-weight: 700; color: #1f2937; margin-top: 2px;" class="font-mono">
+          {{ "{:,}".format(license_section.used) }}
+        </div>
+      </div>
+      <div style="background: #f9fafb; border-radius: 8px; padding: 10px;">
+        <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">Available</div>
+        <div style="font-size: 18px; font-weight: 700; color: {{ license_section.utilization_color }}; margin-top: 2px;" class="font-mono">
+          {{ "{:,}".format(license_section.available) }}
+        </div>
+      </div>
+      <div style="background: #f9fafb; border-radius: 8px; padding: 10px;">
+        <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280;">Expiring Soon</div>
+        <div style="font-size: 18px; font-weight: 700; color: {% if license_section.expiring_soon > 0 %}#d97706{% else %}#1f2937{% endif %}; margin-top: 2px;" class="font-mono">
+          {{ "{:,}".format(license_section.expiring_soon) }}
+        </div>
+        {% if license_section.next_expiration_date %}
+        <div style="font-size: 9px; color: #9ca3af; margin-top: 2px;">{{ license_section.next_expiration_date }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Utilization bar -->
+    {% if license_section.total_paid > 0 %}
+    <div style="margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: #6b7280; margin-bottom: 4px;">
+        <span>Utilization</span>
+        <span class="font-mono">{{ "%.1f"|format(license_section.utilization_pct) }}%</span>
+      </div>
+      <div style="background: #f3f4f6; border-radius: 9999px; height: 8px; overflow: hidden;">
+        <div style="height: 8px; border-radius: 9999px; background: {{ license_section.utilization_color }}; width: {{ license_section.utilization_pct|round(1) }}%;"></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Per-device-type breakdown -->
+    {% if license_section.device_rows %}
+    <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 6px;">By Device Type</div>
+    <div class="status-grid">
+      {% for d in license_section.device_rows %}
+      <div class="status-chip">
+        <span>{{ d.label }}</span>
+        <span class="count">
+          {{ "{:,}".format(d.used) }}<span style="color: #9ca3af;"> / {{ "{:,}".format(d.installed) }}</span>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- Movers & Shakers (week to date) -->
   {% if movers_total > 0 %}
   <div class="status-section">
