@@ -599,31 +599,60 @@ async def fetch_controller_progress(
 
         async with semaphore:
             try:
-                ap_result, venue_result, client_result, switch_result = await asyncio.gather(
+                # Fetch venue list first — its IDs drive the per-venue AP fanout.
+                # (The tenant-wide /venues/aps/query call caps at ~1000 rows and
+                # ignores the `page` parameter, so per-venue is the only way to
+                # get complete results.)
+                venue_result = await asyncio.to_thread(
+                    r1_client.get,
+                    "/venues",
+                    override_tenant_id=tenant_id,
+                )
+
+                venue_list = []
+                venue_map: dict[str, dict] = {}
+
+                if venue_result.ok:
+                    venue_data = venue_result.json()
+                    if isinstance(venue_data, list):
+                        venue_list = venue_data
+                        venue_count = len(venue_data)
+                    elif isinstance(venue_data, dict):
+                        venue_list = venue_data.get("data", [])
+                        venue_count = venue_data.get("totalCount", len(venue_list))
+
+                    # Pre-seed venue_map so 0-AP venues still appear in venue_stats.
+                    for v in venue_list:
+                        vid = v.get("id", "")
+                        vname = v.get("name", "Unknown Venue")
+                        venue_map[vid] = {
+                            "venue_id": vid,
+                            "venue_name": vname,
+                            "ap_count": 0,
+                            "operational": 0,
+                            "offline": 0,
+                            "client_count": 0,
+                        }
+                else:
+                    error = f"venues GET HTTP {venue_result.status_code}"
+
+                venue_ids_list = [v.get("id") for v in venue_list if v.get("id")]
+
+                # Run APs (per-venue fanout) + switches in parallel.
+                # /venues/aps/query caps tenant-wide responses at 1000 rows, so the
+                # AP side has to fan out. Client counts are taken from each AP's
+                # `clientCount` field in the same fetch — the dedicated clients
+                # endpoint (/venues/aps/clients/query) caps `totalCount` at 10000
+                # per venue AND per tenant, so per-AP aggregation is the only
+                # cheap way to get a real number. clientCount is a live snapshot
+                # of currently-connected clients per device, which matches what
+                # device management displays.
+                ap_result, switch_result = await asyncio.gather(
                     asyncio.to_thread(
-                        r1_client.post,
-                        "/venues/aps/query",
-                        payload={
-                            "fields": ["status", "venueName", "venueId"],
-                            "page": 0,
-                            "pageSize": 5000,
-                        },
-                        override_tenant_id=tenant_id,
-                    ),
-                    asyncio.to_thread(
-                        r1_client.get,
-                        "/venues",
-                        override_tenant_id=tenant_id,
-                    ),
-                    asyncio.to_thread(
-                        r1_client.post,
-                        "/venues/aps/clients/query",
-                        payload={
-                            "fields": ["macAddress"],
-                            "page": 0,
-                            "pageSize": 1,
-                        },
-                        override_tenant_id=tenant_id,
+                        r1_client.venues.query_all_aps_by_tenant,
+                        tenant_id,
+                        venue_ids_list,
+                        ["status", "venueName", "venueId", "clientCount"],
                     ),
                     asyncio.to_thread(
                         r1_client.post,
@@ -638,16 +667,16 @@ async def fetch_controller_progress(
                     return_exceptions=True,
                 )
 
-                venue_map: dict[str, dict] = {}
-
-                if not isinstance(ap_result, Exception) and ap_result.ok:
-                    ap_data = ap_result.json()
-                    ap_count = ap_data.get("totalCount", len(ap_data.get("data", [])))
-                    for ap in ap_data.get("data", []):
+                if not isinstance(ap_result, Exception):
+                    ap_list = ap_result or []
+                    ap_count = len(ap_list)
+                    for ap in ap_list:
                         s = ap.get("status", "Unknown")
                         status_counts[s] = status_counts.get(s, 0) + 1
 
-                        # Group by venue
+                        ap_clients = int(ap.get("clientCount") or 0)
+                        client_count += ap_clients
+
                         vid = ap.get("venueId", "unknown")
                         vname = ap.get("venueName", "Unknown Venue")
                         if vid not in venue_map:
@@ -657,47 +686,18 @@ async def fetch_controller_progress(
                                 "ap_count": 0,
                                 "operational": 0,
                                 "offline": 0,
+                                "client_count": 0,
                             }
                         venue_map[vid]["ap_count"] += 1
+                        venue_map[vid]["client_count"] = (
+                            venue_map[vid].get("client_count", 0) + ap_clients
+                        )
                         if s.startswith("2_"):
                             venue_map[vid]["operational"] += 1
                         else:
                             venue_map[vid]["offline"] += 1
-                elif isinstance(ap_result, Exception):
+                elif not error:
                     error = str(ap_result)
-
-                if not isinstance(venue_result, Exception) and venue_result.ok:
-                    venue_data = venue_result.json()
-                    venue_list = []
-                    if isinstance(venue_data, list):
-                        venue_list = venue_data
-                        venue_count = len(venue_data)
-                    elif isinstance(venue_data, dict):
-                        venue_list = venue_data.get("data", [])
-                        venue_count = venue_data.get("totalCount", len(venue_list))
-
-                    # Build name lookup and enrich venue_map / add 0-AP venues
-                    for v in venue_list:
-                        vid = v.get("id", "")
-                        vname = v.get("name", "Unknown Venue")
-                        if vid in venue_map:
-                            venue_map[vid]["venue_name"] = vname
-                        else:
-                            venue_map[vid] = {
-                                "venue_id": vid,
-                                "venue_name": vname,
-                                "ap_count": 0,
-                                "operational": 0,
-                                "offline": 0,
-                            }
-                elif isinstance(venue_result, Exception) and not error:
-                    error = str(venue_result)
-
-                if not isinstance(client_result, Exception) and client_result.ok:
-                    client_data = client_result.json()
-                    client_count = client_data.get("totalCount", 0)
-                elif isinstance(client_result, Exception) and not error:
-                    error = str(client_result)
 
                 if not isinstance(switch_result, Exception) and switch_result.ok:
                     switch_data = switch_result.json()
@@ -776,6 +776,30 @@ async def fetch_controller_progress(
         f"{total_aps} APs, {total_switches} SWs, {total_summary['operational']} online, "
         f"{total_venues} venues, {total_clients} clients, {len(tenants)} ECs, {errors} errors"
     )
+
+    # Reconciliation (diagnostic only, never affects what the dashboard shows):
+    # cross-check the per-venue AP total against the MSP-wide
+    # /tenants/inventories/query. If the gap is non-trivial, the inventory
+    # breakdown by connectionStatus usually explains it (e.g. devices in
+    # "Never Contacted Cloud" which per-venue queries miss).
+    logger.info(f"[dashboard] reconciliation start controller={controller_id}")
+    try:
+        inventory = await asyncio.to_thread(r1_client.msp.get_inventory_summary)
+        inv_total = inventory.get("total_count", 0)
+        delta = inv_total - total_aps
+        logger.info(
+            f"[dashboard] reconciliation controller={controller_id} "
+            f"per-venue={total_aps} msp-inventory={inv_total} delta={delta:+d} "
+            f"inv_error={inventory.get('error')} "
+            f"by_connection_status={inventory.get('by_connection_status', {})} "
+            f"by_device_type={inventory.get('by_device_type', {})}"
+        )
+    except Exception as rec_err:
+        logger.warning(
+            f"[dashboard] reconciliation failed controller={controller_id}: "
+            f"{type(rec_err).__name__}: {rec_err}",
+            exc_info=True,
+        )
 
     # Auto-capture snapshot (throttled to once per 24h, skip if unchanged)
     _maybe_capture_snapshot(controller_id, progress_data, tenants, db)

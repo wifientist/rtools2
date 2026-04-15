@@ -37,6 +37,90 @@ class VenueService:
         else:
             return self.client.get(f"/venues/{venue_id}").json()
 
+    def query_all_aps_by_tenant(
+        self,
+        tenant_id: str,
+        venue_ids: list,
+        fields: list,
+        page_size: int = 10000,
+    ):
+        """
+        Fetch every AP for a tenant by fanning out per-venue /venues/aps/query calls.
+
+        Why: the tenant-wide form of /venues/aps/query silently caps at ~1000 rows
+        regardless of pageSize, and both `page` and `search_after` are ignored on
+        that endpoint (verified empirically: page=1 returns the same 1000 rows as
+        page=0). Per-venue queries (filters: {venueId: [id]}) return complete
+        results because individual venues rarely exceed a few hundred APs.
+
+        Note: sync. Call via asyncio.to_thread from async contexts.
+        """
+        fields = list(fields)
+        if "serialNumber" not in fields:
+            fields.append("serialNumber")
+
+        all_aps: list = []
+        seen_serials: set = set()
+        venues_queried = 0
+        venues_failed = 0
+        venues_truncated = 0
+
+        for venue_id in venue_ids:
+            if not venue_id:
+                continue
+
+            body = {
+                "fields": fields,
+                "filters": {"venueId": [venue_id]},
+                "page": 0,
+                "pageSize": page_size,
+            }
+
+            if self.client.ec_type == "MSP":
+                resp = self.client.post(
+                    "/venues/aps/query", payload=body, override_tenant_id=tenant_id
+                )
+            else:
+                resp = self.client.post("/venues/aps/query", payload=body)
+
+            venues_queried += 1
+
+            if not resp.ok:
+                venues_failed += 1
+                logger.warning(
+                    f"[query_all_aps_by_tenant] tenant={tenant_id} venue={venue_id} "
+                    f"HTTP {resp.status_code}: {resp.text[:200]}"
+                )
+                continue
+
+            data = resp.json() or {}
+            page_rows = data.get("data") or []
+            reported_total = data.get("totalCount", len(page_rows))
+
+            if reported_total > len(page_rows):
+                venues_truncated += 1
+                logger.warning(
+                    f"[query_all_aps_by_tenant] tenant={tenant_id} venue={venue_id} "
+                    f"truncated: got {len(page_rows)} of reported {reported_total} "
+                    f"APs — raise page_size"
+                )
+
+            for ap in page_rows:
+                serial = ap.get("serialNumber")
+                if serial:
+                    if serial not in seen_serials:
+                        seen_serials.add(serial)
+                        all_aps.append(ap)
+                else:
+                    all_aps.append(ap)
+
+        logger.info(
+            f"[query_all_aps_by_tenant] tenant={tenant_id} fetched {len(all_aps)} "
+            f"unique APs across {venues_queried} venue(s) "
+            f"(failed={venues_failed}, truncated={venues_truncated})"
+        )
+        return all_aps
+
     async def get_aps_by_tenant_venue(self, tenant_id: str, venue_id: str):
         """
         Get all APs for a venue, handling pagination automatically

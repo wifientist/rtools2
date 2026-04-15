@@ -16,6 +16,136 @@ class ClientsService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
 
+    def query_all_clients_for_venue(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        fields: list = None,
+        page_size: int = 1000,
+    ):
+        """
+        Enumerate every client currently visible in a single venue.
+
+        R1's /venues/aps/clients/query has two quirks we have to work around:
+
+        1. **Off-by-one on page 0/1.** `page=0` and `page=1` both return the
+           same first block — the endpoint is effectively 1-indexed but
+           silently accepts page=0 as an alias. Iteration has to skip page 1.
+           (Verified empirically 2026-04-15 by walking pages 0..10 on a
+           10k-client venue: page 0 and 1 were identical, pages 2-10 advanced
+           cleanly by 1000 rows each.)
+
+        2. **Elasticsearch max_result_window = 10000.** The query backend is
+           ES; page 11 returns HTTP 400 with the literal ES error
+           "Result window is too large, from + size must be less than or
+           equal to: [10000] but was [11000]". So even with working
+           pagination, we can collect at most 10,000 rows per venue query.
+           If a venue genuinely has more than 10k active clients, we'll need
+           to partition the query (rangeDateFilter on lastSeenTime is the
+           likely path) or use a working scroll/PIT cursor — neither is
+           wired up today.
+
+        When this helper returns exactly 10,000 rows, log a warning — the
+        venue may have more clients than we're seeing.
+
+        Args:
+            tenant_id: Tenant/EC ID. Required for MSP-scoped clients.
+            venue_id: Venue ID to query. Required — this helper is per-venue.
+            fields: AP fields to request. Defaults to ["macAddress"].
+                    macAddress is always appended if missing because it's
+                    used as the dedup key.
+            page_size: Rows per request. 1000 is the endpoint's ceiling; any
+                    higher is silently clamped.
+
+        Returns:
+            List of client dicts (deduped by macAddress). Empty list on error.
+
+        Note: sync. Call via asyncio.to_thread from async contexts.
+        """
+        if not venue_id:
+            return []
+
+        fields = list(fields) if fields else ["macAddress"]
+        if "macAddress" not in fields:
+            fields.append("macAddress")
+
+        all_clients: list = []
+        seen: set = set()
+
+        # Effective page sequence: 0, 2, 3, 4, ..., 10.
+        # Stop at page 10 — page 11 triggers ES max_result_window (10*1000=10000).
+        max_window_pages = 10000 // page_size  # e.g. 10 when page_size=1000
+        pages = [0] + list(range(2, max_window_pages + 1))
+
+        for page in pages:
+            body = {
+                "fields": fields,
+                "filters": {"venueId": [venue_id]},
+                "sortField": "macAddress",
+                "sortOrder": "ASC",
+                "page": page,
+                "pageSize": page_size,
+            }
+
+            if self.client.ec_type == "MSP":
+                resp = self.client.post(
+                    "/venues/aps/clients/query",
+                    payload=body,
+                    override_tenant_id=tenant_id,
+                )
+            else:
+                resp = self.client.post("/venues/aps/clients/query", payload=body)
+
+            if not resp.ok:
+                logger.warning(
+                    f"[query_all_clients_for_venue] tenant={tenant_id} "
+                    f"venue={venue_id} page={page} HTTP {resp.status_code}: "
+                    f"{resp.text[:200]}"
+                )
+                break
+
+            data = resp.json() or {}
+            rows = data.get("data") or []
+            if not rows:
+                break
+
+            new_in_page = 0
+            for row in rows:
+                mac = row.get("macAddress")
+                if mac:
+                    if mac in seen:
+                        continue
+                    seen.add(mac)
+                    new_in_page += 1
+                all_clients.append(row)
+
+            if len(rows) < page_size:
+                break
+
+            # Defensive: if a page is 100% duplicates but wasn't page 1, the
+            # server behavior changed and we should bail rather than spin.
+            if new_in_page == 0 and page > 1:
+                logger.warning(
+                    f"[query_all_clients_for_venue] tenant={tenant_id} "
+                    f"venue={venue_id} page={page} returned {len(rows)} "
+                    f"rows but 0 new — aborting"
+                )
+                break
+
+        if len(all_clients) == 10000:
+            logger.warning(
+                f"[query_all_clients_for_venue] tenant={tenant_id} "
+                f"venue={venue_id} hit ES max_result_window (10000) — venue "
+                f"may have additional clients that require time-range "
+                f"partitioning to retrieve"
+            )
+
+        logger.info(
+            f"[query_all_clients_for_venue] tenant={tenant_id} "
+            f"venue={venue_id} fetched {len(all_clients)} unique clients"
+        )
+        return all_clients
+
     async def get_active_clients(
         self,
         tenant_id: Optional[str] = None,
