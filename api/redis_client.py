@@ -5,6 +5,8 @@ import logging
 import os
 import redis.asyncio as redis
 from redis.asyncio.connection import ConnectionPool
+from redis.asyncio.retry import Retry
+from redis.backoff import ExponentialBackoff
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,11 @@ class RedisClient:
                 "socket_connect_timeout": 10,
                 "socket_timeout": 10,
                 "max_connections": 200,  # Sized for bounded concurrency + headroom
+                # Retry transient timeouts / dropped connections at the command
+                # level (3 attempts, exponential backoff) so a brief Redis
+                # hiccup does not bubble up and fail an entire long-running job.
+                "retry": Retry(ExponentialBackoff(cap=1.0, base=0.1), retries=3),
+                "retry_on_error": [redis.TimeoutError, redis.ConnectionError],
             }
 
             if password:

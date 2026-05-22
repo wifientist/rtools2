@@ -523,12 +523,21 @@ class WorkflowBrain:
                 # Uses get_job_metadata() to avoid reloading all 261+ units —
                 # in-memory units are already kept in sync by Fix 1 (each
                 # update_unit_phase_status call applies the result to job.units).
-                refreshed = await self.state.get_job_metadata(job.id)
-                if refreshed:
-                    job.global_phase_status = refreshed.global_phase_status
-                    job.global_phase_results = refreshed.global_phase_results
-                    job.created_resources = refreshed.created_resources
-                    job.errors = refreshed.errors
+                # Non-fatal: a transient Redis error during this cosmetic
+                # refresh must not hit the top-level handler and fail the
+                # whole job. Keep last-known metadata and retry next loop.
+                try:
+                    refreshed = await self.state.get_job_metadata(job.id)
+                    if refreshed:
+                        job.global_phase_status = refreshed.global_phase_status
+                        job.global_phase_results = refreshed.global_phase_results
+                        job.created_resources = refreshed.created_resources
+                        job.errors = refreshed.errors
+                except Exception as e:
+                    logger.warning(
+                        f"Job {job.id}: metadata refresh failed ({e}); "
+                        f"continuing with in-memory state"
+                    )
 
                 # Periodic heartbeat (every 15 seconds) - ensures frontend
                 # sees progress even during long-running phases like 3-step config

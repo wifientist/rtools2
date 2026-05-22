@@ -66,7 +66,21 @@ class RedisStateManagerV2:
         """Save full job state to Redis."""
         key = f"{PREFIX}:jobs:{job.id}"
         job.updated_at = datetime.utcnow()
-        job_data = job.model_dump_json()
+        # Exclude units from the main job blob: they are persisted in their own
+        # per-unit keys (save_unit/save_all_units) and reloaded by get_job().
+        # Keeping them out bounds this key to a constant size regardless of unit
+        # count, so the brain's per-loop get_job_metadata() GET stays fast and
+        # does not blow socket_timeout on large (200+ unit) jobs.
+        job_data = job.model_dump_json(exclude={"units"})
+
+        # Self-validation hook for the units-exclusion fix: this blob should
+        # stay roughly constant regardless of unit count. If it grows with the
+        # number of units, the exclusion regressed and large jobs risk the
+        # Redis socket_timeout again.
+        logger.info(
+            f"save_job {job.id}: blob={len(job_data)} chars, "
+            f"units={len(job.units)}"
+        )
 
         pipe = self.redis.pipeline()
         pipe.setex(key, JOB_TTL_SECONDS, job_data)
