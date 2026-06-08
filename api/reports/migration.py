@@ -32,6 +32,25 @@ STATUS_COLORS = {
     "4_": "#d97706",  # amber
 }
 
+# Switch deviceStatus labels/colors — mirrors SWITCH_STATUS_LABELS in MigrationDashboard.tsx.
+SWITCH_STATUS_LABELS = {
+    "ONLINE": "Online",
+    "OFFLINE": "Offline",
+    "PREPROVISIONED": "Pre-provisioned",
+    "INITIALIZING": "Initializing",
+    "FIRMWARE_UPD_FAIL": "Firmware Update Failed",
+}
+
+
+def _switch_status_color(code: str) -> str:
+    if code == "ONLINE":
+        return "#16a34a"  # green
+    if code in ("OFFLINE", "FIRMWARE_UPD_FAIL"):
+        return "#dc2626"  # red
+    if code == "INITIALIZING":
+        return "#d97706"  # amber
+    return "#6b7280"  # gray (PREPROVISIONED + anything new)
+
 # Friendly labels + ordering for the license per-device-type table.
 # Must mirror the frontend LICENSE_DEVICE_LABELS/ORDER in MigrationDashboard.tsx.
 LICENSE_DEVICE_LABELS = {
@@ -123,6 +142,17 @@ def _get_message(pct: float) -> str:
     return "The great migration begins!"
 
 
+def _get_switch_message(pct: float) -> str:
+    if pct >= 100: return "Every switch has found its port in R1!"
+    if pct >= 90: return "Almost all switches have flipped!"
+    if pct >= 75: return "Three quarters of switches are home!"
+    if pct >= 50: return "Halfway through the switch migration!"
+    if pct >= 25: return "A quarter of switches have moved!"
+    if pct >= 10: return "Switches are starting to stack up!"
+    if pct >= 5: return "First switches are powering on in R1!"
+    return "The switch migration begins!"
+
+
 def _get_period_delta(snapshots, days: int):
     """Compute delta between latest snapshot and the one closest to `days` ago."""
     if len(snapshots) < 2:
@@ -136,6 +166,7 @@ def _get_period_delta(snapshots, days: int):
     return {
         "aps": latest.total_aps - baseline.total_aps,
         "operational": latest.operational_aps - baseline.operational_aps,
+        "switches": (getattr(latest, "total_switches", 0) or 0) - (getattr(baseline, "total_switches", 0) or 0),
         "venues": latest.total_venues - baseline.total_venues,
         "clients": latest.total_clients - baseline.total_clients,
     }
@@ -200,8 +231,16 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
     offline = progress_data.get("status_summary", {}).get("offline", 0)
     percentage = (total_aps / target_aps * 100) if target_aps > 0 else 0
 
-    # Quip message
+    # Switch totals + progress (mirrors the AP block above)
+    target_switches = settings_data.get("target_switches", 10000)
+    total_switches = progress_data.get("total_switches", 0)
+    operational_switches = progress_data.get("switch_status_summary", {}).get("operational", 0)
+    offline_switches = progress_data.get("switch_status_summary", {}).get("offline", 0)
+    switch_percentage = (total_switches / target_switches * 100) if target_switches > 0 else 0
+
+    # Quip messages
     message = _get_message(percentage)
+    switch_message = _get_switch_message(switch_percentage)
 
     # Compute per-tenant share percentage
     all_aps = sum(t["ap_count"] for t in tenants if not t.get("ignored"))
@@ -235,6 +274,16 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
         color = STATUS_COLORS.get(prefix, "#6b7280")
         status_breakdown.append({"label": label, "count": count, "color": color})
 
+    # SW Status Breakdown — transform raw deviceStatus codes into display-friendly list
+    raw_switch_status_counts = progress_data.get("switch_status_counts", {})
+    switch_status_breakdown = []
+    for code in sorted(raw_switch_status_counts.keys()):
+        count = raw_switch_status_counts[code]
+        label = SWITCH_STATUS_LABELS.get(code, code)
+        switch_status_breakdown.append(
+            {"label": label, "count": count, "color": _switch_status_color(code)}
+        )
+
     # 30/60/90 day deltas from snapshots
     cutoff = datetime.utcnow() - timedelta(days=95)
     snapshots = (
@@ -255,6 +304,7 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
                 "label": label,
                 "rows": [
                     {"label": "APs", "value": _format_delta(delta["aps"]), "color": _delta_color(delta["aps"])},
+                    {"label": "Switches", "value": _format_delta(delta["switches"]), "color": _delta_color(delta["switches"])},
                     {"label": "Venues", "value": _format_delta(delta["venues"]), "color": _delta_color(delta["venues"])},
                     {"label": "Clients", "value": _format_delta(delta["clients"]), "color": _delta_color(delta["clients"])},
                 ],
@@ -337,12 +387,19 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
         "message": message,
         "operational": operational,
         "offline": offline,
-        "total_switches": progress_data.get("total_switches", 0),
+        "total_switches": total_switches,
+        "target_switches": target_switches,
+        "switch_percentage": switch_percentage,
+        "switch_message": switch_message,
+        "operational_switches": operational_switches,
+        "offline_switches": offline_switches,
         "total_venues": progress_data["total_venues"],
         "total_clients": progress_data.get("total_clients", 0),
+        "total_ecs": progress_data.get("total_ecs", 0),
         "tenants": tenants,
         "venues": venues,
         "status_breakdown": status_breakdown,
+        "switch_status_breakdown": switch_status_breakdown,
         "period_cards": period_cards,
         "active_venues": active_venues,
         "new_pending": new_pending,

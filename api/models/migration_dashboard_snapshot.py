@@ -15,6 +15,8 @@ class MigrationDashboardSnapshot(Base):
     )
     total_aps = Column(Integer, nullable=False)
     operational_aps = Column(Integer, nullable=False)
+    total_switches = Column(Integer, nullable=False, default=0, server_default="0")
+    operational_switches = Column(Integer, nullable=False, default=0, server_default="0")
     total_venues = Column(Integer, nullable=False)
     total_clients = Column(Integer, nullable=False)
     total_ecs = Column(Integer, nullable=False)

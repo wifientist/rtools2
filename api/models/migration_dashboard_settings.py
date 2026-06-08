@@ -15,6 +15,7 @@ class MigrationDashboardSettings(Base):
         unique=True,
     )
     target_aps = Column(Integer, default=180000, nullable=False)
+    target_switches = Column(Integer, default=10000, nullable=False)
     ignored_tenant_ids = Column(JSON, default=list, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(

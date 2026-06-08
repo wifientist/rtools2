@@ -158,8 +158,14 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
     operational = ctx.get("operational", 0)
     offline = ctx.get("offline", 0)
     total_switches = ctx.get("total_switches", 0)
+    target_switches = ctx.get("target_switches", 0)
+    switch_pct = ctx.get("switch_percentage", 0)
+    operational_switches = ctx.get("operational_switches", 0)
+    offline_switches = ctx.get("offline_switches", 0)
+    switch_message = ctx.get("switch_message", "")
     total_venues = ctx.get("total_venues", 0)
     total_clients = ctx.get("total_clients", 0)
+    total_ecs = ctx.get("total_ecs", 0)
     message = ctx.get("message", "")
 
     active_24h = ctx.get("active_24h", [])
@@ -184,8 +190,10 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
         f"Generated: {generated_at}\n\n"
         f"Progress: {total_aps:,} / {target_aps:,} APs ({pct:.1f}%)\n"
         f"{message}\n\n"
-        f"Total APs: {total_aps:,}  |  Operational: {operational:,}  |  Offline: {offline:,}\n"
-        f"Switches: {total_switches:,}  |  Venues: {total_venues:,}  |  Clients: {total_clients:,}\n"
+        f"APs:      {total_aps:,} total  |  {operational:,} operational  |  {offline:,} offline\n"
+        f"Switches: {total_switches:,} total  |  {operational_switches:,} operational  |  {offline_switches:,} offline\n"
+        f"          {total_switches:,} / {target_switches:,} switches ({switch_pct:.1f}%) — {switch_message}\n"
+        f"Venues: {total_venues:,}  |  Clients: {total_clients:,}  |  Active ECs: {total_ecs:,}\n"
         f"{movers_text}\n\n"
         f"Full report attached as PDF."
     )
@@ -193,6 +201,8 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
     # Progress bar color
     bar_color = "#22c55e" if pct >= 100 else "#2563eb"
     pct_clamped = min(pct, 100)
+    switch_bar_color = "#22c55e" if switch_pct >= 100 else "#0d9488"
+    switch_pct_clamped = min(switch_pct, 100)
 
     html_body = f"""
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -206,38 +216,72 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
   <p style="text-align: center; font-size: 14px; font-weight: 600; color: #374151; margin: 0 0 4px 0;">
     {total_aps:,} / {target_aps:,} APs ({pct:.1f}%)
   </p>
-  <p style="text-align: center; font-size: 13px; color: #6b7280; font-style: italic; margin: 0 0 20px 0;">
+  <p style="text-align: center; font-size: 13px; color: #6b7280; font-style: italic; margin: 0 0 16px 0;">
     {message}
   </p>
 
+  <!-- Switch Progress -->
+  <div style="background: #f3f4f6; border-radius: 12px; height: 32px; position: relative; overflow: hidden; margin-bottom: 6px;">
+    <div style="height: 32px; border-radius: 12px; width: {switch_pct_clamped:.1f}%; background: {switch_bar_color};"></div>
+  </div>
+  <p style="text-align: center; font-size: 14px; font-weight: 600; color: #374151; margin: 0 0 4px 0;">
+    {total_switches:,} / {target_switches:,} switches ({switch_pct:.1f}%)
+  </p>
+  <p style="text-align: center; font-size: 13px; color: #6b7280; font-style: italic; margin: 0 0 20px 0;">
+    {switch_message}
+  </p>
+
   <!-- Stats grid -->
-  <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 4px;">Access Points</div>
+  <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 14px;">
     <tr>
-      <td style="padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb; border-radius: 8px;">
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
         <div style="font-size: 20px; font-weight: 700; color: #111827;">{total_aps:,}</div>
         <div style="font-size: 11px; color: #6b7280;">Total APs</div>
       </td>
-      <td style="padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
         <div style="font-size: 20px; font-weight: 700; color: #16a34a;">{operational:,}</div>
         <div style="font-size: 11px; color: #6b7280;">Operational</div>
       </td>
-      <td style="padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
         <div style="font-size: 20px; font-weight: 700; color: #d97706;">{offline:,}</div>
         <div style="font-size: 11px; color: #6b7280;">Offline</div>
       </td>
     </tr>
+  </table>
+
+  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 4px;">Switches</div>
+  <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 14px;">
     <tr>
-      <td style="padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
         <div style="font-size: 20px; font-weight: 700; color: #111827;">{total_switches:,}</div>
-        <div style="font-size: 11px; color: #6b7280;">Switches</div>
+        <div style="font-size: 11px; color: #6b7280;">Total Switches</div>
       </td>
-      <td style="padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+        <div style="font-size: 20px; font-weight: 700; color: #16a34a;">{operational_switches:,}</div>
+        <div style="font-size: 11px; color: #6b7280;">Operational</div>
+      </td>
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+        <div style="font-size: 20px; font-weight: 700; color: #d97706;">{offline_switches:,}</div>
+        <div style="font-size: 11px; color: #6b7280;">Offline</div>
+      </td>
+    </tr>
+  </table>
+
+  <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 4px;">Venues &amp; Clients</div>
+  <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 20px;">
+    <tr>
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
         <div style="font-size: 20px; font-weight: 700; color: #111827;">{total_venues:,}</div>
         <div style="font-size: 11px; color: #6b7280;">Venues</div>
       </td>
-      <td style="padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
         <div style="font-size: 20px; font-weight: 700; color: #111827;">{total_clients:,}</div>
         <div style="font-size: 11px; color: #6b7280;">Clients</div>
+      </td>
+      <td style="width: 33.33%; padding: 10px 8px; text-align: center; border: 1px solid #e5e7eb;">
+        <div style="font-size: 20px; font-weight: 700; color: #111827;">{total_ecs:,}</div>
+        <div style="font-size: 11px; color: #6b7280;">Active ECs</div>
       </td>
     </tr>
   </table>
