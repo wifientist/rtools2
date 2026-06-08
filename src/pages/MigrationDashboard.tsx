@@ -45,11 +45,14 @@ interface DashboardData {
   errors: number;
   status_summary: StatusSummary;
   status_counts: Record<string, number>;
+  switch_status_summary: StatusSummary;
+  switch_status_counts: Record<string, number>;
   tenants: ECTenantStats[];
 }
 
 interface DashboardSettings {
   target_aps: number;
+  target_switches: number;
   ignored_tenant_ids: string[];
 }
 
@@ -151,11 +154,29 @@ function getStatusColor(code: string): string {
   return STATUS_COLORS[prefix] ?? "text-gray-500";
 }
 
+const SWITCH_STATUS_LABELS: Record<string, string> = {
+  ONLINE: "Online",
+  OFFLINE: "Offline",
+  PREPROVISIONED: "Pre-provisioned",
+  INITIALIZING: "Initializing",
+  FIRMWARE_UPD_FAIL: "Firmware Update Failed",
+};
+
+function getSwitchStatusColor(code: string): string {
+  if (code === "ONLINE") return "text-green-600";
+  if (code === "OFFLINE") return "text-red-500";
+  if (code === "FIRMWARE_UPD_FAIL") return "text-red-500";
+  if (code === "INITIALIZING") return "text-amber-500";
+  return "text-gray-500"; // PREPROVISIONED + anything new
+}
+
 interface SnapshotPoint {
   id: number;
   captured_at: string;
   total_aps: number;
   operational_aps: number;
+  total_switches: number;
+  operational_switches: number;
   total_venues: number;
   total_clients: number;
   total_ecs: number;
@@ -165,6 +186,7 @@ interface BackfillRow {
   date: string;
   total_aps: string;
   operational_aps: string;
+  total_switches: string;
   total_venues: string;
   total_clients: string;
   total_ecs: string;
@@ -202,6 +224,7 @@ function Sparkline({
 interface PeriodDelta {
   aps: number;
   operational: number;
+  switches: number;
   venues: number;
   clients: number;
 }
@@ -223,12 +246,13 @@ function getPeriodDelta(snapshots: SnapshotPoint[], days: number): PeriodDelta |
   return {
     aps: latest.total_aps - baseline.total_aps,
     operational: latest.operational_aps - baseline.operational_aps,
+    switches: (latest.total_switches ?? 0) - (baseline.total_switches ?? 0),
     venues: latest.total_venues - baseline.total_venues,
     clients: latest.total_clients - baseline.total_clients,
   };
 }
 
-function DeltaRow({ label, value, sparkData }: { label: string; value: number; sparkData?: number[] }) {
+function DeltaRow({ label, value, sparkData, sparkColor = "#6366f1" }: { label: string; value: number; sparkData?: number[]; sparkColor?: string }) {
   const color = value > 0 ? "text-green-600" : value < 0 ? "text-red-500" : "text-gray-400";
   const prefix = value > 0 ? "+" : "";
   const display = value === 0 ? "\u2014" : `${prefix}${value.toLocaleString()}`;
@@ -237,7 +261,7 @@ function DeltaRow({ label, value, sparkData }: { label: string; value: number; s
       <span className="text-gray-500">{label}</span>
       <div className="flex items-center gap-3">
         {sparkData && sparkData.length >= 2 && (
-          <Sparkline data={sparkData} color="#6366f1" width={80} height={18} />
+          <Sparkline data={sparkData} color={sparkColor} width={80} height={18} />
         )}
         <span className={`font-mono font-medium ${color} w-16 text-right`}>{display}</span>
       </div>
@@ -258,6 +282,7 @@ function PeriodCard({ label, delta, snapshots }: { label: string; delta: PeriodD
       {delta ? (
         <div className="space-y-1.5">
           <DeltaRow label="APs" value={delta.aps} sparkData={snapshots?.map(s => s.total_aps)} />
+          <DeltaRow label="Switches" value={delta.switches} sparkData={snapshots?.map(s => s.total_switches ?? 0)} sparkColor="#0d9488" />
           <DeltaRow label="Venues" value={delta.venues} sparkData={snapshots?.map(s => s.total_venues)} />
           <DeltaRow label="Clients" value={delta.clients} sparkData={snapshots?.map(s => s.total_clients)} />
         </div>
@@ -292,6 +317,17 @@ function getMessage(pct: number): string {
   return "The great migration begins!";
 }
 
+function getSwitchMessage(pct: number): string {
+  if (pct >= 100) return "Every switch has found its port in R1!";
+  if (pct >= 90) return "Almost all switches have flipped!";
+  if (pct >= 75) return "Three quarters of switches are home!";
+  if (pct >= 50) return "Halfway through the switch migration!";
+  if (pct >= 25) return "A quarter of switches have moved!";
+  if (pct >= 10) return "Switches are starting to stack up!";
+  if (pct >= 5) return "First switches are powering on in R1!";
+  return "The switch migration begins!";
+}
+
 const MigrationDashboard = () => {
   const { controllers, userRole } = useAuth();
 
@@ -306,9 +342,12 @@ const MigrationDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [editingTarget, setEditingTarget] = useState(false);
   const [targetInput, setTargetInput] = useState("");
+  const [editingSwitchTarget, setEditingSwitchTarget] = useState(false);
+  const [switchTargetInput, setSwitchTargetInput] = useState("");
   const [sortField, setSortField] = useState<SortField>("ap_count");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [animatedPct, setAnimatedPct] = useState(0);
+  const [animatedSwitchPct, setAnimatedSwitchPct] = useState(0);
 
   // Snapshots
   const [snapshots, setSnapshots] = useState<SnapshotPoint[]>([]);
@@ -316,6 +355,7 @@ const MigrationDashboard = () => {
   // Settings panel
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTarget, setSettingsTarget] = useState("");
+  const [settingsSwitchTarget, setSettingsSwitchTarget] = useState("");
   const [settingsIgnored, setSettingsIgnored] = useState<Set<string>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -338,7 +378,7 @@ const MigrationDashboard = () => {
 
   // Backfill
   const emptyBackfillRow = (): BackfillRow => ({
-    date: "", total_aps: "", operational_aps: "", total_venues: "", total_clients: "", total_ecs: "",
+    date: "", total_aps: "", operational_aps: "", total_switches: "", total_venues: "", total_clients: "", total_ecs: "",
   });
   const [backfillRows, setBackfillRows] = useState<BackfillRow[]>([emptyBackfillRow()]);
   const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
@@ -357,6 +397,7 @@ const MigrationDashboard = () => {
   const [moversSortDir, setMoversSortDir] = useState<"asc" | "desc">("asc");
 
   const target = settings?.target_aps ?? 180000;
+  const switchTarget = settings?.target_switches ?? 10000;
 
   // Auto-select first MSP controller
   useEffect(() => {
@@ -422,9 +463,13 @@ const MigrationDashboard = () => {
   useEffect(() => {
     if (!data) return;
     const pct = Math.min((data.total_aps / target) * 100, 100);
-    const timer = setTimeout(() => setAnimatedPct(pct), 100);
+    const swPct = Math.min(((data.total_switches ?? 0) / switchTarget) * 100, 100);
+    const timer = setTimeout(() => {
+      setAnimatedPct(pct);
+      setAnimatedSwitchPct(swPct);
+    }, 100);
     return () => clearTimeout(timer);
-  }, [data, target]);
+  }, [data, target, switchTarget]);
 
   // Fetch license summary when controller changes
   useEffect(() => {
@@ -468,6 +513,7 @@ const MigrationDashboard = () => {
 
   const percentage = data ? (data.total_aps / target) * 100 : 0;
   const remaining = data ? Math.max(target - data.total_aps, 0) : target;
+  const switchPercentage = data ? ((data.total_switches ?? 0) / switchTarget) * 100 : 0;
 
   // Sorted tenants
   const sortedTenants = useMemo(() => {
@@ -565,9 +611,33 @@ const MigrationDashboard = () => {
     setEditingTarget(false);
   };
 
+  const saveSwitchTarget = async () => {
+    const val = parseInt(switchTargetInput, 10);
+    if (!isNaN(val) && val > 0 && controllerID) {
+      try {
+        const res = await apiFetch(
+          `${API_BASE_URL}/migration-dashboard/settings/${controllerID}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target_switches: val }),
+          }
+        );
+        if (res.ok) {
+          const updated = await res.json();
+          setSettings(updated);
+        }
+      } catch {
+        // Silently fail — target stays unchanged
+      }
+    }
+    setEditingSwitchTarget(false);
+  };
+
   // Open settings panel
   const openSettings = () => {
     setSettingsTarget(String(target));
+    setSettingsSwitchTarget(String(switchTarget));
     setSettingsIgnored(new Set(settings?.ignored_tenant_ids ?? []));
     setTestReportStatus(null);
     setShowSettings(true);
@@ -591,6 +661,7 @@ const MigrationDashboard = () => {
     setSavingSettings(true);
     try {
       const val = parseInt(settingsTarget, 10);
+      const swVal = parseInt(settingsSwitchTarget, 10);
       const res = await apiFetch(
         `${API_BASE_URL}/migration-dashboard/settings/${controllerID}`,
         {
@@ -598,6 +669,7 @@ const MigrationDashboard = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             target_aps: !isNaN(val) && val > 0 ? val : undefined,
+            target_switches: !isNaN(swVal) && swVal > 0 ? swVal : undefined,
             ignored_tenant_ids: Array.from(settingsIgnored),
           }),
         }
@@ -697,6 +769,7 @@ const MigrationDashboard = () => {
         date: r.date,
         total_aps: parseInt(r.total_aps, 10) || 0,
         operational_aps: parseInt(r.operational_aps, 10) || 0,
+        total_switches: parseInt(r.total_switches, 10) || 0,
         total_venues: parseInt(r.total_venues, 10) || 0,
         total_clients: parseInt(r.total_clients, 10) || 0,
         total_ecs: parseInt(r.total_ecs, 10) || 0,
@@ -851,6 +924,23 @@ const MigrationDashboard = () => {
                 type="number"
                 value={settingsTarget}
                 onChange={(e) => setSettingsTarget(e.target.value)}
+                className="w-48 px-3 py-2 border rounded-lg text-sm"
+                min={1}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Shared across all users viewing this controller's dashboard.
+              </p>
+            </div>
+
+            {/* Target Switches */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Target Switch Count
+              </label>
+              <input
+                type="number"
+                value={settingsSwitchTarget}
+                onChange={(e) => setSettingsSwitchTarget(e.target.value)}
                 className="w-48 px-3 py-2 border rounded-lg text-sm"
                 min={1}
               />
@@ -1073,6 +1163,13 @@ const MigrationDashboard = () => {
                         />
                         <input
                           type="number"
+                          placeholder="Switches"
+                          value={row.total_switches}
+                          onChange={(e) => updateBackfillRow(idx, "total_switches", e.target.value)}
+                          className="px-2 py-1.5 border rounded text-sm w-24"
+                        />
+                        <input
+                          type="number"
                           placeholder="Venues"
                           value={row.total_venues}
                           onChange={(e) => updateBackfillRow(idx, "total_venues", e.target.value)}
@@ -1282,8 +1379,86 @@ const MigrationDashboard = () => {
             </div>
           </div>
 
-          {/* Metrics Strip */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+          {/* Switch progress bar */}
+          <div className="bg-white rounded-xl shadow-lg p-8 mb-6">
+            {/* Switch target editor */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm text-gray-500 flex items-center gap-2">
+                <Network size={14} />
+                {editingSwitchTarget ? (
+                  <span className="flex items-center gap-1">
+                    Target:{" "}
+                    <input
+                      type="number"
+                      value={switchTargetInput}
+                      onChange={(e) => setSwitchTargetInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && saveSwitchTarget()}
+                      onBlur={saveSwitchTarget}
+                      autoFocus
+                      className="w-28 px-2 py-0.5 border rounded text-sm"
+                    />
+                    <button
+                      onClick={saveSwitchTarget}
+                      className="text-green-600 hover:text-green-700"
+                    >
+                      <Check size={14} />
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    className="cursor-pointer hover:text-gray-700 group"
+                    onClick={() => {
+                      setSwitchTargetInput(String(switchTarget));
+                      setEditingSwitchTarget(true);
+                    }}
+                  >
+                    Target: {switchTarget.toLocaleString()} switches
+                    <Pencil
+                      size={12}
+                      className="inline ml-1 opacity-0 group-hover:opacity-100 transition no-print"
+                    />
+                  </span>
+                )}
+              </div>
+              <div className="text-sm font-medium text-gray-600">
+                {getSwitchMessage(switchPercentage)}
+              </div>
+            </div>
+
+            {/* Big switch progress bar */}
+            <div className="relative">
+              <div className="w-full bg-gray-100 rounded-full h-12 overflow-hidden">
+                <div
+                  className={`h-12 rounded-full transition-all duration-1000 ease-out ${
+                    switchPercentage >= 100
+                      ? "bg-gradient-to-r from-green-500 to-emerald-400"
+                      : "bg-gradient-to-r from-teal-600 to-cyan-500"
+                  }`}
+                  style={{ width: `${Math.min(animatedSwitchPct, 100)}%` }}
+                />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-lg font-bold drop-shadow-sm mix-blend-difference text-white">
+                  {(data.total_switches ?? 0).toLocaleString()} /{" "}
+                  {switchTarget.toLocaleString()} switches ({switchPercentage.toFixed(1)}%)
+                </span>
+              </div>
+              {/* Milestone markers */}
+              {[25, 50, 75].map((m) => (
+                <div
+                  key={m}
+                  className="absolute top-0 h-12 border-l border-gray-300 border-dashed opacity-40"
+                  style={{ left: `${m}%` }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Metrics — Access Points */}
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Access Points
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <MetricCard
               icon={<Wifi size={24} />}
               label="Total APs"
@@ -1302,12 +1477,38 @@ const MigrationDashboard = () => {
               value={(data.status_summary?.offline ?? 0).toLocaleString()}
               color="amber"
             />
+          </div>
+
+          {/* Metrics — Switches */}
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Switches
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <MetricCard
               icon={<Network size={24} />}
-              label="Total SWs"
+              label="Total Switches"
               value={(data.total_switches ?? 0).toLocaleString()}
+              color="blue"
+            />
+            <MetricCard
+              icon={<Network size={24} />}
+              label="Operational"
+              value={(data.switch_status_summary?.operational ?? 0).toLocaleString()}
               color="teal"
             />
+            <MetricCard
+              icon={<Network size={24} />}
+              label="Offline"
+              value={(data.switch_status_summary?.offline ?? 0).toLocaleString()}
+              color="amber"
+            />
+          </div>
+
+          {/* Metrics — Venues & Clients */}
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Venues &amp; Clients
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <MetricCard
               icon={<MapPin size={24} />}
               label="Total Venues"
@@ -1319,6 +1520,12 @@ const MigrationDashboard = () => {
               label="Clients"
               value={(data.total_clients ?? 0).toLocaleString()}
               color="blue"
+            />
+            <MetricCard
+              icon={<BarChart3 size={24} />}
+              label="Active ECs"
+              value={(data.total_ecs ?? 0).toLocaleString()}
+              color="purple"
             />
           </div>
 
@@ -1342,6 +1549,27 @@ const MigrationDashboard = () => {
                     <div key={code} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
                       <span className={`text-sm ${getStatusColor(code)}`}>
                         {STATUS_LABELS[code] ?? code}
+                      </span>
+                      <span className="text-sm font-mono font-medium text-gray-800 ml-2">
+                        {count.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* SW Status Breakdown */}
+          {data.switch_status_counts && Object.keys(data.switch_status_counts).length > 0 && (
+            <div className="bg-white rounded-xl shadow p-5 mb-6">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">SW Status Breakdown</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {Object.entries(data.switch_status_counts)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([code, count]) => (
+                    <div key={code} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                      <span className={`text-sm ${getSwitchStatusColor(code)}`}>
+                        {SWITCH_STATUS_LABELS[code] ?? code}
                       </span>
                       <span className="text-sm font-mono font-medium text-gray-800 ml-2">
                         {count.toLocaleString()}

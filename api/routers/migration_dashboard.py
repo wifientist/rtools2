@@ -34,6 +34,7 @@ router = APIRouter(
 
 class SettingsResponse(BaseModel):
     target_aps: int
+    target_switches: int
     ignored_tenant_ids: List[str]
 
     class Config:
@@ -42,6 +43,7 @@ class SettingsResponse(BaseModel):
 
 class SettingsUpdate(BaseModel):
     target_aps: Optional[int] = None
+    target_switches: Optional[int] = None
     ignored_tenant_ids: Optional[List[str]] = None
 
 
@@ -49,6 +51,8 @@ class SnapshotBackfillEntry(BaseModel):
     date: str  # ISO date string, e.g. "2026-01-15"
     total_aps: int
     operational_aps: int = 0
+    total_switches: int = 0
+    operational_switches: int = 0
     total_venues: int = 0
     total_clients: int = 0
     total_ecs: int = 0
@@ -80,6 +84,61 @@ def _summarize_statuses(status_counts: dict[str, int]) -> dict[str, int]:
         else:
             summary["offline"] += count
     return summary
+
+
+def _summarize_switch_statuses(status_counts: dict[str, int]) -> dict[str, int]:
+    """
+    Group raw R1 switch deviceStatus values into operational/offline buckets.
+
+    Observed values: ONLINE (operational), OFFLINE, PREPROVISIONED, INITIALIZING.
+    Only ONLINE counts as operational; everything else is not-yet-up / down.
+    """
+    summary: dict[str, int] = {
+        "operational": 0,
+        "offline": 0,
+    }
+    for code, count in status_counts.items():
+        if code == "ONLINE":
+            summary["operational"] += count
+        else:
+            summary["offline"] += count
+    return summary
+
+
+def _fetch_all_switches(r1_client, tenant_id: str) -> list[dict]:
+    """
+    Fetch all switches for a tenant with their deviceStatus, paginating past the
+    1000-row page cap. Unlike the tenant-wide AP query, /venues/switches/query
+    honors the `page` parameter, so simple pagination works (verified: pages are
+    disjoint). Raises if the first page fails so the caller can record an error.
+    """
+    switches: list[dict] = []
+    page = 0
+    page_size = 1000
+    while True:
+        resp = r1_client.post(
+            "/venues/switches/query",
+            payload={
+                "fields": ["serialNumber", "deviceStatus", "venueId", "clientCount"],
+                "page": page,
+                "pageSize": page_size,
+            },
+            override_tenant_id=tenant_id,
+        )
+        if not resp.ok:
+            if page == 0:
+                raise RuntimeError(f"switches query HTTP {resp.status_code}")
+            break
+        body = resp.json()
+        rows = body.get("data", []) or []
+        switches.extend(rows)
+        total = body.get("totalCount", len(switches))
+        if len(rows) < page_size or len(switches) >= total:
+            break
+        page += 1
+        if page > 50:  # safety stop: 50k switches
+            break
+    return switches
 
 
 def _compute_venue_status(ap_count: int, operational: int) -> str:
@@ -207,12 +266,16 @@ def _maybe_capture_snapshot(
         )
         new_aps = progress_data["total_aps"]
         new_op = progress_data.get("status_summary", {}).get("operational", 0)
+        new_switches = progress_data.get("total_switches", 0)
+        new_sw_op = progress_data.get("switch_status_summary", {}).get("operational", 0)
         new_venues = progress_data["total_venues"]
         new_ecs = progress_data["total_ecs"]
 
         if last and (
             last.total_aps == new_aps
             and last.operational_aps == new_op
+            and last.total_switches == new_switches
+            and last.operational_switches == new_sw_op
             and last.total_venues == new_venues
             and last.total_ecs == new_ecs
         ):
@@ -222,6 +285,8 @@ def _maybe_capture_snapshot(
             controller_id=controller_id,
             total_aps=progress_data["total_aps"],
             operational_aps=progress_data.get("status_summary", {}).get("operational", 0),
+            total_switches=progress_data.get("total_switches", 0),
+            operational_switches=progress_data.get("switch_status_summary", {}).get("operational", 0),
             total_venues=progress_data["total_venues"],
             total_clients=progress_data.get("total_clients", 0),
             total_ecs=progress_data["total_ecs"],
@@ -265,9 +330,10 @@ def get_settings(
     if settings:
         return SettingsResponse(
             target_aps=settings.target_aps,
+            target_switches=settings.target_switches,
             ignored_tenant_ids=settings.ignored_tenant_ids,
         )
-    return SettingsResponse(target_aps=180000, ignored_tenant_ids=[])
+    return SettingsResponse(target_aps=180000, target_switches=10000, ignored_tenant_ids=[])
 
 
 @router.put("/settings/{controller_id}", response_model=SettingsResponse)
@@ -288,6 +354,8 @@ def update_settings(
 
     if body.target_aps is not None:
         settings.target_aps = body.target_aps
+    if body.target_switches is not None:
+        settings.target_switches = body.target_switches
     if body.ignored_tenant_ids is not None:
         settings.ignored_tenant_ids = body.ignored_tenant_ids
 
@@ -296,6 +364,7 @@ def update_settings(
 
     return SettingsResponse(
         target_aps=settings.target_aps,
+        target_switches=settings.target_switches,
         ignored_tenant_ids=settings.ignored_tenant_ids,
     )
 
@@ -458,6 +527,8 @@ def get_snapshots(
                 "captured_at": s.captured_at.isoformat(),
                 "total_aps": s.total_aps,
                 "operational_aps": s.operational_aps,
+                "total_switches": s.total_switches,
+                "operational_switches": s.operational_switches,
                 "total_venues": s.total_venues,
                 "total_clients": s.total_clients,
                 "total_ecs": s.total_ecs,
@@ -504,6 +575,8 @@ def backfill_snapshots(
             controller_id=controller_id,
             total_aps=entry.total_aps,
             operational_aps=entry.operational_aps,
+            total_switches=entry.total_switches,
+            operational_switches=entry.operational_switches,
             total_venues=entry.total_venues,
             total_clients=entry.total_clients,
             total_ecs=entry.total_ecs,
@@ -572,6 +645,7 @@ async def fetch_controller_progress(
     ignored_ids = set(settings.ignored_tenant_ids) if settings else set()
     settings_data = {
         "target_aps": settings.target_aps if settings else 180000,
+        "target_switches": settings.target_switches if settings else 10000,
         "ignored_tenant_ids": list(ignored_ids),
     }
 
@@ -580,7 +654,9 @@ async def fetch_controller_progress(
             "total_aps": 0, "total_venues": 0, "total_clients": 0,
             "total_switches": 0, "total_ecs": 0, "errors": 0,
             "status_summary": {"operational": 0, "offline": 0},
-            "status_counts": {}, "tenants": [],
+            "status_counts": {},
+            "switch_status_summary": {"operational": 0, "offline": 0},
+            "switch_status_counts": {}, "tenants": [],
         }
         return empty_data, [], settings_data
 
@@ -595,6 +671,7 @@ async def fetch_controller_progress(
         client_count = 0
         switch_count = 0
         status_counts: dict[str, int] = {}
+        switch_status_counts: dict[str, int] = {}
         error = None
 
         async with semaphore:
@@ -655,14 +732,9 @@ async def fetch_controller_progress(
                         ["status", "venueName", "venueId", "clientCount"],
                     ),
                     asyncio.to_thread(
-                        r1_client.post,
-                        "/venues/switches/query",
-                        payload={
-                            "fields": ["serialNumber"],
-                            "page": 0,
-                            "pageSize": 1,
-                        },
-                        override_tenant_id=tenant_id,
+                        _fetch_all_switches,
+                        r1_client,
+                        tenant_id,
                     ),
                     return_exceptions=True,
                 )
@@ -699,10 +771,13 @@ async def fetch_controller_progress(
                 elif not error:
                     error = str(ap_result)
 
-                if not isinstance(switch_result, Exception) and switch_result.ok:
-                    switch_data = switch_result.json()
-                    switch_count = switch_data.get("totalCount", 0)
-                elif isinstance(switch_result, Exception) and not error:
+                if not isinstance(switch_result, Exception):
+                    switch_list = switch_result or []
+                    switch_count = len(switch_list)
+                    for sw in switch_list:
+                        ss = sw.get("deviceStatus", "Unknown")
+                        switch_status_counts[ss] = switch_status_counts.get(ss, 0) + 1
+                elif not error:
                     error = str(switch_result)
 
             except Exception as e:
@@ -718,6 +793,8 @@ async def fetch_controller_progress(
             "switch_count": switch_count,
             "status_summary": _summarize_statuses(status_counts),
             "status_counts": status_counts,
+            "switch_status_summary": _summarize_switch_statuses(switch_status_counts),
+            "switch_status_counts": switch_status_counts,
             "venue_stats": sorted(venue_map.values(), key=lambda v: v["ap_count"], reverse=True),
             "error": error,
         }
@@ -737,7 +814,10 @@ async def fetch_controller_progress(
                 "name": ec_list[i].get("name", "Unknown"),
                 "ap_count": 0, "venue_count": 0, "client_count": 0, "switch_count": 0,
                 "status_summary": {"operational": 0, "offline": 0},
-                "status_counts": {}, "venue_stats": [], "error": str(result),
+                "status_counts": {},
+                "switch_status_summary": {"operational": 0, "offline": 0},
+                "switch_status_counts": {},
+                "venue_stats": [], "error": str(result),
             }
         else:
             tenant = result
@@ -753,11 +833,17 @@ async def fetch_controller_progress(
 
     total_summary = {"operational": 0, "offline": 0}
     total_status_counts: dict[str, int] = {}
+    total_switch_summary = {"operational": 0, "offline": 0}
+    total_switch_status_counts: dict[str, int] = {}
     for t in active:
         for key in total_summary:
             total_summary[key] += t.get("status_summary", {}).get(key, 0)
         for code, count in t.get("status_counts", {}).items():
             total_status_counts[code] = total_status_counts.get(code, 0) + count
+        for key in total_switch_summary:
+            total_switch_summary[key] += t.get("switch_status_summary", {}).get(key, 0)
+        for code, count in t.get("switch_status_counts", {}).items():
+            total_switch_status_counts[code] = total_switch_status_counts.get(code, 0) + count
 
     progress_data = {
         "total_aps": total_aps,
@@ -768,6 +854,8 @@ async def fetch_controller_progress(
         "errors": errors,
         "status_summary": total_summary,
         "status_counts": total_status_counts,
+        "switch_status_summary": total_switch_summary,
+        "switch_status_counts": total_switch_status_counts,
         "tenants": sorted(tenants, key=lambda t: t["ap_count"], reverse=True),
     }
 

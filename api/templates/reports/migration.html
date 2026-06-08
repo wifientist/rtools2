@@ -61,6 +61,10 @@
       display: grid; grid-template-columns: repeat(3, 1fr);
       gap: 12px; margin-bottom: 20px;
     }
+    .metrics-row-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 6px;
+    }
     .metric-card {
       background: #fff; border: 1px solid #e5e7eb;
       border-radius: 10px; padding: 16px;
@@ -210,7 +214,32 @@
     </div>
   </div>
 
-  <!-- Metrics Grid -->
+  <!-- Switch Progress Section -->
+  <div class="progress-section">
+    <div class="progress-meta">
+      <div class="progress-target">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
+        </svg>
+        Target: {{ "{:,}".format(target_switches) }} switches
+      </div>
+      <div class="progress-message">{{ switch_message }}</div>
+    </div>
+    <div class="progress-container" style="position: relative;">
+      <div class="progress-bar {% if switch_percentage >= 100 %}complete{% endif %}"
+           style="width: {{ [switch_percentage, 100] | min }}%"></div>
+      <div class="progress-label">
+        {{ "{:,}".format(total_switches) }} / {{ "{:,}".format(target_switches) }} switches
+        ({{ "%.1f" | format(switch_percentage) }}%)
+      </div>
+      <div class="milestone" style="left: 25%"></div>
+      <div class="milestone" style="left: 50%"></div>
+      <div class="milestone" style="left: 75%"></div>
+    </div>
+  </div>
+
+  <!-- Metrics — Access Points -->
+  <div class="metrics-row-label">Access Points</div>
   <div class="metrics-grid">
     <div class="metric-card">
       <div class="metric-icon blue">
@@ -239,15 +268,43 @@
       <div class="metric-value">{{ "{:,}".format(offline) }}</div>
       <div class="metric-label">Offline</div>
     </div>
+  </div>
+
+  <!-- Metrics — Switches -->
+  <div class="metrics-row-label">Switches</div>
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-icon blue">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(total_switches) }}</div>
+      <div class="metric-label">Total Switches</div>
+    </div>
     <div class="metric-card">
       <div class="metric-icon teal">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
         </svg>
       </div>
-      <div class="metric-value">{{ "{:,}".format(total_switches) }}</div>
-      <div class="metric-label">Total SWs</div>
+      <div class="metric-value">{{ "{:,}".format(operational_switches) }}</div>
+      <div class="metric-label">Operational</div>
     </div>
+    <div class="metric-card">
+      <div class="metric-icon amber">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(offline_switches) }}</div>
+      <div class="metric-label">Offline</div>
+    </div>
+  </div>
+
+  <!-- Metrics — Venues & Clients -->
+  <div class="metrics-row-label">Venues &amp; Clients</div>
+  <div class="metrics-grid">
     <div class="metric-card">
       <div class="metric-icon purple">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -265,6 +322,15 @@
       </div>
       <div class="metric-value">{{ "{:,}".format(total_clients) }}</div>
       <div class="metric-label">Clients</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-icon purple">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
+        </svg>
+      </div>
+      <div class="metric-value">{{ "{:,}".format(total_ecs) }}</div>
+      <div class="metric-label">Active ECs</div>
     </div>
   </div>
 
@@ -291,6 +357,21 @@
     <h3>AP Status Breakdown</h3>
     <div class="status-grid">
       {% for s in status_breakdown %}
+      <div class="status-chip">
+        <span style="color: {{ s.color }}">{{ s.label }}</span>
+        <span class="count">{{ "{:,}".format(s.count) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- SW Status Breakdown -->
+  {% if switch_status_breakdown %}
+  <div class="status-section">
+    <h3>SW Status Breakdown</h3>
+    <div class="status-grid">
+      {% for s in switch_status_breakdown %}
       <div class="status-chip">
         <span style="color: {{ s.color }}">{{ s.label }}</span>
         <span class="count">{{ "{:,}".format(s.count) }}</span>
