@@ -30,6 +30,7 @@ from workflow.workflows.cleanup import VenueCleanupWorkflow
 from workflow.events import WorkflowEventPublisher
 
 from routers.per_unit_ssid.per_unit_ssid_router import validate_controller_access
+from decorators import require_danger
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,7 @@ async def run_cleanup_execution_background(
 # ==================== API Endpoints ====================
 
 @router.post("/plan", response_model=CleanupPlanResponse)
+@require_danger()
 async def create_cleanup_plan(
     request: CleanupRequest,
     background_tasks: BackgroundTasks = BackgroundTasks(),
@@ -274,6 +276,7 @@ async def create_cleanup_plan(
 
 
 @router.get("/{job_id}/plan", response_model=CleanupPlanResult)
+@require_danger()
 async def get_cleanup_plan(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -347,6 +350,7 @@ async def get_cleanup_plan(
 
 
 @router.post("/{job_id}/confirm", response_model=CleanupConfirmResponse)
+@require_danger()
 async def confirm_cleanup(
     job_id: str,
     request: CleanupConfirmRequest = CleanupConfirmRequest(),
@@ -426,6 +430,7 @@ async def confirm_cleanup(
 
 
 @router.get("/{job_id}/graph", response_model=CleanupGraphResponse)
+@require_danger()
 async def get_cleanup_graph(
     job_id: str,
     current_user: User = Depends(get_current_user),

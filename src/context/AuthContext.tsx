@@ -15,6 +15,7 @@ interface AuthContextType {
   featureAccess: FeatureAccess;
   betaEnabled: boolean;
   alphaEnabled: boolean;
+  dangerEnabled: boolean;
   activeControllerId: number | null;
   activeControllerName: string | null;
   activeControllerType: string | null;
@@ -31,6 +32,7 @@ interface AuthContextType {
   setSecondaryControllerName: (name: string) => void;
   setBetaEnabled: (enabled: boolean) => void;
   setAlphaEnabled: (enabled: boolean) => void;
+  setDangerEnabled: (enabled: boolean) => void;
   checkAuth: () => Promise<void>;
   logout: () => void;
 }
@@ -56,6 +58,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [featureAccess, setFeatureAccess] = useState<FeatureAccess>({ migration_dashboard: false });
   const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
   const [alphaEnabled, setAlphaEnabled] = useState<boolean>(false);
+  const [dangerEnabled, setDangerEnabled] = useState<boolean>(false);
   const [controllers, setControllers] = useState<{ id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[]>([]);
   const [activeControllerId, setActiveControllerId] = useState<number | null>(null);
   const [activeControllerName, setActiveControllerName] = useState<string | null>(null);
@@ -131,6 +134,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setFeatureAccess({ migration_dashboard: false });
         setBetaEnabled(false);
         setAlphaEnabled(false);
+        setDangerEnabled(false);
         setControllers([]);
         setActiveControllerId(null);
         setActiveControllerName(null);
@@ -149,6 +153,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setFeatureAccess(data.feature_access ?? { migration_dashboard: false });
       setBetaEnabled(data.beta_enabled || false);
       setAlphaEnabled(data.alpha_enabled || false);
+      setDangerEnabled(data.danger_enabled || false);
 
       setActiveControllerId(data.active_controller_id || null);
       setSecondaryControllerId(data.secondary_controller_id || null);
@@ -192,6 +197,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setFeatureAccess({ migration_dashboard: false });
       setBetaEnabled(false);
       setAlphaEnabled(false);
+      setDangerEnabled(false);
       setActiveControllerId(null);
       setActiveControllerName(null);
       setSecondaryControllerId(null);
@@ -301,6 +307,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       featureAccess,
       betaEnabled,
       alphaEnabled,
+      dangerEnabled,
       activeControllerId,
       activeControllerName,
       activeControllerType,
@@ -317,6 +324,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSecondaryControllerName,
       setBetaEnabled,
       setAlphaEnabled,
+      setDangerEnabled,
       checkAuth,
       logout
     }}>

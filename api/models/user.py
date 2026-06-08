@@ -26,6 +26,9 @@ class User(Base):
     # Feature flags
     beta_enabled = Column(Boolean, default=False, nullable=False)
     alpha_enabled = Column(Boolean, default=False, nullable=False)
+    # Per-user access to the nuclear "Danger Zone" cleanup. Granted only by
+    # super admins; independent of role and of beta/alpha.
+    danger_enabled = Column(Boolean, default=False, nullable=False)
 
     # 🔹 Add ForeignKey to link Users to Companies
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)

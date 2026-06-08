@@ -6,6 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 import BetaRoute from "@/components/BetaRoute";
 import AlphaRoute from "@/components/AlphaRoute";
+import DangerRoute from "@/components/DangerRoute";
 
 import { AuthProvider } from "@/context/AuthContext";
 
@@ -86,7 +87,7 @@ const App = () => {
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />
-          <Route path="/danger-zone" element={<BetaRoute element={<DangerZone />} />} />
+          <Route path="/danger-zone" element={<DangerRoute element={<DangerZone />} />} />
           <Route path="/fileshare" element={<ProtectedRoute element={<FilesharePage />} />} />
           <Route path="/fileshare/admin" element={<AdminRoute element={<FileshareAdmin />} />} />
           <Route path="/fileshare/:folderSlug/*" element={<ProtectedRoute element={<FolderView />} />} />

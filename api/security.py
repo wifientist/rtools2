@@ -81,6 +81,7 @@ def create_user_tokens(user: User):
         "company_id": user.company_id,
         "beta_enabled": user.beta_enabled,
         "alpha_enabled": user.alpha_enabled if hasattr(user, 'alpha_enabled') else False,
+        "danger_enabled": user.danger_enabled if hasattr(user, 'danger_enabled') else False,
     })
     refresh_token = create_refresh_token(user.id)
 
@@ -103,6 +104,7 @@ def create_user_token(user: User, expires_delta: timedelta | None = None):
         "company_id": user.company_id,
         "beta_enabled": user.beta_enabled,
         "alpha_enabled": user.alpha_enabled if hasattr(user, 'alpha_enabled') else False,
+        "danger_enabled": user.danger_enabled if hasattr(user, 'danger_enabled') else False,
     }, expires_delta)
 
 ### 🚀 Decode JWT Token
