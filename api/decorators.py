@@ -113,6 +113,57 @@ def require_alpha():
     return decorator
 
 
+def require_danger():
+    """
+    Decorator to require Danger Zone access for a feature.
+
+    Danger Zone is the nuclear delete workflow. Access is gated by the
+    per-user `danger_enabled` flag, which only super admins can grant.
+    This is intentionally independent of role and of beta/alpha access.
+
+    Usage:
+        @router.post("/cleanup/v2/plan")
+        @require_danger()
+        async def create_cleanup_plan(current_user: User = Depends(get_current_user)):
+            ...
+    """
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, current_user: User = None, **kwargs):
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+            if not getattr(current_user, 'danger_enabled', False):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Danger Zone access required. Ask a super admin to grant access."
+                )
+            return await func(*args, current_user=current_user, **kwargs)
+
+        @wraps(func)
+        def sync_wrapper(*args, current_user: User = None, **kwargs):
+            if not current_user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication required"
+                )
+            if not getattr(current_user, 'danger_enabled', False):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Danger Zone access required. Ask a super admin to grant access."
+                )
+            return func(*args, current_user=current_user, **kwargs)
+
+        import inspect
+        if inspect.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    return decorator
+
+
 def require_beta():
     """
     Decorator to require beta access for a feature.

@@ -270,6 +270,7 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
         "company_id": user_company_id,
         "beta_enabled": user.beta_enabled if hasattr(user, 'beta_enabled') else False,  # Read from DB, not token
         "alpha_enabled": user.alpha_enabled if hasattr(user, 'alpha_enabled') else False,
+        "danger_enabled": user.danger_enabled if hasattr(user, 'danger_enabled') else False,
         "active_controller_id": user.active_controller_id,
         "active_controller_name": active_controller_name,
         "secondary_controller_id": user.secondary_controller_id,

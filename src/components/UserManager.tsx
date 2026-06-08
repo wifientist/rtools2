@@ -10,6 +10,7 @@ interface User {
   role: string;
   beta_enabled: boolean;
   alpha_enabled: boolean;
+  danger_enabled: boolean;
   company_id: number | null;
 }
 
@@ -42,6 +43,7 @@ export default function UserManager() {
     role: "user",
     beta_enabled: false,
     alpha_enabled: false,
+    danger_enabled: false,
   });
 
   // Fetch all users
@@ -136,6 +138,7 @@ export default function UserManager() {
       role: user.role,
       beta_enabled: user.beta_enabled,
       alpha_enabled: user.alpha_enabled,
+      danger_enabled: user.danger_enabled,
     });
   };
 
@@ -358,6 +361,19 @@ export default function UserManager() {
                 </div>
               )}
 
+              {currentUserRole === "super" && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="edit-danger"
+                    checked={editFormData.danger_enabled}
+                    onChange={(e) => setEditFormData({ ...editFormData, danger_enabled: e.target.checked })}
+                    className="rounded accent-red-600"
+                  />
+                  <label htmlFor="edit-danger" className="ml-2 text-sm">Enable Danger Zone access (super only)</label>
+                </div>
+              )}
+
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
@@ -400,6 +416,11 @@ export default function UserManager() {
                   Alpha Access
                 </th>
               )}
+              {currentUserRole === "super" && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Danger Zone
+                </th>
+              )}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -436,6 +457,15 @@ export default function UserManager() {
                       user.alpha_enabled ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-800"
                     }`}>
                       {user.alpha_enabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </td>
+                )}
+                {currentUserRole === "super" && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.danger_enabled ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"
+                    }`}>
+                      {user.danger_enabled ? "Enabled" : "Disabled"}
                     </span>
                   </td>
                 )}

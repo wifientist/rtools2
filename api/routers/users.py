@@ -25,6 +25,7 @@ class UserUpdateSchema(BaseModel):
     role: str | None = None
     beta_enabled: bool | None = None
     alpha_enabled: bool | None = None
+    danger_enabled: bool | None = None
     company_id: int | None = None
 
 ### 🚀 Create New User (Admin Only)
@@ -194,6 +195,16 @@ def update_user_endpoint(
             )
         changes["alpha_enabled"] = {"from": user.alpha_enabled, "to": user_update.alpha_enabled}
         user.alpha_enabled = user_update.alpha_enabled
+
+    if user_update.danger_enabled is not None and user_update.danger_enabled != user.danger_enabled:
+        # Only super admins can grant/revoke Danger Zone access
+        if current_user.role != RoleEnum.super:
+            raise HTTPException(
+                status_code=403,
+                detail="Only super admins can manage Danger Zone access"
+            )
+        changes["danger_enabled"] = {"from": user.danger_enabled, "to": user_update.danger_enabled}
+        user.danger_enabled = user_update.danger_enabled
 
     if user_update.company_id is not None and user_update.company_id != user.company_id:
         # Only super admins can change company assignments

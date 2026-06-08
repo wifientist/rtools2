@@ -12,6 +12,7 @@ interface NavItem {
   rolesAllowed?: string[];
   requiresBeta?: boolean;
   requiresAlpha?: boolean;
+  requiresDanger?: boolean;
   requiresFeature?: string;
   isExternal?: boolean;
 }
@@ -24,7 +25,7 @@ interface NavCategory {
 }
 
 const Sidebar = () => {
-  const { isAuthenticated, userRole, featureAccess, roleHierarchy, betaEnabled, alphaEnabled } = useAuth();
+  const { isAuthenticated, userRole, featureAccess, roleHierarchy, betaEnabled, alphaEnabled, dangerEnabled } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [openCategories, setOpenCategories] = useState<{ [key: string]: boolean }>({
     informational: true,
@@ -82,7 +83,7 @@ const Sidebar = () => {
         { to: "/bulk-ap-tagging", icon: <Tag size={20} />, label: "Bulk AP Tagging", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/pop-swap", icon: <ArrowLeftRight size={20} />, label: "Pop and Swap", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
-        { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, rolesAllowed: ["admin","super"], requiresBeta: true },
+        { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, requiresDanger: true },
         { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
@@ -137,6 +138,9 @@ const Sidebar = () => {
     // Check beta access
     if (item.requiresBeta && !betaEnabled) return false;
 
+    // Check Danger Zone access (granted per-user by super admins)
+    if (item.requiresDanger && !dangerEnabled) return false;
+
     // Check feature access (computed server-side from company + role)
     if (item.requiresFeature && !featureAccess[item.requiresFeature as keyof typeof featureAccess]) return false;
 
@@ -162,7 +166,7 @@ const Sidebar = () => {
       isNested ? 'pl-8 space-x-2' : 'space-x-3'
     } ${inCollapsedSubmenu ? 'w-full' : ''}`;
 
-    const iconClass = item.requiresBeta ? 'text-orange-300' : item.requiresAlpha ? 'text-purple-300' : '';
+    const iconClass = item.requiresDanger ? 'text-red-400' : item.requiresBeta ? 'text-orange-300' : item.requiresAlpha ? 'text-purple-300' : '';
 
     const content = (
       <>

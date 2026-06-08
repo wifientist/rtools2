@@ -22,6 +22,7 @@ def user_profile(user: User = Depends(get_current_user)):
         "role": user.role,
         "beta_enabled": user.beta_enabled,
         "alpha_enabled": user.alpha_enabled,
+        "danger_enabled": user.danger_enabled,
     }
 
 

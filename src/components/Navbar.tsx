@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext"; // Use auth context
 
 const Navbar = () => {
-  const { isAuthenticated, userRole, activeControllerName, logout } = useAuth(); // Get auth state
+  const { isAuthenticated, userRole, dangerEnabled, activeControllerName, logout } = useAuth(); // Get auth state
 
   return (
     <nav className="bg-blue-600 text-white p-4">
@@ -27,7 +27,7 @@ const Navbar = () => {
             <Link to="/profile" className="hover:underline">Profile</Link>
             {(userRole === "admin" || userRole === "super") && <Link to="/admin" className="hover:underline">Admin</Link>}
             {(userRole === "admin" || userRole === "super") && <Link to="/jobs" className="hover:underline">Jobs</Link>}
-            {(userRole === "admin" || userRole === "super") && <Link to="/danger-zone" className="hover:underline text-red-200">Danger Zone</Link>}
+            {dangerEnabled && <Link to="/danger-zone" className="hover:underline text-red-200">Danger Zone</Link>}
             <button onClick={logout} className="bg-red-500 px-3 py-1 rounded">
                 Logout
               </button>

@@ -28,6 +28,7 @@ class UserResponse(UserBase):
     role: str
     beta_enabled: bool
     alpha_enabled: bool
+    danger_enabled: bool
     company_id: int | None
 
     class Config:
