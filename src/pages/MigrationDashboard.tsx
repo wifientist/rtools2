@@ -320,11 +320,14 @@ function getMessage(pct: number): string {
 function getSwitchMessage(pct: number): string {
   if (pct >= 100) return "Every switch has found its port in R1!";
   if (pct >= 90) return "Almost all switches have flipped!";
-  if (pct >= 75) return "Three quarters of switches are home!";
+  if (pct >= 80) return "4 out of 5 switches recommend R1!";
+  if (pct >= 70) return "Seven in ten switches have stacked up in R1!";
+  if (pct >= 60) return "The switches are voting with their ports!";
   if (pct >= 50) return "Halfway through the switch migration!";
-  if (pct >= 25) return "A quarter of switches have moved!";
-  if (pct >= 10) return "Switches are starting to stack up!";
-  if (pct >= 5) return "First switches are powering on in R1!";
+  if (pct >= 40) return "Switches are picking up the pace!";
+  if (pct >= 30) return "Almost a third have powered over!";
+  if (pct >= 20) return "1 in 5 switches now call R1 home!";
+  if (pct >= 10) return "Double digits — switches are stacking up!";
   return "The switch migration begins!";
 }
 
@@ -1363,7 +1366,7 @@ const MigrationDashboard = () => {
                 />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-lg font-bold drop-shadow-sm mix-blend-difference text-white">
+                <span className="text-lg font-bold text-white [text-shadow:_0_1px_3px_rgba(0,0,0,0.6)]">
                   {data.total_aps.toLocaleString()} / {target.toLocaleString()}{" "}
                   APs ({percentage.toFixed(1)}%)
                 </span>
@@ -1438,7 +1441,7 @@ const MigrationDashboard = () => {
                 />
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-lg font-bold drop-shadow-sm mix-blend-difference text-white">
+                <span className="text-lg font-bold text-white [text-shadow:_0_1px_3px_rgba(0,0,0,0.6)]">
                   {(data.total_switches ?? 0).toLocaleString()} /{" "}
                   {switchTarget.toLocaleString()} switches ({switchPercentage.toFixed(1)}%)
                 </span>

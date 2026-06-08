@@ -145,11 +145,14 @@ def _get_message(pct: float) -> str:
 def _get_switch_message(pct: float) -> str:
     if pct >= 100: return "Every switch has found its port in R1!"
     if pct >= 90: return "Almost all switches have flipped!"
-    if pct >= 75: return "Three quarters of switches are home!"
+    if pct >= 80: return "4 out of 5 switches recommend R1!"
+    if pct >= 70: return "Seven in ten switches have stacked up in R1!"
+    if pct >= 60: return "The switches are voting with their ports!"
     if pct >= 50: return "Halfway through the switch migration!"
-    if pct >= 25: return "A quarter of switches have moved!"
-    if pct >= 10: return "Switches are starting to stack up!"
-    if pct >= 5: return "First switches are powering on in R1!"
+    if pct >= 40: return "Switches are picking up the pace!"
+    if pct >= 30: return "Almost a third have powered over!"
+    if pct >= 20: return "1 in 5 switches now call R1 home!"
+    if pct >= 10: return "Double digits — switches are stacking up!"
     return "The switch migration begins!"
 
 
