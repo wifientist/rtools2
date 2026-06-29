@@ -4,7 +4,7 @@ Redis client configuration for workflow state management
 import logging
 import os
 import redis.asyncio as redis
-from redis.asyncio.connection import ConnectionPool
+from redis.asyncio.connection import ConnectionPool, BlockingConnectionPool
 from redis.asyncio.retry import Retry
 from redis.backoff import ExponentialBackoff
 from typing import Optional
@@ -25,22 +25,28 @@ class RedisClient:
             port = int(os.getenv("REDIS_PORT", "6379"))
             db = int(os.getenv("REDIS_DB", "1"))
             password = os.getenv("REDIS_PASSWORD", None)
+            max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "200"))
+            # How long a caller will WAIT for a free connection before failing,
+            # instead of erroring instantly when the pool is momentarily full.
+            pool_timeout = float(os.getenv("REDIS_POOL_TIMEOUT", "20"))
 
-            # Connection pool settings for parallel workloads
-            # Default max_connections=10 is too small for parallel workflows
+            # Connection settings for parallel workloads.
             # With concurrency limits in Brain (20) and ActivityTracker (25),
-            # 200 connections provides sufficient headroom for:
+            # 200 connections provides headroom for:
             # - 20 concurrent phase tasks × ~5 Redis ops each
             # - 25 concurrent activity polls
             # - SSE streams + progress tracking + pub/sub
-            pool_kwargs = {
+            connection_kwargs = {
                 "host": host,
                 "port": port,
                 "db": db,
                 "decode_responses": True,
                 "socket_connect_timeout": 10,
                 "socket_timeout": 10,
-                "max_connections": 200,  # Sized for bounded concurrency + headroom
+                # Drop half-dead sockets proactively so they don't linger as
+                # checked-out-but-unusable connections during traffic spikes.
+                "socket_keepalive": True,
+                "health_check_interval": 30,
                 # Retry transient timeouts / dropped connections at the command
                 # level (3 attempts, exponential backoff) so a brief Redis
                 # hiccup does not bubble up and fail an entire long-running job.
@@ -49,15 +55,29 @@ class RedisClient:
             }
 
             if password:
-                pool_kwargs["password"] = password
+                connection_kwargs["password"] = password
 
-            cls._pool = ConnectionPool(**pool_kwargs)
+            # Use a BLOCKING pool: when all connections are checked out (e.g. a
+            # large import where Brain + ActivityTracker + SSE streams + the
+            # plan poll all contend at once), callers wait up to pool_timeout
+            # for one to free up instead of immediately raising
+            # "Too many connections" and 500ing. This is the key resilience
+            # change — a plain ConnectionPool turns a momentary spike over the
+            # cap into hard failures for whichever requests lose the race.
+            cls._pool = BlockingConnectionPool(
+                max_connections=max_connections,
+                timeout=pool_timeout,
+                **connection_kwargs,
+            )
             cls._instance = redis.Redis(connection_pool=cls._pool)
 
             # Test connection
             try:
                 await cls._instance.ping()
-                logger.info(f"Redis connected: {host}:{port} (DB {db}, max_connections=200)")
+                logger.info(
+                    f"Redis connected: {host}:{port} (DB {db}, "
+                    f"max_connections={max_connections}, pool_timeout={pool_timeout}s, blocking)"
+                )
             except redis.ConnectionError as e:
                 logger.error(f"Redis connection failed: {e}")
                 cls._instance = None
