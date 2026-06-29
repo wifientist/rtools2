@@ -467,9 +467,13 @@ async def extraction_sse(
         except asyncio.CancelledError:
             pass
         finally:
+            # Cancellation-safe cleanup: close() ends the subscription
+            # server-side, so skip the interruptible network unsubscribe and
+            # shield the release so the pooled connection always returns to the
+            # pool even while this generator is being cancelled on disconnect.
+            cleanup = pubsub.aclose() if hasattr(pubsub, "aclose") else pubsub.close()
             try:
-                await pubsub.unsubscribe(channel)
-                await pubsub.close()
+                await asyncio.shield(cleanup)
             except Exception:
                 pass
 

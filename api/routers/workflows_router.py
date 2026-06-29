@@ -649,8 +649,19 @@ async def stream_job_events(
                             return
 
         finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
+            # Cancellation-safe cleanup. On client disconnect (and EventSource
+            # auto-reconnects aggressively), Starlette cancels this generator;
+            # awaiting unsubscribe()/close() directly can be interrupted by
+            # CancelledError before the pooled connection is released, slowly
+            # leaking pub/sub connections until the pool is exhausted. close()
+            # alone ends the subscription server-side, so skip the network
+            # unsubscribe and shield the release so the connection always
+            # returns to the pool even while we're being cancelled.
+            cleanup = pubsub.aclose() if hasattr(pubsub, "aclose") else pubsub.close()
+            try:
+                await asyncio.shield(cleanup)
+            except Exception:
+                pass
 
     return StreamingResponse(
         event_stream(),
