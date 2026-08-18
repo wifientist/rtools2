@@ -36,6 +36,7 @@ from routers.ap_pop_swap import router as pop_swap_router
 from routers.bulk_ap_tagging import router as bulk_ap_tagging_router
 from routers.data_studio_export import router as data_studio_export_router
 from routers.dfs_blacklist import router as dfs_blacklist_router
+from routers.maps import router as maps_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -215,6 +216,9 @@ app.include_router(data_studio_export_router, tags=["Data Studio Export"])
 
 # DFS Blacklist — SmartZone DFS channel monitoring (alpha-gated)
 app.include_router(dfs_blacklist_router, tags=["DFS Blacklist"])
+
+# Maps — floor plan overlays for live client / RSSI data
+app.include_router(maps_router, tags=["Maps"])
 
 # Debug: Log all routes to check for conflicts
 logger.info("=== ALL ROUTES ===")
