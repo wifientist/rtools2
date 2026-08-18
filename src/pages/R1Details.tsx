@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { Camera, GitCompareArrows } from "lucide-react";
+import { Camera, GitCompareArrows, KeyRound } from "lucide-react";
 import Snapshot from "@/pages/Snapshot";
 import DiffTenant from "@/pages/DiffTenant";
 import DiffVenue from "@/pages/DiffVenue";
+import MspLicensing from "@/pages/MspLicensing";
 
-type Tool = "snapshot" | "diff-tenant" | "diff-venue";
+type Tool = "snapshot" | "licensing" | "diff-tenant" | "diff-venue";
 
 const tools: { key: Tool; label: string; icon: React.ReactNode; description: string }[] = [
   { key: "snapshot", label: "MSP Snapshot", icon: <Camera size={28} />, description: "View MSP details, ECs, labels, and entitlements" },
+  { key: "licensing", label: "MSP Licensing", icon: <KeyRound size={28} />, description: "License pool terms, expiration cliffs, and per-EC assignments" },
   { key: "diff-tenant", label: "Diff Tenant", icon: <GitCompareArrows size={28} />, description: "Compare two end-customer tenants side by side" },
   { key: "diff-venue", label: "Diff Venue", icon: <GitCompareArrows size={28} />, description: "Compare venue WiFi settings between tenants" },
 ];
@@ -50,6 +52,7 @@ function R1Details() {
 
       {/* Active tool content */}
       {activeTool === "snapshot" && <Snapshot />}
+      {activeTool === "licensing" && <MspLicensing />}
       {activeTool === "diff-tenant" && <DiffTenant />}
       {activeTool === "diff-venue" && <DiffVenue />}
 
