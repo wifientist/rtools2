@@ -109,14 +109,14 @@ class IdempotentHelper:
         logger.info(f"Finding or creating DPSK pool: {name}")
 
         try:
-            # Try to query for existing pools
-            # Note: The query endpoint may be broken (returns 500)
-            # So we rely on the identity group having a dpskPoolId
+            # Try to query for existing pools.
+            # The 500s previously seen here were not an endpoint fault — the
+            # query is 1-indexed and rejects page=0 with a bare HTTP 500.
             try:
                 response = await self.r1_client.dpsk.query_dpsk_pools(
                     tenant_id=tenant_id,
                     search_string=name,
-                    page=0,
+                    page=1,
                     limit=100
                 )
 

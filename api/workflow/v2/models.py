@@ -276,6 +276,21 @@ class PhaseDefinitionV2(BaseModel):
     # API call estimate (for dry-run display)
     api_calls_per_unit: Union[int, str] = 1  # int or "dynamic"
 
+    # Real-work reporting (optional).
+    # A per-unit phase runs once per unit, so "45/45" only ever says every
+    # unit reached the phase — a unit the phase no-ops for (no APs to assign,
+    # no passphrases of its own, no AP Group because it broadcasts venue-wide)
+    # completes exactly like one that did work. When effect_field is set,
+    # get_progress() also reports what the phase actually produced, read off
+    # each unit's resolved data once that unit's phase completes.
+    #   effect_field: a UnitResolved field name, or a resolved.extra key
+    #   effect_agg:   "sum"      → add the numeric values (passphrases, APs)
+    #                 "distinct" → count unique non-empty IDs (pools, SSIDs)
+    #                 "truthy"   → count units where the flag is set
+    effect_field: Optional[str] = None
+    effect_label: str = ""            # e.g. "passphrases", plural noun
+    effect_agg: str = "sum"           # "sum" | "distinct" | "truthy"
+
     # Activation slot control - for R1's 15-SSID-per-AP-Group limit
     # "acquire" = acquire a slot before this phase starts
     # "release" = release the slot after this phase completes
@@ -331,6 +346,10 @@ class ValidationSummary(BaseModel):
     dpsk_pools_to_reuse: int = 0
     networks_to_create: int = 0
     networks_to_reuse: int = 0
+    # Name of the property-wide SSID riding alongside the per-unit ones,
+    # empty when the plan has none. It is counted in networks_to_create but
+    # gets no AP Group, which is why the AP Group counts run one lower.
+    property_ssid: str = ""
     passphrases_to_create: int = 0
     passphrases_to_update: int = 0  # Existing passphrases needing VLAN update
     passphrases_existing: int = 0
@@ -373,6 +392,18 @@ class PhaseResult(BaseModel):
     error: Optional[str] = None
     reused: bool = False             # True if existing resource was found
     duration_ms: Optional[int] = None
+
+
+def _resolved_value(resolved: UnitResolved, field: str) -> Any:
+    """Read a phase output off a unit's resolved data.
+
+    Phase outputs land on a UnitResolved field when one exists and in
+    resolved.extra otherwise (see Brain._apply_outputs), so both are checked.
+    """
+    value = getattr(resolved, field, None)
+    if value is None:
+        value = resolved.extra.get(field)
+    return value
 
 
 # =============================================================================
@@ -521,6 +552,18 @@ class WorkflowJobV2(BaseModel):
         # Per-phase counters: {phase_id: [completed, failed, running]}
         phase_counters = {pid: [0, 0, 0] for pid in per_unit_phase_ids}
 
+        # Phases that report what they actually produced, not just how many
+        # units reached them. Accumulated in the same pass over the units.
+        effect_specs = {
+            p.id: p for p in self.phase_definitions
+            if p.id in per_unit_phase_ids and p.effect_field
+        }
+        effect_totals: Dict[str, Any] = {
+            pid: (set() if p.effect_agg == "distinct" else 0)
+            for pid, p in effect_specs.items()
+        }
+        effect_units: Dict[str, int] = {pid: 0 for pid in effect_specs}
+
         for unit in self.units.values():
             # Unit status counts
             if unit.status == UnitStatus.COMPLETED:
@@ -535,6 +578,27 @@ class WorkflowJobV2(BaseModel):
                 if pid in per_unit_phase_ids:
                     completed_work += 1
                     phase_counters[pid][0] += 1
+
+                    # Roll up what this phase actually did for this unit
+                    spec = effect_specs.get(pid)
+                    if spec is not None:
+                        value = _resolved_value(unit.resolved, spec.effect_field)
+                        if spec.effect_agg == "distinct":
+                            if value:
+                                effect_totals[pid].add(value)
+                                effect_units[pid] += 1
+                        elif spec.effect_agg == "truthy":
+                            if value:
+                                effect_totals[pid] += 1
+                                effect_units[pid] += 1
+                        else:  # "sum"
+                            try:
+                                numeric = float(value or 0)
+                            except (TypeError, ValueError):
+                                numeric = 0
+                            if numeric:
+                                effect_totals[pid] += numeric
+                                effect_units[pid] += 1
 
             # Count failed per-unit phases
             for pid in unit.failed_phases:
@@ -583,6 +647,18 @@ class WorkflowJobV2(BaseModel):
                     "pending": total_units - c - f - r,
                     "total": total_units,
                 }
+                if phase_def.id in effect_specs:
+                    total = effect_totals[phase_def.id]
+                    phase_stats[phase_def.id].update({
+                        # What the phase produced, as opposed to how many
+                        # units reached it (completed/total above)
+                        "effect": (
+                            len(total) if isinstance(total, set)
+                            else int(total)
+                        ),
+                        "effect_label": phase_def.effect_label,
+                        "effect_units": effect_units[phase_def.id],
+                    })
             else:
                 status = self.global_phase_status.get(phase_def.id, PhaseStatus.PENDING)
                 phase_stats[phase_def.id] = {

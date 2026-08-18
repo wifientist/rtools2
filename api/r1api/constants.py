@@ -75,6 +75,48 @@ class NetworkNameConstraints:
     # No backticks, no $(), no leading/trailing whitespace
 
 
+# DPSK Passphrase Generation
+class DpskPassphraseFormat:
+    """
+    RuckusONE `passphraseFormat` enum for DPSK pools.
+
+    DICTIONARY_WORDS generates word-based passphrases (e.g. "otter-lantern-
+    copper"), which are far easier to read out over the phone than the
+    KEYBOARD_FRIENDLY default. It is the only format that honours
+    `wordCount` and `numericSuffixEnabled`; both are ignored otherwise.
+    """
+    NUMBERS_ONLY = "NUMBERS_ONLY"
+    KEYBOARD_FRIENDLY = "KEYBOARD_FRIENDLY"
+    MOST_SECURED = "MOST_SECURED"
+    DICTIONARY_WORDS = "DICTIONARY_WORDS"
+
+    ALL = (NUMBERS_ONLY, KEYBOARD_FRIENDLY, MOST_SECURED, DICTIONARY_WORDS)
+
+    # Spec-declared bounds on wordCount (inclusive)
+    MIN_WORD_COUNT = 3
+    MAX_WORD_COUNT = 6
+    DEFAULT_WORD_COUNT = 4
+
+
+# DPSK Scale Limits
+class DpskScaleLimits:
+    """
+    Ceilings for per-unit DPSK deployments.
+
+    These are RuckusONE platform limits, not spec-declared values — the
+    OpenAPI spec does not publish them, so they are recorded here as the
+    single place to bump when R1 raises them again.
+
+    SHARED_POOL_MAX_SSIDS applies to ssid_mode='per_unit': one DPSK pool
+    backing many SSIDs. A passphrase from that pool works on ANY of those
+    SSIDs, which is what keeps roaming working across the property.
+    """
+    SHARED_POOL_MAX_SSIDS = 1024
+
+    # DPSK pool/service display name cap enforced by R1
+    POOL_NAME_MAX_LENGTH = 64
+
+
 # AP Group Name Constraints
 class ApGroupNameConstraints:
     """AP Group name validation constraints"""

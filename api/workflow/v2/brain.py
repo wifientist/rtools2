@@ -350,6 +350,41 @@ class WorkflowBrain:
         # (Phase 0 is already in global_phase_status, so it won't re-run)
         graph = DependencyGraph(job.phase_definitions)
 
+        # Collapse skipped phases out of the dependency edges.
+        #
+        # _mark_skipped_phases records a skip as SKIPPED in global_phase_status,
+        # and _settled_global_phases treats that as settled so the skip does not
+        # strand its dependents. But "settled" is not "satisfied": a phase that
+        # never ran produced no outputs. Dependents must inherit the skipped
+        # phase's dependencies instead of stopping at it, or they become ready
+        # before the phase that actually creates what they consume.
+        # Take the union of the persisted markers and a fresh evaluation of
+        # skip_if: the markers drive the UI, but skip_if is the source of truth
+        # and is what every other skip check in this class re-evaluates.
+        skipped_phase_ids = {
+            pid for pid, status in job.global_phase_status.items()
+            if status == PhaseStatus.SKIPPED
+        }
+        for phase_def in job.phase_definitions:
+            if not phase_def.skip_if or phase_def.id in skipped_phase_ids:
+                continue
+            try:
+                if safe_eval(phase_def.skip_if, {"options": job.options}):
+                    skipped_phase_ids.add(phase_def.id)
+            except Exception as e:
+                logger.warning(
+                    f"Job {job.id}: skip_if eval failed for "
+                    f"{phase_def.id} ({e}); treating as not skipped"
+                )
+
+        if skipped_phase_ids:
+            graph.collapse_skipped(skipped_phase_ids)
+            logger.info(
+                f"Job {job.id}: Collapsed {len(skipped_phase_ids)} skipped "
+                f"phase(s) out of the dependency graph: "
+                f"{sorted(skipped_phase_ids)}"
+            )
+
         # Initialize concurrency control semaphore
         # This prevents Redis connection pool exhaustion with large unit counts
         self._phase_semaphore = asyncio.Semaphore(MAX_CONCURRENT_PHASE_TASKS)
@@ -404,26 +439,32 @@ class WorkflowBrain:
                     job.errors.append("Cancelled by user")
                     break
 
-                # Find all ready work
-                ready_work = self._find_ready_work(job, graph)
-
-                # Launch ready work that isn't already in flight
-                # Use semaphore to limit concurrent phase executions
-                for unit_id, phase_id in ready_work:
-                    key = f"{unit_id}:{phase_id}"
-                    if key not in in_flight:
-                        task = asyncio.create_task(
-                            self._execute_phase_with_limit(job, unit_id, phase_id)
-                        )
-                        in_flight[key] = task
-
-                # Also check for ready global phases
+                # Launch ready global phases FIRST.
+                #
+                # Globals and per-unit work share _phase_semaphore, and its
+                # waiters are served in the order they were created. A global
+                # phase that sets up resources for every unit (e.g.
+                # create_shared_resources) would otherwise queue behind a whole
+                # wave of per-unit tasks from the same tick — on a 45-unit
+                # property that left it waiting while the units it unblocks sat
+                # in front of it. There are only ever a handful of globals, so
+                # letting them in first costs the per-unit fan-out nothing.
                 ready_global = self._find_ready_global_phases(job, graph)
                 for phase_id in ready_global:
                     key = f"global:{phase_id}"
                     if key not in in_flight:
                         task = asyncio.create_task(
                             self._execute_global_phase_with_limit(job, phase_id)
+                        )
+                        in_flight[key] = task
+
+                # Then per-unit work that isn't already in flight
+                ready_work = self._find_ready_work(job, graph)
+                for unit_id, phase_id in ready_work:
+                    key = f"{unit_id}:{phase_id}"
+                    if key not in in_flight:
+                        task = asyncio.create_task(
+                            self._execute_phase_with_limit(job, unit_id, phase_id)
                         )
                         in_flight[key] = task
 
@@ -747,10 +788,7 @@ class WorkflowBrain:
             List of (unit_id, phase_id) tuples
         """
         ready = []
-        global_completed = {
-            pid for pid, status in job.global_phase_status.items()
-            if status == PhaseStatus.COMPLETED
-        }
+        global_completed = self._settled_global_phases(job)
 
         for unit_id, unit in job.units.items():
             if unit.status == UnitStatus.FAILED:
@@ -787,10 +825,7 @@ class WorkflowBrain:
         - Per-unit phases (must be completed for ALL units)
         """
         ready = []
-        global_completed = {
-            pid for pid, status in job.global_phase_status.items()
-            if status == PhaseStatus.COMPLETED
-        }
+        global_completed = self._settled_global_phases(job)
 
         # Build set of per-unit phases that are complete for ALL units
         per_unit_completed_all = set()
@@ -811,10 +846,13 @@ class WorkflowBrain:
             if phase_def.id in job.global_phase_status:
                 continue  # Already started/completed/failed (incl. Phase 0)
 
-            # Check dependencies - can be global OR per-unit (all units done)
+            # Check dependencies - can be global OR per-unit (all units done).
+            # Read them off the graph, not phase_def.depends_on: the graph has
+            # skipped phases collapsed out, so a dependency on a skipped phase
+            # resolves to whatever that phase itself was waiting for.
             deps_met = all(
                 dep in global_completed or dep in per_unit_completed_all
-                for dep in phase_def.depends_on
+                for dep in graph.get_dependencies(phase_def.id)
             )
             if deps_met:
                 ready.append(phase_def.id)
@@ -1515,10 +1553,7 @@ class WorkflowBrain:
         }
 
         # Global phases that are done (needed for dependency checking)
-        global_completed = {
-            pid for pid, status in job.global_phase_status.items()
-            if status == PhaseStatus.COMPLETED
-        }
+        global_completed = self._settled_global_phases(job)
 
         for unit in job.units.values():
             if unit.status == UnitStatus.FAILED:
@@ -1586,6 +1621,22 @@ class WorkflowBrain:
         graph: DependencyGraph
     ) -> None:
         """Handle a completed phase result."""
+        # Global phases carry no unit_id. _execute_global_phase writes the
+        # terminal status to Redis, but update_global_phase_status is a
+        # read-modify-write of the whole job — the scheduler's own save_job()
+        # can clobber it back with its stale in-memory copy, leaving the phase
+        # RUNNING forever and stranding every dependent phase. Sync the
+        # in-memory copy here (the failure path at the task handler already
+        # does this) so both views agree.
+        if result.unit_id is None:
+            gp_def = job.get_phase_definition(result.phase_id)
+            if gp_def and not gp_def.per_unit:
+                job.global_phase_status[result.phase_id] = (
+                    PhaseStatus.COMPLETED if result.success else PhaseStatus.FAILED
+                )
+                if result.success and result.outputs:
+                    job.global_phase_results[result.phase_id] = result.outputs
+
         if not result.success:
             phase_def = job.get_phase_definition(result.phase_id)
             if phase_def and phase_def.critical and result.unit_id:
@@ -1610,6 +1661,34 @@ class WorkflowBrain:
             await self._publish_event(job.id, "progress_update", {
                 "progress": job.get_progress(),
             })
+
+    def _settled_global_phases(self, job: WorkflowJobV2) -> Set[str]:
+        """
+        Global phases that are settled, i.e. that no longer block dependents.
+
+        A dependency is satisfied once the upstream phase has reached a
+        terminal state — not only on success:
+
+        - COMPLETED — ran and succeeded.
+        - SKIPPED   — deliberately not run for this configuration. Excluding it
+          strands every dependent phase forever (this stranded cloudpath_audit
+          on every run with access policies disabled). Note this makes a skip
+          non-blocking, NOT satisfied: collapse_skipped() rewrites the edges so
+          dependents still wait on whatever the skipped phase waited on.
+        - FAILED on a NON-critical phase — the workflow already declares that
+          this phase's failure must not stop the run, so it must not block
+          downstream work either. Critical failures are handled separately and
+          do stop the job.
+        """
+        settled: Set[str] = set()
+        for pid, status in job.global_phase_status.items():
+            if status in (PhaseStatus.COMPLETED, PhaseStatus.SKIPPED):
+                settled.add(pid)
+            elif status == PhaseStatus.FAILED:
+                phase_def = job.get_phase_definition(pid)
+                if phase_def and not phase_def.critical:
+                    settled.add(pid)
+        return settled
 
     def _mark_skipped_phases(self, job: WorkflowJobV2) -> None:
         """
@@ -2123,19 +2202,37 @@ class WorkflowBrain:
 
         This ensures the workflow definition controls which class runs,
         not the import-order-dependent registry.
+
+        An executor may legitimately be written either way:
+          - dotted path  "workflow.phases.foo.FooPhase"  -> imported directly
+          - registry id  "create_ap_group"               -> looked up by id
+
+        Only the dotted form is importable. Attempting to import a registry id
+        raised ValueError on every call ("not enough values to unpack"), which
+        was caught and logged as a warning per phase per unit — hundreds of
+        spurious warnings a run, and worse, indistinguishable from a genuine
+        import failure. Registry ids now go straight to the registry, so a
+        warning here once again means something is actually wrong.
         """
         import importlib
 
         # Try executor path from phase definition (authoritative)
         if phase_def and phase_def.executor:
-            try:
-                module_path, class_name = phase_def.executor.rsplit('.', 1)
-                module = importlib.import_module(module_path)
-                return getattr(module, class_name)
-            except (ImportError, AttributeError, ValueError) as e:
-                logger.warning(
-                    f"Failed to import executor '{phase_def.executor}': {e}, "
-                    f"falling back to registry for '{phase_id}'"
+            executor = phase_def.executor
+            if '.' in executor:
+                try:
+                    module_path, class_name = executor.rsplit('.', 1)
+                    module = importlib.import_module(module_path)
+                    return getattr(module, class_name)
+                except (ImportError, AttributeError, ValueError) as e:
+                    logger.warning(
+                        f"Failed to import executor '{executor}': {e}, "
+                        f"falling back to registry for '{phase_id}'"
+                    )
+            else:
+                # Bare registry id — the intended shorthand, not an error.
+                logger.debug(
+                    f"Executor '{executor}' is a registry id; resolving by id"
                 )
 
         # Fallback to registry

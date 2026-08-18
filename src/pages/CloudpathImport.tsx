@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import DpskPoolSelector from "@/components/DpskPoolSelector";
@@ -57,11 +57,50 @@ interface ScenarioDetection {
   unit_coverage: number;  // 0-1
   unique_ssids: string[];
   recommendation: string;
-  can_use_b1: boolean;
+  can_use_b1: boolean;         // within the shared-pool SSID ceiling
+  units_without_number: number;  // no unit SSID of their own
+  unit_numbers: string[];        // detected units, sorted — seeds the AP CSV
+  // Counts the preview needs to state what an import will really produce.
+  // Mirrors the planning in api/workflow/phases/cloudpath/validate.py.
+  total_passphrases: number;
+  site_wide_ssid: string;             // "" when the export has none
+  passphrases_with_unit: number;      // carry a unit SSID
+  passphrases_on_property: number;    // listed on the property-wide SSID
 }
 
-// Import mode is now controlled by ssid_mode: "none" | "single" | "per_unit"
+// Import mode is controlled by ssid_mode:
+//   "none" | "single" | "per_unit"
 // Scenario detection (A/B) is used internally for analytics only
+
+// RuckusONE ceiling. Mirrors DpskScaleLimits in api/r1api/constants.py —
+// keep the two in step. Not published by R1, so it is described in the UI
+// as this tool's ceiling rather than a platform one.
+const MAX_SSIDS_SHARED_POOL = 1024;  // ssid_mode="per_unit"
+
+type SsidMode = "none" | "single" | "per_unit";
+
+// R1 passphraseFormat. "" means translate whatever Cloudpath exported.
+// Mirrors DpskPassphraseFormat in api/r1api/constants.py.
+type PassphraseFormat =
+  | ""
+  | "NUMBERS_ONLY"
+  | "KEYBOARD_FRIENDLY"
+  | "MOST_SECURED"
+  | "DICTIONARY_WORDS";
+
+const MIN_WORD_COUNT = 3;
+const MAX_WORD_COUNT = 6;
+const DEFAULT_WORD_COUNT = 4;
+
+const PASSPHRASE_FORMATS: { value: PassphraseFormat; label: string; hint: string }[] = [
+  { value: "", label: "From Cloudpath export", hint: "Translate the format the pool was exported with" },
+  { value: "DICTIONARY_WORDS", label: "Dictionary words", hint: "e.g. otter-lantern-copper — easiest to read aloud" },
+  { value: "KEYBOARD_FRIENDLY", label: "Keyboard friendly", hint: "Letters and digits" },
+  { value: "NUMBERS_ONLY", label: "Numbers only", hint: "Digits only" },
+  { value: "MOST_SECURED", label: "Most secured", hint: "Letters, digits and symbols" },
+];
+
+const isPerUnitMode = (mode: SsidMode) => mode === "per_unit";
 
 function CloudpathImport() {
   const {
@@ -85,21 +124,35 @@ function CloudpathImport() {
   const [expiredDpskHandling, setExpiredDpskHandling] = useState<"no_expiration" | "renew" | "skip">("no_expiration");
   const [identityGroupName, setIdentityGroupName] = useState("");
   const [dpskServiceName, setDpskServiceName] = useState("");
-  const [ssidMode, setSsidMode] = useState<"none" | "single" | "per_unit">("none");
 
-  // AP Group & Assignment Options (for per_unit mode)
+  // Passphrase generation. "" = translate whatever Cloudpath exported.
+  const [passphraseFormat, setPassphraseFormat] = useState<PassphraseFormat>("");
+  const [wordCount, setWordCount] = useState(DEFAULT_WORD_COUNT);
+  const [numericSuffixEnabled, setNumericSuffixEnabled] = useState(false);
+  const [ssidMode, setSsidMode] = useState<SsidMode>("none");
+
+  // AP Group & Assignment Options (for both per-unit modes)
+  // Hybrid: also stand up the export's property-wide SSID alongside the
+  // per-unit ones. Most properties have one.
+  const [createPropertySsid, setCreatePropertySsid] = useState(true);
   const [apGroupPrefix, setApGroupPrefix] = useState("");
   const [apGroupPostfix, setApGroupPostfix] = useState("");
   const [apAssignmentMode, setApAssignmentMode] = useState<"skip" | "csv">("skip");
   const [apAssignments, setApAssignments] = useState<{unit_number: string, ap_identifier: string}[]>([]);
   const [apAssignmentError, setApAssignmentError] = useState("");
   const [apAssignmentText, setApAssignmentText] = useState("");
+  // The last CSV we auto-seeded, so the UI can tell a pristine seed from a
+  // list the user edited. Cleared by resetImportState() on every new file.
+  const seededApCsvRef = useRef("");
 
   // Identity description options
-  const [skipIdentityDescriptions, setSkipIdentityDescriptions] = useState(true);
+  // Default OFF: writing the Cloudpath GUID onto each identity is the only
+  // link back to the source export, so losing it silently is worse than the
+  // extra API call per identity. Matches the backend default.
+  const [skipIdentityDescriptions, setSkipIdentityDescriptions] = useState(false);
 
   // Access Policy Options
-  const [enableAccessPolicies, setEnableAccessPolicies] = useState(false);
+  const [enableAccessPolicies, setEnableAccessPolicies] = useState(true);
   const [policySetName, setPolicySetName] = useState("");
   const [detectedSuffixes, setDetectedSuffixes] = useState<{patterns: string[], withSuffix: number, withoutSuffix: number} | null>(null);
 
@@ -212,14 +265,38 @@ function CloudpathImport() {
     const allSsids = new Set<string>();
     let unitPassphrases = 0;
 
+    // The pool's own ssidList is the authoritative unit list — the backend
+    // plans a unit for every SSID on it, even one no passphrase names. A
+    // non-unit SSID there is the property-wide one.
+    const poolSsids: string[] = data.pool?.ssidList || [];
+    let masterSiteWideSsid = "";
+    for (const ssid of poolSsids) {
+      allSsids.add(ssid);
+      const match = ssid.match(unitPattern);
+      if (match) {
+        uniqueUnits.add(match[1]);
+      } else if (!masterSiteWideSsid) {
+        masterSiteWideSsid = ssid;
+      }
+    }
+
     // Suffix pattern detection
     const suffixPatterns = new Set<string>();
     let usersWithSuffix = 0;
     let usersWithoutSuffix = 0;
 
+    // Non-unit SSID frequency, for detecting a property-wide SSID that the
+    // pool's master list doesn't carry
+    const nonUnitSsidCounts = new Map<string, number>();
+
     for (const dpsk of dpsks) {
       const ssidList = dpsk.ssidList || [];
-      ssidList.forEach((ssid: string) => allSsids.add(ssid));
+      ssidList.forEach((ssid: string) => {
+        allSsids.add(ssid);
+        if (!ssid.match(unitPattern)) {
+          nonUnitSsidCounts.set(ssid, (nonUnitSsidCounts.get(ssid) || 0) + 1);
+        }
+      });
 
       for (const ssid of ssidList) {
         const match = ssid.match(unitPattern);
@@ -257,7 +334,30 @@ function CloudpathImport() {
 
     const unitCount = uniqueUnits.size;
     const unitCoverage = dpsks.length > 0 ? unitPassphrases / dpsks.length : 0;
-    const canUseB1 = unitCount < 64;
+    const canUseB1 = unitCount <= MAX_SSIDS_SHARED_POOL;
+
+    // Passphrases with no unit SSID of their own. The shared pool still
+    // holds them, so they work on every SSID it backs.
+    const unitsWithoutNumber = dpsks.length - unitPassphrases;
+
+    // Property-wide SSID: the pool's master list wins, else the most common
+    // non-unit SSID carried by at least half the passphrases, else any
+    // non-unit SSID. Same order the backend uses.
+    let siteWideSsid = masterSiteWideSsid;
+    if (!siteWideSsid && nonUnitSsidCounts.size > 0) {
+      const ranked = Array.from(nonUnitSsidCounts.entries())
+        .sort((a, b) => b[1] - a[1]);
+      siteWideSsid = ranked[0][0];
+    }
+
+    // How many passphrases list the property-wide SSID
+    let passphrasesOnProperty = 0;
+    for (const dpsk of dpsks) {
+      const ssidList: string[] = dpsk.ssidList || [];
+      if (!!siteWideSsid && ssidList.includes(siteWideSsid)) {
+        passphrasesOnProperty++;
+      }
+    }
 
     let detectedScenario: string;
     let recommendation: string;
@@ -267,10 +367,10 @@ function CloudpathImport() {
       recommendation = `Property-wide: ${dpsks.length} passphrases into 1 pool. Only ${Math.round(unitCoverage * 100)}% have unit-specific SSIDs.`;
     } else if (canUseB1) {
       detectedScenario = "B1";
-      recommendation = `Per-unit with site-wide pool: ${unitCount} units detected. R1 supports up to 64 networks per pool (roaming enabled).`;
+      recommendation = `Per-unit with shared pool: ${unitCount} units detected. One pool serves all ${unitCount} SSIDs, so passphrases roam across the property.`;
     } else {
       detectedScenario = "B2";
-      recommendation = `Per-unit with individual pools: ${unitCount} units detected. Exceeds R1's 64-network limit, requires 1 pool per unit.`;
+      recommendation = `${unitCount} units exceeds the ${MAX_SSIDS_SHARED_POOL.toLocaleString()}-SSID ceiling for a shared pool. Split this property across multiple venues.`;
     }
 
     return {
@@ -280,8 +380,68 @@ function CloudpathImport() {
       unique_ssids: Array.from(allSsids).slice(0, 10),
       recommendation,
       can_use_b1: canUseB1,
+      units_without_number: unitsWithoutNumber,
+      unit_numbers: Array.from(uniqueUnits).sort(
+        (a, b) => Number(a) - Number(b) || a.localeCompare(b)
+      ),
+      total_passphrases: dpsks.length,
+      site_wide_ssid: siteWideSsid,
+      passphrases_with_unit: unitPassphrases,
+      passphrases_on_property: passphrasesOnProperty,
     };
   };
+
+  // What an import with the current settings actually produces. Mirrors the
+  // planning in api/workflow/phases/cloudpath/validate.py so this preview,
+  // the confirmation screen and the job monitor tell the same story.
+  const plannedResources = useMemo(() => {
+    if (!scenarioDetection) return null;
+
+    const units = scenarioDetection.unit_count;
+    const perUnit = isPerUnitMode(ssidMode);
+    const propertySsid = scenarioDetection.site_wide_ssid;
+    // The property-wide SSID rides alongside the per-unit ones. "single" IS
+    // the property-wide SSID, and "none" creates no SSID at all. The backend
+    // only stands it up when passphrases actually list it, so nobody sees a
+    // planned SSID that the import then skips.
+    const withProperty =
+      perUnit &&
+      createPropertySsid &&
+      !!propertySsid &&
+      scenarioDetection.passphrases_on_property > 0;
+
+    const unitSsids = perUnit ? units : 0;
+    const ssids =
+      ssidMode === "none" ? 0
+      : ssidMode === "single" ? 1
+      : unitSsids + (withProperty ? 1 : 0);
+    // Every mode shares one identity group + one pool across the import.
+    const pools = 1;
+    // Only the unit SSIDs are targeted at an AP Group; the property-wide one
+    // broadcasts across the venue.
+    const apGroups = unitSsids;
+
+    // One shared pool, so every passphrase is imported exactly once and
+    // nothing is left without a home.
+    const propertyImports = withProperty
+      ? scenarioDetection.passphrases_on_property
+      : 0;
+    const passphraseImports = scenarioDetection.total_passphrases;
+
+    return {
+      propertySsid,
+      withProperty,
+      units,
+      unitSsids,
+      ssids,
+      pools,
+      apGroups,
+      passphraseImports,
+      propertyImports,
+      apsToAssign: apAssignments.length,
+      unitsWithAps: new Set(apAssignments.map((a) => a.unit_number)).size,
+    };
+  }, [scenarioDetection, ssidMode, createPropertySsid, apAssignments]);
 
   // Parse AP assignment CSV text (unit_number,ap_identifier)
   const parseApAssignmentCsv = (text: string): {unit_number: string, ap_identifier: string}[] | null => {
@@ -377,14 +537,66 @@ function CloudpathImport() {
     }
   };
 
+  // A new export means a new property, so nothing from the previous one may
+  // survive. This used to refresh only some fields — the resource names in
+  // particular were guarded with `if (!identityGroupName)` and kept whatever
+  // the FIRST file set — so a second upload silently created an identity
+  // group, DPSK service and policy set named after the previous site. Reset
+  // everything the import form holds rather than trying to pick.
+  const resetImportState = () => {
+    // Parsed export
+    setJsonData(null);
+    setPoolMetadata(null);
+    setExportMetadata(null);
+    setScenarioDetection(null);
+    setDetectedSuffixes(null);
+    setUploadError("");
+
+    // Target venue — a different property is a different venue
+    setVenueId(null);
+    setVenueName(null);
+
+    // Names that become real R1 resources
+    setIdentityGroupName("");
+    setDpskServiceName("");
+    setPolicySetName("");
+
+    // Import options
+    setExpiredDpskHandling("no_expiration");
+    setPassphraseFormat("");
+    setWordCount(DEFAULT_WORD_COUNT);
+    setNumericSuffixEnabled(false);
+    setSsidMode("none");
+    setCreatePropertySsid(true);
+    setApGroupPrefix("");
+    setApGroupPostfix("");
+    setSkipIdentityDescriptions(false);
+    setEnableAccessPolicies(true);
+
+    // AP assignments — unit numbers from the old property match nothing here
+    setApAssignmentMode("skip");
+    setApAssignments([]);
+    setApAssignmentText("");
+    setApAssignmentError("");
+    seededApCsvRef.current = "";
+
+    // Anything pointing at a job run for the previous export
+    setError("");
+    setLastJobResult(null);
+    setCurrentJobId(null);
+    setV2JobId(null);
+    setShowJobModal(false);
+    setShowV2PlanModal(false);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploadError("");
-    setPoolMetadata(null);
-    setExportMetadata(null);
-    setDetectedSuffixes(null);
+    resetImportState();
+    // Let the same filename re-trigger onChange, so re-picking a file the
+    // user has edited on disk actually reloads it.
+    e.target.value = "";
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -408,37 +620,43 @@ function CloudpathImport() {
         if (Array.isArray(data)) {
           // Legacy flat array format - no scenario detection available
           setJsonData(data);
-          setPoolMetadata(null);
-          setExportMetadata(null);
-          setScenarioDetection(null);
-          setDetectedSuffixes(null);
         } else if (typeof data === 'object' && data.dpsks) {
           // New nested format with pool metadata
           setJsonData(data);  // Pass the whole object to backend
           setPoolMetadata(data.pool || null);
           setExportMetadata(data.metadata || null);
 
-          // Pre-populate names from pool displayName if not already set
+          // Names come from this file's pool, unconditionally — the state
+          // was just cleared, and a stale name here becomes a real R1
+          // resource named after the wrong property.
           if (data.pool?.displayName) {
-            if (!identityGroupName) {
-              setIdentityGroupName(data.pool.displayName);
-            }
-            if (!dpskServiceName) {
-              setDpskServiceName(data.pool.displayName);
-            }
-            if (!policySetName) {
-              setPolicySetName(data.pool.displayName);
-            }
+            setIdentityGroupName(data.pool.displayName);
+            setDpskServiceName(data.pool.displayName);
+            setPolicySetName(data.pool.displayName);
           }
 
           // Analyze for scenario detection (unit count, coverage info)
           const detection = analyzeCloudpathData(data);
           setScenarioDetection(detection);
+
+          // Seed the AP assignment CSV with "unit,unit" for every detected
+          // unit. Properties usually name the AP after the unit it serves, so
+          // this is right often enough to be worth correcting rather than
+          // typing from scratch. Always seeded: resetImportState() just
+          // cleared whatever the previous file left behind.
+          if (detection.unit_numbers.length > 0) {
+            // Header included so the expected column order stays visible
+            // while editing; parseApAssignmentCsv skips it.
+            const seeded = [
+              "unit_number,ap_identifier",
+              ...detection.unit_numbers.map((u) => `${u},${u}`),
+            ].join("\n");
+            seededApCsvRef.current = seeded;
+            setApAssignmentText(seeded);
+            parseApAssignmentCsv(seeded);
+          }
         } else {
           setUploadError("Invalid format: Expected an array of DPSK objects or a Cloudpath export with 'dpsks' key");
-          setJsonData(null);
-          setScenarioDetection(null);
-          setDetectedSuffixes(null);
           return;
         }
       } catch (err: any) {
@@ -495,13 +713,19 @@ function CloudpathImport() {
             renew_expired_dpsks: expiredDpskHandling === "renew",
             identity_group_name: identityGroupName.trim() || null,
             dpsk_service_name: dpskServiceName.trim() || null,
+            // Passphrase generation ("" = keep the Cloudpath-derived format).
+            // word_count / numeric_suffix only mean anything for DICTIONARY_WORDS.
+            passphrase_format: passphraseFormat,
+            word_count: wordCount,
+            numeric_suffix_enabled: numericSuffixEnabled,
             ssid_mode: ssidMode,
             passphrases_only: ssidMode === "none",
-            // AP Group & Assignment options (for per_unit mode)
-            ap_group_prefix: ssidMode === "per_unit" ? apGroupPrefix : "",
-            ap_group_postfix: ssidMode === "per_unit" ? apGroupPostfix : "",
-            ap_assignment_mode: ssidMode === "per_unit" && apAssignments.length > 0 ? "csv" : "skip",
-            ap_assignments: ssidMode === "per_unit" ? apAssignments : [],
+            // AP Group & Assignment options (both per-unit modes)
+            create_property_ssid: isPerUnitMode(ssidMode) ? createPropertySsid : false,
+            ap_group_prefix: isPerUnitMode(ssidMode) ? apGroupPrefix : "",
+            ap_group_postfix: isPerUnitMode(ssidMode) ? apGroupPostfix : "",
+            ap_assignment_mode: isPerUnitMode(ssidMode) && apAssignments.length > 0 ? "csv" : "skip",
+            ap_assignments: isPerUnitMode(ssidMode) ? apAssignments : [],
             // Identity description options
             skip_identity_descriptions: skipIdentityDescriptions,
             // Access policy options
@@ -936,6 +1160,76 @@ function CloudpathImport() {
             )}
           </div>
 
+          {/* Passphrase Generation */}
+          <div className="pt-4 border-t">
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              Passphrase Generation
+            </label>
+            <select
+              value={passphraseFormat}
+              onChange={(e) => setPassphraseFormat(e.target.value as PassphraseFormat)}
+              disabled={processing}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100"
+            >
+              {PASSPHRASE_FORMATS.map((f) => (
+                <option key={f.value || "default"} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {PASSPHRASE_FORMATS.find((f) => f.value === passphraseFormat)?.hint}
+            </p>
+
+            {/* Dictionary-word settings — R1 ignores these for other formats */}
+            {passphraseFormat === "DICTIONARY_WORDS" && (
+              <div className="ml-1 mt-3 space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Words per passphrase
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={MIN_WORD_COUNT}
+                      max={MAX_WORD_COUNT}
+                      value={wordCount}
+                      onChange={(e) => setWordCount(Number(e.target.value))}
+                      disabled={processing}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-mono text-gray-900 w-6 text-center">
+                      {wordCount}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    RuckusONE allows {MIN_WORD_COUNT}–{MAX_WORD_COUNT} words. More words is
+                    stronger but longer to read out.
+                  </p>
+                </div>
+
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={numericSuffixEnabled}
+                    onChange={(e) => setNumericSuffixEnabled(e.target.checked)}
+                    disabled={processing}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-gray-900">Append a numeric suffix</span>
+                    <p className="text-xs text-gray-500">
+                      Adds digits to the end of each generated passphrase.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            <p className="mt-2 text-xs text-gray-500">
+              Applies to passphrases RuckusONE generates for this pool. Passphrases
+              imported from Cloudpath keep their existing values.
+            </p>
+          </div>
+
           {/* SSID Configuration */}
           <div className="pt-4 border-t">
             <label className="block text-sm font-medium text-gray-900 mb-2">
@@ -984,7 +1278,7 @@ function CloudpathImport() {
                 </div>
               </label>
 
-              {/* Option 3: Per-Unit SSIDs */}
+              {/* Option 3: Per-Unit SSIDs, one shared DPSK pool */}
               <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                 ssidMode === "per_unit"
                   ? "border-blue-500 bg-blue-50"
@@ -998,22 +1292,60 @@ function CloudpathImport() {
                   className="w-4 h-4 text-blue-600 focus:ring-blue-500 mt-0.5"
                 />
                 <div className="flex-1">
-                  <span className="text-sm font-medium text-gray-900">Per-Unit SSIDs</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    Per-Unit SSIDs &mdash; Shared Pool
+                  </span>
                   <p className="text-xs text-gray-500 mt-1">
-                    Create {scenarioDetection?.unit_count || 'N'} SSIDs (one per unit) with AP Groups for targeted broadcast.
-                    Passphrases work on any unit's SSID (roaming enabled).
+                    Create {scenarioDetection?.unit_count || 'N'} SSIDs (one per unit) with AP Groups for targeted broadcast,
+                    all served by <strong>one</strong> DPSK pool.
+                  </p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    Any resident's passphrase opens any unit's SSID &mdash; this is what keeps roaming
+                    working across the property.
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Up to {MAX_SSIDS_SHARED_POOL.toLocaleString()} SSIDs.
                   </p>
                   {!scenarioDetection?.can_use_b1 && (
                     <p className="text-xs text-red-600 mt-1">
-                      Unavailable: {scenarioDetection?.unit_count || 0} units exceeds R1's 64-network limit
+                      Unavailable: {scenarioDetection?.unit_count || 0} units exceeds the{' '}
+                      {MAX_SSIDS_SHARED_POOL.toLocaleString()}-SSID limit for a shared pool
                     </p>
                   )}
                 </div>
               </label>
 
-              {/* Per-Unit Options (shown when per_unit mode selected) */}
-              {ssidMode === "per_unit" && (
+              {/* Per-Unit Options */}
+              {isPerUnitMode(ssidMode) && (
                 <div className="ml-7 mt-3 space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  {/* Property-wide SSID (hybrid) */}
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={createPropertySsid}
+                      onChange={(e) => setCreatePropertySsid(e.target.checked)}
+                      disabled={processing}
+                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-gray-900">
+                        Also create the property-wide SSID
+                      </span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Most exports carry a property-wide SSID alongside the per-unit ones.
+                        This creates it on the same shared pool, broadcasting across the
+                        whole venue for every resident listed on it.
+                      </p>
+                      {!createPropertySsid && !!scenarioDetection?.units_without_number && (
+                        <p className="text-xs text-amber-700 mt-1">
+                          {scenarioDetection.units_without_number} residents are on the
+                          property-wide SSID only — without this they get no SSID of
+                          their own, though their passphrase still imports.
+                        </p>
+                      )}
+                    </div>
+                  </label>
+
                   {/* AP Group Naming */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1114,6 +1446,15 @@ function CloudpathImport() {
                         </button>
                       </div>
                     )}
+                    {apAssignmentText &&
+                      apAssignmentText === seededApCsvRef.current && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Pre-filled as <code>unit,unit</code> for each detected unit,
+                        assuming APs are named after their unit. Edit or replace any
+                        row whose AP uses a different name or serial &mdash; unmatched
+                        rows are reported and skipped, not fatal.
+                      </p>
+                    )}
                     {apAssignments.length === 0 && !apAssignmentText && (
                       <p className="text-xs text-yellow-600 mt-2">
                         Without AP assignments, AP Groups will be created but APs won't be assigned.
@@ -1129,21 +1470,68 @@ function CloudpathImport() {
             {(ssidMode !== "none" || scenarioDetection) && (
               <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                 <div className="text-sm font-medium text-gray-700 mb-2">What will be created:</div>
-                <div className="text-xs text-gray-600 space-y-1">
-                  <div>• 1 Identity Group</div>
-                  <div>• 1 DPSK Pool (all passphrases)</div>
-                  {ssidMode === "none" && <div>• No SSIDs (configure separately)</div>}
-                  {ssidMode === "single" && <div>• 1 new DPSK SSID (property-wide)</div>}
-                  {ssidMode === "per_unit" && (
-                    <>
-                      <div>• {scenarioDetection?.unit_count || 'N'} new SSIDs (one per unit)</div>
-                      <div>• {scenarioDetection?.unit_count || 'N'} AP Groups for targeted broadcast</div>
-                      {apAssignments.length > 0 && (
-                        <div>• {apAssignments.length} APs to be assigned to groups</div>
-                      )}
-                    </>
-                  )}
-                </div>
+                {!plannedResources ? (
+                  <div className="text-xs text-gray-500">
+                    Upload a Cloudpath export to see the exact counts.
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-600 space-y-1">
+                    {/* One identity group + one pool, every mode */}
+                    <div>• 1 Identity Group</div>
+                    <div>• 1 DPSK Pool (all passphrases share it)</div>
+
+                    {/* SSIDs */}
+                    {ssidMode === "none" && <div>• No SSIDs (configure separately)</div>}
+                    {ssidMode === "single" && (
+                      <div>
+                        • 1 property-wide DPSK SSID
+                        {plannedResources.propertySsid && ` ("${plannedResources.propertySsid}")`}
+                      </div>
+                    )}
+                    {isPerUnitMode(ssidMode) && (
+                      <>
+                        <div>
+                          • {plannedResources.ssids} SSIDs — {plannedResources.unitSsids} unit
+                          SSIDs
+                          {plannedResources.withProperty
+                            ? ` + "${plannedResources.propertySsid}" property-wide`
+                            : ''}
+                        </div>
+                        <div>
+                          • {plannedResources.apGroups} AP Groups — one per unit SSID
+                          {plannedResources.withProperty &&
+                            ' (the property-wide SSID needs none — it broadcasts across the venue)'}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Passphrases — one shared pool, so every row imports once */}
+                    <div>
+                      • {plannedResources.passphraseImports} passphrases imported
+                    </div>
+                    {plannedResources.withProperty && (
+                      <div className="text-gray-500">
+                        • {plannedResources.propertyImports} of them are also listed on
+                        the property-wide SSID
+                      </div>
+                    )}
+
+                    {/* APs */}
+                    {isPerUnitMode(ssidMode) && plannedResources.apsToAssign > 0 && (
+                      <div>
+                        • {plannedResources.apsToAssign} APs assigned across{' '}
+                        {plannedResources.unitsWithAps} of {plannedResources.units} units
+                      </div>
+                    )}
+
+                    {isPerUnitMode(ssidMode) && (
+                      <div className="text-gray-500">
+                        • Passphrases work on any unit's SSID (roaming)
+                        {plannedResources.withProperty && ", plus the property-wide SSID"}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1214,9 +1602,16 @@ function CloudpathImport() {
               <div className="flex-1">
                 <span className="text-sm font-medium text-gray-900">Skip Identity Description Updates</span>
                 <p className="text-xs text-gray-500">
-                  Skip writing Cloudpath GUIDs to R1 identity descriptions. This is the slowest phase (1 API call per identity).
-                  You can still view GUIDs via "View Identities" by matching against the uploaded JSON.
+                  Leave unchecked to write each Cloudpath GUID into its R1 identity description —
+                  the only link back to the source export, and what later reconciliation relies on.
                 </p>
+                {skipIdentityDescriptions && (
+                  <p className="text-xs text-amber-700 mt-1">
+                    GUIDs will NOT be written. Identities in R1 will have no reference back to
+                    Cloudpath. Faster (this phase costs 1 API call per identity), but you would
+                    need to re-run the import to add them later.
+                  </p>
+                )}
               </div>
             </label>
 

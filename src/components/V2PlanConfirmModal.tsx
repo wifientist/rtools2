@@ -35,6 +35,10 @@ interface ActionItem {
   name?: string;
   action: string;
   details?: string;
+  // Caveats the planner attached to this resource — passphrases that land in
+  // two pools, ones it cannot place at all, and so on. Worth reading before
+  // confirming, so they are rendered rather than dropped.
+  notes?: string[];
 }
 
 interface PlanResult {
@@ -352,12 +356,22 @@ const V2PlanConfirmModal = ({
                       Validation Summary
                     </h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {Object.entries(plan.summary).map(([key, value]) => (
+                      {Object.entries(plan.summary)
+                        // Empty strings are "not applicable to this plan"
+                        // (e.g. no property-wide SSID), not a count of zero
+                        .filter(([, value]) => value !== '' && value !== null)
+                        .map(([key, value]) => (
                         <div key={key} className="text-sm">
                           <span className="text-gray-500">
                             {key.replace(/_/g, ' ')}:
                           </span>{' '}
-                          <span className="font-medium text-gray-800">
+                          <span
+                            className={
+                              value === 0
+                                ? 'font-medium text-gray-400'
+                                : 'font-medium text-gray-800'
+                            }
+                          >
                             {typeof value === 'object'
                               ? JSON.stringify(value)
                               : String(value)}
@@ -399,6 +413,14 @@ const V2PlanConfirmModal = ({
                                   - {action.details}
                                 </span>
                               )}
+                              {action.notes?.map((note, noteIdx) => (
+                                <span
+                                  key={noteIdx}
+                                  className="block text-blue-500 mt-0.5"
+                                >
+                                  {note}
+                                </span>
+                              ))}
                             </span>
                           </li>
                         ))}
@@ -428,6 +450,14 @@ const V2PlanConfirmModal = ({
                               <span className="text-green-500 ml-1">
                                 ({action.resource_type})
                               </span>
+                              {action.notes?.map((note, noteIdx) => (
+                                <span
+                                  key={noteIdx}
+                                  className="block text-green-600 mt-0.5"
+                                >
+                                  {note}
+                                </span>
+                              ))}
                             </span>
                           </li>
                         ))}

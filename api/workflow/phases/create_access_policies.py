@@ -59,11 +59,33 @@ class IdentityRenameResult(BaseModel):
     error: Optional[str] = None
 
 
-def sanitize_policy_name(account: str, unit_number: str = None) -> str:
-    """Create a safe policy name from account (unit_number no longer used)."""
-    # Remove any non-alphanumeric except @ and _
+def site_from_ssid(ssid: str) -> str:
+    """
+    Extract the site token from a unit SSID: "101@CedarPoint" -> "CedarPoint".
+
+    Returns "" when the SSID carries no site (property-wide SSIDs).
+    """
+    if not ssid or '@' not in ssid:
+        return ""
+    return re.sub(r'[^a-zA-Z0-9_]', '', ssid.rsplit('@', 1)[-1])
+
+
+def sanitize_policy_name(account: str, ssid: str = None) -> str:
+    """
+    Build a policy name that identifies which site the policy belongs to:
+    "resident101a" + "101@CedarPoint" -> "resident101a@CedarPoint".
+
+    Policies are tenant-scoped in R1 with no venue attribute, so the name is
+    the only thing tying one to a property. Without the site suffix a cleanup
+    cannot tell this property's policies from another's, and the only safe
+    action would be to leave them all behind.
+
+    The previous version's regex stripped '@' despite its docstring claiming
+    otherwise, so every policy was named for the account alone.
+    """
     safe_account = re.sub(r'[^a-zA-Z0-9_]', '', account)
-    return safe_account
+    site = site_from_ssid(ssid) if ssid else ""
+    return f"{safe_account}@{site}" if site else safe_account
 
 
 def regex_pattern_for_value(value: str) -> str:
@@ -320,6 +342,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 if new_group and 'id' in new_group:
                     suffix_to_group_id[suffix] = new_group['id']
                     groups_created += 1
+                    await self.track_resource('radius_attribute_groups', {
+                        'id': new_group['id'],
+                        'name': suffix,
+                    })
                     await self.emit(f"Created RADIUS group: {suffix} ({new_group['id']})")
                 else:
                     raise ValueError("No ID in creation response")
@@ -410,6 +436,12 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     description=f"Adaptive policies for {policy_set_name}"
                 )
                 policy_set_id = new_set['id']
+                # Track so job-scoped cleanup can remove it. Without this the
+                # set survives cleanup and the next import 409s on its policies.
+                await self.track_resource('policy_sets', {
+                    'id': policy_set_id,
+                    'name': policy_set_name,
+                })
                 await self.emit(f"Created Policy Set: {policy_set_name}")
 
         except Exception as e:
@@ -467,7 +499,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 policies_failed += 1
                 continue
 
-            policy_name = sanitize_policy_name(account, unit_num)
+            policy_name = sanitize_policy_name(account, ssid)
 
             try:
                 # Check if policy already exists
@@ -576,6 +608,11 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     )
 
                     policies_created += 1
+                    await self.track_resource('policies', {
+                        'id': policy_id,
+                        'name': policy_name,
+                        'template_id': DPSK_POLICY_TEMPLATE_ID,
+                    })
 
                 # Assign to policy set (idempotent - will skip if already assigned)
                 try:

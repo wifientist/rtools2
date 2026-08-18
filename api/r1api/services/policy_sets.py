@@ -421,7 +421,32 @@ class PolicySetService:
 
         if not response.content:
             return {"status": "removed"}
-        return self.client.safe_json(response)
+
+        result = self.client.safe_json(response)
+
+        # Unassignment is asynchronous. Returning as soon as the HTTP call
+        # completes leaves the policy still assigned server-side, and a delete
+        # issued straight afterwards fails with
+        #   409 "The policy is still assigned to a policy set".
+        # Wait for the task so callers can rely on the link actually being gone.
+        if response.status_code == 202 and isinstance(result, dict):
+            request_id = result.get('requestId')
+            if request_id:
+                logger.debug(
+                    f"Policy unassignment is async (requestId: {request_id}), waiting..."
+                )
+                try:
+                    await self.client.await_task_completion(
+                        request_id=request_id,
+                        override_tenant_id=tenant_id,
+                    )
+                except Exception as e:
+                    # Non-fatal: the caller retries the delete on conflict.
+                    logger.warning(
+                        f"Unassignment task {request_id} did not confirm: {e}"
+                    )
+
+        return result
 
     # ========== Policy Evaluation ==========
 
@@ -671,9 +696,14 @@ class PolicySetService:
         Returns:
             Query response with policies
         """
+        # This endpoint reads "pageSize", NOT "limit". Sending "limit" is
+        # silently ignored and the server falls back to a default page of 20,
+        # so every caller was seeing 20 policies regardless of the value passed
+        # (verified against a tenant holding 160). Requests are 0-indexed;
+        # page=1 returns an empty set when everything fits on page 0.
         body = {
             "page": page,
-            "limit": limit
+            "pageSize": limit
         }
 
         if filters:

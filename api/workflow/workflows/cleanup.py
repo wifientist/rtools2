@@ -105,6 +105,33 @@ VenueCleanupWorkflow = Workflow(
             api_calls_per_unit="dynamic",
         ),
 
+        # Phase 2b: Delete Access Policy resources
+        # Adaptive policies, their policy sets, and the RADIUS attribute groups
+        # they reference. Must run BEFORE DPSK pools and identity groups, since
+        # a policy set is attached to those and blocks their deletion.
+        Phase(
+            id="delete_access_policies",
+            name="Delete Access Policies",
+            description=(
+                "Delete adaptive policies, adaptive policy sets and RADIUS "
+                "attribute groups. Must happen before DPSK pools and identity "
+                "groups, which policy sets are attached to."
+            ),
+            executor=(
+                "workflow.phases.cleanup.delete_access_policies"
+                ".DeleteAccessPoliciesPhase"
+            ),
+            depends_on=["delete_networks"],
+            per_unit=False,
+            critical=False,
+            inputs=["inventory"],
+            outputs=[
+                "policies_deleted", "policy_sets_deleted",
+                "radius_groups_deleted", "failed",
+            ],
+            api_calls_per_unit="dynamic",
+        ),
+
         # Phase 3: Delete DPSK Pools
         # Now safe since networks have been deleted and no longer reference the pools
         Phase(
@@ -118,7 +145,7 @@ VenueCleanupWorkflow = Workflow(
                 "workflow.phases.cleanup.delete_dpsk_pools"
                 ".DeleteDPSKPoolsPhase"
             ),
-            depends_on=["delete_networks"],
+            depends_on=["delete_access_policies"],
             per_unit=False,
             critical=False,
             inputs=["inventory"],

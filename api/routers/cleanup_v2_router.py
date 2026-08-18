@@ -67,6 +67,13 @@ class ResourceInventoryResponse(BaseModel):
     identity_groups: List[Dict[str, Any]] = Field(default_factory=list)
     wifi_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_groups: List[Dict[str, Any]] = Field(default_factory=list)
+    # Access-policy resources, listed tenant-wide (R1 gives them no venue).
+    # Policy sets carry a `matches_venue` flag for the ones whose name contains
+    # this venue's @site token. RADIUS attribute groups are shared rate tiers,
+    # so the UI leaves that category unticked by default.
+    policies: List[Dict[str, Any]] = Field(default_factory=list)
+    policy_sets: List[Dict[str, Any]] = Field(default_factory=list)
+    radius_attribute_groups: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CleanupPlanResult(BaseModel):
@@ -386,6 +393,7 @@ async def confirm_cleanup(
     ALL_CATEGORIES = [
         "passphrases", "dpsk_pools", "identities",
         "identity_groups", "wifi_networks", "ap_groups",
+        "policies", "policy_sets", "radius_attribute_groups",
     ]
     selected = request.selected_categories
     if selected is not None:

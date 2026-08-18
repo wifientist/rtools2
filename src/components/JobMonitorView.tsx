@@ -31,6 +31,12 @@ interface PhaseStat {
   pending?: number;
   total?: number;
   status?: string;  // For global phases
+  // What the phase actually produced, when it reports it. completed/total
+  // only counts units that reached the phase — a unit the phase no-ops for
+  // (no APs to assign, no AP Group, no passphrases of its own) still counts.
+  effect?: number;
+  effect_label?: string;   // plural noun, e.g. "AP Groups"
+  effect_units?: number;   // units where the phase did something
 }
 
 interface Progress {
@@ -912,17 +918,26 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                     {stat.name}
                   </div>
                   {isPerUnit ? (
-                    <div className="mt-1 flex items-center gap-1 text-gray-600">
-                      <span className={isComplete ? 'text-green-600 font-semibold' : ''}>
-                        {stat.completed ?? 0}/{stat.total}
-                      </span>
-                      {isRunning && (
-                        <span className="text-blue-600">({stat.running} running)</span>
+                    <>
+                      <div className="mt-1 flex items-center gap-1 text-gray-600">
+                        <span className={isComplete ? 'text-green-600 font-semibold' : ''}>
+                          {stat.completed ?? 0}/{stat.total} units
+                        </span>
+                        {isRunning && (
+                          <span className="text-blue-600">({stat.running} running)</span>
+                        )}
+                        {hasFailed && (
+                          <span className="text-red-600">({stat.failed} failed)</span>
+                        )}
+                      </div>
+                      {/* What the phase actually did — the unit count above
+                          includes units it no-opped for */}
+                      {stat.effect !== undefined && (
+                        <div className="text-gray-500">
+                          {stat.effect} {stat.effect_label}
+                        </div>
                       )}
-                      {hasFailed && (
-                        <span className="text-red-600">({stat.failed} failed)</span>
-                      )}
-                    </div>
+                    </>
                   ) : (
                     <div className={`mt-1 ${
                       stat.status === 'COMPLETED' ? 'text-green-600' :
@@ -1151,6 +1166,20 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                                 )}
                                 {statFailed > 0 && (
                                   <span className="text-red-600 ml-1">({statFailed} failed)</span>
+                                )}
+                              </span>
+                            )}
+                            {/* Units reached vs. work done: a unit the phase
+                                no-ops for still completes, so the unit count
+                                alone overstates what was created */}
+                            {isPerUnit && phaseStat?.effect !== undefined && (
+                              <span className="text-xs text-gray-500">
+                                · {phaseStat.effect} {phaseStat.effect_label}
+                                {(phaseStat.effect_units ?? 0) > 0 &&
+                                  (phaseStat.effect_units ?? 0) < statTotal && (
+                                  <span className="ml-1 text-gray-400">
+                                    (in {phaseStat.effect_units} units)
+                                  </span>
                                 )}
                               </span>
                             )}
