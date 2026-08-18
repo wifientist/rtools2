@@ -13,6 +13,7 @@ from r1api.services.networks import NetworksService
 from r1api.services.tenant import TenantService
 from r1api.services.aps import ApService
 from r1api.services.clients import ClientsService
+from r1api.services.floorplans import FloorplanService
 from r1api.services.entitlements import EntitlementsService
 from r1api.services.dpsk import DpskService
 from r1api.services.identity import IdentityService
@@ -54,6 +55,7 @@ class R1Client:
         self.tenant = TenantService(self)
         self.aps = ApService(self)
         self.clients = ClientsService(self)
+        self.floorplans = FloorplanService(self)
         self.entitlements = EntitlementsService(self)
         self.dpsk = DpskService(self)
         self.identity = IdentityService(self)

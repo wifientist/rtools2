@@ -49,6 +49,7 @@ import BulkAPTagging from "@/pages/BulkAPTagging";
 import DangerZone from "@/pages/DangerZone";
 import DataStudioExport from "@/pages/DataStudioExport";
 import DfsBlacklist from "@/pages/DfsBlacklist";
+import Maps from "@/pages/Maps";
 import FilesharePage from "@/pages/Fileshare/FilesharePage";
 import FolderView from "@/pages/Fileshare/FolderView";
 import FileshareAdmin from "@/pages/Fileshare/FileshareAdmin";
@@ -99,6 +100,7 @@ const App = () => {
           <Route path="/migration-audit" element={<AlphaRoute element={<MigrationAudit />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/dfs-blacklist" element={<AlphaRoute element={<DfsBlacklist />} />} />
+          <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
