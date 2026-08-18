@@ -56,6 +56,67 @@ class DependencyGraph:
                     self._dependents[dep] = set()
                 self._dependents[dep].add(phase.id)
 
+    def _rebuild_dependents(self) -> None:
+        """Recompute the reverse index from the current _dependencies."""
+        self._dependents = {pid: set() for pid in self.phases}
+        for phase_id, deps in self._dependencies.items():
+            for dep in deps:
+                self._dependents.setdefault(dep, set()).add(phase_id)
+
+    def collapse_skipped(self, skipped: Set[str]) -> None:
+        """
+        Rewrite dependencies so skipped phases are TRANSPARENT, not terminal.
+
+        A skipped phase never runs and therefore produces no outputs, so
+        reaching it must not count as satisfying a dependency. Dependents
+        instead inherit the skipped phase's own dependencies, transitively:
+
+            effective(P) = ⋃ { effective(d) if d skipped else {d} }
+                           for d in depends_on(P)
+
+        Without this, a phase skipped mid-chain silently satisfied everything
+        downstream of it: skipping the per-unit create_identity_groups and
+        create_dpsk_pools made create_passphrases and create_dpsk_network
+        ready the instant validation finished. They raced the global
+        create_shared_resources that produces the very pool id they need, and
+        every unit failed on a missing dpsk_pool_id — self-healing on a re-run
+        only because validation then pre-resolved the id from the tenant.
+
+        Skipped phases keep their own (also collapsed) entries so topological
+        sort, levels and visualization stay intact. They are excluded from
+        scheduling by the caller, which holds them in its completed set.
+
+        Args:
+            skipped: Phase IDs that will not run for this job
+        """
+        skipped = {pid for pid in skipped if pid in self.phases}
+        if not skipped:
+            return
+
+        resolved: Dict[str, Set[str]] = {}
+
+        def effective(phase_id: str, seen: Set[str]) -> Set[str]:
+            if phase_id in resolved:
+                return resolved[phase_id]
+            if phase_id in seen:
+                # Cycles are rejected by validate_definition() before a job is
+                # ever created; bail out rather than recurse forever.
+                return set()
+            seen = seen | {phase_id}
+            deps: Set[str] = set()
+            for dep in self._dependencies.get(phase_id, set()):
+                if dep in skipped:
+                    deps |= effective(dep, seen)
+                else:
+                    deps.add(dep)
+            resolved[phase_id] = deps
+            return deps
+
+        self._dependencies = {
+            pid: effective(pid, set()) for pid in self._dependencies
+        }
+        self._rebuild_dependents()
+
     # =========================================================================
     # Validation
     # =========================================================================

@@ -33,7 +33,9 @@ class AssignAPsPhase(PhaseExecutor):
     class Inputs(BaseModel):
         unit_id: str
         unit_number: str
-        ap_group_id: str
+        # Optional: a venue-wide unit (the property-wide SSID in hybrid mode)
+        # has no AP Group, so there is nothing to assign APs to.
+        ap_group_id: str = ""
         ap_group_name: str = ""
         ssid_name: str = ""
         ap_serial_numbers: List[str] = Field(default_factory=list)
@@ -47,6 +49,16 @@ class AssignAPsPhase(PhaseExecutor):
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Assign APs to this unit's AP Group."""
+        # Venue-wide unit — no AP Group, so no APs to move.
+        if not inputs.ap_group_id:
+            logger.info(
+                f"[{inputs.unit_number}] No AP Group — skipping AP assignment"
+            )
+            await self.emit(
+                f"[{inputs.unit_number}] No AP Group (venue-wide) — no APs to assign"
+            )
+            return self.Outputs()
+
         await self.emit(
             f"[{inputs.unit_number}] Assigning APs to "
             f"'{inputs.ap_group_name}'..."

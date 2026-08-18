@@ -33,16 +33,29 @@ class CreateAPGroupPhase(PhaseExecutor):
     class Inputs(BaseModel):
         unit_id: str
         unit_number: str
-        ap_group_name: str
+        # Optional: a unit that broadcasts venue-wide (the property-wide SSID
+        # in hybrid mode) deliberately has no AP Group.
+        ap_group_name: Optional[str] = None
         # Pre-resolved by validation (skips individual R1 query)
         ap_group_id: Optional[str] = None
 
     class Outputs(BaseModel):
-        ap_group_id: str
+        ap_group_id: str = ""
         reused: bool = False
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Find or create an AP Group for this unit."""
+
+        # No AP Group planned — this unit broadcasts across the whole venue.
+        if not inputs.ap_group_name:
+            logger.info(
+                f"[{inputs.unit_number}] No AP Group planned "
+                f"(venue-wide unit) — nothing to create"
+            )
+            await self.emit(
+                f"[{inputs.unit_number}] No AP Group needed (broadcasts venue-wide)"
+            )
+            return self.Outputs(ap_group_id="", reused=False)
 
         # Fast path: validation already found this AP group.
         # Skip the individual R1 query (saves 1 API call per unit).

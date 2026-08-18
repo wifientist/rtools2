@@ -81,7 +81,9 @@ class ScenarioDetectionResponse(BaseModel):
     unit_coverage: float = 0.0  # % of passphrases with unit-specific SSIDs
     unique_ssids: list = []  # Sample of detected SSIDs
     recommendation: str = ""
-    can_use_b1: bool = True  # True if unit_count < 64
+    # Ceiling mirrors DpskScaleLimits in r1api/constants.py
+    can_use_b1: bool = True  # unit_count within SHARED_POOL_MAX_SSIDS (1024)
+    units_without_number: int = 0  # no unit SSID; the shared pool still holds them
 
 
 class V2PlanResult(BaseModel):

@@ -68,6 +68,16 @@ def _safe_eval_node(node, variables: dict):
             return -operand
         raise _SafeEvalError(f"Unary operator {type(node.op).__name__} not allowed")
 
+    # Literal containers: ('a', 'b') and ['a', 'b'].
+    # Required for the In/NotIn comparisons below — without these, an
+    # expression like `x not in ('a', 'b')` raises and the caller silently
+    # falls through to NOT skipping the phase.
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return [_safe_eval_node(elt, variables) for elt in node.elts]
+
+    if isinstance(node, ast.Set):
+        return {_safe_eval_node(elt, variables) for elt in node.elts}
+
     # Comparisons: ==, !=, <, >, etc.
     if isinstance(node, ast.Compare):
         left = _safe_eval_node(node.left, variables)

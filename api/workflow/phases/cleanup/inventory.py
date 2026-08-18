@@ -18,6 +18,12 @@ from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
 
 logger = logging.getLogger(__name__)
 
+# The DPSK policy "template" id. Despite the /policyTemplates/{id}/policies
+# path, the policies underneath are REAL entities, not MSP templates — this is
+# the same path create_access_policies posts to. Nothing here touches the
+# /templates/* MSP template system.
+DPSK_POLICY_TEMPLATE_ID = "100"
+
 
 class ResourceInventory(BaseModel):
     """Inventory of resources to delete."""
@@ -27,6 +33,15 @@ class ResourceInventory(BaseModel):
     identity_groups: List[Dict[str, Any]] = Field(default_factory=list)
     wifi_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_groups: List[Dict[str, Any]] = Field(default_factory=list)
+    # Access-policy resources: adaptive policies, the adaptive policy sets that
+    # hold them, and the RADIUS attribute groups the policies reference.
+    # These survived earlier cleanups because nothing collected them, so
+    # re-imports hit "409 A policy with this name already exists".
+    # Delete order matters: policies -> policy sets -> RADIUS groups, since a
+    # policy references its RADIUS attribute group.
+    policies: List[Dict[str, Any]] = Field(default_factory=list)
+    policy_sets: List[Dict[str, Any]] = Field(default_factory=list)
+    radius_attribute_groups: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 @register_phase("inventory", "Inventory Resources")
@@ -73,6 +88,9 @@ class InventoryPhase(PhaseExecutor):
             + len(inventory.identity_groups)
             + len(inventory.wifi_networks)
             + len(inventory.ap_groups)
+            + len(inventory.policies)
+            + len(inventory.policy_sets)
+            + len(inventory.radius_attribute_groups)
         )
 
         parts = []
@@ -88,6 +106,14 @@ class InventoryPhase(PhaseExecutor):
             parts.append(f"{len(inventory.wifi_networks)} networks")
         if inventory.ap_groups:
             parts.append(f"{len(inventory.ap_groups)} AP groups")
+        if inventory.policies:
+            parts.append(f"{len(inventory.policies)} policies")
+        if inventory.policy_sets:
+            parts.append(f"{len(inventory.policy_sets)} policy sets")
+        if inventory.radius_attribute_groups:
+            parts.append(
+                f"{len(inventory.radius_attribute_groups)} RADIUS attribute groups"
+            )
 
         summary = ", ".join(parts) if parts else "no resources found"
         level = "success" if total > 0 else "warning"
@@ -411,7 +437,218 @@ class InventoryPhase(PhaseExecutor):
         else:
             logger.info("[Inventory] AP groups: skipped (no venue specified)")
 
+        # =====================================================================
+        # Access-policy resources.
+        #
+        # These are TENANT-scoped in R1 — a policy has no venue attribute — so
+        # they cannot be filtered by venue the way networks and AP groups are.
+        # The site token in the name ("resident101a@CedarPoint") is the only
+        # link back to a property, and the sites legitimately belonging to THIS
+        # venue are exactly the ones appearing in its own SSIDs.
+        # =====================================================================
+        site_tokens = {
+            n['name'].rsplit('@', 1)[-1]
+            for n in inventory.wifi_networks
+            if n.get('name') and '@' in n['name']
+        }
+        await self._audit_access_policies(inventory, pattern, site_tokens)
+
         return inventory
+
+    async def _audit_access_policies(
+        self, inventory, pattern, site_tokens: set
+    ) -> None:
+        """
+        Collect adaptive policies and policy sets belonging to this venue.
+
+        Scoped by the site tokens taken from the venue's own SSIDs, so a
+        cleanup cannot reach across into another property's policies. With no
+        site tokens (nothing recognisable on this venue) policies are left
+        alone rather than guessed at.
+
+        RADIUS attribute groups are deliberately NOT collected — see below.
+        """
+        # ---------------------------------------------------------------
+        # Adaptive policies: ALL of them, tenant-wide.
+        #
+        # Unlike policy sets and RADIUS groups these are per-identity records
+        # an import mints in bulk, they accumulate into the hundreds, and R1
+        # gives them no venue attribute. Scoping by @site was leaving the bulk
+        # of them stranded, so this collects the lot and lets the operator
+        # deselect the category if that is not what they want.
+        # A name_pattern, when supplied, still narrows the selection.
+        # ---------------------------------------------------------------
+        # Policy sets first, so each policy can record the set it is assigned
+        # to. R1 refuses to delete a policy that is still assigned
+        # ("409 The policy is still assigned to a policy set"), so the delete
+        # phase must unassign it first and needs to know from where.
+        policy_to_set: Dict[str, str] = {}
+        try:
+            resp = await self.r1_client.policy_sets.query_policy_sets(
+                tenant_id=self.tenant_id, limit=200
+            )
+            set_items = resp.get('content', resp.get('data', []))
+            for ps in set_items:
+                name = ps.get('name', '')
+                if pattern and not pattern.search(name):
+                    continue
+                inventory.policy_sets.append({
+                    'id': ps.get('id'),
+                    'name': name,
+                    # Flag the ones matching this venue's SSIDs so the operator
+                    # can tell "mine" from "another property's" at a glance.
+                    'matches_venue': any(
+                        tok and tok in name for tok in site_tokens
+                    ),
+                })
+            logger.info(
+                f"[Inventory] Policy sets: {len(inventory.policy_sets)} "
+                f"tenant-wide "
+                f"({sum(1 for p in inventory.policy_sets if p['matches_venue'])} "
+                f"match this venue's sites)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to query policy sets: {e}")
+
+        # Map policy -> owning set, from every set (not only matched ones), so
+        # an unassign can be issued for any policy we plan to delete.
+        for ps in inventory.policy_sets:
+            ps_id = ps.get('id')
+            if not ps_id:
+                continue
+            try:
+                resp = await self.r1_client.policy_sets.get_prioritized_policies(
+                    policy_set_id=ps_id, tenant_id=self.tenant_id
+                )
+                members = (
+                    resp if isinstance(resp, list)
+                    else resp.get('content', resp.get('data', []))
+                )
+                for pol in members:
+                    pol_id = pol.get('policyId') or pol.get('id')
+                    if pol_id:
+                        policy_to_set[pol_id] = ps_id
+            except Exception as e:
+                logger.warning(
+                    f"Could not list policies in set '{ps.get('name')}': {e}"
+                )
+        logger.info(
+            f"[Inventory] Policy->set assignments mapped: {len(policy_to_set)}"
+        )
+
+        policy_names_by_id: Dict[str, str] = {}
+        try:
+            page = 0
+            page_size = 500
+            all_items: List[Dict[str, Any]] = []
+            while True:
+                resp = await self.r1_client.policy_sets.query_template_policies(
+                    template_id=DPSK_POLICY_TEMPLATE_ID,
+                    tenant_id=self.tenant_id,
+                    page=page,
+                    limit=page_size,
+                )
+                items = (
+                    resp if isinstance(resp, list)
+                    else resp.get('content', resp.get('data', []))
+                )
+                if not items:
+                    break
+                all_items.extend(items)
+
+                paging = resp.get('paging', {}) if isinstance(resp, dict) else {}
+                total = paging.get('totalCount')
+                if total is not None and len(all_items) >= total:
+                    break
+                if len(items) < page_size:
+                    break
+                page += 1
+                if page > 100:  # safety valve
+                    logger.warning("Policy pagination safety limit reached")
+                    break
+
+            for pol in all_items:
+                if pol.get('id'):
+                    policy_names_by_id[pol['id']] = pol.get('name', '')
+
+            filtered_out = 0
+            for pol in all_items:
+                name = pol.get('name', '')
+                if pattern and not pattern.search(name):
+                    filtered_out += 1
+                    continue
+                inventory.policies.append({
+                    'id': pol.get('id'),
+                    'name': name,
+                    'template_id': DPSK_POLICY_TEMPLATE_ID,
+                    # Which set to unassign from before deleting (None = free)
+                    'policy_set_id': policy_to_set.get(pol.get('id')),
+                })
+            assigned = sum(1 for p in inventory.policies if p['policy_set_id'])
+            logger.info(
+                f"[Inventory] Adaptive policies: {len(inventory.policies)} "
+                f"collected of {len(all_items)} tenant-wide "
+                f"({assigned} assigned to a policy set, must be unassigned first)"
+                + (f", {filtered_out} excluded by name pattern" if filtered_out else "")
+            )
+        except Exception as e:
+            logger.warning(f"Failed to query adaptive policies: {e}")
+
+        # Policy sets and RADIUS groups are listed in full rather than scoped.
+        # There are only a handful of each, and hiding the ones belonging to
+        # other sites made the tool look broken ("why does it find one policy
+        # set but not the others?"). Safety comes from selection instead:
+        # these are separate categories the operator ticks deliberately, and
+        # RADIUS groups are not selected by default.
+
+        # Any policy that is in a set but was not returned by the paginated
+        # template query still needs collecting — otherwise it survives and
+        # keeps its set pinned.
+        seen_ids = {p['id'] for p in inventory.policies if p.get('id')}
+        recovered = 0
+        for pol_id, ps_id in policy_to_set.items():
+            if pol_id in seen_ids:
+                continue
+            inventory.policies.append({
+                'id': pol_id,
+                'name': policy_names_by_id.get(pol_id) or pol_id,
+                'template_id': DPSK_POLICY_TEMPLATE_ID,
+                'policy_set_id': ps_id,
+            })
+            recovered += 1
+        if recovered:
+            logger.info(
+                f"[Inventory] +{recovered} policies recovered via set membership"
+            )
+
+        # RADIUS attribute groups are listed so they are visible, but they are
+        # the genuinely dangerous ones: they are rate tiers named for the tier
+        # ("fast", "gigabit"), not for a property, and every property's
+        # policies point at the same ones. Deleting them breaks rate limiting
+        # tenant-wide, so the UI leaves this category unticked by default.
+        try:
+            resp = await self.r1_client.radius_attributes.get_radius_attribute_groups(
+                tenant_id=self.tenant_id
+            )
+            items = (
+                resp if isinstance(resp, list)
+                else resp.get('content', resp.get('data', []))
+            )
+            for grp in items:
+                name = grp.get('name', '')
+                if pattern and not pattern.search(name):
+                    continue
+                inventory.radius_attribute_groups.append({
+                    'id': grp.get('id'),
+                    'name': name,
+                })
+            logger.info(
+                f"[Inventory] RADIUS attribute groups: "
+                f"{len(inventory.radius_attribute_groups)} listed (shared "
+                f"tenant-wide rate tiers — off by default)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to query RADIUS attribute groups: {e}")
 
     def _from_created_resources(
         self, created_resources: Dict[str, List[Dict[str, Any]]]
@@ -426,6 +663,11 @@ class InventoryPhase(PhaseExecutor):
             ),
             wifi_networks=created_resources.get('wifi_networks', []),
             ap_groups=created_resources.get('ap_groups', []),
+            policies=created_resources.get('policies', []),
+            policy_sets=created_resources.get('policy_sets', []),
+            radius_attribute_groups=created_resources.get(
+                'radius_attribute_groups', []
+            ),
         )
 
 

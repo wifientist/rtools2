@@ -1,0 +1,493 @@
+{
+  "metadata": {
+    "extracted_at": "2026-08-12T09:30:00.000000",
+    "cloudpath_fqdn": "test-cloudpath.example.com",
+    "extractor_version": "1.0.0",
+    "mode": "dpsk_only",
+    "pool_id": "AccountDpskPool-cedarpoint-16units",
+    "extraction_duration_seconds": 0.128
+  },
+  "pool": {
+    "at": "AccountDpskPool-cedarpoint-16units",
+    "displayName": "CedarPoint Residents",
+    "description": "Cedar Point - 16 units, per-unit SSIDs, isolated 1:1 DPSK pools",
+    "enabled": true,
+    "phraseDefaultLength": 11,
+    "phraseRandomCharactersType": "ALPHANUMERIC_MIXED",
+    "ssidList": [
+      "101@CedarPoint",
+      "102@CedarPoint",
+      "103@CedarPoint",
+      "104@CedarPoint",
+      "105@CedarPoint",
+      "106@CedarPoint",
+      "107@CedarPoint",
+      "108@CedarPoint",
+      "201@CedarPoint",
+      "202@CedarPoint",
+      "203@CedarPoint",
+      "204@CedarPoint",
+      "205@CedarPoint",
+      "206@CedarPoint",
+      "207@CedarPoint",
+      "208@CedarPoint"
+    ],
+    "enforceExpirationDate": true,
+    "expirationDateType": "MONTHS_AFTER_TIME",
+    "expirationDateValue": "12",
+    "enforceDeviceCountLimit": false,
+    "deviceCountLimit": 0,
+    "supportsPolicies": true,
+    "defaultAccess": "ACCEPT"
+  },
+  "dpsks": [
+    {
+      "guid": "AccountDpsk-8e1463d5-9363-bc71-197e-4d9ebc4bf4e1",
+      "name": "resident101a",
+      "passphrase": "xteoqx8xbjx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "101@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1101"
+    },
+    {
+      "guid": "AccountDpsk-09935f26-e03b-cd20-8771-6887bf5c9ff2",
+      "name": "resident101b_fast",
+      "passphrase": "axb1kecd5n2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "101@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1101"
+    },
+    {
+      "guid": "AccountDpsk-620fc278-1e52-f507-0e5d-43eba019e226",
+      "name": "resident102a",
+      "passphrase": "mor1h4er06h",
+      "status": "ACTIVE",
+      "ssidList": [
+        "102@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1102"
+    },
+    {
+      "guid": "AccountDpsk-0d9be9c4-db5c-0c0e-4ffa-1b837162e385",
+      "name": "resident102b_fast",
+      "passphrase": "eb04yqpajuy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "102@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1102"
+    },
+    {
+      "guid": "AccountDpsk-12de34c3-f53a-e464-6b37-15158ee1ced5",
+      "name": "resident103a",
+      "passphrase": "vj7e0w3iag7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "103@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1103"
+    },
+    {
+      "guid": "AccountDpsk-ff6c08bf-b43f-1485-d938-1320fa60e49c",
+      "name": "resident103b_fast",
+      "passphrase": "vr6ziyrc36t",
+      "status": "ACTIVE",
+      "ssidList": [
+        "103@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1103"
+    },
+    {
+      "guid": "AccountDpsk-12924081-9914-6014-3ae9-2f8ed035250c",
+      "name": "resident104a_fast",
+      "passphrase": "sim1wq0akda",
+      "status": "ACTIVE",
+      "ssidList": [
+        "104@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1104"
+    },
+    {
+      "guid": "AccountDpsk-f553ec06-76cd-8d0f-6640-00f070263e9d",
+      "name": "resident104b_fast",
+      "passphrase": "05i41vyjxw8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "104@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1104"
+    },
+    {
+      "guid": "AccountDpsk-24ee8e51-121b-0381-c0be-e65086ca758e",
+      "name": "resident105a_fast",
+      "passphrase": "an06cvr3spa",
+      "status": "ACTIVE",
+      "ssidList": [
+        "105@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1105"
+    },
+    {
+      "guid": "AccountDpsk-79158bd8-9026-8379-9755-cdee8cd5ed9a",
+      "name": "resident105b",
+      "passphrase": "ubccshs55ri",
+      "status": "ACTIVE",
+      "ssidList": [
+        "105@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1105"
+    },
+    {
+      "guid": "AccountDpsk-b214a2c5-136b-667c-7258-ab83d39cb942",
+      "name": "resident106a",
+      "passphrase": "35wvq2cpohe",
+      "status": "ACTIVE",
+      "ssidList": [
+        "106@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1106"
+    },
+    {
+      "guid": "AccountDpsk-5ab9b70b-3dcc-2fcb-c9ad-8bc4adba265f",
+      "name": "resident106b",
+      "passphrase": "z90onqwok2e",
+      "status": "ACTIVE",
+      "ssidList": [
+        "106@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1106"
+    },
+    {
+      "guid": "AccountDpsk-e4185adf-7e43-226e-c8e9-96486a3519b1",
+      "name": "resident107a",
+      "passphrase": "srtf9jl1zys",
+      "status": "ACTIVE",
+      "ssidList": [
+        "107@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1107"
+    },
+    {
+      "guid": "AccountDpsk-79b2508e-178c-680f-968c-05d2d3ad6250",
+      "name": "resident107b_fast",
+      "passphrase": "5czb0izlnh5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "107@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1107"
+    },
+    {
+      "guid": "AccountDpsk-925d5b1c-f4b7-7059-89b8-8c6336661336",
+      "name": "resident108a",
+      "passphrase": "fhx0734z91a",
+      "status": "ACTIVE",
+      "ssidList": [
+        "108@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1108"
+    },
+    {
+      "guid": "AccountDpsk-74df7bd5-f4d6-dea8-43df-0290c2f8054b",
+      "name": "resident108b",
+      "passphrase": "zl07mw6e7ax",
+      "status": "ACTIVE",
+      "ssidList": [
+        "108@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1108"
+    },
+    {
+      "guid": "AccountDpsk-20f2bfd2-a17f-3334-2400-214417aac15c",
+      "name": "resident201a_fast",
+      "passphrase": "cdqgjy44dl4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "201@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1201"
+    },
+    {
+      "guid": "AccountDpsk-d2289f42-b770-6c99-ef7c-80ea8e4e20f8",
+      "name": "resident201b",
+      "passphrase": "khyxac6kgsd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "201@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1201"
+    },
+    {
+      "guid": "AccountDpsk-71dd0629-a171-cd98-59d5-8df08211b812",
+      "name": "resident202a",
+      "passphrase": "d4uju88d2qq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "202@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1202"
+    },
+    {
+      "guid": "AccountDpsk-d04abafd-f4b9-d29d-39d3-577ae1f476ab",
+      "name": "resident202b_fast",
+      "passphrase": "hi0rmdk2vp3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "202@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1202"
+    },
+    {
+      "guid": "AccountDpsk-55abc01d-471c-c909-ebe2-f046e3f4df07",
+      "name": "resident203a",
+      "passphrase": "j60qai9sdg7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "203@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1203"
+    },
+    {
+      "guid": "AccountDpsk-568ae4f2-5027-fae0-2f8e-eeaa65b35c55",
+      "name": "resident203b",
+      "passphrase": "mnsgg2tqlay",
+      "status": "ACTIVE",
+      "ssidList": [
+        "203@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1203"
+    },
+    {
+      "guid": "AccountDpsk-75227a8f-337a-37c1-9e6e-007934925d20",
+      "name": "resident204a_fast",
+      "passphrase": "epgyknscyzp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "204@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1204"
+    },
+    {
+      "guid": "AccountDpsk-e150c014-608f-f1c5-7208-47a268244163",
+      "name": "resident204b_fast",
+      "passphrase": "gksk01amnca",
+      "status": "ACTIVE",
+      "ssidList": [
+        "204@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1204"
+    },
+    {
+      "guid": "AccountDpsk-e9e54626-e0e0-0d7b-d4a1-630c7cdfa039",
+      "name": "resident205a_fast",
+      "passphrase": "oiv4994o942",
+      "status": "ACTIVE",
+      "ssidList": [
+        "205@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1205"
+    },
+    {
+      "guid": "AccountDpsk-f619eebc-2624-591a-a930-59a182422f3f",
+      "name": "resident205b",
+      "passphrase": "a37eb7tzmw6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "205@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1205"
+    },
+    {
+      "guid": "AccountDpsk-2bd7d588-9b99-0964-9d36-9802393651da",
+      "name": "resident206a",
+      "passphrase": "35u4h12geo4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "206@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1206"
+    },
+    {
+      "guid": "AccountDpsk-cef4f2b9-ab90-0455-9226-4459c95e34fc",
+      "name": "resident206b_fast",
+      "passphrase": "7cskcll7hhp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "206@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1206"
+    },
+    {
+      "guid": "AccountDpsk-3d2799ed-777d-6083-4fc4-66aafcbf0931",
+      "name": "resident207a",
+      "passphrase": "afkenqpqj7u",
+      "status": "ACTIVE",
+      "ssidList": [
+        "207@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1207"
+    },
+    {
+      "guid": "AccountDpsk-7bdedc2b-2df3-d474-3c73-40893637d38e",
+      "name": "resident207b",
+      "passphrase": "wmwd8je3ilz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "207@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1207"
+    },
+    {
+      "guid": "AccountDpsk-0125dc57-8796-4dc8-239e-75967e0c31ce",
+      "name": "resident208a_fast",
+      "passphrase": "tsj7cdqat8i",
+      "status": "ACTIVE",
+      "ssidList": [
+        "208@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1208"
+    },
+    {
+      "guid": "AccountDpsk-9ebb2013-0e10-b822-5526-fcd0af46109d",
+      "name": "resident208b_fast",
+      "passphrase": "lg8hs04v1ac",
+      "status": "ACTIVE",
+      "ssidList": [
+        "208@CedarPoint"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1208"
+    }
+  ]
+}

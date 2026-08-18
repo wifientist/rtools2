@@ -1,0 +1,2434 @@
+{
+  "metadata": {
+    "extracted_at": "2026-08-12T09:30:00.000000",
+    "cloudpath_fqdn": "test-cloudpath.example.com",
+    "extractor_version": "1.0.0",
+    "mode": "dpsk_only",
+    "pool_id": "AccountDpskPool-aspenridge-80units",
+    "extraction_duration_seconds": 0.664
+  },
+  "pool": {
+    "guid": "AccountDpskPool-aspenridge-80units",
+    "displayName": "AspenRidge Residents",
+    "description": "Aspen Ridge - 80 units, per-unit SSIDs, shared DPSK pool",
+    "enabled": true,
+    "phraseDefaultLength": 11,
+    "phraseRandomCharactersType": "ALPHANUMERIC_MIXED",
+    "ssidList": [
+      "101@AspenRidge",
+      "102@AspenRidge",
+      "103@AspenRidge",
+      "104@AspenRidge",
+      "105@AspenRidge",
+      "106@AspenRidge",
+      "107@AspenRidge",
+      "108@AspenRidge",
+      "109@AspenRidge",
+      "110@AspenRidge",
+      "111@AspenRidge",
+      "112@AspenRidge",
+      "113@AspenRidge",
+      "114@AspenRidge",
+      "115@AspenRidge",
+      "116@AspenRidge",
+      "117@AspenRidge",
+      "118@AspenRidge",
+      "119@AspenRidge",
+      "120@AspenRidge",
+      "201@AspenRidge",
+      "202@AspenRidge",
+      "203@AspenRidge",
+      "204@AspenRidge",
+      "205@AspenRidge",
+      "206@AspenRidge",
+      "207@AspenRidge",
+      "208@AspenRidge",
+      "209@AspenRidge",
+      "210@AspenRidge",
+      "211@AspenRidge",
+      "212@AspenRidge",
+      "213@AspenRidge",
+      "214@AspenRidge",
+      "215@AspenRidge",
+      "216@AspenRidge",
+      "217@AspenRidge",
+      "218@AspenRidge",
+      "219@AspenRidge",
+      "220@AspenRidge",
+      "301@AspenRidge",
+      "302@AspenRidge",
+      "303@AspenRidge",
+      "304@AspenRidge",
+      "305@AspenRidge",
+      "306@AspenRidge",
+      "307@AspenRidge",
+      "308@AspenRidge",
+      "309@AspenRidge",
+      "310@AspenRidge",
+      "311@AspenRidge",
+      "312@AspenRidge",
+      "313@AspenRidge",
+      "314@AspenRidge",
+      "315@AspenRidge",
+      "316@AspenRidge",
+      "317@AspenRidge",
+      "318@AspenRidge",
+      "319@AspenRidge",
+      "320@AspenRidge",
+      "401@AspenRidge",
+      "402@AspenRidge",
+      "403@AspenRidge",
+      "404@AspenRidge",
+      "405@AspenRidge",
+      "406@AspenRidge",
+      "407@AspenRidge",
+      "408@AspenRidge",
+      "409@AspenRidge",
+      "410@AspenRidge",
+      "411@AspenRidge",
+      "412@AspenRidge",
+      "413@AspenRidge",
+      "414@AspenRidge",
+      "415@AspenRidge",
+      "416@AspenRidge",
+      "417@AspenRidge",
+      "418@AspenRidge",
+      "419@AspenRidge",
+      "420@AspenRidge",
+      "AspenRidge-Guest"
+    ],
+    "enforceExpirationDate": true,
+    "expirationDateType": "MONTHS_AFTER_TIME",
+    "expirationDateValue": "12",
+    "enforceDeviceCountLimit": false,
+    "deviceCountLimit": 0,
+    "supportsPolicies": true,
+    "defaultAccess": "ACCEPT"
+  },
+  "dpsks": [
+    {
+      "guid": "AccountDpsk-9d971f5e-b556-1984-e5e2-f7aed4ba4930",
+      "name": "resident101a_fast",
+      "passphrase": "dlx36ex2uxm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "101@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-bbd283dc-b6b8-d8b9-5feb-f3b55fd85b9e",
+      "name": "resident101b",
+      "passphrase": "3dqs6oghzj5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "101@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-cd1f1743-c1bf-e939-7c8b-ed02267d9584",
+      "name": "resident102a_fast",
+      "passphrase": "5uwkv00tibf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "102@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-79ba4248-9e39-cf37-0466-eb58af4bd19e",
+      "name": "resident102b",
+      "passphrase": "37gsecucdi7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "102@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-28f8ee9a-3220-68f5-2b62-f9ebfc1af010",
+      "name": "resident103a_fast",
+      "passphrase": "ax7hxf7j491",
+      "status": "ACTIVE",
+      "ssidList": [
+        "103@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-db925034-ce29-a56b-d28f-9897beb73d3e",
+      "name": "resident103b",
+      "passphrase": "0jwsgkf5z7w",
+      "status": "ACTIVE",
+      "ssidList": [
+        "103@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-e43b5ecb-8931-e5cf-2368-5711582b4acd",
+      "name": "resident104a",
+      "passphrase": "dkwz521jwyd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "104@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-ea2d0cc7-5d91-c58d-9e98-17e7fb366f8f",
+      "name": "resident104b",
+      "passphrase": "tli9skeimxy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "104@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-739054ef-89a3-01bb-6798-3add433227a7",
+      "name": "resident105a_fast",
+      "passphrase": "47ylbcvllsw",
+      "status": "EXPIRED",
+      "ssidList": [
+        "105@AspenRidge"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-20d0380f-d8a5-a3f8-b5a6-f5505b3f46de",
+      "name": "resident105b_fast",
+      "passphrase": "xt2llacwdlx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "105@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-b7174925-023e-a362-20d1-9d5b35c4cbd3",
+      "name": "resident106a",
+      "passphrase": "cz8bim3hwku",
+      "status": "ACTIVE",
+      "ssidList": [
+        "106@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-c267bb28-b689-1c7c-82af-57694f9ed259",
+      "name": "resident106b",
+      "passphrase": "3xordmvw9zf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "106@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-2f73fa90-f395-11b9-02da-2f37844ffd68",
+      "name": "resident107a",
+      "passphrase": "1kugiwmfv97",
+      "status": "ACTIVE",
+      "ssidList": [
+        "107@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-f4f38304-f311-1525-7dcd-d5674c1f86dc",
+      "name": "resident107b_fast",
+      "passphrase": "zb85fj1p72q",
+      "status": "ACTIVE",
+      "ssidList": [
+        "107@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-589edc3f-ae0a-791b-1c6d-94f5eab09f97",
+      "name": "resident108a_fast",
+      "passphrase": "8g8cfg7kyn3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "108@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-ce82a82f-2e62-01bf-b1fe-c4be4821a61b",
+      "name": "resident108b_fast",
+      "passphrase": "vujwmjg78fy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "108@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-d0b9130d-7ead-0c0f-6b80-9df8af5c78a9",
+      "name": "resident109a_fast",
+      "passphrase": "6h6jo6cakj5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "109@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-4a039b49-f82c-51a3-7443-6d55a31fe264",
+      "name": "resident109b_fast",
+      "passphrase": "9ut29gk5b8h",
+      "status": "ACTIVE",
+      "ssidList": [
+        "109@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-9009362b-66ac-e318-f4bb-99af54890c10",
+      "name": "resident110a",
+      "passphrase": "z9722zetqcu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "110@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-379842c7-2c0f-d87b-8e38-fc1ffca5deae",
+      "name": "resident110b_fast",
+      "passphrase": "937a9h07tx4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "110@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-9d8cc7f1-7fd4-63f9-b425-fbe801619591",
+      "name": "resident111a",
+      "passphrase": "8lf0tp66ut4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "111@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-fa92cb2e-e4a7-65b4-3d0c-1bdf2b0305bd",
+      "name": "resident111b",
+      "passphrase": "ixeuoi0xe65",
+      "status": "ACTIVE",
+      "ssidList": [
+        "111@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-2f38928e-59fe-f92c-086c-ff6598b98718",
+      "name": "resident112a",
+      "passphrase": "hqv9sznvigc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "112@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-ec3b92df-7241-e21b-0d57-1c67144321d5",
+      "name": "resident112b_fast",
+      "passphrase": "yyw2c1kcea2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "112@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-ed107b63-f5dc-3560-8534-bd19fd143b0b",
+      "name": "resident113a",
+      "passphrase": "9oh17g02jrt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "113@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-a7dce2f2-dba0-7363-a2aa-851d315454bb",
+      "name": "resident113b_fast",
+      "passphrase": "d9ldceyizf3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "113@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-9a076084-e35c-d781-0ac6-06b13765a1a1",
+      "name": "resident114a_fast",
+      "passphrase": "it7wk5np5vr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "114@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-f5deac74-142b-6c83-1943-c70ab8b193c2",
+      "name": "resident114b",
+      "passphrase": "d6afjvrcl0k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "114@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-5b46cc38-da65-3a7c-1781-cb2bb60d88d0",
+      "name": "resident115a",
+      "passphrase": "jv4twbyzbr5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "115@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-19e0def0-ca9a-c01d-31c3-e85fdea30434",
+      "name": "resident115b_fast",
+      "passphrase": "xfh2ddbsasb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "115@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-0c0a0118-5470-9e39-e7cc-2883e37242fb",
+      "name": "resident116a",
+      "passphrase": "x7q7aohv8mp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "116@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-e5118cde-cd52-6ff9-b13e-121763ff9b11",
+      "name": "resident116b",
+      "passphrase": "clnz36i8np2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "116@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-8bb5c91c-2a7c-9758-cb6a-2c878a91445a",
+      "name": "resident117a_fast",
+      "passphrase": "ylj49z0rcog",
+      "status": "ACTIVE",
+      "ssidList": [
+        "117@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-58e0b134-98e6-0878-2feb-7ebf948d8815",
+      "name": "resident117b_fast",
+      "passphrase": "drf3rhxmaz4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "117@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-fe6b2855-2050-46ae-2b25-30a0a5649316",
+      "name": "resident118a",
+      "passphrase": "qf3pafy16uz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "118@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-1806f560-8fbc-681a-2bd8-42e5a44dc166",
+      "name": "resident118b",
+      "passphrase": "rxj9ck01vy5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "118@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-c1238e03-cb57-0fdf-7b42-cd0fa0ab4a98",
+      "name": "resident119a",
+      "passphrase": "1rlrx22946z",
+      "status": "ACTIVE",
+      "ssidList": [
+        "119@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-7077cd45-443b-c640-6cf4-8d56e084582c",
+      "name": "resident119b",
+      "passphrase": "tahdupb3cze",
+      "status": "ACTIVE",
+      "ssidList": [
+        "119@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-d00b219f-2f0c-bdfc-1bb6-78e2a2c19259",
+      "name": "resident120a",
+      "passphrase": "2m9v8xt15w8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "120@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-6b7cbf4b-7e52-9d54-48a9-5b2b64582595",
+      "name": "resident120b_fast",
+      "passphrase": "n3rysxp1xwy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "120@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-77a13f71-fc49-66b3-ffea-42c55c2cb396",
+      "name": "resident201a",
+      "passphrase": "es2m5dmn1u2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "201@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-98322cd9-109d-1a79-e40a-ea1f9e6c0a28",
+      "name": "resident201b",
+      "passphrase": "dro7xmhxqc3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "201@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-c99e5f98-5579-faa5-7f49-313144085079",
+      "name": "resident202a_fast",
+      "passphrase": "ye07bfu4f0c",
+      "status": "ACTIVE",
+      "ssidList": [
+        "202@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-cc3ab025-67a7-d219-6b6b-65f29695b588",
+      "name": "resident202b",
+      "passphrase": "ip3fi4lrpdq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "202@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-e2a76846-48f6-76b3-9ffd-65cd89d5c63f",
+      "name": "resident203a",
+      "passphrase": "c6xabe56rhh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "203@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-39703fc8-a603-b163-52d7-609355fabee9",
+      "name": "resident203b_fast",
+      "passphrase": "3zqqxwfm2nb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "203@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-9b0fa49e-7e80-945f-a156-f7429edb34d4",
+      "name": "resident204a",
+      "passphrase": "x8vci00h6pw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "204@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-af5a99cb-768d-2e27-8860-b9167a91f16d",
+      "name": "resident204b",
+      "passphrase": "mcrkakl2a9a",
+      "status": "ACTIVE",
+      "ssidList": [
+        "204@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-a3e25f9a-bd1e-db8d-7537-91fc036cd45e",
+      "name": "resident205a",
+      "passphrase": "1qp5nqis9l5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "205@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-9aa3e828-f96b-b0b2-43b4-73dc40dcdb36",
+      "name": "resident205b_fast",
+      "passphrase": "ap6j7fplb9e",
+      "status": "ACTIVE",
+      "ssidList": [
+        "205@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-921bd376-fb76-b7d7-3f2e-44b04d248afe",
+      "name": "resident206a",
+      "passphrase": "pdsiars6jkf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "206@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-c563782b-b71c-1f58-4014-3dcf7eb13253",
+      "name": "resident206b_fast",
+      "passphrase": "9tc9gcacthg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "206@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-ef127802-cc9b-405c-7e00-bef8c521c1b0",
+      "name": "resident207a",
+      "passphrase": "g4b2lylljo4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "207@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-58ecb586-ef6a-9868-a46a-1b8a21c3b05f",
+      "name": "resident207b",
+      "passphrase": "ha7czo5wyp8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "207@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-4fe44174-ae5b-df28-4aa5-b92dd864e4f1",
+      "name": "resident208a_fast",
+      "passphrase": "6kbg29aj16w",
+      "status": "ACTIVE",
+      "ssidList": [
+        "208@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-34df5e8d-6358-050a-234b-4f7aa0f33f70",
+      "name": "resident208b",
+      "passphrase": "ilmzehr1iol",
+      "status": "ACTIVE",
+      "ssidList": [
+        "208@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-65d98c93-5f9f-3c7f-414e-62a9efb7265f",
+      "name": "resident209a",
+      "passphrase": "i60q6sijoa4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "209@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-df66baeb-5d32-0d58-ec31-6c4e7c3c0da7",
+      "name": "resident209b",
+      "passphrase": "oyos421evld",
+      "status": "ACTIVE",
+      "ssidList": [
+        "209@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-947a2468-25fd-6d8a-e0f8-27018b94b2e8",
+      "name": "resident210a_fast",
+      "passphrase": "r44c4derr3h",
+      "status": "ACTIVE",
+      "ssidList": [
+        "210@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-533ed9da-4052-76dc-b5ca-0e1002f22281",
+      "name": "resident210b",
+      "passphrase": "votym8005to",
+      "status": "ACTIVE",
+      "ssidList": [
+        "210@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-7d21524f-c5dd-cd67-cc84-de4d4940c140",
+      "name": "resident211a",
+      "passphrase": "f8xyr5tk7k6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "211@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-0032230a-4a6e-e3ee-32b4-b42a6f98640c",
+      "name": "resident211b",
+      "passphrase": "r9wdu71g1he",
+      "status": "ACTIVE",
+      "ssidList": [
+        "211@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-d48abb28-2646-3640-018f-e6194770e457",
+      "name": "resident212a_fast",
+      "passphrase": "feeqzvtjwbp",
+      "status": "EXPIRED",
+      "ssidList": [
+        "212@AspenRidge"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-2ebc83f9-114d-1a3b-7710-603b4699da0d",
+      "name": "resident212b",
+      "passphrase": "y0az2kc6dxv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "212@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-1c3dca50-90f5-c8e6-2598-f92ee96efacc",
+      "name": "resident213a_fast",
+      "passphrase": "61ftzp2y7f3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "213@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-e3ef3468-257c-bd19-dc98-f33d998f17e7",
+      "name": "resident213b",
+      "passphrase": "2mux4bpp7j3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "213@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-80e585c4-a2a1-c326-f187-11d121720952",
+      "name": "resident214a",
+      "passphrase": "y14fcpe58hc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "214@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-67db4aa9-c7be-2e51-a422-716f27d67432",
+      "name": "resident214b",
+      "passphrase": "hpz939wijyt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "214@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-4203ab69-c9eb-4d49-9106-db412cf35aad",
+      "name": "resident215a_fast",
+      "passphrase": "p7w2rteofl2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "215@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-e14f92d2-31ec-2584-fcca-13b7d2dcf105",
+      "name": "resident215b",
+      "passphrase": "dii817hjo3k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "215@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-5240ea14-258b-23f1-5557-50fb26e066f7",
+      "name": "resident216a",
+      "passphrase": "m84q4zjey2y",
+      "status": "ACTIVE",
+      "ssidList": [
+        "216@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-02b40536-c76a-ca1f-89ae-31d78d82a1d8",
+      "name": "resident216b",
+      "passphrase": "kl86w2w74f5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "216@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-fad32e17-450f-f3e4-4d65-2021ba134d68",
+      "name": "resident217a_fast",
+      "passphrase": "doxkc1aelsl",
+      "status": "ACTIVE",
+      "ssidList": [
+        "217@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-5b704636-1c34-b438-37da-6333fdf9f82a",
+      "name": "resident217b",
+      "passphrase": "5d5m42rfa7b",
+      "status": "ACTIVE",
+      "ssidList": [
+        "217@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-af3938f9-f76a-01de-6fb6-61b78f3cc32f",
+      "name": "resident218a",
+      "passphrase": "ccz1te0h8mw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "218@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-6bd9ec48-96a8-6919-41e9-fac53a9710c1",
+      "name": "resident218b",
+      "passphrase": "rbtv7z3j9nk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "218@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-646e70b2-a497-827e-151f-e5cc8fcc1225",
+      "name": "resident219a",
+      "passphrase": "snayus868sx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "219@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-306679b5-d842-3200-d53d-74818c0e510c",
+      "name": "resident219b",
+      "passphrase": "6pgb86azh4z",
+      "status": "ACTIVE",
+      "ssidList": [
+        "219@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-7a5aec9a-48e0-83fb-0b5b-5100f58c4807",
+      "name": "resident220a",
+      "passphrase": "5upj5i2sq65",
+      "status": "ACTIVE",
+      "ssidList": [
+        "220@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-a619b444-051d-d204-0b9d-ce85a88cdada",
+      "name": "resident220b_fast",
+      "passphrase": "4wkqv50l346",
+      "status": "ACTIVE",
+      "ssidList": [
+        "220@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-833d4678-f296-a359-c7e9-a8d4f7764a4d",
+      "name": "resident301a_fast",
+      "passphrase": "yn8oq6wk32r",
+      "status": "ACTIVE",
+      "ssidList": [
+        "301@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-7f1fe851-2b12-59fb-7557-92b218450566",
+      "name": "resident301b",
+      "passphrase": "1qgx0vd0giu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "301@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-c48a8b49-c785-9a06-16f8-73a5b67c7f81",
+      "name": "resident302a",
+      "passphrase": "hd9o0072667",
+      "status": "ACTIVE",
+      "ssidList": [
+        "302@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-4508578c-3bb3-6455-e242-584537985a04",
+      "name": "resident302b",
+      "passphrase": "i0mucutzk6w",
+      "status": "ACTIVE",
+      "ssidList": [
+        "302@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-1371a9a6-53ad-7dd8-2c02-f5a91164d378",
+      "name": "resident303a",
+      "passphrase": "8jiwsheovp7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "303@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-eae1ec9e-f8e4-f800-a703-f9e45adf8046",
+      "name": "resident303b_fast",
+      "passphrase": "9b0h1jnt717",
+      "status": "ACTIVE",
+      "ssidList": [
+        "303@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-bc0e86d3-2880-4a78-3133-88bc862fbe73",
+      "name": "resident304a",
+      "passphrase": "mfxr1z7xq1l",
+      "status": "ACTIVE",
+      "ssidList": [
+        "304@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-b4369d75-f726-9fc4-239b-07da7a8b8b52",
+      "name": "resident304b_fast",
+      "passphrase": "1k81u8hhb64",
+      "status": "ACTIVE",
+      "ssidList": [
+        "304@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-ba70d80a-babb-6829-e854-4fd3d119b4a8",
+      "name": "resident305a_fast",
+      "passphrase": "zgk9tkeps3a",
+      "status": "ACTIVE",
+      "ssidList": [
+        "305@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-77a77b4f-ff43-aa0a-1f60-e7a15cb0587c",
+      "name": "resident305b",
+      "passphrase": "zdnv887fspk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "305@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-a525f828-344b-52c6-e966-c5dfd839a40f",
+      "name": "resident306a",
+      "passphrase": "p13kzsg7rqo",
+      "status": "ACTIVE",
+      "ssidList": [
+        "306@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-d40eb4e8-9d79-e5dd-97b8-4141773f9b77",
+      "name": "resident306b",
+      "passphrase": "rl6nsuhfw89",
+      "status": "ACTIVE",
+      "ssidList": [
+        "306@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-31d433ce-d134-f2ed-2fb1-cf9205308d32",
+      "name": "resident307a",
+      "passphrase": "kjhlxgfhwa6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "307@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-7794ed20-4e5a-950a-7e5f-5a94eb26656a",
+      "name": "resident307b",
+      "passphrase": "cyq0fgt7ter",
+      "status": "ACTIVE",
+      "ssidList": [
+        "307@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-4a0d7279-7a7e-0cc3-3185-4a8ff16e46b8",
+      "name": "resident308a",
+      "passphrase": "u04eenj01og",
+      "status": "ACTIVE",
+      "ssidList": [
+        "308@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-040f7ae1-7f80-f184-3e08-a8da9b5cc100",
+      "name": "resident308b_fast",
+      "passphrase": "0dqzko7movx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "308@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-5878d75f-7891-d5bb-524b-17ab23c342c1",
+      "name": "resident309a_fast",
+      "passphrase": "g7dfxp6e6ks",
+      "status": "ACTIVE",
+      "ssidList": [
+        "309@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-27b1f8b5-721e-1c61-c4bd-0f72622cb276",
+      "name": "resident309b_fast",
+      "passphrase": "kq9je5fa9m0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "309@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-e7ba4ca0-eacc-a699-b0fb-475ed8afcf2a",
+      "name": "resident310a",
+      "passphrase": "d7xlxcnq86w",
+      "status": "ACTIVE",
+      "ssidList": [
+        "310@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-05f8b13f-fbb6-b462-02f3-4582444f4cad",
+      "name": "resident310b",
+      "passphrase": "hxql3nkwfbn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "310@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-54caf3ff-57dd-a900-9e36-92eed4691baf",
+      "name": "resident311a",
+      "passphrase": "5xdxnvlud9s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "311@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-22fb897f-3bd5-0ad8-0354-1d9737511b89",
+      "name": "resident311b",
+      "passphrase": "f9quschpfpk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "311@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-fcc3fb7c-725d-c23d-3e2a-495bb806c3bd",
+      "name": "resident312a_fast",
+      "passphrase": "8d5n85ontkv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "312@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-160a5707-71db-4ef5-ff92-e05bf33fa284",
+      "name": "resident312b",
+      "passphrase": "hpfnkunb13d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "312@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-61c2216d-07f9-76e8-1bfa-d6ef350a8c1b",
+      "name": "resident313a",
+      "passphrase": "bjphhv9r3vu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "313@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-7c6de075-beaf-a926-0480-a54ccffda83b",
+      "name": "resident313b",
+      "passphrase": "2u5gsa0dlwn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "313@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-db6b3858-d6bb-0479-fcf3-92c4577e7d6d",
+      "name": "resident314a",
+      "passphrase": "vl5b99ixhtm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "314@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-b3548a6a-5d10-3a96-e947-c3130e755df9",
+      "name": "resident314b",
+      "passphrase": "2t8jtwb0sbq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "314@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-3beca827-8b87-c412-35b2-333868ebea81",
+      "name": "resident315a",
+      "passphrase": "c4fvl55u6ff",
+      "status": "ACTIVE",
+      "ssidList": [
+        "315@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-dc563c5a-5517-bb80-936a-9e310c64ff7c",
+      "name": "resident315b",
+      "passphrase": "ssj1uuz2nqg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "315@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-abcccefd-5c5a-204f-fa85-d572d629ff0d",
+      "name": "resident316a",
+      "passphrase": "omv1ugsx7nv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "316@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-2b75b21c-adcc-502d-58f6-4cf4d5602148",
+      "name": "resident316b",
+      "passphrase": "j3hmu7gu5qj",
+      "status": "ACTIVE",
+      "ssidList": [
+        "316@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-26eea2ea-72a2-0d33-301a-90e300299301",
+      "name": "resident317a",
+      "passphrase": "q2avkw2s708",
+      "status": "ACTIVE",
+      "ssidList": [
+        "317@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-61e068dd-1dce-a6df-9bec-1fe73ae89b47",
+      "name": "resident317b",
+      "passphrase": "z26m8k9woio",
+      "status": "ACTIVE",
+      "ssidList": [
+        "317@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-dc79c6f1-b1a7-b7d6-0f2d-c1665ab64454",
+      "name": "resident318a",
+      "passphrase": "35yc0743q8c",
+      "status": "EXPIRED",
+      "ssidList": [
+        "318@AspenRidge"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-4e26a2b3-579b-4548-6deb-316bba27256c",
+      "name": "resident318b",
+      "passphrase": "tuqjhjkbfea",
+      "status": "ACTIVE",
+      "ssidList": [
+        "318@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-165a1b7d-b7d0-c8fd-ee79-cd1d76066992",
+      "name": "resident319a",
+      "passphrase": "ahv2ak4xvkw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "319@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-2dc7ed68-e007-d6a9-63e0-38b10eccdb38",
+      "name": "resident319b",
+      "passphrase": "wpchnyxqaeg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "319@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-3eeefa01-e737-d183-73dd-76ddc5d1373d",
+      "name": "resident320a",
+      "passphrase": "ttb0mzpo9gr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "320@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-2d4c0e0e-bf21-7ac9-7c83-ef9663d8cfe1",
+      "name": "resident320b",
+      "passphrase": "63slojdoo5s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "320@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-f49c0d29-80da-55a5-4b4f-56bcbdb3ee26",
+      "name": "resident401a_fast",
+      "passphrase": "esaaua4xb6k",
+      "status": "EXPIRED",
+      "ssidList": [
+        "401@AspenRidge"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-0d122f83-014f-5a57-2aff-027136957123",
+      "name": "resident401b",
+      "passphrase": "qxwxnetebcm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "401@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-b1d2fca0-068e-7673-e6e4-1821c2ccf6c7",
+      "name": "resident402a",
+      "passphrase": "90lvxl1nx35",
+      "status": "ACTIVE",
+      "ssidList": [
+        "402@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-41b43194-23b9-4887-49bc-965f200ae89b",
+      "name": "resident402b_fast",
+      "passphrase": "sojnyogmprr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "402@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-a3848e0c-6e6d-054c-9b6d-e7f660133166",
+      "name": "resident403a_fast",
+      "passphrase": "bves479dm17",
+      "status": "ACTIVE",
+      "ssidList": [
+        "403@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-f36630d2-bcfc-5764-9a91-7fe7323cf57c",
+      "name": "resident403b",
+      "passphrase": "9hvnbmog300",
+      "status": "ACTIVE",
+      "ssidList": [
+        "403@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-bc76d709-e42c-8361-c12b-dec33c37fba9",
+      "name": "resident404a_fast",
+      "passphrase": "w764ahj5eic",
+      "status": "ACTIVE",
+      "ssidList": [
+        "404@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-06d247e0-bcc1-7c7a-c182-06705e318a2a",
+      "name": "resident404b_fast",
+      "passphrase": "9e7mg8afoz4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "404@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-b46a76bb-2c54-a14e-4965-0eb1f629a411",
+      "name": "resident405a",
+      "passphrase": "ajbxcsoj07e",
+      "status": "ACTIVE",
+      "ssidList": [
+        "405@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-559ca3f8-8195-81f3-c7f5-4274e93ecf83",
+      "name": "resident405b",
+      "passphrase": "ad1nh7ergaz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "405@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-9d94ad85-b315-8e86-f187-fc819a54c3f6",
+      "name": "resident406a",
+      "passphrase": "k9hnlieyf5o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "406@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-544bd6cf-6dfe-1d75-6d71-2aff767f0a16",
+      "name": "resident406b",
+      "passphrase": "65mm8e7cyik",
+      "status": "ACTIVE",
+      "ssidList": [
+        "406@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-c9726c36-a8fa-f8e4-f77e-2451ad745606",
+      "name": "resident407a",
+      "passphrase": "19c0l333lum",
+      "status": "ACTIVE",
+      "ssidList": [
+        "407@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-4858d217-f03e-8dae-c32c-4c58fb1e0e57",
+      "name": "resident407b_fast",
+      "passphrase": "hdxerrqreeh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "407@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-0005fd69-82da-88b1-ed63-fcdd1ff93db4",
+      "name": "resident408a_fast",
+      "passphrase": "7es1qca2dxf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "408@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-e50d51e0-233c-8f98-ccc9-b1e4e7aa0dbe",
+      "name": "resident408b",
+      "passphrase": "1kne34v28j3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "408@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-49f29083-05cd-1e2d-79b7-a10e4d127d56",
+      "name": "resident409a",
+      "passphrase": "ewybqutjfqc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "409@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-73c5a636-f624-3b3d-a50d-b6cfab82e0aa",
+      "name": "resident409b",
+      "passphrase": "moav8g5hqlk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "409@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-08dc214c-82bf-63fa-f8ba-ce99103b6879",
+      "name": "resident410a",
+      "passphrase": "dk57r8nrn2d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "410@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-18dad18b-bc1b-75cd-5e6e-19a418df1b2a",
+      "name": "resident410b",
+      "passphrase": "muwxgxq9zut",
+      "status": "ACTIVE",
+      "ssidList": [
+        "410@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-12de9e63-43f5-24b6-f458-455bb27064b3",
+      "name": "resident411a",
+      "passphrase": "c1iqnr5ujy2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "411@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-1770944d-2ed5-3bbb-14e5-cf1a9b4e8724",
+      "name": "resident411b",
+      "passphrase": "qrekkd9rsx0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "411@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-9391c606-1b0b-d6b5-129c-ae4ea395cf20",
+      "name": "resident412a_fast",
+      "passphrase": "aa3z0t80jhe",
+      "status": "ACTIVE",
+      "ssidList": [
+        "412@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-d5d399f5-553d-d5d6-afae-fba80464ba1b",
+      "name": "resident412b_fast",
+      "passphrase": "oi7pckb5e44",
+      "status": "ACTIVE",
+      "ssidList": [
+        "412@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-e1ecef4f-e8b0-d2dc-10bf-2d1c867c8ade",
+      "name": "resident413a",
+      "passphrase": "uw43311mufr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "413@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-765bcb48-3044-ff3a-3e40-ad2c955602e4",
+      "name": "resident413b",
+      "passphrase": "k33bmgrb22k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "413@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-df33d5e9-31f6-da5f-3670-15a50f68d99e",
+      "name": "resident414a",
+      "passphrase": "iyspenkc0ri",
+      "status": "ACTIVE",
+      "ssidList": [
+        "414@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-49f8c24f-9e32-e0e4-1ca3-01f6df42f7dc",
+      "name": "resident414b",
+      "passphrase": "oo2jd2vj11o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "414@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-75a62b50-70a8-092d-0f27-d5475fb813ea",
+      "name": "resident415a_fast",
+      "passphrase": "ek92ebz0igx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "415@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-010a4d68-706e-2f8a-e96d-97be5067cd00",
+      "name": "resident415b_fast",
+      "passphrase": "ovxba2mjs3s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "415@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-a08c018c-1490-abb3-723b-68afc5ce2372",
+      "name": "resident416a_fast",
+      "passphrase": "rl850ffytkl",
+      "status": "ACTIVE",
+      "ssidList": [
+        "416@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-a40ce6cc-f813-c8de-d7c9-f2187b8c62eb",
+      "name": "resident416b",
+      "passphrase": "3tyybuxw0up",
+      "status": "ACTIVE",
+      "ssidList": [
+        "416@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-8f9b640f-80cf-d6bd-6014-420cb51c8525",
+      "name": "resident417a",
+      "passphrase": "kmf434pfo21",
+      "status": "ACTIVE",
+      "ssidList": [
+        "417@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-ec1d9174-5571-1d07-527a-3c07d50aa167",
+      "name": "resident417b",
+      "passphrase": "3e6bsk96nrs",
+      "status": "ACTIVE",
+      "ssidList": [
+        "417@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-342dda29-38ad-7f8f-3daf-8662cc69792f",
+      "name": "resident418a_fast",
+      "passphrase": "amd03a9mv4f",
+      "status": "ACTIVE",
+      "ssidList": [
+        "418@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-1f08ba9f-c9ae-aa44-9855-1c1bf8a6d75a",
+      "name": "resident418b",
+      "passphrase": "6c8sw7shqjb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "418@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-3dba3bbe-e9c8-b670-654f-b8368fce3398",
+      "name": "resident419a_fast",
+      "passphrase": "g3emdzdg0uy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "419@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-3713d8ac-5a92-85be-0476-e12d4338e060",
+      "name": "resident419b",
+      "passphrase": "a0nmpaxvgnh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "419@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-60c77937-d73c-a9df-43c0-5ed689ea8866",
+      "name": "resident420a_fast",
+      "passphrase": "q7b7pgh8jct",
+      "status": "ACTIVE",
+      "ssidList": [
+        "420@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-09986ca0-abd8-f09f-9deb-aa6a0fcd3334",
+      "name": "resident420b_fast",
+      "passphrase": "hh7l1hhkxh2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "420@AspenRidge"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-adb8ac71-cc72-6893-872f-1c6fdb4d333b",
+      "name": "staff-frontdesk",
+      "passphrase": "79xbi97f9ax",
+      "status": "ACTIVE",
+      "ssidList": [
+        "AspenRidge-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-43d32edd-d076-211f-e6af-93606665aea9",
+      "name": "staff-maintenance",
+      "passphrase": "u3yefsulxh6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "AspenRidge-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 1,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-94923b70-4b38-b901-a667-54057d3e44ad",
+      "name": "staff-security",
+      "passphrase": "llf4w5mpn63",
+      "status": "ACTIVE",
+      "ssidList": [
+        "AspenRidge-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-5c02494d-16f7-ad69-2c17-af520ee50925",
+      "name": "amenity-poolkiosk",
+      "passphrase": "q85y5jmn9b2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "AspenRidge-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 2,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-344ca50f-150a-1831-90a7-7610973c6b9c",
+      "name": "amenity-gym",
+      "passphrase": "60xm4722az7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "AspenRidge-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-c1dd60fd-9e8d-2d26-7d05-354260b4868b",
+      "name": "amenity-clubhouse",
+      "passphrase": "trljnq3fokx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "AspenRidge-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    }
+  ]
+}

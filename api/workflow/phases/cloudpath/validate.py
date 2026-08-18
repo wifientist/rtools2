@@ -14,11 +14,17 @@ SSID MODES:
    - All passphrases work on the single SSID
 
 3. ssid_mode="per_unit"
-   - 1 shared DPSK pool → N SSIDs (one per unit)
+   - 1 shared DPSK pool → N SSIDs (one per unit), up to 1024
    - Each unit gets its own SSID (e.g., "108@Property")
    - AP Groups created per-unit for targeted broadcast
    - APs assigned to groups, SSIDs configured per-group
    - Passphrases work on any unit's SSID (roaming enabled)
+   - Plus the property-wide SSID from the export, riding on that same
+     shared pool and activated venue-wide (create_property_ssid)
+
+Every mode plans exactly ONE identity group and ONE DPSK pool. The 1:1
+"per_unit_isolated" mode (a dedicated pool per unit, no roaming) has been
+removed.
 
 Detection logic (for auto-detecting import_mode A vs B):
 1. Parse ssidList patterns (e.g., "108@Property" → unit 108)
@@ -34,6 +40,7 @@ from collections import defaultdict
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Set
 
+from r1api.constants import DpskPassphraseFormat, DpskScaleLimits
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
 from workflow.v2.models import (
@@ -58,6 +65,13 @@ class CloudpathPoolConfig(BaseModel):
     expiration_value: str = "24"
     device_limit_enabled: bool = False
     device_limit: int = 20
+
+    # Passphrase generation overrides (from import options, not Cloudpath).
+    # Cloudpath has no equivalent of DICTIONARY_WORDS, so when the user picks a
+    # format here it wins over whatever phrase_type was imported.
+    passphrase_format_override: Optional[str] = None
+    word_count: int = DpskPassphraseFormat.DEFAULT_WORD_COUNT
+    numeric_suffix_enabled: bool = False
 
 
 class ParsedPassphrase(BaseModel):
@@ -124,6 +138,19 @@ class ValidateCloudpathPhase(PhaseExecutor):
 
         # Extract pool configuration
         pool_data = data.get('pool', {})
+
+        # Passphrase generation is an import-time choice, not a Cloudpath one.
+        # Only accept a format R1 actually defines; anything else falls back to
+        # the Cloudpath-derived mapping rather than being sent blindly.
+        fmt_override = inputs.options.get('passphrase_format') or None
+        if fmt_override and fmt_override not in DpskPassphraseFormat.ALL:
+            await self.emit(
+                f"Ignoring unknown passphrase format '{fmt_override}' "
+                f"(expected one of {', '.join(DpskPassphraseFormat.ALL)})",
+                "warning",
+            )
+            fmt_override = None
+
         pool_config = CloudpathPoolConfig(
             name=pool_data.get('displayName', 'Cloudpath Import'),
             description=pool_data.get('description', ''),
@@ -134,7 +161,22 @@ class ValidateCloudpathPhase(PhaseExecutor):
             expiration_value=pool_data.get('expirationDateValue', '24'),
             device_limit_enabled=pool_data.get('enforceDeviceCountLimit', False),
             device_limit=pool_data.get('deviceCountLimit', 20),
+            passphrase_format_override=fmt_override,
+            word_count=int(inputs.options.get(
+                'word_count', DpskPassphraseFormat.DEFAULT_WORD_COUNT
+            )),
+            numeric_suffix_enabled=bool(
+                inputs.options.get('numeric_suffix_enabled', False)
+            ),
         )
+
+        if fmt_override == DpskPassphraseFormat.DICTIONARY_WORDS:
+            await self.emit(
+                f"Passphrases will be {pool_config.word_count} dictionary words"
+                + (" with a numeric suffix" if pool_config.numeric_suffix_enabled else "")
+            )
+        elif fmt_override:
+            await self.emit(f"Passphrase format override: {fmt_override}")
 
         # =====================================================================
         # Extract SSIDs from pool-level ssidList (master list)
@@ -399,10 +441,16 @@ class ValidateCloudpathPhase(PhaseExecutor):
         )
 
         # Check SSID creation mode: 'none', 'single', 'per_unit'
+        #   per_unit → 1 shared pool → N SSIDs (roaming across the property)
         ssid_mode = options.get('ssid_mode', 'none')
         passphrases_only = ssid_mode == 'none'
         create_networks = ssid_mode in ('single', 'per_unit')
         per_unit_ssid = ssid_mode == 'per_unit'
+        # Hybrid: alongside the per-unit SSIDs, also stand up the property-wide
+        # SSID the export carries. Most properties have one, and without it any
+        # resident who is only on the property network is dropped. No-ops when
+        # the export has no site-wide SSID.
+        create_property_ssid = options.get('create_property_ssid', True)
 
         # Determine import_mode (Scenario A or B)
         # User's ssid_mode selection takes priority over auto-detection:
@@ -413,9 +461,12 @@ class ValidateCloudpathPhase(PhaseExecutor):
         if ssid_mode == 'single':
             import_mode = "A"
             await self.emit(f"Using Scenario A (property-wide) per ssid_mode selection")
-        elif ssid_mode == 'per_unit':
+        elif per_unit_ssid:
             import_mode = "B"
-            await self.emit(f"Using Scenario B (per-unit) per ssid_mode selection")
+            await self.emit(
+                "Using Scenario B (per-unit, 1 shared pool, roaming) "
+                "per ssid_mode selection"
+            )
         elif forced_scenario and forced_scenario in ("A", "B"):
             import_mode = forced_scenario
             await self.emit(f"Using user-selected scenario: {import_mode}")
@@ -491,63 +542,23 @@ class ValidateCloudpathPhase(PhaseExecutor):
             logger.warning(f"Error checking DPSK pool: {e}")
 
         # --- Check existing passphrases by actual passphrase value ---
-        # Paginate through ALL passphrases in the pool - no artificial limit
-        # Store passphrase_value -> {id, vlan_id} for update detection
+        # Store passphrase_value -> {id, vlan_id} for update detection, so a
+        # re-run reuses what is already imported instead of re-creating it.
         existing_passphrases: Dict[str, Dict[str, Any]] = {}
+
         if pool_id:
             try:
-                page = 1
-                page_size = 500
-                total_fetched = 0
-
-                while True:
-                    result = await self.r1_client.dpsk.query_passphrases(
-                        pool_id=pool_id,
-                        tenant_id=self.tenant_id,
-                        page=page,
-                        limit=page_size
-                    )
-                    existing_pps = result.get('data', result.get('content', []))
-
-                    if not existing_pps:
-                        break  # No more passphrases
-
-                    for pp_entry in existing_pps:
-                        passphrase_val = pp_entry.get('passphrase', '')
-                        if passphrase_val:
-                            # Parse existing VLAN ID
-                            existing_vlan = pp_entry.get('vlanId')
-                            if existing_vlan is not None:
-                                try:
-                                    existing_vlan = int(existing_vlan)
-                                except (ValueError, TypeError):
-                                    existing_vlan = None
-
-                            existing_passphrases[passphrase_val] = {
-                                'id': pp_entry.get('id'),
-                                'vlan_id': existing_vlan,
-                            }
-                            logger.debug(f"Existing passphrase: id={pp_entry.get('id')}, vlan={existing_vlan}")
-
-                    total_fetched += len(existing_pps)
-
-                    # Check if we got a full page - if not, we're done
-                    if len(existing_pps) < page_size:
-                        break
-
-                    page += 1
-
-                    # Safety limit to prevent infinite loops
-                    if page > 1000:
-                        logger.warning("Passphrase pagination safety limit reached (500k passphrases)")
-                        break
-
-                if existing_passphrases:
-                    await self.emit(
-                        f"Found {len(existing_passphrases)} existing passphrases in pool"
-                    )
+                existing_passphrases = await self._fetch_pool_passphrases(pool_id)
             except Exception as e:
-                logger.warning(f"Error checking existing passphrases: {e}")
+                logger.warning(
+                    f"Error checking existing passphrases in '{pool_name}': {e}"
+                )
+
+        if existing_passphrases:
+            await self.emit(
+                f"Found {len(existing_passphrases)} existing passphrases "
+                f"in '{pool_name}'"
+            )
 
         # --- Fetch existing identities for GUID description check (idempotent re-runs) ---
         # Build username -> {identity_id, description} map so Phase 4 can skip
@@ -686,8 +697,10 @@ class ValidateCloudpathPhase(PhaseExecutor):
         if per_unit_ssid:
             await self.emit("Checking existing AP Groups...")
             try:
-                ap_groups_response = await self.r1_client.venues.get_venue_ap_groups(
-                    self.tenant_id, self.venue_id
+                ap_groups_response = await self.r1_client.venues.query_ap_groups(
+                    tenant_id=self.tenant_id,
+                    venue_id=self.venue_id,
+                    fields=['id', 'name', 'venueId'],
                 )
                 for ap_group in ap_groups_response.get('data', []):
                     existing_ap_groups[ap_group.get('name', '')] = ap_group.get('id', '')
@@ -696,10 +709,14 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 logger.warning(f"Error checking AP groups: {e}")
 
         # =====================================================================
-        # Count venue-wide SSIDs (for activation slot limit calculation)
-        # R1 limits 15 SSIDs per AP Group. When activating SSIDs, they
-        # temporarily broadcast to ALL AP Groups until assigned specifically.
-        # We count existing venue-wide SSIDs to calculate a safe concurrent limit.
+        # Count venue-wide SSIDs.
+        #
+        # R1 limits 15 SSIDs per AP Group. Per-unit imports no longer pass
+        # through an "All AP Groups" state — activation binds straight to the
+        # unit's AP Group — so this no longer throttles our own activations.
+        # It still matters as a headroom check: SSIDs already broadcasting
+        # venue-wide consume a slot on EVERY AP Group, including the ones we
+        # are about to create, so a venue near the cap will reject them.
         # =====================================================================
         SSID_LIMIT_PER_AP_GROUP = 15
         SSID_SAFETY_BUFFER = 3
@@ -732,13 +749,14 @@ class ValidateCloudpathPhase(PhaseExecutor):
 
                 if venue_wide_ssid_count > 0:
                     await self.emit(
-                        f"Found {venue_wide_ssid_count} venue-wide SSIDs, "
-                        f"limiting concurrent activations to {calculated_max_activation_slots}",
-                        "info"
+                        f"Found {venue_wide_ssid_count} venue-wide SSIDs consuming "
+                        f"a slot on every AP Group — {calculated_max_activation_slots} "
+                        f"of {SSID_LIMIT_PER_AP_GROUP} remain for per-unit SSIDs",
+                        "warning" if calculated_max_activation_slots <= 1 else "info"
                     )
                 else:
                     await self.emit(
-                        f"No venue-wide SSIDs found, using default limit of {calculated_max_activation_slots}"
+                        f"No venue-wide SSIDs found — full per-AP-Group headroom available"
                     )
 
                 # Store in options for Brain to use
@@ -808,13 +826,17 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 except Exception as e:
                     logger.warning(f"Error checking policy set: {e}")
 
-            # Count policies to create (one per passphrase with unit SSID)
+            # Count policies to create (one per passphrase with unit SSID).
+            # Must use the same name builder as create_access_policies —
+            # these had drifted, so the plan counted every policy as new and
+            # the run then hit 409s on the ones that already existed.
+            from workflow.phases.create_access_policies import sanitize_policy_name
+
             for pp in passphrases:
                 for ssid in pp.ssid_list:
                     if UNIT_SSID_PATTERN.match(ssid):
-                        # Build expected policy name
                         account = pp.name.rsplit("_", 1)[0] if "_" in pp.name else pp.name
-                        policy_name = f"{account}_{ssid.replace('@', '_at_')}"
+                        policy_name = sanitize_policy_name(account, ssid)
                         if policy_name in existing_policy_names:
                             policies_existing += 1
                         else:
@@ -825,6 +847,12 @@ class ValidateCloudpathPhase(PhaseExecutor):
             f"Pool={'exists' if pool_exists else 'new'}, "
             f"Passphrases={passphrases_to_create_count} new/{passphrases_existing} existing"
         )
+
+        # Every mode imports the whole export into the one shared pool, so
+        # what the plan will do matches what the export contains.
+        planned_passphrase_creates = passphrases_to_create_count
+        planned_passphrase_existing = passphrases_existing
+        property_ssid_planned = False
 
         if import_mode == "A":
             # SCENARIO A: Property-wide - single pool, single network
@@ -924,9 +952,38 @@ class ValidateCloudpathPhase(PhaseExecutor):
             await self.emit(f"Scenario A: 1 pool, {passphrases_to_create_count} new / {passphrases_existing} existing passphrases")
 
         elif import_mode == "B":
-            # SCENARIO B: Per-unit with shared pool
-            # 1 DPSK pool shared across all unit networks
-            identity_groups.append({'name': ig_name, 'exists': ig_exists, 'id': ig_id})
+            # SCENARIO B: Per-unit SSIDs on one shared pool.
+            # A passphrase opens ANY unit's SSID, so residents roam across
+            # the property. One identity group, one pool, N SSIDs.
+            identity_groups.append(
+                {'name': ig_name, 'exists': ig_exists, 'id': ig_id}
+            )
+
+            # Group passphrases by unit for tracking
+            by_unit: Dict[str, List[ParsedPassphrase]] = defaultdict(list)
+            for pp in passphrases:
+                unit_num = pp.unit_number or "shared"
+                by_unit[unit_num].append(pp)
+
+            # Passphrases with no detectable unit number still import fine:
+            # the shared pool holds them and they open every unit SSID.
+            orphan_count = sum(
+                1 for pp_dict in passphrases_with_exists
+                if not pp_dict.get('unit_number')
+            )
+            if orphan_count:
+                await self.emit(
+                    f"{orphan_count} passphrases have no unit number; the "
+                    f"shared pool holds them and they work on every SSID"
+                )
+
+            # The authoritative unit set: master SSID list merged with the units
+            # seen on DPSK records, so a unit listed in the pool's master list
+            # still gets planned even if no passphrase names it. "shared" is the
+            # orphan bucket, not a unit — it never gets an SSID or a pool.
+            all_units_to_process = set(all_unit_ssids.keys()) | set(by_unit.keys())
+            all_units_to_process.discard("shared")
+
             dpsk_pools.append({
                 'name': pool_name,
                 'identity_group_name': ig_name,
@@ -934,12 +991,6 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 'exists': pool_exists,
                 'id': pool_id,
             })
-
-            # Group passphrases by unit for tracking
-            by_unit: Dict[str, List[ParsedPassphrase]] = defaultdict(list)
-            for pp in passphrases:
-                unit_num = pp.unit_number or "shared"
-                by_unit[unit_num].append(pp)
 
             # Track AP Groups for per_unit mode
             ap_groups_to_create = 0
@@ -1016,18 +1067,28 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     )
 
             if create_networks:
-                # B1 with networks: Create unit mappings for each unit
-                # All units share the same pool, but each gets its own network
-                # First unit creates ALL passphrases (they go to shared pool)
+                # Per-unit with networks: one unit mapping per unit.
                 #
-                # IMPORTANT: Use all_unit_ssids (merged master + DPSK list) as the
-                # authoritative source of units, not just by_unit (DPSK-based).
-                # This ensures we create networks for SSIDs in the pool master list
-                # even if no individual DPSK has that unit in its ssidList.
+                # The shared identity group and pool are created up front by
+                # the global create_shared_resources phase; the first unit
+                # then imports every passphrase into that one pool.
+                #
+                # all_units_to_process was built above from the merged master
+                # SSID list + DPSK-derived units, so both the pool plan and
+                # these mappings cover exactly the same units.
                 is_first_unit = True
 
-                # Build the set of all units to process (from master list + DPSK entries)
-                all_units_to_process = set(all_unit_ssids.keys()) | set(by_unit.keys())
+                # ---------------------------------------------------------
+                # Enforce the platform ceilings before planning anything.
+                # ---------------------------------------------------------
+                unit_total = len(all_units_to_process)
+                ceiling = DpskScaleLimits.SHARED_POOL_MAX_SSIDS
+                if unit_total > ceiling:
+                    raise ValueError(
+                        f"{unit_total} units exceeds RuckusONE's limit of "
+                        f"{ceiling} SSIDs on a shared DPSK pool. "
+                        f"Split this property across multiple venues."
+                    )
 
                 for unit_num in sorted(all_units_to_process):
                     unit_id = f"unit_{unit_num}"
@@ -1059,7 +1120,16 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     will_create_ap_group = False
 
                     if per_unit_ssid:
-                        ap_group_name = f"{ap_group_prefix}{unit_num}{ap_group_postfix}"
+                        if ap_group_prefix or ap_group_postfix:
+                            # Explicit naming supplied by the user
+                            ap_group_name = (
+                                f"{ap_group_prefix}{unit_num}{ap_group_postfix}"
+                            )
+                        else:
+                            # Default to the unit's SSID name (e.g. "101@CedarPoint")
+                            # rather than a bare unit number, so the AP Group and
+                            # the SSID it carries line up in the R1 UI.
+                            ap_group_name = ssid_name
                         if ap_group_name in existing_ap_groups:
                             ap_group_exists = True
                             ap_group_id = existing_ap_groups[ap_group_name]
@@ -1071,17 +1141,39 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     # Get AP serial numbers from CSV assignments (processed above)
                     ap_serial_numbers: List[str] = unit_to_aps.get(unit_num, [])
 
+                    # -------------------------------------------------------
+                    # Pool topology + passphrase routing.
+                    #
+                    # Isolated: this unit owns its pool and imports only its
+                    # own passphrases. Shared: every unit points at the one
+                    # pool, and the first unit alone imports the whole set.
+                    # -------------------------------------------------------
+                    # One shared identity group + pool, both created up front
+                    # by create_shared_resources. The first unit carries the
+                    # whole import into that pool; the rest import nothing.
+                    unit_ig_name = ig_name
+                    unit_ig_id = ig_id
+                    unit_ig_exists = ig_exists
+                    will_create_ig = False
+
+                    unit_pool_name = pool_name
+                    unit_pool_id = pool_id
+                    unit_pool_exists = pool_exists
+                    will_create_pool = False
+                    unit_passphrases = (
+                        passphrases_with_exists if is_first_unit else []
+                    )
+
                     unit_mappings[unit_id] = UnitMapping(
                         unit_id=unit_id,
                         unit_number=unit_num,
                         plan=UnitPlan(
-                            identity_group_name=ig_name,
-                            dpsk_pool_name=pool_name,
-                            # Only first unit creates IDG and pool if they don't exist
-                            will_create_identity_group=is_first_unit and not ig_exists,
-                            will_create_dpsk_pool=is_first_unit and not pool_exists,
-                            identity_group_exists=ig_exists,
-                            dpsk_pool_exists=pool_exists,
+                            identity_group_name=unit_ig_name,
+                            dpsk_pool_name=unit_pool_name,
+                            will_create_identity_group=will_create_ig,
+                            will_create_dpsk_pool=will_create_pool,
+                            identity_group_exists=unit_ig_exists,
+                            dpsk_pool_exists=unit_pool_exists,
                             will_create_network=True,
                             network_name=network_name,
                             ssid_name=ssid_name,
@@ -1092,16 +1184,15 @@ class ValidateCloudpathPhase(PhaseExecutor):
                             ap_serial_numbers=ap_serial_numbers,
                         ),
                         resolved=UnitResolved(
-                            identity_group_id=ig_id,
-                            dpsk_pool_id=pool_id,
+                            identity_group_id=unit_ig_id,
+                            dpsk_pool_id=unit_pool_id,
                             ap_group_id=ap_group_id,
                         ),
                         status=UnitStatus.PENDING,
                         input_config={
                             'scenario': 'B',
-                            # First unit creates ALL passphrases (shared pool)
-                            'passphrases': passphrases_with_exists if is_first_unit else [],
-                            'passphrase_count': len(passphrases) if is_first_unit else 0,
+                            'passphrases': unit_passphrases,
+                            'passphrase_count': len(unit_passphrases),
                             'passphrases_only': passphrases_only,
                             'ssid_mode': ssid_mode,
                             'network_name': network_name,
@@ -1120,6 +1211,91 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     is_first_unit = False
 
                 networks_to_create = len(all_units_to_process)
+
+                # =====================================================================
+                # Property-wide SSID (hybrid).
+                #
+                # Cloudpath scopes a passphrase to an SSID *list*; R1 scopes by
+                # pool. A resident listed on both "401@Prop" and "Prop WiFi"
+                # therefore cannot be served by a single pool without that pool
+                # also reaching every other unit's SSID — which is exactly the
+                # isolation these modes exist to provide.
+                #
+                # So the property SSID gets its own identity group + pool,
+                # holding everyone who lists it. Residents with a unit SSID as
+                # well end up in two pools (their unit's and the property's),
+                # which is the faithful translation: their passphrase opens
+                # their own unit and the shared property network, nothing else.
+                #
+                # Only fires when the export actually contains a site-wide
+                # SSID, so properties without one are unaffected.
+                # =====================================================================
+                property_pp = [
+                    p for p in passphrases_with_exists
+                    if site_wide_ssid and site_wide_ssid in (p.get('ssid_list') or [])
+                ]
+                if create_property_ssid and site_wide_ssid and property_pp:
+                    # Rides on the same shared identity group and pool as the
+                    # unit SSIDs — its residents are already in there.
+                    prop_ig_name = ig_name
+                    prop_pool_name = pool_name
+                    prop_ig_id = ig_id
+                    prop_pool_id = pool_id
+
+                    unit_mappings["property"] = UnitMapping(
+                        unit_id="property",
+                        unit_number="property",
+                        plan=UnitPlan(
+                            identity_group_name=prop_ig_name,
+                            dpsk_pool_name=prop_pool_name,
+                            will_create_identity_group=False,
+                            will_create_dpsk_pool=False,
+                            identity_group_exists=bool(prop_ig_id),
+                            dpsk_pool_exists=bool(prop_pool_id),
+                            will_create_network=True,
+                            network_name=site_wide_ssid,
+                            ssid_name=site_wide_ssid,
+                            # Broadcast everywhere — no AP Group targeting.
+                            ap_group_name=None,
+                            ap_group_exists=False,
+                            will_create_ap_group=False,
+                            ap_serial_numbers=[],
+                        ),
+                        resolved=UnitResolved(
+                            identity_group_id=prop_ig_id,
+                            dpsk_pool_id=prop_pool_id,
+                            ap_group_id=None,
+                        ),
+                        status=UnitStatus.PENDING,
+                        input_config={
+                            'scenario': 'B',
+                            'passphrases': [],
+                            'passphrase_count': 0,
+                            'passphrases_only': passphrases_only,
+                            'ssid_mode': ssid_mode,
+                            'network_name': site_wide_ssid,
+                            'ssid_name': site_wide_ssid,
+                            'is_first_unit': False,
+                            # Tells activate_ap_group to go venue-wide instead
+                            # of binding to an AP Group.
+                            'is_venue_wide': True,
+                            'ap_group_name': None,
+                            'ap_serial_numbers': [],
+                            'default_vlan': str(options.get('default_vlan', 1)),
+                            'suffix_patterns': list(suffix_patterns),
+                            'users_with_suffix': users_with_suffix,
+                            'users_without_suffix': users_without_suffix,
+                        },
+                    )
+                    networks_to_create += 1
+                    property_ssid_planned = True
+
+                    await self.emit(
+                        f"Property-wide SSID '{site_wide_ssid}': "
+                        f"{len(property_pp)} passphrases (already in the "
+                        f"shared pool)",
+                        "success",
+                    )
             else:
                 # B1 without networks: Single global unit mapping
                 unit_mappings["global"] = UnitMapping(
@@ -1170,31 +1346,47 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 notes=[f"Shared across {len(by_unit)} unit networks"],
             ))
             # Passphrases action
-            if passphrases_to_create_count > 0:
-                notes = ["Site-wide pool with roaming"]
-                if passphrases_existing > 0:
-                    notes.append(f"{passphrases_existing} already exist")
+            pp_notes = ["Site-wide pool with roaming"]
+            if planned_passphrase_creates > 0:
+                if planned_passphrase_existing > 0:
+                    pp_notes.append(
+                        f"{planned_passphrase_existing} already exist"
+                    )
                 actions.append(ResourceAction(
                     action="create",
                     resource_type="passphrases",
-                    name=f"{passphrases_to_create_count} passphrases",
-                    notes=notes,
+                    name=f"{planned_passphrase_creates} passphrases",
+                    notes=pp_notes,
                 ))
-            elif passphrases_existing > 0:
+            elif planned_passphrase_existing > 0:
                 actions.append(ResourceAction(
                     action="reuse",
                     resource_type="passphrases",
-                    name=f"{passphrases_existing} passphrases",
-                    notes=["All already imported"],
+                    name=f"{planned_passphrase_existing} passphrases",
+                    notes=["All already imported"] + pp_notes[1:],
                 ))
 
             if create_networks:
+                # Unit SSIDs and the property-wide SSID are listed separately:
+                # only the unit SSIDs get an AP Group, and lumping them
+                # together made the AP Group count look one short.
                 actions.append(ResourceAction(
                     action="create",
                     resource_type="wifi_networks",
-                    name=f"{networks_to_create} unit networks",
+                    name=f"{len(all_units_to_process)} unit SSIDs",
                     notes=["All linked to single DPSK pool"],
                 ))
+                if property_ssid_planned:
+                    actions.append(ResourceAction(
+                        action="create",
+                        resource_type="wifi_network",
+                        name=f"{site_wide_ssid} (property-wide)",
+                        notes=[
+                            "Broadcasts across the venue — no AP Group",
+                            f"{len(property_pp)} passphrases "
+                            f"(already in the shared pool)",
+                        ],
+                    ))
 
             # AP Group actions (for per_unit SSID mode)
             if per_unit_ssid:
@@ -1213,7 +1405,8 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     ))
 
             await self.emit(
-                f"Scenario B: 1 shared pool → {len(unit_mappings)} units, "
+                f"Scenario B: 1 shared identity group + 1 shared pool "
+                f"→ {len(unit_mappings)} units, "
                 f"{passphrases_to_create_count} new / {passphrases_existing} existing passphrases"
             )
             if per_unit_ssid:
@@ -1262,28 +1455,42 @@ class ValidateCloudpathPhase(PhaseExecutor):
             if m.plan.ap_group_exists
         )
 
+        # Always exactly one identity group and one pool.
+        dpsk_pools_create_count = 0 if pool_exists else 1
+        dpsk_pools_reuse_count = 1 if pool_exists else 0
+        igs_create_count = 0 if ig_exists else 1
+        igs_reuse_count = 1 if ig_exists else 0
+
+        # Units the job will actually run, so the plan and the job monitor
+        # agree. The property-wide SSID rides along as a pseudo-unit; it is
+        # reported as its own resource, not as a unit.
+        planned_unit_count = sum(
+            1 for uid in unit_mappings if uid not in ("property", "global")
+        ) or len(unit_mappings)
+
         # Build validation result
         validation_result = ValidationResult(
             valid=True,
             summary=ValidationSummary(
-                total_units=actual_unit_count if actual_unit_count > 0 else len(unit_mappings),
+                total_units=planned_unit_count,
                 ap_groups_to_create=ap_groups_create_count,
                 ap_groups_to_reuse=ap_groups_reuse_count,
-                identity_groups_to_create=0 if ig_exists else 1,
-                identity_groups_to_reuse=1 if ig_exists else 0,
-                dpsk_pools_to_create=0 if pool_exists else 1,
-                dpsk_pools_to_reuse=1 if pool_exists else 0,
+                identity_groups_to_create=igs_create_count,
+                identity_groups_to_reuse=igs_reuse_count,
+                dpsk_pools_to_create=dpsk_pools_create_count,
+                dpsk_pools_to_reuse=dpsk_pools_reuse_count,
                 networks_to_create=networks_to_create,
-                passphrases_to_create=passphrases_to_create_count,
+                property_ssid=site_wide_ssid if property_ssid_planned else "",
+                passphrases_to_create=planned_passphrase_creates,
                 passphrases_to_update=passphrases_to_update_count,
-                passphrases_existing=passphrases_existing,
+                passphrases_existing=planned_passphrase_existing,
                 policies_to_create=policies_to_create,
                 policies_existing=policies_existing,
                 radius_groups_to_create=radius_groups_to_create,
                 radius_groups_existing=radius_groups_existing,
                 total_api_calls=self._estimate_api_calls(
-                    import_mode, 0 if ig_exists else 1, 0 if pool_exists else 1,
-                    passphrases_to_create_count, passphrases_only, policies_to_create,
+                    import_mode, igs_create_count, dpsk_pools_create_count,
+                    planned_passphrase_creates, passphrases_only, policies_to_create,
                     ap_groups_create_count, per_unit_ssid,
                 ),
             ),
@@ -1294,7 +1501,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
             f"Validation complete: Scenario {import_mode}, "
             f"IDG={'reuse' if ig_exists else 'create'}, "
             f"Pool={'reuse' if pool_exists else 'create'}, "
-            f"{passphrases_to_create_count} passphrases to create",
+            f"{planned_passphrase_creates} passphrases to create",
             "success"
         )
 
@@ -1311,6 +1518,63 @@ class ValidateCloudpathPhase(PhaseExecutor):
             max_activation_slots=calculated_max_activation_slots,
             venue_wide_ssid_count=venue_wide_ssid_count,
         )
+
+    async def _fetch_pool_passphrases(
+        self, pool_id: str
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Page through every passphrase in a pool.
+
+        Returns passphrase_value -> {id, vlan_id}.
+        """
+        found: Dict[str, Dict[str, Any]] = {}
+        page = 1
+        page_size = 500
+
+        while True:
+            result = await self.r1_client.dpsk.query_passphrases(
+                pool_id=pool_id,
+                tenant_id=self.tenant_id,
+                page=page,
+                limit=page_size,
+            )
+            existing_pps = result.get('data', result.get('content', []))
+
+            if not existing_pps:
+                break  # No more passphrases
+
+            for pp_entry in existing_pps:
+                passphrase_val = pp_entry.get('passphrase', '')
+                if not passphrase_val:
+                    continue
+
+                # Parse existing VLAN ID
+                existing_vlan = pp_entry.get('vlanId')
+                if existing_vlan is not None:
+                    try:
+                        existing_vlan = int(existing_vlan)
+                    except (ValueError, TypeError):
+                        existing_vlan = None
+
+                found[passphrase_val] = {
+                    'id': pp_entry.get('id'),
+                    'vlan_id': existing_vlan,
+                }
+
+            # Partial page means we're done
+            if len(existing_pps) < page_size:
+                break
+
+            page += 1
+
+            # Safety limit to prevent infinite loops
+            if page > 1000:
+                logger.warning(
+                    "Passphrase pagination safety limit reached (500k passphrases)"
+                )
+                break
+
+        return found
 
     def _estimate_api_calls(
         self,

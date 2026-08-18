@@ -185,6 +185,31 @@ class IdentityService:
                 if group_id:
                     return await self.get_identity_group(group_id, tenant_id)
 
+                # The 202 body often carries only a requestId. Returning it as-is
+                # leaves callers with no 'id', which reads as "creation produced
+                # nothing" even though the group exists. Resolve it by name.
+                logger.info(
+                    f"Async response had no id for '{name}', resolving by name"
+                )
+                try:
+                    found = await self.query_identity_groups(
+                        tenant_id=tenant_id, search_string=name
+                    )
+                    items = found.get('content', found.get('data', []))
+                    match = next(
+                        (g for g in items if g.get('name') == name), None
+                    )
+                    if match:
+                        return match
+                    logger.warning(
+                        f"Identity group '{name}' not found by name after "
+                        f"its creation task completed"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to resolve identity group '{name}' by name: {e}"
+                    )
+
         return result
 
     async def delete_identity_group(

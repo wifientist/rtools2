@@ -103,6 +103,7 @@ import workflow.phases.cleanup.delete_identities  # noqa: F401
 import workflow.phases.cleanup.delete_identity_groups  # noqa: F401
 import workflow.phases.cleanup.delete_networks  # noqa: F401
 import workflow.phases.cleanup.delete_ap_groups  # noqa: F401
+import workflow.phases.cleanup.delete_access_policies  # noqa: F401
 import workflow.phases.cleanup.verify  # noqa: F401
 
 # Standalone phases
@@ -110,12 +111,12 @@ import workflow.phases.validate_lan_ports  # noqa: F401
 
 # Cloudpath Import phases
 import workflow.phases.cloudpath.validate  # noqa: F401
-import workflow.phases.cloudpath.identity_groups  # noqa: F401
-import workflow.phases.cloudpath.dpsk_pools  # noqa: F401
 import workflow.phases.cloudpath.passphrases  # noqa: F401
 import workflow.phases.cloudpath.update_identities  # noqa: F401
 import workflow.phases.cloudpath.audit  # noqa: F401
 import workflow.phases.cloudpath.activate_venue_wide  # noqa: F401
+import workflow.phases.cloudpath.activate_ap_group  # noqa: F401
+import workflow.phases.cloudpath.shared_resources  # noqa: F401
 
 # Access policies (reusable across workflows)
 import workflow.phases.create_access_policies  # noqa: F401

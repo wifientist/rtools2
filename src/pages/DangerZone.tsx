@@ -25,6 +25,9 @@ interface ResourceInventory {
   identity_groups: ResourceItem[];
   wifi_networks: ResourceItem[];
   ap_groups: ResourceItem[];
+  policies: ResourceItem[];
+  policy_sets: ResourceItem[];
+  radius_attribute_groups: ResourceItem[];
 }
 
 interface PlanResult {
@@ -43,7 +46,25 @@ const CATEGORIES = [
   { key: "identity_groups", label: "Identity Groups", icon: "👥" },
   { key: "wifi_networks", label: "WiFi Networks", icon: "📡" },
   { key: "ap_groups", label: "AP Groups", icon: "📶" },
+  // Access-policy resources are tenant-wide — R1 gives them no venue — so
+  // these lists do not change with the selected venue.
+  { key: "policies", label: "Adaptive Policies", icon: "🛡️" },
+  { key: "policy_sets", label: "Adaptive Policy Sets", icon: "🗂️" },
+  // Shared rate tiers ("fast", "gigabit") that every property's policies
+  // point at. Deleting them breaks rate limiting tenant-wide, so this one
+  // is listed for visibility but starts unticked.
+  {
+    key: "radius_attribute_groups",
+    label: "RADIUS Attribute Groups",
+    icon: "⚠️",
+    dangerous: true,
+  },
 ] as const;
+
+// Categories that must be ticked deliberately rather than by default.
+const DEFAULT_SELECTED_CATEGORIES = CATEGORIES
+  .filter((c) => !("dangerous" in c && c.dangerous))
+  .map((c) => c.key);
 
 type CategoryKey = (typeof CATEGORIES)[number]["key"];
 
@@ -76,7 +97,7 @@ export default function DangerZone() {
   // Inventory display
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<CategoryKey>>(
-    new Set(CATEGORIES.map((c) => c.key))
+    new Set(DEFAULT_SELECTED_CATEGORIES)
   );
 
   // Execution
@@ -114,7 +135,7 @@ export default function DangerZone() {
     setScanError(null);
     setConfirmError(null);
     setExpandedCategories(new Set());
-    setSelectedCategories(new Set(CATEGORIES.map((c) => c.key)));
+    setSelectedCategories(new Set(DEFAULT_SELECTED_CATEGORIES));
   }, [venueId]);
 
   // ==================== Handlers ====================

@@ -60,6 +60,13 @@ class Phase(BaseModel):
     # API call estimate for dry-run display
     api_calls_per_unit: Union[int, str] = 1  # int or "dynamic"
 
+    # Real-work reporting for per-unit phases. "45/45 units" only says every
+    # unit reached the phase; these declare what the phase actually produced
+    # so progress can report both. See PhaseDefinitionV2 for the aggregations.
+    effect_field: Optional[str] = None   # resolved field or resolved.extra key
+    effect_label: str = ""               # plural noun, e.g. "AP Groups"
+    effect_agg: str = "sum"              # "sum" | "distinct" | "truthy"
+
     # Activation slot group - for R1's 15-SSID-per-AP-Group limit
     # Phases with activation_slot="acquire" get a slot before starting
     # Phases with activation_slot="release" release the slot after completing
@@ -85,6 +92,9 @@ class Phase(BaseModel):
             skip_if=self.skip_if,
             api_calls_per_unit=self.api_calls_per_unit,
             activation_slot=self.activation_slot,
+            effect_field=self.effect_field,
+            effect_label=self.effect_label,
+            effect_agg=self.effect_agg,
         )
 
 

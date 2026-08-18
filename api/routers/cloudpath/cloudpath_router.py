@@ -326,8 +326,9 @@ async def audit_venue_dpsk(
                     break
 
         # Get DPSK pools
+        # /dpskServices/query is 1-indexed; page=0 returns HTTP 500
         dpsk_pools_response = await r1_client.dpsk.query_dpsk_pools(
-            tenant_id=tenant_id, search_string="", page=0, limit=1000
+            tenant_id=tenant_id, search_string="", page=1, limit=1000
         )
         all_dpsk_pools = dpsk_pools_response.get('data', [])
 

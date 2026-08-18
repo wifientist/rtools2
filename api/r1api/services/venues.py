@@ -1196,6 +1196,8 @@ class VenueService:
         ap_group_id: str,
         radio_types: list = None,
         vlan_id: int = None,
+        dpsk_service_id: str = None,
+        already_activated: bool = False,
         wait_for_completion: bool = True,
     ):
         """
@@ -1203,16 +1205,29 @@ class VenueService:
 
         Instead of the traditional approach:
             activate_ssid_on_venue (isAllApGroups=true) → wait → 3-step move to group
-        This goes directly to the specific AP group, avoiding the 15-SSID-per-AP-Group
-        limit since the SSID never broadcasts to all groups.
+        This targets the AP group from the outset, so the SSID never broadcasts to
+        all groups and never consumes a venue-wide slot against R1's
+        15-SSID-per-AP-Group limit.
 
         Steps:
-        1. PUT /venues/{venueId}/wifiNetworks/{networkId}/settings
-           - Set isAllApGroups=false with target AP group and scheduler
+        1. PUT /venues/{venueId}/wifiNetworks/{networkId}
+           - Activate on the venue with isAllApGroups=false and the target group.
+           - This step is mandatory: without a venue association, every later
+             call fails with "Wi-Fi network [...] is not activated on the venue".
+             Passing isAllApGroups=false here is what keeps it off All AP Groups.
+           - On a re-run the association already exists, so PUT .../settings is
+             used instead to update it.
         2. PUT /venues/{venueId}/wifiNetworks/{networkId}/apGroups/{apGroupId}
            - Bind the AP group to the network
         3. PUT /venues/{venueId}/wifiNetworks/{networkId}/apGroups/{apGroupId}/settings
-           - Configure radio settings for the group
+           - Configure radio settings and VLAN for the group
+
+        Args:
+            dpsk_service_id: For DPSK networks, the DPSK pool/service ID. Mirrors
+                activate_ssid_on_venue, which includes it so the entity store
+                registers the venue association completely.
+            already_activated: True if the network already has a venue
+                association (re-run); routes step 1 to the settings endpoint.
         """
         import asyncio
 
@@ -1230,8 +1245,16 @@ class VenueService:
         # 3-step process: each step MUST complete before the next fires.
         # =====================================================================
 
-        # Step 1: Set network settings with isAllApGroups=false and target group
-        logger.info(f"[Step 1/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings")
+        # Step 1: Create the venue association, targeted at this AP group.
+        # New network  -> PUT the base URL (activates on the venue)
+        # Existing one -> PUT /settings (updates the association in place)
+        step1_path = (
+            f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings"
+            if already_activated
+            else f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}"
+        )
+        logger.info(f"[Step 1/3] PUT {step1_path}")
+
         ap_group_entry = {
             "apGroupId": ap_group_id,
             "radioTypes": radio_types,
@@ -1249,16 +1272,18 @@ class VenueService:
             "venueId": venue_id,
             "networkId": wifi_network_id,
         }
+        if dpsk_service_id:
+            settings_payload["dpskServiceProfileId"] = dpsk_service_id
 
         if self.client.ec_type == "MSP":
             response = self.client.put(
-                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
+                step1_path,
                 payload=settings_payload,
                 override_tenant_id=tenant_id
             )
         else:
             response = self.client.put(
-                f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
+                step1_path,
                 payload=settings_payload
             )
 

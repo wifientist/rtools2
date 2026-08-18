@@ -9,8 +9,10 @@ from workflow.phases.cloudpath.validate import (
     ValidateCloudpathPhase,
     CloudpathPoolConfig,
 )
-from workflow.phases.cloudpath.identity_groups import CreateIdentityGroupsPhase
-from workflow.phases.cloudpath.dpsk_pools import CreateDPSKPoolsPhase
+from workflow.phases.cloudpath.shared_resources import (
+    CreateSharedResourcesPhase,
+    resolve_passphrase_format,
+)
 from workflow.phases.cloudpath.passphrases import (
     CreatePassphrasesPhase,
     PassphraseResult,
@@ -20,17 +22,19 @@ from workflow.phases.cloudpath.update_identities import (
     IdentityUpdateResult,
 )
 from workflow.phases.cloudpath.audit import CloudpathAuditPhase, ResourceSummary
+from workflow.phases.cloudpath.activate_ap_group import ActivateApGroupPhase
 
 __all__ = [
     # Phases
     'ValidateCloudpathPhase',
-    'CreateIdentityGroupsPhase',
-    'CreateDPSKPoolsPhase',
+    'CreateSharedResourcesPhase',
     'CreatePassphrasesPhase',
     'UpdateIdentityDescriptionsPhase',
     'CloudpathAuditPhase',
-    # Models
+    'ActivateApGroupPhase',
+    # Models / helpers
     'CloudpathPoolConfig',
+    'resolve_passphrase_format',
     'PassphraseResult',
     'IdentityUpdateResult',
     'ResourceSummary',

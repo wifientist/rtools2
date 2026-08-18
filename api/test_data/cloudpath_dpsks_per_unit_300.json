@@ -1,0 +1,5981 @@
+{
+  "metadata": {
+    "extracted_at": "2026-08-17T11:15:00.000000",
+    "cloudpath_fqdn": "test-cloudpath.example.com",
+    "extractor_version": "1.0.0",
+    "mode": "dpsk_only",
+    "pool_id": "AccountDpskPool-birchlanding-300units",
+    "extraction_duration_seconds": 0.971
+  },
+  "pool": {
+    "guid": "AccountDpskPool-birchlanding-300units",
+    "displayName": "BirchLanding Residents",
+    "description": "BirchLanding - 300 units, per-unit SSIDs, shared DPSK pool",
+    "enabled": true,
+    "phraseDefaultLength": 11,
+    "phraseRandomCharactersType": "ALPHANUMERIC_MIXED",
+    "ssidList": [
+      "101@BirchLanding",
+      "102@BirchLanding",
+      "103@BirchLanding",
+      "104@BirchLanding",
+      "105@BirchLanding",
+      "106@BirchLanding",
+      "107@BirchLanding",
+      "108@BirchLanding",
+      "109@BirchLanding",
+      "110@BirchLanding",
+      "111@BirchLanding",
+      "112@BirchLanding",
+      "113@BirchLanding",
+      "114@BirchLanding",
+      "115@BirchLanding",
+      "116@BirchLanding",
+      "117@BirchLanding",
+      "118@BirchLanding",
+      "119@BirchLanding",
+      "120@BirchLanding",
+      "201@BirchLanding",
+      "202@BirchLanding",
+      "203@BirchLanding",
+      "204@BirchLanding",
+      "205@BirchLanding",
+      "206@BirchLanding",
+      "207@BirchLanding",
+      "208@BirchLanding",
+      "209@BirchLanding",
+      "210@BirchLanding",
+      "211@BirchLanding",
+      "212@BirchLanding",
+      "213@BirchLanding",
+      "214@BirchLanding",
+      "215@BirchLanding",
+      "216@BirchLanding",
+      "217@BirchLanding",
+      "218@BirchLanding",
+      "219@BirchLanding",
+      "220@BirchLanding",
+      "301@BirchLanding",
+      "302@BirchLanding",
+      "303@BirchLanding",
+      "304@BirchLanding",
+      "305@BirchLanding",
+      "306@BirchLanding",
+      "307@BirchLanding",
+      "308@BirchLanding",
+      "309@BirchLanding",
+      "310@BirchLanding",
+      "311@BirchLanding",
+      "312@BirchLanding",
+      "313@BirchLanding",
+      "314@BirchLanding",
+      "315@BirchLanding",
+      "316@BirchLanding",
+      "317@BirchLanding",
+      "318@BirchLanding",
+      "319@BirchLanding",
+      "320@BirchLanding",
+      "401@BirchLanding",
+      "402@BirchLanding",
+      "403@BirchLanding",
+      "404@BirchLanding",
+      "405@BirchLanding",
+      "406@BirchLanding",
+      "407@BirchLanding",
+      "408@BirchLanding",
+      "409@BirchLanding",
+      "410@BirchLanding",
+      "411@BirchLanding",
+      "412@BirchLanding",
+      "413@BirchLanding",
+      "414@BirchLanding",
+      "415@BirchLanding",
+      "416@BirchLanding",
+      "417@BirchLanding",
+      "418@BirchLanding",
+      "419@BirchLanding",
+      "420@BirchLanding",
+      "501@BirchLanding",
+      "502@BirchLanding",
+      "503@BirchLanding",
+      "504@BirchLanding",
+      "505@BirchLanding",
+      "506@BirchLanding",
+      "507@BirchLanding",
+      "508@BirchLanding",
+      "509@BirchLanding",
+      "510@BirchLanding",
+      "511@BirchLanding",
+      "512@BirchLanding",
+      "513@BirchLanding",
+      "514@BirchLanding",
+      "515@BirchLanding",
+      "516@BirchLanding",
+      "517@BirchLanding",
+      "518@BirchLanding",
+      "519@BirchLanding",
+      "520@BirchLanding",
+      "601@BirchLanding",
+      "602@BirchLanding",
+      "603@BirchLanding",
+      "604@BirchLanding",
+      "605@BirchLanding",
+      "606@BirchLanding",
+      "607@BirchLanding",
+      "608@BirchLanding",
+      "609@BirchLanding",
+      "610@BirchLanding",
+      "611@BirchLanding",
+      "612@BirchLanding",
+      "613@BirchLanding",
+      "614@BirchLanding",
+      "615@BirchLanding",
+      "616@BirchLanding",
+      "617@BirchLanding",
+      "618@BirchLanding",
+      "619@BirchLanding",
+      "620@BirchLanding",
+      "701@BirchLanding",
+      "702@BirchLanding",
+      "703@BirchLanding",
+      "704@BirchLanding",
+      "705@BirchLanding",
+      "706@BirchLanding",
+      "707@BirchLanding",
+      "708@BirchLanding",
+      "709@BirchLanding",
+      "710@BirchLanding",
+      "711@BirchLanding",
+      "712@BirchLanding",
+      "713@BirchLanding",
+      "714@BirchLanding",
+      "715@BirchLanding",
+      "716@BirchLanding",
+      "717@BirchLanding",
+      "718@BirchLanding",
+      "719@BirchLanding",
+      "720@BirchLanding",
+      "801@BirchLanding",
+      "802@BirchLanding",
+      "803@BirchLanding",
+      "804@BirchLanding",
+      "805@BirchLanding",
+      "806@BirchLanding",
+      "807@BirchLanding",
+      "808@BirchLanding",
+      "809@BirchLanding",
+      "810@BirchLanding",
+      "811@BirchLanding",
+      "812@BirchLanding",
+      "813@BirchLanding",
+      "814@BirchLanding",
+      "815@BirchLanding",
+      "816@BirchLanding",
+      "817@BirchLanding",
+      "818@BirchLanding",
+      "819@BirchLanding",
+      "820@BirchLanding",
+      "901@BirchLanding",
+      "902@BirchLanding",
+      "903@BirchLanding",
+      "904@BirchLanding",
+      "905@BirchLanding",
+      "906@BirchLanding",
+      "907@BirchLanding",
+      "908@BirchLanding",
+      "909@BirchLanding",
+      "910@BirchLanding",
+      "911@BirchLanding",
+      "912@BirchLanding",
+      "913@BirchLanding",
+      "914@BirchLanding",
+      "915@BirchLanding",
+      "916@BirchLanding",
+      "917@BirchLanding",
+      "918@BirchLanding",
+      "919@BirchLanding",
+      "920@BirchLanding",
+      "1001@BirchLanding",
+      "1002@BirchLanding",
+      "1003@BirchLanding",
+      "1004@BirchLanding",
+      "1005@BirchLanding",
+      "1006@BirchLanding",
+      "1007@BirchLanding",
+      "1008@BirchLanding",
+      "1009@BirchLanding",
+      "1010@BirchLanding",
+      "1011@BirchLanding",
+      "1012@BirchLanding",
+      "1013@BirchLanding",
+      "1014@BirchLanding",
+      "1015@BirchLanding",
+      "1016@BirchLanding",
+      "1017@BirchLanding",
+      "1018@BirchLanding",
+      "1019@BirchLanding",
+      "1020@BirchLanding",
+      "1101@BirchLanding",
+      "1102@BirchLanding",
+      "1103@BirchLanding",
+      "1104@BirchLanding",
+      "1105@BirchLanding",
+      "1106@BirchLanding",
+      "1107@BirchLanding",
+      "1108@BirchLanding",
+      "1109@BirchLanding",
+      "1110@BirchLanding",
+      "1111@BirchLanding",
+      "1112@BirchLanding",
+      "1113@BirchLanding",
+      "1114@BirchLanding",
+      "1115@BirchLanding",
+      "1116@BirchLanding",
+      "1117@BirchLanding",
+      "1118@BirchLanding",
+      "1119@BirchLanding",
+      "1120@BirchLanding",
+      "1201@BirchLanding",
+      "1202@BirchLanding",
+      "1203@BirchLanding",
+      "1204@BirchLanding",
+      "1205@BirchLanding",
+      "1206@BirchLanding",
+      "1207@BirchLanding",
+      "1208@BirchLanding",
+      "1209@BirchLanding",
+      "1210@BirchLanding",
+      "1211@BirchLanding",
+      "1212@BirchLanding",
+      "1213@BirchLanding",
+      "1214@BirchLanding",
+      "1215@BirchLanding",
+      "1216@BirchLanding",
+      "1217@BirchLanding",
+      "1218@BirchLanding",
+      "1219@BirchLanding",
+      "1220@BirchLanding",
+      "1301@BirchLanding",
+      "1302@BirchLanding",
+      "1303@BirchLanding",
+      "1304@BirchLanding",
+      "1305@BirchLanding",
+      "1306@BirchLanding",
+      "1307@BirchLanding",
+      "1308@BirchLanding",
+      "1309@BirchLanding",
+      "1310@BirchLanding",
+      "1311@BirchLanding",
+      "1312@BirchLanding",
+      "1313@BirchLanding",
+      "1314@BirchLanding",
+      "1315@BirchLanding",
+      "1316@BirchLanding",
+      "1317@BirchLanding",
+      "1318@BirchLanding",
+      "1319@BirchLanding",
+      "1320@BirchLanding",
+      "1401@BirchLanding",
+      "1402@BirchLanding",
+      "1403@BirchLanding",
+      "1404@BirchLanding",
+      "1405@BirchLanding",
+      "1406@BirchLanding",
+      "1407@BirchLanding",
+      "1408@BirchLanding",
+      "1409@BirchLanding",
+      "1410@BirchLanding",
+      "1411@BirchLanding",
+      "1412@BirchLanding",
+      "1413@BirchLanding",
+      "1414@BirchLanding",
+      "1415@BirchLanding",
+      "1416@BirchLanding",
+      "1417@BirchLanding",
+      "1418@BirchLanding",
+      "1419@BirchLanding",
+      "1420@BirchLanding",
+      "1501@BirchLanding",
+      "1502@BirchLanding",
+      "1503@BirchLanding",
+      "1504@BirchLanding",
+      "1505@BirchLanding",
+      "1506@BirchLanding",
+      "1507@BirchLanding",
+      "1508@BirchLanding",
+      "1509@BirchLanding",
+      "1510@BirchLanding",
+      "1511@BirchLanding",
+      "1512@BirchLanding",
+      "1513@BirchLanding",
+      "1514@BirchLanding",
+      "1515@BirchLanding",
+      "1516@BirchLanding",
+      "1517@BirchLanding",
+      "1518@BirchLanding",
+      "1519@BirchLanding",
+      "1520@BirchLanding",
+      "BirchLanding-Guest"
+    ],
+    "enforceExpirationDate": true,
+    "expirationDateType": "MONTHS_AFTER_TIME",
+    "expirationDateValue": "12",
+    "enforceDeviceCountLimit": false,
+    "deviceCountLimit": 0,
+    "supportsPolicies": true,
+    "defaultAccess": "ACCEPT"
+  },
+  "dpsks": [
+    {
+      "guid": "AccountDpsk-88c3fc8c-3765-4062-fabf-010436c81d38",
+      "name": "resident101a_superfast",
+      "passphrase": "xk13hi5h1rv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "101@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-c5a26353-e2a6-145e-49d0-f109348a1ecd",
+      "name": "resident102a_gigabit",
+      "passphrase": "zrqoxhjl6fo",
+      "status": "ACTIVE",
+      "ssidList": [
+        "102@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-693e291d-28d4-7219-a43e-24234717f34b",
+      "name": "resident102b_gigabit",
+      "passphrase": "u6ynerrouhf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "102@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-848c96f5-a820-3c80-60b4-426b1c948907",
+      "name": "resident103a_gigabit",
+      "passphrase": "2lk079beh3p",
+      "status": "ACTIVE",
+      "ssidList": [
+        "103@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-804338e2-e1da-7f77-3b58-ea68facca3ff",
+      "name": "resident104a_gigabit",
+      "passphrase": "qbidp0xvx11",
+      "status": "ACTIVE",
+      "ssidList": [
+        "104@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-b208584a-6fbc-9222-0674-b6deaae8d339",
+      "name": "resident105a_gigabit",
+      "passphrase": "egxdtziwyzz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "105@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-12bdf737-c697-e011-0e9a-bfe493532d1e",
+      "name": "resident106a_gigabit",
+      "passphrase": "jy4tj6hz6vy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "106@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-3d8bcfcc-9801-f68f-e478-ce4856a79333",
+      "name": "resident107a_gigabit",
+      "passphrase": "8a9luwi3pb9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "107@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-df6a4fe1-608d-aa64-02ba-86273c9956b7",
+      "name": "resident108a_fast",
+      "passphrase": "u76u2vwzk81",
+      "status": "ACTIVE",
+      "ssidList": [
+        "108@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-23ba1232-dd86-c083-d54c-db9417ce97d9",
+      "name": "resident109a_gigabit",
+      "passphrase": "944wr7t6zst",
+      "status": "ACTIVE",
+      "ssidList": [
+        "109@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-9fde2d71-663e-c9a9-2bc5-8e6aa9ff5427",
+      "name": "resident109b_superfast",
+      "passphrase": "ct904er2i34",
+      "status": "ACTIVE",
+      "ssidList": [
+        "109@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-8678d1b8-de3a-1833-9e8d-ac9f2f296a49",
+      "name": "resident110a_gigabit",
+      "passphrase": "kr4n4ckr9m2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "110@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-2ab36b82-0a5e-933d-0a48-e4319cdeaf6d",
+      "name": "resident111a_fast",
+      "passphrase": "lywfzaul812",
+      "status": "ACTIVE",
+      "ssidList": [
+        "111@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-0bb059f3-7d64-727e-9f8c-a94870400779",
+      "name": "resident112a_gigabit",
+      "passphrase": "d7qlruhuyo8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "112@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-eedb3681-b6d3-462c-b9d4-f4baf81308b7",
+      "name": "resident113a_gigabit",
+      "passphrase": "y6z2pgruvqg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "113@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-98c3a402-0dea-bdc4-b2f7-9222b5ca2425",
+      "name": "resident114a_gigabit",
+      "passphrase": "gb71bz8jyhr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "114@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-370731df-3491-5ce0-3ffc-7dbb9f8111cd",
+      "name": "resident114b_fast",
+      "passphrase": "vuhxlznidru",
+      "status": "ACTIVE",
+      "ssidList": [
+        "114@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-6610d220-67a3-4191-b017-e6b4f1ab78cb",
+      "name": "resident115a_fast",
+      "passphrase": "tx9466pn0ff",
+      "status": "ACTIVE",
+      "ssidList": [
+        "115@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-203adf92-685c-24cf-f600-32f4cf03df3d",
+      "name": "resident115b_gigabit",
+      "passphrase": "chdgdfygv8d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "115@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-2fe5aad7-9f3e-eb16-e298-1265b9be26d7",
+      "name": "resident116a_gigabit",
+      "passphrase": "vc9wagcau8d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "116@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-d7e0c0f6-f002-e232-bceb-b1e0ed3ff2d9",
+      "name": "resident117a_gigabit",
+      "passphrase": "guv5rbo9acm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "117@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-81a4b58a-2580-73e1-aab1-fc1552dd3293",
+      "name": "resident118a_gigabit",
+      "passphrase": "xnasj7x1at9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "118@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-adbe37ff-6f02-a4a0-729a-26dc84d50ff8",
+      "name": "resident119a_gigabit",
+      "passphrase": "ckwbpgay63j",
+      "status": "ACTIVE",
+      "ssidList": [
+        "119@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-4e68fd85-b57f-5abd-13e6-bdd2c9744b37",
+      "name": "resident120a_gigabit",
+      "passphrase": "kme2q4g5p9d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "120@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-3984ae4b-ef6e-15ff-a748-649266b788cf",
+      "name": "resident120b_gigabit",
+      "passphrase": "spnqlmf5tj0",
+      "status": "EXPIRED",
+      "ssidList": [
+        "120@BirchLanding"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-f61db0ae-ce0a-7dc2-11e4-caa1f3e1787a",
+      "name": "resident120c_gigabit",
+      "passphrase": "sdu6d5owa5s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "120@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1100"
+    },
+    {
+      "guid": "AccountDpsk-6fc050a0-0f5e-f4c6-0c3e-ae0aaa8c412a",
+      "name": "resident201a_fast",
+      "passphrase": "4kcfke2u6mh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "201@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-251be60c-0539-9dcb-3ca0-65c810625fd0",
+      "name": "resident201b_gigabit",
+      "passphrase": "jh1sc8ynnsj",
+      "status": "ACTIVE",
+      "ssidList": [
+        "201@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-701d709c-e7b0-7f7f-0839-9753b3cf4b31",
+      "name": "resident202a_gigabit",
+      "passphrase": "zve7teh4xwb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "202@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-5d008766-a028-e818-4ec7-c5f64277fcf2",
+      "name": "resident203a_gigabit",
+      "passphrase": "qzg5b457xwy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "203@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-dce28535-c3ed-a27d-05ae-0587977c9d82",
+      "name": "resident204a_gigabit",
+      "passphrase": "2o8mxlfof2s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "204@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-105fcc0c-04f9-4e48-7270-6f60c95ee68e",
+      "name": "resident205a_fast",
+      "passphrase": "76sswjigomn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "205@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-7d5eb245-52e1-5841-3b76-aeb1113bc8ba",
+      "name": "resident206a_gigabit",
+      "passphrase": "ugcp1zkwa55",
+      "status": "ACTIVE",
+      "ssidList": [
+        "206@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-4d5875e2-23ce-a0b5-3ea0-74458dba3b62",
+      "name": "resident207a_gigabit",
+      "passphrase": "by2af6fwp1m",
+      "status": "EXPIRED",
+      "ssidList": [
+        "207@BirchLanding"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-04b86583-251f-1faf-9d5d-4fea1ef6a4ea",
+      "name": "resident208a_gigabit",
+      "passphrase": "siyloky5st3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "208@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-979a3fc6-81cd-82c2-1411-dd69f42c7ee6",
+      "name": "resident208b_gigabit",
+      "passphrase": "aav935pno0y",
+      "status": "ACTIVE",
+      "ssidList": [
+        "208@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-a49c522b-a320-bf00-5ec9-420ed586b5a8",
+      "name": "resident209a_gigabit",
+      "passphrase": "ajppa8x7mbo",
+      "status": "ACTIVE",
+      "ssidList": [
+        "209@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-913b6f15-e0ff-e669-3f9a-f0cce47a7653",
+      "name": "resident209b_gigabit",
+      "passphrase": "swd1ktx4ey0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "209@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-91328bfb-9bb0-a49a-a661-0ee82a7525ee",
+      "name": "resident210a_gigabit",
+      "passphrase": "wvvu08cdlxx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "210@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-e34baf11-3e77-4868-a69a-1c14c0bb8c54",
+      "name": "resident211a_gigabit",
+      "passphrase": "g6uhi9pd78g",
+      "status": "ACTIVE",
+      "ssidList": [
+        "211@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-79696490-d673-167a-89a4-de0ebb7213af",
+      "name": "resident211b_gigabit",
+      "passphrase": "ut3p0tb22ts",
+      "status": "ACTIVE",
+      "ssidList": [
+        "211@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-49c87475-0a58-3c7b-1208-ca3aacd54adc",
+      "name": "resident212a_gigabit",
+      "passphrase": "djkcanmpz2s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "212@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-cce108fa-2c19-4ff7-c1a1-0c7142f30d04",
+      "name": "resident213a_gigabit",
+      "passphrase": "wv5i7nzs9g9",
+      "status": "EXPIRED",
+      "ssidList": [
+        "213@BirchLanding"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-ad2000b3-9d06-84ae-75d9-2d66a0506463",
+      "name": "resident213b_gigabit",
+      "passphrase": "g607v87ak48",
+      "status": "ACTIVE",
+      "ssidList": [
+        "213@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-4a9ab519-af70-6241-6a71-c9419183dc87",
+      "name": "resident214a_gigabit",
+      "passphrase": "j5i7r989vb4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "214@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-6b362069-78e8-0ce3-4004-62b38c639788",
+      "name": "resident215a_gigabit",
+      "passphrase": "ypdg9sgiool",
+      "status": "ACTIVE",
+      "ssidList": [
+        "215@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-71447f6b-9599-f94c-ae49-4b4b2c2b7cb8",
+      "name": "resident216a_gigabit",
+      "passphrase": "7euhbggmyw0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "216@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-6449cabc-ea3a-f5b9-7e9c-ae07a746872f",
+      "name": "resident217a_gigabit",
+      "passphrase": "6on82wdror9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "217@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-800bb5f6-fdf3-8d17-505c-96cc55bebbc0",
+      "name": "resident218a_gigabit",
+      "passphrase": "xbhxp4fxtkb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "218@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-7b9f82aa-ce12-ff97-d8c9-5279c92094e0",
+      "name": "resident218b_gigabit",
+      "passphrase": "95r3eulhrp9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "218@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-5f358778-6879-f286-67fc-11bb996411ff",
+      "name": "resident219a_gigabit",
+      "passphrase": "vitsjko48c3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "219@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-c7f490e0-2857-5b9e-1d9e-dd046e08728b",
+      "name": "resident219b_superfast",
+      "passphrase": "aopv3csij34",
+      "status": "ACTIVE",
+      "ssidList": [
+        "219@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-581e05bb-3274-a4fd-be0b-ed8277581ccd",
+      "name": "resident220a_gigabit",
+      "passphrase": "483wfz2ye89",
+      "status": "ACTIVE",
+      "ssidList": [
+        "220@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-25487a41-9a26-295d-bdbb-45a2e5356600",
+      "name": "resident220b_gigabit",
+      "passphrase": "sbh0cbo4efx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "220@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1200"
+    },
+    {
+      "guid": "AccountDpsk-25a9c9e6-b5cf-c543-59f3-906ee3cd4156",
+      "name": "resident301a_superfast",
+      "passphrase": "yowtb519bqz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "301@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-4d576df7-5b93-2da1-9760-e9c215d1c534",
+      "name": "resident302a_fast",
+      "passphrase": "us4392yfgai",
+      "status": "ACTIVE",
+      "ssidList": [
+        "302@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-b5dea2d3-f0fe-3b15-2324-02c51b6307a3",
+      "name": "resident303a_gigabit",
+      "passphrase": "25b0l18cvea",
+      "status": "ACTIVE",
+      "ssidList": [
+        "303@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-1c4150ee-5cc3-aac9-1a95-aaa91b23e5ab",
+      "name": "resident304a_fast",
+      "passphrase": "rizkljrl6jr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "304@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-571ef6c1-ddd1-b63d-fa3f-14897e216fc9",
+      "name": "resident304b_fast",
+      "passphrase": "1mfac3m3sd2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "304@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-95aad8f8-b624-885c-8757-c1ab8cc88f91",
+      "name": "resident304c_gigabit",
+      "passphrase": "kcbdbipok7y",
+      "status": "ACTIVE",
+      "ssidList": [
+        "304@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-fe503726-5339-9768-8c03-d1609911e116",
+      "name": "resident305a_gigabit",
+      "passphrase": "z8q313rkrw2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "305@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-4ae9ad8a-e647-dd78-cd0b-cf9e122b8247",
+      "name": "resident306a_gigabit",
+      "passphrase": "wsntnixebye",
+      "status": "ACTIVE",
+      "ssidList": [
+        "306@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-ff4d129b-05ab-c46a-2cb4-d1ff1b6d796c",
+      "name": "resident307a_gigabit",
+      "passphrase": "u5midgc0fyb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "307@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-1e33c65b-40f0-3ca1-bd7c-7ef7462d8655",
+      "name": "resident308a_gigabit",
+      "passphrase": "czo9l0y6xc8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "308@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-a2a3b8f6-85ed-b087-b1aa-3ce1d33678e7",
+      "name": "resident309a_gigabit",
+      "passphrase": "29glyja67o9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "309@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-c7e928af-a010-72da-74d1-70e74652b4d9",
+      "name": "resident310a_gigabit",
+      "passphrase": "lma1s66251m",
+      "status": "ACTIVE",
+      "ssidList": [
+        "310@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-e1b08010-9afb-1aaf-d877-e5a49ac00796",
+      "name": "resident311a_gigabit",
+      "passphrase": "fmz7zlw6ke3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "311@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-3781aa1f-bc1a-ae41-dcde-6cd00e6e4cbc",
+      "name": "resident312a_fast",
+      "passphrase": "ouqtmef8eob",
+      "status": "ACTIVE",
+      "ssidList": [
+        "312@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-bb51a2a0-0db3-3860-83b5-63b525b89138",
+      "name": "resident313a_gigabit",
+      "passphrase": "040c5sdekqf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "313@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-2d4f3443-5058-681d-f0df-af916643e30f",
+      "name": "resident313b_gigabit",
+      "passphrase": "q2dgnl91nw2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "313@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-b4a1dd51-594d-18be-7542-8d156eb91375",
+      "name": "resident314a_fast",
+      "passphrase": "dpqriagxwhe",
+      "status": "ACTIVE",
+      "ssidList": [
+        "314@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-b6e70b1a-42a1-cdd9-9017-124e11548281",
+      "name": "resident315a_fast",
+      "passphrase": "f2jgcxm8gm6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "315@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-5b71e820-be33-53f0-6af0-3c3c5b0d30af",
+      "name": "resident316a_gigabit",
+      "passphrase": "fejnxg3vvrr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "316@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-a2c1b555-915c-3141-4709-77ddc6aff657",
+      "name": "resident317a_gigabit",
+      "passphrase": "9omjex47ecp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "317@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-588dc4b9-c143-0cc4-34e9-8cc6d77f5c7c",
+      "name": "resident318a_gigabit",
+      "passphrase": "8588zdw72dv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "318@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-e63babc0-023d-2684-7981-53145c8cc493",
+      "name": "resident318b_fast",
+      "passphrase": "a3akrk5jkpr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "318@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-02f21b76-dfa1-3951-993b-053ef82063e3",
+      "name": "resident319a_superfast",
+      "passphrase": "f30qzj4c0gu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "319@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-115ad653-dd96-d3a6-c719-526e4281ad3f",
+      "name": "resident319b_gigabit",
+      "passphrase": "y6i55pzwxym",
+      "status": "ACTIVE",
+      "ssidList": [
+        "319@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-95a91c23-499d-c4a8-44c8-bccaa9f7315b",
+      "name": "resident320a_superfast",
+      "passphrase": "1afn3k3adlm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "320@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-54443352-88ce-7903-5d51-c2f652fe5e4c",
+      "name": "resident320b_gigabit",
+      "passphrase": "egvjjsril1s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "320@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1300"
+    },
+    {
+      "guid": "AccountDpsk-1c13a9c6-91b3-e1c2-e774-626d977f8be3",
+      "name": "resident401a_gigabit",
+      "passphrase": "sl8ejlfvi74",
+      "status": "ACTIVE",
+      "ssidList": [
+        "401@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-10e1e579-cf62-5e2c-9728-c83ffbd6f84a",
+      "name": "resident401b_gigabit",
+      "passphrase": "8ws2onij48o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "401@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-9be14958-344e-070d-732d-899ec6977b77",
+      "name": "resident402a_gigabit",
+      "passphrase": "stthg6hb9ox",
+      "status": "ACTIVE",
+      "ssidList": [
+        "402@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-ff5a15e6-a5f9-cb28-f16d-5052e336382c",
+      "name": "resident402b_gigabit",
+      "passphrase": "obe38ccs237",
+      "status": "ACTIVE",
+      "ssidList": [
+        "402@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-086007d7-24ac-8c8b-0eb8-935d6a38df0c",
+      "name": "resident402c_gigabit",
+      "passphrase": "y2bd3taqmt8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "402@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-93c1be02-3629-c778-5fa0-6ab2a6b3dc4d",
+      "name": "resident403a_superfast",
+      "passphrase": "igoy90sadmu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "403@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-03248d74-b8ba-fd1c-89ef-5e556d3fc095",
+      "name": "resident404a_gigabit",
+      "passphrase": "xhr9b0mn195",
+      "status": "ACTIVE",
+      "ssidList": [
+        "404@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-276b9d05-cd11-3795-8002-41c736ce3142",
+      "name": "resident405a_gigabit",
+      "passphrase": "y1msfia9eb8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "405@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-3b50d21b-be98-7a4a-97b0-101ec228788d",
+      "name": "resident405b_gigabit",
+      "passphrase": "2tta9jkemsz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "405@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-ca714ef0-0fcb-f848-979a-531dd22d619c",
+      "name": "resident406a_gigabit",
+      "passphrase": "5z3fwk0ttmr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "406@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-9d18750e-87a0-c973-adc8-c5b861e8866c",
+      "name": "resident406b_fast",
+      "passphrase": "tyo8ig3x8ia",
+      "status": "ACTIVE",
+      "ssidList": [
+        "406@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-245a9e59-05a1-3fe0-7f82-199b5ccb2c67",
+      "name": "resident407a_gigabit",
+      "passphrase": "fycju9wam2q",
+      "status": "ACTIVE",
+      "ssidList": [
+        "407@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-f5257e85-9e3c-99a8-9db5-fb9a9d9f6708",
+      "name": "resident407b_gigabit",
+      "passphrase": "eofwero7nhq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "407@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-acdb6443-0f02-365e-1f93-883e95b00afe",
+      "name": "resident408a_superfast",
+      "passphrase": "rjgvb90tkja",
+      "status": "ACTIVE",
+      "ssidList": [
+        "408@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-8b63eaa7-2f5b-6e39-9c1e-3b999a4d15e6",
+      "name": "resident409a_fast",
+      "passphrase": "ro8i2sknt50",
+      "status": "ACTIVE",
+      "ssidList": [
+        "409@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-69d6d9b0-cd8f-1915-316c-a0707dc5f260",
+      "name": "resident410a_fast",
+      "passphrase": "f3i248ohy7y",
+      "status": "ACTIVE",
+      "ssidList": [
+        "410@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-f8f2669f-4c44-b854-194f-c27b24960185",
+      "name": "resident411a_gigabit",
+      "passphrase": "jwq09grf5km",
+      "status": "ACTIVE",
+      "ssidList": [
+        "411@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-203d387c-ff7b-e206-b0d9-349a8c3d31bd",
+      "name": "resident412a_gigabit",
+      "passphrase": "eewlmg12cmx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "412@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-52cf4956-3bc9-c750-7f6f-7117c4b4d074",
+      "name": "resident412b_gigabit",
+      "passphrase": "mzjrex8qzk4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "412@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-3db9c1b1-9f7c-fa52-1822-0833e77e0c04",
+      "name": "resident413a_gigabit",
+      "passphrase": "tx5w9eaazgp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "413@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-6a55ca60-b352-7797-f6a8-7d1559634090",
+      "name": "resident414a_gigabit",
+      "passphrase": "31dyz2fbgat",
+      "status": "ACTIVE",
+      "ssidList": [
+        "414@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-024e302c-e3e4-db96-65a6-53d6373ab20f",
+      "name": "resident415a_fast",
+      "passphrase": "aof4g5b9t4m",
+      "status": "ACTIVE",
+      "ssidList": [
+        "415@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-f2f1e3bb-22f3-6dcd-c5ba-b79870339880",
+      "name": "resident416a_gigabit",
+      "passphrase": "0lg9qup7og4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "416@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-faed2ca6-6420-1046-cc37-90237277d193",
+      "name": "resident417a_superfast",
+      "passphrase": "jk6gpj9qzvc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "417@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-afdc60cf-696c-ba93-a7f1-19b3632ed6e7",
+      "name": "resident417b_gigabit",
+      "passphrase": "l0ojbq9lrdn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "417@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-7f349cab-5467-8c24-2ffa-e8228b6854c8",
+      "name": "resident418a_gigabit",
+      "passphrase": "nph1ppo3jxp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "418@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-b3a7279e-d10d-d40b-2ffb-71fbb09be2bd",
+      "name": "resident418b_gigabit",
+      "passphrase": "pgjgc6glm61",
+      "status": "ACTIVE",
+      "ssidList": [
+        "418@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-40676039-f2cf-b3bd-5587-93edf44f9f9e",
+      "name": "resident419a_gigabit",
+      "passphrase": "mj8lcjbgz0p",
+      "status": "ACTIVE",
+      "ssidList": [
+        "419@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-2c8c37a8-12ec-3168-fd6e-d14e1d1946b6",
+      "name": "resident420a_gigabit",
+      "passphrase": "x492pmqcws0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "420@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-11fb67d0-61eb-a6d1-a2c6-89ced3ccf2a4",
+      "name": "resident420b_gigabit",
+      "passphrase": "7ar3dl5or7o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "420@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1400"
+    },
+    {
+      "guid": "AccountDpsk-9595fbff-38bb-ac5c-5af7-a1759a79f87f",
+      "name": "resident501a_gigabit",
+      "passphrase": "07rjqo5at8k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "501@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-79e23472-a756-f66b-8ae1-810b5e718039",
+      "name": "resident502a_gigabit",
+      "passphrase": "3x0spencg1d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "502@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-49a7ae70-341d-ce06-696b-17fd1e48d30d",
+      "name": "resident503a_gigabit",
+      "passphrase": "pdk6s3wssoo",
+      "status": "ACTIVE",
+      "ssidList": [
+        "503@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-8cceaf3f-d737-e751-1d4d-099cc3f11d80",
+      "name": "resident504a_gigabit",
+      "passphrase": "y6wfxee26ac",
+      "status": "ACTIVE",
+      "ssidList": [
+        "504@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-b9074fe1-6050-e2fa-f0bb-493aef0b0e54",
+      "name": "resident505a_gigabit",
+      "passphrase": "15n43v9go5y",
+      "status": "ACTIVE",
+      "ssidList": [
+        "505@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-5080053b-2001-16f6-7790-dfd069b67646",
+      "name": "resident506a_gigabit",
+      "passphrase": "cbpecibpn6w",
+      "status": "ACTIVE",
+      "ssidList": [
+        "506@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-a4818510-ee90-c998-fa36-cdcd643d97ed",
+      "name": "resident507a_gigabit",
+      "passphrase": "mst14musxjx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "507@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-75ba6835-62a4-4194-6e5c-8845cacd8faf",
+      "name": "resident507b_gigabit",
+      "passphrase": "gjxuwyjyhcd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "507@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-394f3b3d-5808-9dc3-27a3-b4539d747d5e",
+      "name": "resident507c_gigabit",
+      "passphrase": "rfylyj0l967",
+      "status": "ACTIVE",
+      "ssidList": [
+        "507@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-cf6050a6-96b4-8dd5-8772-a8f850bffcda",
+      "name": "resident508a_gigabit",
+      "passphrase": "019ryjdntdr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "508@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-0ee5fc49-e1b0-7533-b92a-88cf7775680a",
+      "name": "resident509a_gigabit",
+      "passphrase": "roi9xkky3pf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "509@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-d3cd9024-acaf-2e91-617c-7217b85a8654",
+      "name": "resident510a_gigabit",
+      "passphrase": "d7stc28g0mi",
+      "status": "ACTIVE",
+      "ssidList": [
+        "510@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-5dfb32ce-1ad4-7f3d-766f-765e5651ffe9",
+      "name": "resident511a_gigabit",
+      "passphrase": "okv7jmniial",
+      "status": "ACTIVE",
+      "ssidList": [
+        "511@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-a9cd672d-ede5-1765-dda2-1c6f51444eee",
+      "name": "resident512a_gigabit",
+      "passphrase": "mrf7y6lhgji",
+      "status": "ACTIVE",
+      "ssidList": [
+        "512@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-2546c93c-91bb-0252-bbc5-91d2e9ded3fb",
+      "name": "resident512b_gigabit",
+      "passphrase": "ulsa4cvqelw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "512@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-a28cdb72-8b54-33d5-725e-b72ff9fd56bb",
+      "name": "resident513a_gigabit",
+      "passphrase": "onylc2d3a0g",
+      "status": "ACTIVE",
+      "ssidList": [
+        "513@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-b72c9fb2-de3c-2d68-6e2b-c2a0933397af",
+      "name": "resident514a_gigabit",
+      "passphrase": "cva5ty2k1l2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "514@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-4979f32d-7de4-a6d4-e0b8-fa9f47f4f14a",
+      "name": "resident515a_gigabit",
+      "passphrase": "s703cccc9xw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "515@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-52e519b3-022f-9abe-40a2-c8561fd2a211",
+      "name": "resident515b_gigabit",
+      "passphrase": "oi5mpcodg9i",
+      "status": "ACTIVE",
+      "ssidList": [
+        "515@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-45e67079-b7a8-d648-68e8-56dadfbef1da",
+      "name": "resident516a_gigabit",
+      "passphrase": "hjivhb0lqud",
+      "status": "ACTIVE",
+      "ssidList": [
+        "516@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-2719c388-7660-ce0c-4640-2c7510594e71",
+      "name": "resident517a_gigabit",
+      "passphrase": "gehgwv9s2nr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "517@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-fbf7be0a-2068-fc8f-904b-6e59508822a0",
+      "name": "resident517b_fast",
+      "passphrase": "gq8wtwnh0j0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "517@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-2e656e3e-f85d-63a9-2fdb-7f13028d3932",
+      "name": "resident518a_gigabit",
+      "passphrase": "i2tb81pg87s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "518@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-6dd93fb4-f4a0-13ed-7c96-5b0eaa0926ac",
+      "name": "resident519a_gigabit",
+      "passphrase": "4veqpspqmr0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "519@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-2ae1d7ce-3a1e-251d-4207-99189cda7b92",
+      "name": "resident520a_fast",
+      "passphrase": "rruy0w7o740",
+      "status": "ACTIVE",
+      "ssidList": [
+        "520@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1500"
+    },
+    {
+      "guid": "AccountDpsk-8f8a66bb-9ac0-130b-de74-a0ea36cf06ee",
+      "name": "resident601a_superfast",
+      "passphrase": "zjitookenzr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "601@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-2bf010fd-65b3-f944-23a8-9e4f215d8ddc",
+      "name": "resident602a_fast",
+      "passphrase": "divsz2xpdv0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "602@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-27846709-3112-3bb9-75b4-214bedc8ff4f",
+      "name": "resident603a_fast",
+      "passphrase": "cpu94la07ij",
+      "status": "ACTIVE",
+      "ssidList": [
+        "603@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-6cef76e6-4cdc-427c-ecdc-fbc4b5f79473",
+      "name": "resident604a_gigabit",
+      "passphrase": "mzroxgeboz5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "604@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-7f4be121-d547-cc7b-a74f-ab24a0e3b9e1",
+      "name": "resident605a_gigabit",
+      "passphrase": "h7ysa2z0d9e",
+      "status": "ACTIVE",
+      "ssidList": [
+        "605@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-2da1d575-8f2d-61b5-8fa5-766e549e42e5",
+      "name": "resident606a_gigabit",
+      "passphrase": "r83a9rf3ph2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "606@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-e3552d7d-fbbc-88dc-b053-bb8447523a64",
+      "name": "resident607a_fast",
+      "passphrase": "af7a818rx14",
+      "status": "ACTIVE",
+      "ssidList": [
+        "607@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-898146f3-e035-415b-ba39-f168bc143e39",
+      "name": "resident608a_gigabit",
+      "passphrase": "gzmnhvs82i1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "608@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-86c5a232-8731-37c9-6b5f-69c90787ff14",
+      "name": "resident608b_fast",
+      "passphrase": "mkc5bc2q54i",
+      "status": "ACTIVE",
+      "ssidList": [
+        "608@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-c8949100-9b11-b037-08ed-dd2e56213d4c",
+      "name": "resident608c_gigabit",
+      "passphrase": "fop42gyznnz",
+      "status": "ACTIVE",
+      "ssidList": [
+        "608@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-c6174d04-28ea-6b4b-bb78-922ed713351a",
+      "name": "resident609a_gigabit",
+      "passphrase": "0n8uq5uzna1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "609@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-3d6771ed-c1c4-da05-f306-f1e76817b457",
+      "name": "resident610a_gigabit",
+      "passphrase": "48blclzv6hm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "610@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-667d812b-5197-5ffe-e722-87ae1c4b64aa",
+      "name": "resident610b_gigabit",
+      "passphrase": "fj20zvforh2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "610@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-58042999-be20-4936-eefc-c2c74561a10d",
+      "name": "resident611a_gigabit",
+      "passphrase": "1tc9s9izh5v",
+      "status": "ACTIVE",
+      "ssidList": [
+        "611@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-3d89fdcc-8fb5-d715-e003-4776d5ef3c18",
+      "name": "resident611b_gigabit",
+      "passphrase": "74o04w9hxdl",
+      "status": "ACTIVE",
+      "ssidList": [
+        "611@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-a914f7ce-5e0b-4e41-323c-b6ce6a5d72c4",
+      "name": "resident611c_gigabit",
+      "passphrase": "gqjf8dst8b1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "611@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-2355f26d-e012-e330-4346-0e737432a063",
+      "name": "resident612a_fast",
+      "passphrase": "66fixddem01",
+      "status": "ACTIVE",
+      "ssidList": [
+        "612@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-87dd84eb-d796-9bbe-ff41-83a47e867a18",
+      "name": "resident613a_gigabit",
+      "passphrase": "bcx6cjrziqt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "613@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-5e3432d9-6c8e-a048-1b21-586f8298fda6",
+      "name": "resident614a_gigabit",
+      "passphrase": "j98yf11ow49",
+      "status": "ACTIVE",
+      "ssidList": [
+        "614@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-4228ab76-d316-1b09-6d14-002a2d9812c5",
+      "name": "resident615a_gigabit",
+      "passphrase": "r3q6qszg06z",
+      "status": "ACTIVE",
+      "ssidList": [
+        "615@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-d2ed9760-cbee-b34a-6b93-4e90d03c3a21",
+      "name": "resident616a_fast",
+      "passphrase": "bhfq7ichntt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "616@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-8d25b822-c357-dd10-d5ac-8ac816b47f8c",
+      "name": "resident616b_gigabit",
+      "passphrase": "fw8xikwqiq2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "616@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-c985ed65-da86-fe3e-c834-9f4c22414649",
+      "name": "resident617a_gigabit",
+      "passphrase": "yahzsqp6ohd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "617@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-7a787bfa-a38d-4105-7bb1-746c1c50a210",
+      "name": "resident618a_fast",
+      "passphrase": "92fgrvaxclv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "618@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-38649a8b-66e3-2e6d-4b12-4eac2e2dcf34",
+      "name": "resident619a_gigabit",
+      "passphrase": "cmicti5l30s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "619@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-e3b8b0ac-ad5b-05ea-986b-e6dd0d830cb6",
+      "name": "resident620a_gigabit",
+      "passphrase": "kshr6o4u8uh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "620@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-9a5050ae-4e54-8c2c-1590-8629ae270afe",
+      "name": "resident620b_gigabit",
+      "passphrase": "pi77s6k1wkn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "620@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1600"
+    },
+    {
+      "guid": "AccountDpsk-b71d202d-44cf-d7ec-ccf6-d1902a9d50f7",
+      "name": "resident701a_gigabit",
+      "passphrase": "98ncxbjthq2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "701@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-89e58fa5-9c8b-19da-f088-9ceda3236ebd",
+      "name": "resident701b_gigabit",
+      "passphrase": "yjewlnl5vep",
+      "status": "ACTIVE",
+      "ssidList": [
+        "701@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-3e35d18d-7d54-fbb0-8eb8-f3d3f595b30b",
+      "name": "resident702a_gigabit",
+      "passphrase": "2806efx6ned",
+      "status": "ACTIVE",
+      "ssidList": [
+        "702@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-40e01080-58ce-aa26-4d38-2152bea29f1f",
+      "name": "resident703a_fast",
+      "passphrase": "918aj6lsoin",
+      "status": "ACTIVE",
+      "ssidList": [
+        "703@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-c7292f64-5931-ba3e-c13d-8815610053ba",
+      "name": "resident704a_gigabit",
+      "passphrase": "jxygki7fwp3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "704@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-ac51ed1e-6948-9426-36c7-fad6ffb7004a",
+      "name": "resident705a_gigabit",
+      "passphrase": "29qqyqnk3e9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "705@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-9c2cb037-bd39-71fa-f908-5b6818723fc3",
+      "name": "resident706a_gigabit",
+      "passphrase": "pu1ea7a7if5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "706@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-881fc35a-5292-cefa-717c-a390e80926e4",
+      "name": "resident707a_gigabit",
+      "passphrase": "a3e07uz8fg7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "707@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-071e3b95-2749-5198-d8dd-d834ba1473ca",
+      "name": "resident708a_gigabit",
+      "passphrase": "sn0r3uzexmg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "708@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-dc157140-74d7-327e-5591-143a1b12fc67",
+      "name": "resident709a_gigabit",
+      "passphrase": "s8tfiyavgrt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "709@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-2d3ebf4e-d6f2-dc9b-b6c8-1c217f1bbce0",
+      "name": "resident710a_fast",
+      "passphrase": "07f0dczezf3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "710@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-782e357d-418a-9466-30bb-868fe0d774f3",
+      "name": "resident711a_gigabit",
+      "passphrase": "w98jr6dywy6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "711@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-3e810cea-2ad6-3d88-375c-17a46a9ed20f",
+      "name": "resident712a_gigabit",
+      "passphrase": "kkpwqq176mr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "712@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-86ea9f0e-3282-52d2-09d1-adc7c082de52",
+      "name": "resident713a_gigabit",
+      "passphrase": "osshef3n0eh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "713@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-fa2b6d7e-2ae1-63f8-f1cc-563b0729455c",
+      "name": "resident714a_gigabit",
+      "passphrase": "ejjy0taj14o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "714@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-15cda762-2975-3e0d-b285-b86455495df9",
+      "name": "resident715a_gigabit",
+      "passphrase": "cr88xgq07rx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "715@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-94a45a59-da00-0c78-f8a8-694a8c1a0ca9",
+      "name": "resident716a_gigabit",
+      "passphrase": "7miaqmte3al",
+      "status": "ACTIVE",
+      "ssidList": [
+        "716@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-9cc845d6-ee51-bfee-2342-4a5c1e865fb1",
+      "name": "resident717a_gigabit",
+      "passphrase": "b0atwyx7qbs",
+      "status": "ACTIVE",
+      "ssidList": [
+        "717@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-571b7eee-bb08-8769-b06a-62f5e93f704a",
+      "name": "resident718a_superfast",
+      "passphrase": "0caroakbjhn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "718@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-2a8d5f61-ed43-bfea-0513-28a4a7420b50",
+      "name": "resident718b_gigabit",
+      "passphrase": "na6onbg897y",
+      "status": "ACTIVE",
+      "ssidList": [
+        "718@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-4deee161-a4d1-98d6-6e98-6a4bdb677030",
+      "name": "resident718c_gigabit",
+      "passphrase": "7lcwem46tnx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "718@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-882245b4-c321-7708-eceb-35551e8c3286",
+      "name": "resident719a_superfast",
+      "passphrase": "qj7on3lqafb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "719@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-4f44cf30-2746-7950-d121-69b9862fb179",
+      "name": "resident720a_gigabit",
+      "passphrase": "b4xstojj9v2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "720@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1700"
+    },
+    {
+      "guid": "AccountDpsk-fbcb275b-a614-bf06-b20e-44b8d267d7ca",
+      "name": "resident801a_gigabit",
+      "passphrase": "7gxhiv3c1rm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "801@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-b6eefeb2-290d-7304-c700-f4fd7063dffd",
+      "name": "resident801b_gigabit",
+      "passphrase": "br88r5y2xr4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "801@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-4f6f03a6-b245-21dd-7aa8-739ebb3c1872",
+      "name": "resident802a_gigabit",
+      "passphrase": "zfzgokwe7hp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "802@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-6b78380d-9a4c-4ee0-3bc0-a604c106a404",
+      "name": "resident803a_gigabit",
+      "passphrase": "ixf26zxjicl",
+      "status": "ACTIVE",
+      "ssidList": [
+        "803@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-9364f324-48ac-e421-b866-aadf3b4a3979",
+      "name": "resident804a_gigabit",
+      "passphrase": "8rx6wfz3cc1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "804@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-8d8e2890-ca25-74c3-cbc7-70cf6a73eb30",
+      "name": "resident805a_gigabit",
+      "passphrase": "r0kszv8g74k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "805@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-81cdbbff-215c-5244-7514-24e4cef86eec",
+      "name": "resident806a_fast",
+      "passphrase": "sdmon21t4jj",
+      "status": "ACTIVE",
+      "ssidList": [
+        "806@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-11b403ab-c42e-6dcb-a7fa-f8e79965df00",
+      "name": "resident806b_gigabit",
+      "passphrase": "knh9sxlp3ba",
+      "status": "ACTIVE",
+      "ssidList": [
+        "806@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-c461158a-b189-535d-2bfd-cd1317a854ad",
+      "name": "resident807a_gigabit",
+      "passphrase": "z04g433t2dp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "807@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-4968af31-5c4f-863f-d557-ad0e503b8199",
+      "name": "resident808a_gigabit",
+      "passphrase": "yzjoiyk10lu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "808@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-5d356a55-dbb1-140d-a202-d8057b836e6c",
+      "name": "resident809a_gigabit",
+      "passphrase": "0t104qg0lud",
+      "status": "ACTIVE",
+      "ssidList": [
+        "809@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-aa45a5c1-7a2b-93de-6523-84aa9abbc75c",
+      "name": "resident810a_gigabit",
+      "passphrase": "uv518wyfyud",
+      "status": "ACTIVE",
+      "ssidList": [
+        "810@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-203e157e-77c4-4d1b-3d9a-7ae65b791f49",
+      "name": "resident811a_gigabit",
+      "passphrase": "f1cf28yf8zo",
+      "status": "ACTIVE",
+      "ssidList": [
+        "811@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-3f208e19-07e7-cb10-4006-059e94d01ee2",
+      "name": "resident812a_gigabit",
+      "passphrase": "kwda4o1m4ma",
+      "status": "ACTIVE",
+      "ssidList": [
+        "812@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-c68a375d-856f-8817-6ab4-e60ec0f04901",
+      "name": "resident813a_gigabit",
+      "passphrase": "3zdtn97xmm7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "813@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-2d42a6e8-5d03-152f-f0d3-2dbc32c8cf96",
+      "name": "resident814a_gigabit",
+      "passphrase": "3ptnnom7s5t",
+      "status": "ACTIVE",
+      "ssidList": [
+        "814@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-4f074774-558d-db3f-7d5a-0d2d34d0856f",
+      "name": "resident814b_gigabit",
+      "passphrase": "tx6p66tsisa",
+      "status": "ACTIVE",
+      "ssidList": [
+        "814@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-b34e4e0b-d502-1ef2-dfb2-39fa1b8668cc",
+      "name": "resident815a_gigabit",
+      "passphrase": "hhw3bjalvz4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "815@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-d0b849ef-54dc-ab8f-53f8-d6abfe8d8f5e",
+      "name": "resident816a_gigabit",
+      "passphrase": "a1h78b4jwim",
+      "status": "ACTIVE",
+      "ssidList": [
+        "816@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-bbe57612-87be-cc6a-a5b6-875feecc3cbf",
+      "name": "resident817a_gigabit",
+      "passphrase": "4iceusnrdqa",
+      "status": "ACTIVE",
+      "ssidList": [
+        "817@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-eba91031-8264-0889-a1b3-3546afceb9b9",
+      "name": "resident818a_gigabit",
+      "passphrase": "zo1fmd7nj7b",
+      "status": "ACTIVE",
+      "ssidList": [
+        "818@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-b7acefaf-8f1b-b011-1a3b-9854660cbe64",
+      "name": "resident819a_gigabit",
+      "passphrase": "htlb5hnpwnh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "819@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-0c33b4b1-0ddd-cfb3-89f9-c1e92108fe88",
+      "name": "resident820a_gigabit",
+      "passphrase": "pwh0ty4vru5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "820@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1800"
+    },
+    {
+      "guid": "AccountDpsk-c362310f-21e2-5675-91cf-d600b10818eb",
+      "name": "resident901a_gigabit",
+      "passphrase": "npl6mnixhsf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "901@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-cd52002d-6be9-c7ef-3f38-3359a3abfcbf",
+      "name": "resident902a_gigabit",
+      "passphrase": "au34ijfi36l",
+      "status": "ACTIVE",
+      "ssidList": [
+        "902@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-bae89238-8723-8698-891b-672364d6c520",
+      "name": "resident903a_gigabit",
+      "passphrase": "tbsj2wy61fy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "903@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-577a4ece-1316-1379-bd3b-edafef8322ee",
+      "name": "resident904a_gigabit",
+      "passphrase": "mudezuhgntv",
+      "status": "ACTIVE",
+      "ssidList": [
+        "904@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-fc0d08aa-1161-bb3e-1a21-5bd6a81f0476",
+      "name": "resident904b_fast",
+      "passphrase": "21d1m6j0a6i",
+      "status": "ACTIVE",
+      "ssidList": [
+        "904@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-fe224775-e54e-318e-6857-4c0c9754fc0a",
+      "name": "resident904c_gigabit",
+      "passphrase": "aj6cm3xom3f",
+      "status": "ACTIVE",
+      "ssidList": [
+        "904@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-86894745-2c5f-3ee3-941b-4a439b9d2ef8",
+      "name": "resident905a_gigabit",
+      "passphrase": "6t0lmmjjeqf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "905@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-f9a68c75-109d-46fa-82f0-7ac44cd04428",
+      "name": "resident906a_gigabit",
+      "passphrase": "n3qznhr8gbn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "906@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-8bab4bc6-1bf8-9b2a-345d-e63773530e15",
+      "name": "resident907a_gigabit",
+      "passphrase": "uvov2rkvn7k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "907@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-452ee161-0151-a269-cc3d-2ad4614c684b",
+      "name": "resident907b_gigabit",
+      "passphrase": "mne7rok0v8z",
+      "status": "ACTIVE",
+      "ssidList": [
+        "907@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-8989c371-e70f-ce3a-50a4-a2186c8c6c72",
+      "name": "resident908a_gigabit",
+      "passphrase": "in1oged3g10",
+      "status": "ACTIVE",
+      "ssidList": [
+        "908@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-69786bd7-ce55-0b79-efb8-7dbed897969a",
+      "name": "resident909a_gigabit",
+      "passphrase": "dgjfxmaj2mp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "909@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-3fa92d47-72ad-b274-6237-61e29f5c3118",
+      "name": "resident909b_gigabit",
+      "passphrase": "fvcwilijz65",
+      "status": "ACTIVE",
+      "ssidList": [
+        "909@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-7aeb8f14-156b-f6e3-aa0e-3cc9552d8b9c",
+      "name": "resident910a_gigabit",
+      "passphrase": "pbs7r47ujma",
+      "status": "ACTIVE",
+      "ssidList": [
+        "910@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-fb89baab-01fb-05d4-1947-0dccbbaa4d30",
+      "name": "resident911a_gigabit",
+      "passphrase": "sqbkhn4rrk3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "911@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-9b2b6824-98fc-901e-847b-ba4ca2077681",
+      "name": "resident912a_fast",
+      "passphrase": "54i6c9ep98m",
+      "status": "ACTIVE",
+      "ssidList": [
+        "912@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-b1c84177-8968-d6ed-121a-99433f7e97fe",
+      "name": "resident913a_gigabit",
+      "passphrase": "cqibpi6kjhb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "913@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-410e973f-2374-b7c5-11b3-848b97d79d00",
+      "name": "resident914a_gigabit",
+      "passphrase": "5ocuwuncbim",
+      "status": "ACTIVE",
+      "ssidList": [
+        "914@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-249c3a43-2c1b-3e3c-44fa-474316e60ad4",
+      "name": "resident915a_gigabit",
+      "passphrase": "75ayhx42k59",
+      "status": "ACTIVE",
+      "ssidList": [
+        "915@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-4e87e2c9-60cc-3fca-fe15-2b2d42523caf",
+      "name": "resident915b_gigabit",
+      "passphrase": "9gw1gkn4t5s",
+      "status": "ACTIVE",
+      "ssidList": [
+        "915@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-cad6ce1a-0c0d-4b0d-8939-5959965b04dd",
+      "name": "resident915c_gigabit",
+      "passphrase": "ee0zer4vcn2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "915@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-0b1a034f-4fb5-30d8-d92e-a285d80c376c",
+      "name": "resident916a_gigabit",
+      "passphrase": "hblqti01r0d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "916@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-2f7f8876-e6ed-3a75-feaf-ce0a47d83671",
+      "name": "resident916b_gigabit",
+      "passphrase": "t6nhsou4qgt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "916@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-40e1ed51-fffd-1141-b92f-bc18035cd16f",
+      "name": "resident917a_gigabit",
+      "passphrase": "jmpu7aam7rj",
+      "status": "ACTIVE",
+      "ssidList": [
+        "917@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-9d775e03-a2db-561a-bea0-79a66399b80a",
+      "name": "resident917b_fast",
+      "passphrase": "ueg0kavusnt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "917@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-b15aa7c1-97da-1b51-208c-ec3a5a1d76a3",
+      "name": "resident918a_gigabit",
+      "passphrase": "bzqmvllyd9v",
+      "status": "ACTIVE",
+      "ssidList": [
+        "918@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-a83ce40e-d8a1-7686-b2cd-a0f95e393284",
+      "name": "resident918b_gigabit",
+      "passphrase": "ocg5hy21dwx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "918@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-30daaca8-0488-16ea-5326-807f1cc3f82d",
+      "name": "resident919a_gigabit",
+      "passphrase": "w2414txl7ju",
+      "status": "ACTIVE",
+      "ssidList": [
+        "919@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-05a228d7-8cb8-3118-364a-94c7ddad482a",
+      "name": "resident920a_gigabit",
+      "passphrase": "7fd0c3rm1kw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "920@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-09a6b9f0-50f1-4999-e619-813305644a88",
+      "name": "resident920b_gigabit",
+      "passphrase": "3yx0ou0g84q",
+      "status": "ACTIVE",
+      "ssidList": [
+        "920@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "1900"
+    },
+    {
+      "guid": "AccountDpsk-13558284-171f-89ad-9658-7bfc82d6748c",
+      "name": "resident1001a_gigabit",
+      "passphrase": "410yjyvrlgy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1001@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-b359f693-bda8-72e5-bf27-d57ab91cf2ef",
+      "name": "resident1001b_gigabit",
+      "passphrase": "1toexxg94se",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1001@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-193a1b66-6ecb-dff1-3484-cb60d0ea019a",
+      "name": "resident1001c_gigabit",
+      "passphrase": "h5vj6tu0ivd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1001@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-c4b93212-08af-0909-4869-77f2f14cbcb7",
+      "name": "resident1002a_gigabit",
+      "passphrase": "zvnnga3ibh9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1002@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-04315d93-897b-33b6-9323-fde64605105b",
+      "name": "resident1003a_superfast",
+      "passphrase": "tjye48f8o31",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1003@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-ee5a404e-5586-9723-2346-db95d22d9b30",
+      "name": "resident1004a_gigabit",
+      "passphrase": "uxxo6o2uyw1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1004@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-e967fda2-3f70-c3fe-57dc-129a688f9ffe",
+      "name": "resident1005a_gigabit",
+      "passphrase": "1ggfu3qrbn1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1005@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-c761b6b2-5ceb-d794-0d09-d68579af3bdf",
+      "name": "resident1006a_fast",
+      "passphrase": "invo2nyl312",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1006@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-a47beccb-8190-a86c-44ad-6d9e4f680433",
+      "name": "resident1007a_gigabit",
+      "passphrase": "9shzjau0x38",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1007@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-89eb8cf4-3b34-8582-0caf-9963211979ba",
+      "name": "resident1007b_gigabit",
+      "passphrase": "3rnf2vzye4o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1007@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-eccaeec1-3449-9540-2c06-a85028c4b8ea",
+      "name": "resident1008a_gigabit",
+      "passphrase": "q6e068x0n3j",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1008@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-eda12d49-33bf-20a7-220b-a75cbe5f29d0",
+      "name": "resident1009a_gigabit",
+      "passphrase": "icabryyf272",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1009@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-985803e3-630a-e093-5fbe-0afef3421fe9",
+      "name": "resident1009b_gigabit",
+      "passphrase": "b5ahyjf5ste",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1009@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-e2904031-c253-b0bc-a9bc-aac24d212e9b",
+      "name": "resident1010a_gigabit",
+      "passphrase": "bdfm8w9mejr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1010@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-2eb5c7f3-6abe-da4e-fb5f-8cbdc270720f",
+      "name": "resident1010b_fast",
+      "passphrase": "w82k7ra1hhf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1010@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-2350cfa9-5134-a0cc-c93f-61fe50713da8",
+      "name": "resident1011a_gigabit",
+      "passphrase": "z6hn1bla6at",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1011@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-2ff90505-6f17-55f3-1e02-ad7d4a2ac74e",
+      "name": "resident1011b_gigabit",
+      "passphrase": "17il1s0laf5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1011@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-c9eb4a26-14a2-7422-1b0b-d4ebe7c9deac",
+      "name": "resident1012a_gigabit",
+      "passphrase": "urqsos20pgn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1012@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-97a24339-1380-0b35-2812-9c5d05b74acb",
+      "name": "resident1013a_gigabit",
+      "passphrase": "lq6grgj3ldm",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1013@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-bf242b88-93b4-124b-5bf9-bea9bf0c3ec5",
+      "name": "resident1014a_gigabit",
+      "passphrase": "7p07rttbkbe",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1014@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-40a16d8a-ab94-c083-35b7-e751a7fa1cab",
+      "name": "resident1014b_gigabit",
+      "passphrase": "6ccpjwnmqra",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1014@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-5cd3a1ee-b126-6dca-9908-c5d8cbd3eb91",
+      "name": "resident1015a_fast",
+      "passphrase": "9x5d7excmlr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1015@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-2080b7a9-5724-e16f-f03f-14b1f55bb60d",
+      "name": "resident1015b_gigabit",
+      "passphrase": "emvb8gcftnq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1015@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-e1dc7340-b491-77f6-546b-b465647de76d",
+      "name": "resident1016a_gigabit",
+      "passphrase": "llb3zokgm39",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1016@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-6de046fc-3815-8017-48c7-9aee5ee1ecae",
+      "name": "resident1016b_fast",
+      "passphrase": "xf3vylp4sic",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1016@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-f626f72a-caf7-0848-519e-24ef2ed12e2a",
+      "name": "resident1017a_gigabit",
+      "passphrase": "ajtibze3el2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1017@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-acc36377-7fe9-4e35-409f-16cef4e985ae",
+      "name": "resident1017b_gigabit",
+      "passphrase": "r0fxlz9qej7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1017@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-93b9d9b1-9a75-0bfe-a0c6-dfc09487390d",
+      "name": "resident1017c_gigabit",
+      "passphrase": "zxfg42tojn3",
+      "status": "EXPIRED",
+      "ssidList": [
+        "1017@BirchLanding"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-35518376-5917-1b7e-750b-e649780549c1",
+      "name": "resident1018a_gigabit",
+      "passphrase": "2ridg5cuott",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1018@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-3713eeca-3461-d768-916f-6ad7c514cada",
+      "name": "resident1019a_superfast",
+      "passphrase": "0mna7uxpv53",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1019@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-62e8e25d-ec44-c094-d88b-998bf6012603",
+      "name": "resident1020a_gigabit",
+      "passphrase": "n95yx7pmny7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1020@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2000"
+    },
+    {
+      "guid": "AccountDpsk-4ebd8af5-26c2-9164-0a33-2c7c829087bc",
+      "name": "resident1101a_gigabit",
+      "passphrase": "fk2x32hh4sa",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1101@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-956e5998-b68e-2fe9-427a-5753f17e363b",
+      "name": "resident1102a_gigabit",
+      "passphrase": "gb5eacvffhc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1102@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-2d4bb291-3aea-4bac-fc62-28073f5ad880",
+      "name": "resident1103a_gigabit",
+      "passphrase": "9t0ilyp650h",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1103@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-7a8d8425-d8fd-d098-e435-aeb3db303ad5",
+      "name": "resident1104a_gigabit",
+      "passphrase": "nw9qclplece",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1104@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-4f4bafaf-9f09-1858-b89b-6431091345ef",
+      "name": "resident1105a_gigabit",
+      "passphrase": "f4r0gs3pszx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1105@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-d5c8c319-9c94-31b8-0fe6-06d169204e95",
+      "name": "resident1106a_fast",
+      "passphrase": "7g9pxsnsock",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1106@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-ce1b6aeb-bd54-98d6-6639-476cd95b219d",
+      "name": "resident1107a_superfast",
+      "passphrase": "x5ndslmsw2i",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1107@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-cbb88dbf-0e09-6504-0f25-330e38db6563",
+      "name": "resident1107b_gigabit",
+      "passphrase": "rl27fhio1el",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1107@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-1343e1c9-4029-f688-e70e-7f5880a2b69e",
+      "name": "resident1108a_gigabit",
+      "passphrase": "8yfi0727egw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1108@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-468ac8ba-e0bf-99ae-8755-6f365ec68b19",
+      "name": "resident1108b_gigabit",
+      "passphrase": "pzqer6gjlvp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1108@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-5b4647fb-0cbf-ff92-67df-916eae44409a",
+      "name": "resident1109a_fast",
+      "passphrase": "4z0rlemtwf8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1109@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-7b4748ec-75e5-bc32-962c-cf7df6eaade6",
+      "name": "resident1110a_gigabit",
+      "passphrase": "zbypr33484u",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1110@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-b6e4f374-41e1-ddbd-7fa8-c3cbb623a083",
+      "name": "resident1111a_gigabit",
+      "passphrase": "dm225xiyrjp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1111@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-b19a640f-b467-1a8b-5af2-25a06073e39d",
+      "name": "resident1112a_fast",
+      "passphrase": "49ugwg1fjk4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1112@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-0dbc004d-7cae-016a-2187-96d2754f226a",
+      "name": "resident1113a_gigabit",
+      "passphrase": "bgjctkd5n7f",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1113@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-566a35b5-6c49-60d0-82ac-522100cde4d2",
+      "name": "resident1114a_superfast",
+      "passphrase": "64czvkk8vn7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1114@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-830a12e6-a652-afd1-0f2e-63bcc973c675",
+      "name": "resident1114b_fast",
+      "passphrase": "91ob3pdip74",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1114@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-36ab737e-c06c-7b16-39e7-128a991c3052",
+      "name": "resident1115a_gigabit",
+      "passphrase": "4af6lqsfo22",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1115@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-ec48fb38-6c34-cd09-23a9-53b7feb13297",
+      "name": "resident1115b_gigabit",
+      "passphrase": "tdw83c2c4fc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1115@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-8db5280b-ead6-492e-c16c-f7f070ae5b1c",
+      "name": "resident1116a_gigabit",
+      "passphrase": "7fk1l0ri26f",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1116@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-31fadfed-61a7-6832-bf9c-5028eeff1f3a",
+      "name": "resident1117a_gigabit",
+      "passphrase": "3asufdxffcd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1117@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-8d7cecb6-fb70-0011-cd18-b220baf18d48",
+      "name": "resident1118a_gigabit",
+      "passphrase": "pgm95tv76yk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1118@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-7a2bd0c8-3a26-b42a-76d0-718159ba2dfc",
+      "name": "resident1119a_fast",
+      "passphrase": "52bltpbw51k",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1119@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-69c1cc4a-85f6-de3a-6892-081ae8dde456",
+      "name": "resident1120a_gigabit",
+      "passphrase": "08rgoemcvie",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1120@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2100"
+    },
+    {
+      "guid": "AccountDpsk-a96450e0-ce15-7307-16de-4b6972cc04c8",
+      "name": "resident1201a_gigabit",
+      "passphrase": "9whrxnthe31",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1201@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-a75ed7a5-7a3a-3be2-0084-08dd12154512",
+      "name": "resident1202a_gigabit",
+      "passphrase": "6g0ki6mnhf0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1202@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-a3446ad9-d514-62d5-4d07-1deeda3e10c4",
+      "name": "resident1202b_fast",
+      "passphrase": "04d620yxaig",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1202@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-41c21a83-f8f2-66f0-ff42-4312948fd453",
+      "name": "resident1203a_fast",
+      "passphrase": "4bnsy2rtusg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1203@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-5bb1751e-172f-fde9-96b5-97512e12455f",
+      "name": "resident1204a_gigabit",
+      "passphrase": "i5rez34o9hc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1204@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-68201544-f0a2-b6ba-f1c9-35ead1f94b89",
+      "name": "resident1205a_gigabit",
+      "passphrase": "xthh45wvn3o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1205@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-86a1fe69-1e21-42b2-7926-df573bc7a823",
+      "name": "resident1206a_gigabit",
+      "passphrase": "e890pygxe38",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1206@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-bfc68efe-2ac4-6f3e-8f80-ba1292c9827a",
+      "name": "resident1207a_gigabit",
+      "passphrase": "xep4r6tddkc",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1207@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-f8b6065b-a43d-e232-9e36-5b206b21eaae",
+      "name": "resident1208a_gigabit",
+      "passphrase": "smp6r6iuu6q",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1208@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-f34bb61d-1bda-e9e5-c15c-2f0dbe622f97",
+      "name": "resident1209a_gigabit",
+      "passphrase": "uv48agidf3e",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1209@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-1f3b789a-6c67-fbf5-d168-3e262b7e107b",
+      "name": "resident1210a_gigabit",
+      "passphrase": "ao4xbrryz3r",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1210@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-c0aa31f9-8c17-fcb1-7d01-14bd9c19be12",
+      "name": "resident1211a_gigabit",
+      "passphrase": "91udrjsp4fx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1211@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-019582ae-7e5e-f0e6-41bc-86a6de4ca304",
+      "name": "resident1212a_gigabit",
+      "passphrase": "fq3gr6e872e",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1212@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-5bfa9df1-1759-e78f-cc8c-c91290535eab",
+      "name": "resident1213a_gigabit",
+      "passphrase": "9t1j5wo5r69",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1213@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-4d688cc6-fa10-18bc-268e-bf70e2e781c7",
+      "name": "resident1214a_gigabit",
+      "passphrase": "9pzwigijmkt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1214@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-16a89342-b07e-67f7-be91-621b72a701a8",
+      "name": "resident1214b_gigabit",
+      "passphrase": "whh257hxb17",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1214@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-3e8a5d19-675e-d24d-00ba-237c00325670",
+      "name": "resident1215a_superfast",
+      "passphrase": "o54jvuvr571",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1215@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-4882c65d-41a4-ad21-86ee-f5447a82e6de",
+      "name": "resident1216a_gigabit",
+      "passphrase": "9co4craqlvu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1216@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-9b4a7155-f02a-4d6f-771e-f4dd2e1a3137",
+      "name": "resident1217a_gigabit",
+      "passphrase": "n7ay218vhhr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1217@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-2d97d5e5-9971-f604-9f19-8fdbf40e10ff",
+      "name": "resident1218a_gigabit",
+      "passphrase": "16vkfm7vnqb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1218@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-5ffa2956-b18b-b100-a589-2beeac35aaab",
+      "name": "resident1219a_gigabit",
+      "passphrase": "tuns8uixwbh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1219@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-42a628f6-c19e-7a69-14aa-6c3e482d0104",
+      "name": "resident1220a_gigabit",
+      "passphrase": "u21bygtrzaa",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1220@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2200"
+    },
+    {
+      "guid": "AccountDpsk-967cc533-2288-847b-11f3-9ec6d051a240",
+      "name": "resident1301a_gigabit",
+      "passphrase": "3ozq2kcqg96",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1301@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-704c3971-a5c8-5c60-5631-09022409eb7c",
+      "name": "resident1302a_fast",
+      "passphrase": "oshhtcqmfxn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1302@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-6b89393d-329e-8914-6d38-3a8690b40190",
+      "name": "resident1303a_gigabit",
+      "passphrase": "cr853fvo9ss",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1303@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-0d4126a2-fef9-d721-c29c-99ed3a6c7013",
+      "name": "resident1304a_gigabit",
+      "passphrase": "hxmqcnwjhnq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1304@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-6978699a-5b31-788f-2733-67754312934a",
+      "name": "resident1305a_gigabit",
+      "passphrase": "zakbt8it2bf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1305@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-6dc827aa-38a9-e16e-4c8e-b053051ff30c",
+      "name": "resident1306a_gigabit",
+      "passphrase": "on6nda8u7s1",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1306@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-0cc2a429-056f-610a-fa7f-0f1d9e936ac0",
+      "name": "resident1307a_gigabit",
+      "passphrase": "0kitir2xlrx",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1307@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-4eb3061f-e236-f591-80a8-8d01f1437bb5",
+      "name": "resident1308a_gigabit",
+      "passphrase": "4m63pkk7ftj",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1308@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-21b43c96-a22d-06c1-9e69-8fde2c8b1986",
+      "name": "resident1309a_fast",
+      "passphrase": "bt0nhdyxn2d",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1309@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-d98753b4-143d-5b1a-0001-14febabc59d2",
+      "name": "resident1309b_gigabit",
+      "passphrase": "r8qhle4ny5y",
+      "status": "EXPIRED",
+      "ssidList": [
+        "1309@BirchLanding"
+      ],
+      "expirationDateTime": "2026-03-01T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-804f92f8-a526-496a-e510-90b2733956d4",
+      "name": "resident1310a_gigabit",
+      "passphrase": "w4d5g92xucd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1310@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-67b56444-2aed-d8db-d2cc-e4a97d31f3fe",
+      "name": "resident1311a_gigabit",
+      "passphrase": "rtqjfq4q3g0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1311@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-7ee8b830-8153-0897-3630-c97b7befea72",
+      "name": "resident1311b_fast",
+      "passphrase": "g6ibfjdezv9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1311@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-82d90b07-f112-5517-9c81-2167365fe0df",
+      "name": "resident1311c_gigabit",
+      "passphrase": "7jwu60m82qe",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1311@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-3d3ab309-80e5-8a51-1fa6-6e56c6921f89",
+      "name": "resident1312a_fast",
+      "passphrase": "mkws54adrrp",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1312@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-35695263-e93d-ea1b-4192-b0b8f7c5f1e4",
+      "name": "resident1312b_gigabit",
+      "passphrase": "ztu8yu3dvnf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1312@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-43b1b1a4-fca7-e156-5474-338087a1227e",
+      "name": "resident1312c_superfast",
+      "passphrase": "h696z43j89a",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1312@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-43b1af4b-9ece-40e8-cafa-b95f6ee9f7d7",
+      "name": "resident1313a_fast",
+      "passphrase": "3tvb88frrmg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1313@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-f8a09293-e6e0-3f5f-a855-f8e5509eb225",
+      "name": "resident1314a_gigabit",
+      "passphrase": "1vj0imb66j6",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1314@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-8d8c8023-2691-44cc-6159-280d015be10d",
+      "name": "resident1315a_gigabit",
+      "passphrase": "qlmoj6cxp6p",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1315@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-dfbdf96a-1be3-b3ed-aecc-6a6f04bba6dd",
+      "name": "resident1316a_gigabit",
+      "passphrase": "jrdvq758q1o",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1316@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-70fe2bd0-c792-32b9-206f-77b9da394084",
+      "name": "resident1317a_gigabit",
+      "passphrase": "1s2y7n7adr3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1317@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-c43234c5-ecc9-d755-51de-c7aa14c8024d",
+      "name": "resident1318a_gigabit",
+      "passphrase": "v6rzug2tn7i",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1318@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-4a770cd2-aa6a-b3eb-e37e-43e2b48de37d",
+      "name": "resident1319a_gigabit",
+      "passphrase": "t8vkxlwb5c2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1319@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-4a82392b-7512-e5d9-c133-26891e280171",
+      "name": "resident1319b_gigabit",
+      "passphrase": "5k79dw4t2ch",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1319@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-bfb4d63e-bd44-562e-fabf-ce58a59fc2a9",
+      "name": "resident1320a_gigabit",
+      "passphrase": "ce1ln8mmkla",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1320@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2300"
+    },
+    {
+      "guid": "AccountDpsk-51675303-e86a-c38b-29ce-16a4a898ce0a",
+      "name": "resident1401a_gigabit",
+      "passphrase": "myv8e54cpwg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1401@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-a97e0402-814f-e0b3-cba4-cbaa1caef02b",
+      "name": "resident1401b_gigabit",
+      "passphrase": "xgje9hrg725",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1401@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-3124f0e4-07b5-55f4-e346-02d795e17a63",
+      "name": "resident1401c_superfast",
+      "passphrase": "q34zo10eyh9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1401@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-f3797269-3ab1-e858-ec1c-83d69460f49c",
+      "name": "resident1402a_gigabit",
+      "passphrase": "9fuc0ue8fdw",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1402@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-93a0e245-679f-00b2-29df-4136b1a41afe",
+      "name": "resident1403a_gigabit",
+      "passphrase": "1xrd5bo3ycs",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1403@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-872a0f09-32f2-8035-8a60-c508d0ebe598",
+      "name": "resident1403b_gigabit",
+      "passphrase": "lrvvk57bhdq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1403@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-aedc78a8-eb6a-e6f8-c805-99becd4b0cc4",
+      "name": "resident1403c_fast",
+      "passphrase": "tqipyat89wb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1403@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-b18ccb7d-39e7-7308-cb6c-89daa90bb72c",
+      "name": "resident1404a_gigabit",
+      "passphrase": "n7d3u9yzl21",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1404@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-22844d8c-c193-f0ff-15f8-170702156e7b",
+      "name": "resident1405a_gigabit",
+      "passphrase": "2tr2d3hmpvs",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1405@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-8d8ec514-783e-b30e-63fa-69595a8b1cb2",
+      "name": "resident1406a_gigabit",
+      "passphrase": "80mdnk6r14u",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1406@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-bd13d423-5183-2d92-14c4-860253fbe59e",
+      "name": "resident1407a_gigabit",
+      "passphrase": "7pa9rtfglv3",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1407@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-1f155f6c-4014-e549-b0ca-2e5af0de9295",
+      "name": "resident1408a_gigabit",
+      "passphrase": "ii5psna5jdk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1408@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-e668ffb0-abf2-d388-e931-150229112eb4",
+      "name": "resident1409a_gigabit",
+      "passphrase": "ci04cr45oe5",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1409@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-85df4ab2-5db2-f01f-f862-dc2181e033bc",
+      "name": "resident1410a_gigabit",
+      "passphrase": "j8bpq1clgqd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1410@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-32231191-6cab-8930-3186-330b986b6520",
+      "name": "resident1411a_superfast",
+      "passphrase": "gqa1fzc8apt",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1411@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-c5d34f71-2f5d-3cac-a9f7-b98dcf401415",
+      "name": "resident1411b_gigabit",
+      "passphrase": "vow63adtav0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1411@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-bb4909b1-3441-5178-63df-923f895ac65e",
+      "name": "resident1412a_gigabit",
+      "passphrase": "f0r828ysvyr",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1412@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-7c117325-16c1-8cc8-866b-9f21357a4d6f",
+      "name": "resident1412b_fast",
+      "passphrase": "mg98bi0fpmy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1412@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-d46f92a2-5810-fdaa-85b9-2cd2af39a621",
+      "name": "resident1413a_gigabit",
+      "passphrase": "7m7czt0c2ld",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1413@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-86827cb5-fb75-2a25-74ae-3df6cd93031f",
+      "name": "resident1414a_gigabit",
+      "passphrase": "1iu6tfw8kw9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1414@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-c456554b-3305-997f-6c35-dc33191e2b36",
+      "name": "resident1415a_fast",
+      "passphrase": "aku7ei8gfo0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1415@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-988da6d2-2f27-e995-4c88-e07c28a92c66",
+      "name": "resident1416a_fast",
+      "passphrase": "p1313x4igpf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1416@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-7070d0e5-f271-088d-84d7-d2381eca04a1",
+      "name": "resident1417a_fast",
+      "passphrase": "56jc9xhh9ks",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1417@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-698ad6da-1a03-9553-cf97-947d89fce988",
+      "name": "resident1418a_gigabit",
+      "passphrase": "2daradrcalb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1418@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-33f8bcc9-729f-ebc0-f768-b41ef030d008",
+      "name": "resident1418b_gigabit",
+      "passphrase": "gshgt5ptuq8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1418@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 5,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-628c09b3-b186-3ade-71d0-5a1f47c06011",
+      "name": "resident1419a_gigabit",
+      "passphrase": "anb61giequn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1419@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-37ac101a-9f04-5bd6-8392-f334f8829731",
+      "name": "resident1420a_gigabit",
+      "passphrase": "wphkkdn4vul",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1420@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2400"
+    },
+    {
+      "guid": "AccountDpsk-a6cec3d2-b7d4-3f61-ee14-3ad47bfbf706",
+      "name": "resident1501a_gigabit",
+      "passphrase": "nhg210qlg5v",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1501@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-cbe9f9ad-3299-5288-ff73-e8ff1a02efcc",
+      "name": "resident1502a_gigabit",
+      "passphrase": "37nxeqfnufn",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1502@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-ec3bc268-7f6c-a23c-4cc6-5a1229c15438",
+      "name": "resident1503a_gigabit",
+      "passphrase": "2hbbsy4ytm9",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1503@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-ad0dbd00-a933-3fe6-6a48-1f2a99613140",
+      "name": "resident1504a_gigabit",
+      "passphrase": "dmviof4kzfd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1504@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-ac413ccf-9106-aa0f-1347-f8e20f7d3c8c",
+      "name": "resident1505a_gigabit",
+      "passphrase": "c5emzvk732p",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1505@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-7e3180e4-c1fc-c14e-db7c-140b8a6de149",
+      "name": "resident1506a_gigabit",
+      "passphrase": "02rfu0mqi6c",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1506@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-f7292ebf-0de8-7297-7ecd-f5fa2608c366",
+      "name": "resident1507a_gigabit",
+      "passphrase": "szp6zlukswh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1507@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-cf31bafb-a01f-2750-7593-8c75b31e2ff2",
+      "name": "resident1508a_gigabit",
+      "passphrase": "xov2mpsw502",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1508@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-ebbb999b-8fc1-1a50-fba3-285fa2165edc",
+      "name": "resident1508b_gigabit",
+      "passphrase": "sf10uxk2ofy",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1508@BirchLanding",
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-39b365f0-a7cd-9580-6b41-32f1f721c6c3",
+      "name": "resident1509a_gigabit",
+      "passphrase": "m27t7ho4yeu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1509@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-343b7bcd-0e2d-900a-b3ee-b76d44c45694",
+      "name": "resident1510a_gigabit",
+      "passphrase": "pjiqu21r6jj",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1510@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-3754045f-5e59-71c5-9fd0-fb2c82ae5ac2",
+      "name": "resident1511a_gigabit",
+      "passphrase": "xa2uwit38c0",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1511@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-4cc415ee-7766-db29-46b2-3331b3ce3095",
+      "name": "resident1511b_gigabit",
+      "passphrase": "kt0kdo9hz2n",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1511@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-4a52d1dc-82bc-896b-b88a-a20cf619fe85",
+      "name": "resident1512a_gigabit",
+      "passphrase": "487noxnyr6j",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1512@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-78094630-8849-b855-fc27-8c377f4ec144",
+      "name": "resident1513a_gigabit",
+      "passphrase": "1l3thdg8o5v",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1513@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-2c5dfac6-8c2f-d301-7b73-8ff98a4bd8fc",
+      "name": "resident1514a_gigabit",
+      "passphrase": "o8f74t8wtfg",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1514@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-7acf7d9f-94a8-804b-d1ef-18c96df1e7cf",
+      "name": "resident1514b_gigabit",
+      "passphrase": "iym40692pdi",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1514@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-7f9a9ac6-ca83-9665-478d-f744a3526995",
+      "name": "resident1515a_gigabit",
+      "passphrase": "wp09w5n3l8g",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1515@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-506eeee8-281e-2ef2-9527-0ef62af4d141",
+      "name": "resident1516a_gigabit",
+      "passphrase": "7ta5xvj1sk2",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1516@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-04a436e2-6ef1-9333-93dc-2afbb1aca899",
+      "name": "resident1517a_gigabit",
+      "passphrase": "5noh1yqbjiu",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1517@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-aadb750a-4e1a-0114-03d7-8a103c0c5b45",
+      "name": "resident1517b_fast",
+      "passphrase": "k2j4ez6f54t",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1517@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 3,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-fc59e02e-fde3-3c93-39cc-96692adf1d2d",
+      "name": "resident1517c_fast",
+      "passphrase": "cyitwv52qxf",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1517@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-bad5d16d-d1ee-4139-beff-1c01893fd7bb",
+      "name": "resident1518a_gigabit",
+      "passphrase": "d832s61cvjd",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1518@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 2,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-83a61619-9f8f-80f8-98f9-8010f693b9d8",
+      "name": "resident1519a_gigabit",
+      "passphrase": "mm1v3ooo1gk",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1519@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 4,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-86cf6daa-9f51-ca0d-9e52-50bc4d47a86f",
+      "name": "resident1519b_gigabit",
+      "passphrase": "4t18yj94jy4",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1519@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-e1068242-f282-e78e-7a34-9086fc79cafd",
+      "name": "resident1519c_gigabit",
+      "passphrase": "fcfnej17l0a",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1519@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-bb27aa4f-8654-bf0f-cc00-4100e0c67af1",
+      "name": "resident1520a_fast",
+      "passphrase": "16e64epq5bb",
+      "status": "ACTIVE",
+      "ssidList": [
+        "1520@BirchLanding"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": true,
+      "deviceCountLimit": 5,
+      "deviceCount": 1,
+      "vlanid": "2500"
+    },
+    {
+      "guid": "AccountDpsk-f995063d-5668-542a-263c-c3be8206a6ad",
+      "name": "staff-frontdesk",
+      "passphrase": "9x606v73f7n",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-55541045-7c10-e882-6d57-08d550389369",
+      "name": "staff-maintenance",
+      "passphrase": "1ttrymhrqax",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-e8e56377-4d4b-df2e-698a-d050ce9f2fd5",
+      "name": "staff-security",
+      "passphrase": "5rh7ejuvbl7",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-e0b15f27-3b65-0690-2cb0-67c907c31afc",
+      "name": "staff-leasing",
+      "passphrase": "sc861giknqq",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-e540c648-6480-2516-9b64-6b89cd0588a2",
+      "name": "amenity-clubhouse",
+      "passphrase": "hoyn0fkrpwh",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-f0114157-bef8-7853-2437-471453de4d9f",
+      "name": "amenity-gym",
+      "passphrase": "5v421l2gn0l",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-d8ca01e3-9b0c-5f29-5eb5-5e09e365db13",
+      "name": "amenity-poolkiosk",
+      "passphrase": "vsjaxhi8km8",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    },
+    {
+      "guid": "AccountDpsk-0d148bde-1764-affe-cf13-220baa6a27d1",
+      "name": "amenity-mailroom",
+      "passphrase": "e26h396at8p",
+      "status": "ACTIVE",
+      "ssidList": [
+        "BirchLanding-Guest"
+      ],
+      "expirationDateTime": "2027-06-15T00:00-07:00[America/Denver]",
+      "useDeviceCountLimit": false,
+      "deviceCountLimit": 0,
+      "deviceCount": 0,
+      "vlanid": "1"
+    }
+  ]
+}

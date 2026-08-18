@@ -1,5 +1,7 @@
 import logging
 
+from r1api.constants import DpskPassphraseFormat
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +38,18 @@ class DpskService:
         Returns:
             Query response with pools array and pagination info
         """
+        # This endpoint is strictly 1-indexed and answers page=0 with a bare
+        # HTTP 500 rather than a validation error, which reads like an R1
+        # outage. Other query endpoints (e.g. /identityGroups/query) happily
+        # accept page=0, so the inconsistency is easy to walk into — normalize
+        # here so no caller has to know.
+        if page is None or page < 1:
+            logger.debug(
+                f"query_dpsk_pools: page={page} is invalid for "
+                f"/dpskServices/query (1-indexed); using page=1"
+            )
+            page = 1
+
         # Build request body matching OpenAPI spec exactly
         # NOTE: Extra fields like defaultPageSize, total cause 500 errors
         body = {
@@ -84,7 +98,9 @@ class DpskService:
         passphrase_length: int = 12,
         passphrase_format: str = None,
         max_devices_per_passphrase: int = 1,
-        expiration_days: int = None
+        expiration_days: int = None,
+        word_count: int = None,
+        numeric_suffix_enabled: bool = None
     ):
         """
         Create a new DPSK pool within an identity group
@@ -95,9 +111,14 @@ class DpskService:
             tenant_id: Tenant/EC ID (required for MSP)
             description: Optional pool description
             passphrase_length: Length of auto-generated passphrases (default: 12)
-            passphrase_format: Format for passphrases (NUMBERS_ONLY, KEYBOARD_FRIENDLY, MOST_SECURED)
+            passphrase_format: One of DpskPassphraseFormat.ALL — NUMBERS_ONLY,
+                KEYBOARD_FRIENDLY, MOST_SECURED, DICTIONARY_WORDS
             max_devices_per_passphrase: Max devices per passphrase (default: 1)
             expiration_days: Optional expiration in days
+            word_count: Number of words for DICTIONARY_WORDS (3-6). Ignored by
+                R1 for every other format, so it is only sent when relevant.
+            numeric_suffix_enabled: Append a numeric suffix to dictionary-word
+                passphrases. Also DICTIONARY_WORDS-only.
 
         Returns:
             Created DPSK pool response
@@ -116,10 +137,23 @@ class DpskService:
 
         if passphrase_format:
             # RuckusONE API passphraseFormat enum values:
-            # "NUMBERS_ONLY" - numeric only (0-9)
+            # "NUMBERS_ONLY"      - numeric only (0-9)
             # "KEYBOARD_FRIENDLY" - alphanumeric (a-z, A-Z, 0-9)
-            # "MOST_SECURED" - complex (alphanumeric + symbols)
+            # "MOST_SECURED"      - complex (alphanumeric + symbols)
+            # "DICTIONARY_WORDS"  - word-based, e.g. "otter-lantern-copper"
             payload["passphraseFormat"] = passphrase_format
+
+            # wordCount / numericSuffixEnabled apply only to DICTIONARY_WORDS.
+            # Sending them with another format is at best ignored, so scope
+            # them rather than leaking meaningless fields into the payload.
+            if passphrase_format == DpskPassphraseFormat.DICTIONARY_WORDS:
+                if word_count is not None:
+                    payload["wordCount"] = max(
+                        DpskPassphraseFormat.MIN_WORD_COUNT,
+                        min(DpskPassphraseFormat.MAX_WORD_COUNT, int(word_count)),
+                    )
+                if numeric_suffix_enabled is not None:
+                    payload["numericSuffixEnabled"] = bool(numeric_suffix_enabled)
 
         if expiration_days:
             # API uses expirationType and expirationOffset
@@ -444,43 +478,80 @@ class DpskService:
 
                 # Task completed - now we need to find the created passphrase
                 # Note: The passphrase field is NOT searchable (security) - we must fetch all and filter
+                #
+                # This lookup is what supplies identityId, and identityId is what
+                # lets the import write the Cloudpath GUID onto the identity
+                # description afterwards. A single attempt is not enough: the
+                # activity can be reported complete (or assumed complete on
+                # timeout) before R1 has made the new passphrase readable, and
+                # every miss silently drops that identity from the GUID update —
+                # which showed up as roughly half of identities missing GUIDs.
+                # Retry with backoff so a slow write does not lose the linkage.
                 if passphrase:
-                    # Fetch all passphrases from pool (no search filter)
-                    # The passphrase string is unique per pool, so we filter client-side
-                    query_result = await self.query_passphrases(
-                        pool_id=pool_id,
-                        tenant_id=tenant_id,
-                        page=1,
-                        limit=500  # Fetch enough to find our passphrase
+                    import asyncio
+
+                    lookup_delays = [0, 2, 4, 8]  # first pass immediate
+                    found_passphrases = []
+
+                    for attempt, delay in enumerate(lookup_delays):
+                        if delay:
+                            await asyncio.sleep(delay)
+
+                        # Fetch all passphrases from pool (no search filter)
+                        # The passphrase string is unique per pool, so we filter client-side
+                        query_result = await self.query_passphrases(
+                            pool_id=pool_id,
+                            tenant_id=tenant_id,
+                            page=1,
+                            limit=500  # Fetch enough to find our passphrase
+                        )
+
+                        # Find the exact match by passphrase string (+ vlan for extra safety)
+                        found_passphrases = query_result.get('data', [])
+                        logger.debug(
+                            f"Searching {len(found_passphrases)} passphrases for "
+                            f"'{passphrase[:8]}...' (attempt {attempt + 1}/{len(lookup_delays)})"
+                        )
+
+                        for pp in found_passphrases:
+                            pp_passphrase = pp.get('passphrase', '')
+
+                            # Match by passphrase string (primary key)
+                            if pp_passphrase == passphrase:
+                                # Verify VLAN matches too (extra safety)
+                                pp_vlan = pp.get('vlanId')
+                                if pp_vlan is not None:
+                                    try:
+                                        pp_vlan = int(pp_vlan) if pp_vlan != '' and pp_vlan != 0 else None
+                                    except (ValueError, TypeError):
+                                        pp_vlan = None
+
+                                if pp_vlan != normalized_vlan:
+                                    # Passphrase matches but VLAN doesn't - still return it
+                                    logger.debug(
+                                        f"Found passphrase by string (VLAN mismatch): id={pp.get('id')}"
+                                    )
+                                elif attempt > 0:
+                                    logger.info(
+                                        f"Found created passphrase after {attempt + 1} attempts: "
+                                        f"id={pp.get('id')}, identityId={pp.get('identityId')}"
+                                    )
+                                else:
+                                    logger.debug(
+                                        f"Found created passphrase: id={pp.get('id')}, "
+                                        f"identityId={pp.get('identityId')}"
+                                    )
+                                return pp
+
+                    # Passphrase not found after creation - this shouldn't happen.
+                    # The caller gets no identityId, so this identity will not
+                    # receive its Cloudpath GUID description.
+                    logger.warning(
+                        f"Passphrase created but not found in pool after "
+                        f"{len(lookup_delays)} attempts: {passphrase[:8]}... "
+                        f"(checked {len(found_passphrases)} passphrases) — "
+                        f"its identity will be missing the Cloudpath GUID"
                     )
-
-                    # Find the exact match by passphrase string (+ vlan for extra safety)
-                    found_passphrases = query_result.get('data', [])
-                    logger.debug(f"Searching {len(found_passphrases)} passphrases for '{passphrase[:8]}...'")
-
-                    for pp in found_passphrases:
-                        pp_passphrase = pp.get('passphrase', '')
-
-                        # Match by passphrase string (primary key)
-                        if pp_passphrase == passphrase:
-                            # Verify VLAN matches too (extra safety)
-                            pp_vlan = pp.get('vlanId')
-                            if pp_vlan is not None:
-                                try:
-                                    pp_vlan = int(pp_vlan) if pp_vlan != '' and pp_vlan != 0 else None
-                                except (ValueError, TypeError):
-                                    pp_vlan = None
-
-                            if pp_vlan == normalized_vlan:
-                                logger.debug(f"Found created passphrase: id={pp.get('id')}, identityId={pp.get('identityId')}")
-                                return pp
-                            else:
-                                # Passphrase matches but VLAN doesn't - still return it
-                                logger.debug(f"Found passphrase by string (VLAN mismatch): id={pp.get('id')}")
-                                return pp
-
-                    # Passphrase not found after creation - this shouldn't happen
-                    logger.warning(f"Passphrase created but not found in pool: {passphrase[:8]}... (checked {len(found_passphrases)} passphrases)")
                     return {
                         "requestId": request_id,
                         "status": "created",

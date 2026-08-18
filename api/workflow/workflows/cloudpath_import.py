@@ -18,30 +18,40 @@ SSID MODES:
    - Use when: Single site-wide SSID for all residents
 
 3. ssid_mode="per_unit"
-   - 1 shared DPSK pool → N SSIDs (one per unit)
+   - 1 shared DPSK pool → N SSIDs (one per unit), up to 1024
    - Each unit gets its own SSID (e.g., "108@Property")
    - AP Groups created per-unit for targeted broadcast
    - APs assigned to groups, SSIDs configured per-group
    - Passphrases work on any unit's SSID (roaming enabled)
-   - Use when: Per-unit SSID visibility needed
+   - Plus the property-wide SSID from the export, on that same shared
+     pool, activated venue-wide (create_property_ssid)
+   - Use when: Per-unit SSID visibility with property-wide roaming
+
+Every mode uses exactly ONE identity group and ONE DPSK pool, created up
+front by the global create_shared_resources phase. The 1:1
+"per_unit_isolated" mode (one pool per unit, no roaming) has been removed.
+
+ACTIVATION
+    Per-unit SSIDs bind straight to their AP Group via activate_ap_group,
+    which never puts the SSID into an "All AP Groups" state. That removes
+    the in-flight activation cap the old venue-wide-then-move path needed
+    to respect R1's 15-SSID-per-AP-Group limit, and it avoids the
+    deprecated POST /networkActivations endpoint entirely.
 
 Flow (ssid_mode="per_unit"):
     validate_and_plan (global)
         │
-        ├── create_identity_groups (shared)
-        │       └── create_dpsk_pools (shared)
-        │               │
-        │               ├── create_passphrases ──> update_identity_descriptions
-        │               │
-        │               └── create_ap_group (per-unit) ─────────────────┐
-        │                       │                                       │
-        │                       └── create_dpsk_network (per-unit)      │
-        │                               │                               │
-        │                               └── activate_network            │
-        │                                       │                       │
-        │                                       └── assign_aps ◄────────┘
-        │                                               │
-        │                                       configure_lan_ports (optional)
+        ├── create_shared_resources (global: the 1 identity group + 1 pool)
+        │       │
+        │       ├── create_passphrases ──> update_identity_descriptions
+        │       │
+        │       └── create_dpsk_network (per-unit)
+        │                       │
+        ├── create_ap_group ────┴──> activate_ap_group
+        │           │                        │
+        │           └───────────────> assign_aps
+        │                                    │
+        │                            configure_lan_ports (optional)
         │
         ├── create_access_policies (optional, global)
         │
@@ -58,9 +68,9 @@ CloudpathImportWorkflow = Workflow(
         "Supports property-wide or per-unit SSID modes."
     ),
     requires_confirmation=True,
-    # Limit concurrent SSID activations to avoid R1's 15-SSID-per-AP-Group limit
-    # When activating SSIDs, they temporarily broadcast to ALL AP Groups until
-    # assigned to specific groups. This limits how many can be "in-flight".
+    # Retained only for the legacy activate_network path. Per-unit SSIDs now
+    # activate straight onto their AP Group (activate_ap_group) and never
+    # broadcast venue-wide, so nothing in this workflow acquires a slot.
     max_activation_slots=12,
     default_options={
         # Passphrase import options
@@ -74,13 +84,27 @@ CloudpathImportWorkflow = Workflow(
         "ssid_mode": "none",
         "activate_networks": False,  # Auto-activate created SSIDs
 
-        # AP Group settings (only used when ssid_mode="per_unit")
+        # Hybrid: alongside the per-unit SSIDs, also create the property-wide
+        # SSID from the export, on the same shared pool and activated across
+        # the venue. Most Cloudpath exports carry one, and residents who are
+        # only on it would otherwise be dropped. No-op when none is detected.
+        "create_property_ssid": True,
+
+        # AP Group settings (used by ssid_mode='per_unit')
         "ap_group_prefix": "",       # e.g., "Unit-"
         "ap_group_postfix": "",      # e.g., "-APs"
         "ap_assignment_mode": "skip",  # "skip" | "csv" (from ap_assignments list)
         # ap_assignments: [{unit_number: "108", ap_identifier: "ABC123"}, ...]
         # ap_identifier can be AP serial number or AP name
         "ap_assignments": [],
+
+        # DPSK passphrase generation. Empty format = translate whatever
+        # Cloudpath exported. DICTIONARY_WORDS produces word-based passphrases
+        # and is the only format that honours the two settings below.
+        "passphrase_format": "",       # "" | NUMBERS_ONLY | KEYBOARD_FRIENDLY
+                                       #    | MOST_SECURED | DICTIONARY_WORDS
+        "word_count": 4,               # 3-6, DICTIONARY_WORDS only
+        "numeric_suffix_enabled": False,  # DICTIONARY_WORDS only
 
         # Network settings
         "default_vlan": "1",
@@ -89,7 +113,7 @@ CloudpathImportWorkflow = Workflow(
         # LAN port configuration (optional)
         "configure_lan_ports": False,
 
-        # Identity description updates (Phase 4)
+        # Identity description updates (Phase 3)
         "skip_identity_descriptions": False,  # Skip writing Cloudpath GUIDs to R1 identity descriptions
 
         # Access policy options
@@ -126,46 +150,34 @@ CloudpathImportWorkflow = Workflow(
         ),
 
         # =====================================================================
-        # Phase 1: Create Identity Group(s) - Shared across all units
+        # Phase 1: Create the Identity Group + DPSK Pool (GLOBAL)
+        # Runs once, before any per-unit work. Every mode shares one identity
+        # group and one pool, so this always runs.
+        # Without it the first unit created them and the other N-1 polled by
+        # name — which deadlocked, because the pollers held every concurrency
+        # slot while sleeping and the creator could never be scheduled.
         # =====================================================================
         Phase(
-            id="create_identity_groups",
-            name="Create Identity Groups",
-            description="Create identity group(s) for DPSK passphrases.",
-            executor="create_identity_groups",
+            id="create_shared_resources",
+            name="Create Shared Identity Group & DPSK Pool",
+            description=(
+                "Create the one identity group and DPSK pool shared by all "
+                "units, before any per-unit phase runs."
+            ),
+            executor="create_shared_resources",
             depends_on=["validate_and_plan"],
-            per_unit=True,
+            per_unit=False,
             critical=True,
-            inputs=[
-                "import_mode", "identity_group_name", "identity_groups",
-                "will_create_identity_group"  # From unit.plan - controls shared group creation
+            inputs=["identity_groups", "dpsk_pools", "pool_config"],
+            outputs=[
+                "identity_group_id", "dpsk_pool_id",
+                "identity_group_ids", "dpsk_pool_ids",
             ],
-            outputs=["identity_group_id", "identity_group_ids"],
-            api_calls_per_unit=2,
+            api_calls_per_unit=4,
         ),
 
         # =====================================================================
-        # Phase 2: Create DPSK Pool(s) - Shared across all units
-        # =====================================================================
-        Phase(
-            id="create_dpsk_pools",
-            name="Create DPSK Pools",
-            description="Create DPSK service pool(s) linked to identity groups.",
-            executor="create_dpsk_pools",
-            depends_on=["create_identity_groups"],
-            per_unit=True,
-            critical=True,
-            inputs=[
-                "import_mode", "dpsk_pool_name", "identity_group_id",
-                "pool_config", "dpsk_pools", "identity_group_ids",
-                "will_create_dpsk_pool"  # From unit.plan - controls shared pool creation
-            ],
-            outputs=["dpsk_pool_id", "dpsk_pool_ids"],
-            api_calls_per_unit=2,
-        ),
-
-        # =====================================================================
-        # Phase 3: Create Passphrases - All go into the shared pool
+        # Phase 2: Create Passphrases - All go into the shared pool
         # =====================================================================
         Phase(
             id="create_passphrases",
@@ -175,7 +187,7 @@ CloudpathImportWorkflow = Workflow(
                 "Uses parallel execution for bulk imports."
             ),
             executor="create_passphrases",
-            depends_on=["create_dpsk_pools"],
+            depends_on=["create_shared_resources"],
             per_unit=True,
             critical=True,
             inputs=[
@@ -187,10 +199,15 @@ CloudpathImportWorkflow = Workflow(
                 "created_passphrases", "failed_passphrases"
             ],
             api_calls_per_unit="dynamic",
+            # Shared-pool modes import every passphrase under the first unit,
+            # so the unit count says nothing about the import size.
+            effect_field="created_count",
+            effect_label="passphrases",
+            effect_agg="sum",
         ),
 
         # =====================================================================
-        # Phase 4: Update Identity Descriptions
+        # Phase 3: Update Identity Descriptions
         # =====================================================================
         Phase(
             id="update_identity_descriptions",
@@ -210,10 +227,13 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["updated_count", "update_results"],
             api_calls_per_unit="dynamic",
+            effect_field="updated_count",
+            effect_label="identities updated",
+            effect_agg="sum",
         ),
 
         # =====================================================================
-        # Phase 5: Create Access Policies (Optional)
+        # Phase 4: Create Access Policies (Optional)
         # =====================================================================
         Phase(
             id="create_access_policies",
@@ -240,15 +260,16 @@ CloudpathImportWorkflow = Workflow(
         ),
 
         # =====================================================================
-        # Phase 6: Create AP Groups (per-unit, only when ssid_mode="per_unit")
-        # Must happen BEFORE SSIDs to avoid 15-SSID limit per AP Group
+        # Phase 5: Create AP Groups (ssid_mode='per_unit' only)
+        # Must happen BEFORE activation so the SSID has a group to bind to
         # =====================================================================
         Phase(
             id="create_ap_group",
             name="Create AP Groups",
             description=(
                 "Create AP Group for each unit. Required for per-unit SSID "
-                "broadcast. Must happen BEFORE SSIDs to avoid 15-SSID limit."
+                "broadcast, and must exist before the SSID is activated so "
+                "activation can bind directly to it."
             ),
             executor="create_ap_group",
             depends_on=["validate_and_plan"],
@@ -261,10 +282,15 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["ap_group_id"],
             api_calls_per_unit=1,
+            # The property-wide unit broadcasts across the venue and gets no
+            # AP Group, so this trails the unit count by one when it runs.
+            effect_field="ap_group_id",
+            effect_label="AP Groups",
+            effect_agg="distinct",
         ),
 
         # =====================================================================
-        # Phase 7: Create DPSK Networks (Optional - when ssid_mode != "none")
+        # Phase 6: Create DPSK Networks (Optional - when ssid_mode != "none")
         # =====================================================================
         Phase(
             id="create_dpsk_network",
@@ -274,7 +300,7 @@ CloudpathImportWorkflow = Workflow(
                 "Runs when ssid_mode is 'single' or 'per_unit'."
             ),
             executor="create_dpsk_network",
-            depends_on=["create_dpsk_pools"],
+            depends_on=["create_shared_resources"],
             per_unit=True,
             critical=False,  # Non-critical - can configure SSIDs manually
             skip_if="options.get('ssid_mode', 'none') == 'none'",
@@ -285,10 +311,13 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["network_id", "network_ids"],
             api_calls_per_unit=2,  # create + link DPSK service
+            effect_field="network_id",
+            effect_label="SSIDs",
+            effect_agg="distinct",
         ),
 
         # =====================================================================
-        # Phase 8a: Activate Network Venue-Wide (ssid_mode="single" only)
+        # Phase 7a: Activate Network Venue-Wide (ssid_mode="single" only)
         # Property-wide SSID - just activate on all AP groups, no targeting.
         # Uses cloudpath-specific phase to avoid touching the shared
         # activate_network phase used by the Per-Unit SSID tool.
@@ -310,57 +339,60 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["activated", "already_active"],
             api_calls_per_unit=1,
+            effect_field="activated",
+            effect_label="SSIDs activated",
+            effect_agg="truthy",
         ),
 
         # =====================================================================
-        # Phase 8b: Activate Networks per AP Group (ssid_mode="per_unit" only)
-        # Per-unit SSID - activate venue-wide then move to specific AP group.
-        # Uses the shared activate_network phase (requires ap_group_id).
-        # NOTE: Uses activation_slot="acquire" to limit concurrent activations
-        # due to R1's 15-SSID-per-AP-Group limit. The slot is held until
-        # assign_aps completes to prevent too many SSIDs being "in-flight".
+        # Phase 7b: Activate Networks on their AP Group (per-unit mode)
+        # Binds the SSID straight to the unit's AP Group. The SSID is never
+        # in an "All AP Groups" state, so there is no venue-wide slot
+        # pressure and no activation_slot is needed — this is what lets the
+        # per-unit mode scales past a handful of concurrent units.
+        # Depends on create_ap_group because the group must exist to bind to.
         # =====================================================================
         Phase(
-            id="activate_network",
-            name="Activate Networks",
+            id="activate_ap_group",
+            name="Activate SSIDs on AP Groups",
             description=(
-                "Activate SSIDs at venue level then move to AP Group. "
-                "Only runs for ssid_mode='per_unit'."
+                "Bind each unit's SSID directly to its AP Group without a "
+                "venue-wide broadcast step."
             ),
-            executor="activate_network",
-            depends_on=["create_dpsk_network"],
+            executor="activate_ap_group",
+            depends_on=["create_dpsk_network", "create_ap_group"],
             per_unit=True,
             critical=False,
             skip_if="options.get('ssid_mode') != 'per_unit'",
             inputs=[
                 "unit_id", "unit_number", "network_id", "ssid_name",
-                "already_activated", "is_venue_wide",
+                "ap_group_id", "ap_group_name", "default_vlan",
+                "dpsk_pool_id", "already_activated", "is_venue_wide",
             ],
             outputs=["activated", "already_active"],
-            api_calls_per_unit=1,
-            activation_slot="acquire",  # Acquire slot - released by assign_aps
+            api_calls_per_unit=3,
+            effect_field="activated",
+            effect_label="SSIDs activated",
+            effect_agg="truthy",
         ),
 
         # =====================================================================
-        # Phase 9: Assign APs & Configure SSID (per-unit, only when per_unit mode)
-        # This is what makes per-unit SSID actually work - configures SSID
-        # to broadcast ONLY on the unit's AP Group, not venue-wide.
-        # NOTE: Uses activation_slot="release" to complete the activation cycle
-        # and free up slot for the next unit's SSID activation.
+        # Phase 8: Assign APs to the unit's AP Group (per-unit mode)
+        # The SSID→AP Group binding is done by activate_ap_group; this phase
+        # puts the unit's physical APs into that group.
         # =====================================================================
         Phase(
             id="assign_aps",
-            name="Assign APs & Configure SSID",
+            name="Assign APs to AP Groups",
             description=(
-                "Find APs by serial number, assign to AP Groups, and "
-                "configure SSID to broadcast only on that AP Group. "
-                "This is the key step for per-unit SSID isolation."
+                "Find APs by serial number or name and assign them to the "
+                "unit's AP Group, so the unit's SSID reaches its own APs."
             ),
             executor="assign_aps",
-            depends_on=["create_ap_group", "activate_network"],
+            depends_on=["create_ap_group", "activate_ap_group"],
             per_unit=True,
             critical=True,
-            # Only skip if not in per_unit mode - phase handles no-APs gracefully
+            # Phase handles the no-APs case gracefully
             skip_if="options.get('ssid_mode') != 'per_unit'",
             inputs=[
                 "unit_id", "unit_number", "network_id", "ap_group_id",
@@ -369,11 +401,15 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["aps_matched", "aps_assigned", "ssid_configured"],
             api_calls_per_unit="dynamic",
-            activation_slot="release",  # Release slot acquired by activate_network
+            # Units with no AP assignment complete here without moving an AP,
+            # so the unit count on its own reads as more work than happened.
+            effect_field="aps_assigned",
+            effect_label="APs assigned",
+            effect_agg="sum",
         ),
 
         # =====================================================================
-        # Phase 10: Configure LAN Ports (Optional, non-critical)
+        # Phase 9: Configure LAN Ports (Optional, non-critical)
         # =====================================================================
         Phase(
             id="configure_lan_ports",
@@ -393,10 +429,13 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=["configured_aps", "failed_aps"],
             api_calls_per_unit="dynamic",
+            effect_field="configured_aps",
+            effect_label="APs configured",
+            effect_agg="sum",
         ),
 
         # =====================================================================
-        # Phase 11: Audit Results (GLOBAL)
+        # Phase 10: Audit Results (GLOBAL)
         # =====================================================================
         Phase(
             id="cloudpath_audit",
@@ -407,7 +446,7 @@ CloudpathImportWorkflow = Workflow(
                 "update_identity_descriptions",
                 "create_access_policies",
                 "activate_venue_wide",
-                "activate_network",
+                "activate_ap_group",
                 "assign_aps",
                 "configure_lan_ports",
             ],
