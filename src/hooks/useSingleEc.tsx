@@ -23,9 +23,15 @@ export function useSingleEc(controllerId: number | null) {
       credentials: "include",
       signal: controller.signal,
     })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) {
-          throw new Error(`HTTP error ${res.status}`);
+          // The API reports upstream RUCKUS ONE failures in `error`; show that
+          // rather than a bare status code.
+          const detail = await res
+            .json()
+            .then((body) => body?.error)
+            .catch(() => null);
+          throw new Error(detail || `HTTP error ${res.status}`);
         }
         return res.json();
       })

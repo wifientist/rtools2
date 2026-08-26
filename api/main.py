@@ -34,6 +34,7 @@ from routers.migration_dashboard import router as migration_dashboard_router
 from routers.sz_migration.router import router as sz_migration_router
 from routers.ap_pop_swap import router as pop_swap_router
 from routers.bulk_ap_tagging import router as bulk_ap_tagging_router
+from routers.wiredwiz import router as wiredwiz_router
 from routers.data_studio_export import router as data_studio_export_router
 from routers.dfs_blacklist import router as dfs_blacklist_router
 from routers.maps import router as maps_router
@@ -211,6 +212,9 @@ app.include_router(sz_migration_router, tags=["SZ Migration"])
 app.include_router(pop_swap_router, tags=["Pop and Swap"])
 
 app.include_router(bulk_ap_tagging_router, tags=["Bulk AP Tagging"])
+
+# WiredWiz - read-only switch crawler / loop hunter
+app.include_router(wiredwiz_router, tags=["WiredWiz"])
 
 # PISR — read-only Property Install Status Report, one venue at a time
 app.include_router(pisr_router, tags=["PISR"])

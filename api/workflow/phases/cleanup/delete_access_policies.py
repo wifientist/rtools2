@@ -29,7 +29,10 @@ from pydantic import BaseModel, Field
 
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
-from workflow.phases.cleanup.inventory import ResourceInventory
+from workflow.phases.cleanup.inventory import (
+    DPSK_POLICY_TEMPLATE_ID,
+    ResourceInventory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -265,18 +268,117 @@ class DeleteAccessPoliciesPhase(PhaseExecutor):
             )
 
         # --- 3. RADIUS attribute groups --------------------------------------
-        # Last: a policy still referencing one blocks its deletion.
-        results = await asyncio.gather(*[
-            run(
-                "RADIUS attribute group",
-                g.get('name', g.get('id', '?')),
-                lambda g=g: self.r1_client.radius_attributes.delete_radius_attribute_group(
-                    group_id=g.get('id'),
-                    tenant_id=self.tenant_id,
+        # Last: a policy still referencing one blocks its deletion, with
+        #   409 "The Attribute Group is still in use by another service."
+        # These groups are shared tenant-wide, so the blocking policy is often
+        # one this venue-scoped cleanup never inventoried — the tiers every
+        # other property points at ("fast", "gigabit") survive by design. Name
+        # them in the message so a 409 reads as a fact about the tenant rather
+        # than a failure of the run.
+        # R1 does not clean up the /assignments row when a policy is deleted,
+        # so the group stays pinned by a link to a policy that 404s. The UI
+        # counts policies, not assignment rows, so such a group reads "0
+        # associated policies" and still refuses to delete — by hand or by API.
+        # On a 409, walk the rows, drop only the ones whose policy is really
+        # gone, and retry. Rows pointing at a live policy are left alone.
+        async def clear_orphan_assignments(gid: str, name: str) -> int:
+            try:
+                resp = await self.r1_client.radius_attributes.get_group_assignments(
+                    group_id=gid, tenant_id=self.tenant_id
+                )
+            except Exception as e:
+                logger.warning(f"Could not list assignments for '{name}': {e}")
+                return 0
+
+            rows = (
+                resp if isinstance(resp, list)
+                else resp.get('content', resp.get('data', []))
+            )
+            cleared = 0
+            for row in rows:
+                assignment_id = row.get('id')
+                policy_id = row.get('externalAssignmentIdentifier')
+                if not assignment_id or not policy_id:
+                    continue
+                try:
+                    await self.r1_client.policy_sets.get_template_policy(
+                        template_id=DPSK_POLICY_TEMPLATE_ID,
+                        policy_id=policy_id,
+                        tenant_id=self.tenant_id,
+                    )
+                    logger.info(
+                        f"Assignment on '{name}' points at live policy "
+                        f"{policy_id} — leaving it"
+                    )
+                    continue
+                except Exception as e:
+                    if '404' not in str(e) and 'not found' not in str(e).lower():
+                        logger.warning(
+                            f"Could not check policy {policy_id} for '{name}': {e}"
+                        )
+                        continue
+
+                try:
+                    await self.r1_client.radius_attributes.delete_group_assignment(
+                        group_id=gid,
+                        assignment_id=assignment_id,
+                        tenant_id=self.tenant_id,
+                    )
+                    cleared += 1
+                    logger.info(
+                        f"Cleared orphaned assignment {assignment_id} on "
+                        f"'{name}' (policy {policy_id} no longer exists)"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to clear assignment {assignment_id} on "
+                        f"'{name}': {e}"
+                    )
+            return cleared
+
+        async def delete_group(g: Dict[str, Any]) -> bool:
+            gid = g['id']
+            name = g.get('name', gid)
+
+            if await run(
+                "RADIUS attribute group", name,
+                lambda: self.r1_client.radius_attributes
+                .delete_radius_attribute_group(
+                    group_id=gid, tenant_id=self.tenant_id
+                ),
+            ):
+                return True
+
+            # run() recorded the failure; if it was the in-use conflict, try to
+            # unpin and go again. Drop that first entry either way so a
+            # recovered group is not reported as failed.
+            first_error = failed[-1]['error'] if failed else ''
+            if 'in use' not in first_error.lower() and '409' not in first_error:
+                return False
+            failed.pop()
+
+            cleared = await clear_orphan_assignments(gid, name)
+            if not cleared:
+                failed.append({
+                    'type': 'RADIUS attribute group', 'name': name,
+                    'error': first_error,
+                })
+                return False
+
+            await self.emit(
+                f"Cleared {cleared} orphaned assignment(s) pinning "
+                f"'{name}'; retrying delete"
+            )
+            return await run(
+                "RADIUS attribute group", name,
+                lambda: self.r1_client.radius_attributes
+                .delete_radius_attribute_group(
+                    group_id=gid, tenant_id=self.tenant_id
                 ),
             )
-            for g in inv.radius_attribute_groups if g.get('id')
-        ])
+
+        groups = [g for g in inv.radius_attribute_groups if g.get('id')]
+        results = await asyncio.gather(*[delete_group(g) for g in groups])
         radius_deleted = sum(1 for r in results if r)
         if inv.radius_attribute_groups:
             await self.emit(
@@ -285,6 +387,17 @@ class DeleteAccessPoliciesPhase(PhaseExecutor):
                 "success" if radius_deleted == len(inv.radius_attribute_groups)
                 else "warning",
             )
+            in_use = [
+                g.get('name', g.get('id', '?'))
+                for g, ok in zip(groups, results) if not ok
+            ]
+            if in_use:
+                await self.emit(
+                    f"Still in use elsewhere in the tenant, left in place: "
+                    f"{', '.join(in_use)}. Delete the policies that reference "
+                    f"them first.",
+                    "warning",
+                )
 
         if failed:
             await self.emit(

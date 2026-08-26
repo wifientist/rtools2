@@ -400,7 +400,9 @@ class RadiusAttributeService:
                 f"/radiusAttributeGroups/{group_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
 
     # ========== RADIUS Attribute Group Assignments ==========
 
@@ -515,4 +517,6 @@ class RadiusAttributeService:
                 f"/radiusAttributeGroups/{group_id}/assignments/{assignment_id}"
             )
 
-        return response.json() if response.content else {"status": "deleted"}
+        if not response.content:
+            return {"status": "deleted"}
+        return self.client.safe_json(response)
