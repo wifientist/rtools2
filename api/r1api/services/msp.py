@@ -1,11 +1,38 @@
 import logging
 
+from fastapi import HTTPException
+
 logger = logging.getLogger(__name__)
 
 
 class MspService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
+
+    @staticmethod
+    def _json(response, what: str):
+        """
+        Decode an R1 response, turning upstream failures into a 502 the UI can
+        read. R1's MSP service answers a partial outage with a plain-text
+        `503 no healthy upstream`; calling .json() on that raises deep in
+        requests and the caller sees an opaque 500 with no hint of the cause.
+        """
+        if response.status_code >= 500:
+            body = (response.text or "").strip()[:200]
+            logger.warning(f"{what}: upstream {response.status_code} - {body}")
+            raise HTTPException(
+                502,
+                f"RUCKUS ONE returned {response.status_code} for {what}"
+                + (f": {body}" if body else ""),
+            )
+        try:
+            # 4xx bodies are R1's own JSON errors; callers already pass those
+            # through, so only an undecodable body is escalated here.
+            return response.json()
+        except ValueError:
+            body = (response.text or "").strip()[:200]
+            logger.warning(f"{what}: non-JSON body ({response.status_code}) - {body}")
+            raise HTTPException(502, f"RUCKUS ONE sent a non-JSON reply for {what}: {body}")
 
     async def get_msp_ecs(self):
         logger.debug(f"get_msp_ecs called on client: {self.client}")
@@ -17,7 +44,7 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_EC']}
         }
-        return self.client.post("/mspecs/query", payload=body).json()
+        return self._json(self.client.post("/mspecs/query", payload=body), "the MSP-EC list")
 
     async def get_msp_tech_partners(self):
         if self.client.ec_type != "MSP":
@@ -28,7 +55,7 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_INSTALLER', 'MSP_INTEGRATOR']}
         }
-        return self.client.post("/techpartners/mspecs/query", payload=body).json()
+        return self._json(self.client.post("/techpartners/mspecs/query", payload=body), "the tech-partner list")
 
     async def get_msp_labels(self):
         if self.client.ec_type != "MSP":
@@ -50,22 +77,25 @@ class MspService:
     async def get_entitlements(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self.client.get("/entitlements").json()
+        return self._json(self.client.get("/entitlements"), "entitlements")
 
     async def get_msp_entitlements(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self.client.get("/mspEntitlements").json()
+        return self._json(self.client.get("/mspEntitlements"), "MSP entitlements")
 
     async def get_msp_admins(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self.client.get("/admins").json()
+        return self._json(self.client.get("/admins"), "MSP admins")
 
     async def get_msp_customer_admins(self, tenant_id: str): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self.client.get(f"/mspCustomers/{tenant_id}/admins", override_tenant_id=tenant_id).json()
+        return self._json(
+            self.client.get(f"/mspCustomers/{tenant_id}/admins", override_tenant_id=tenant_id),
+            "customer admins",
+        )
 
     def get_inventory_summary(self, page_size: int = 1000, max_pages: int = 200):
         """
