@@ -42,3 +42,5 @@ Caddyfile
 CLAUDE.md
 
 plans/
+# WiredWiz snapshots (contain network topology + redacted configs)
+api/wiredwiz_data/
