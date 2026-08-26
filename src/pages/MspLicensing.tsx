@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, RefreshCw, ChevronRight, Info, CalendarClock, Shuffle } from "lucide-react";
+import { AlertCircle, RefreshCw, ChevronRight, Info, CalendarClock, Shuffle, Download, Printer } from "lucide-react";
+import { buildWorkbook, downloadBlob } from "@/lib/xlsx";
+import { buildExportSheets } from "@/lib/mspLicensingExport";
 import { useAuth } from "@/context/AuthContext";
 import {
     planMaxPeriod,
@@ -22,6 +24,17 @@ import {
     totalLicenses,
     purchaseEnds,
     CADENCE_LABEL,
+    maxTranches,
+    GRACE_WINDOW_DAYS,
+    scaleModel,
+    steadyState,
+    type DemandModel,
+    FLAT_DEMAND,
+    requiredPurchases,
+    poolTimeline,
+    poolCliffs,
+    poolSummary,
+    commitmentTimeline,
     type Cadence,
     type WhatIfPurchase,
 } from "@/lib/licensePlanner";
@@ -67,6 +80,9 @@ function inkOn(hex: string): string {
 
 const DAY = 86400000;
 const toDate = (s: string) => new Date(`${s}T00:00:00Z`).getTime();
+/** Stable identity for a pool block, for the exclusion set. */
+const blockKey = (b: LicenseBlock) =>
+    String(b.id ?? `${b.sku}|${b.effective_date}|${b.expiration_date}|${b.quantity}`);
 
 function fmtDate(s: string | null | undefined): string {
     if (!s) return "—";
@@ -113,6 +129,8 @@ interface Band {
     key: string;
     expiration: string;
     start: number;
+    /** When bought, if the term had not started yet. Null when immediate. */
+    purchased: number | null;
     end: number;
     quantity: number;
     color: string;
@@ -135,7 +153,8 @@ function PoolTimelineChart({
     optimized,
     mode,
     estateDemand,
-    growthPerMonth,
+    showCommitted = true,
+    demand,
     asOf,
 }: {
     blocks: LicenseBlock[];
@@ -144,13 +163,24 @@ function PoolTimelineChart({
     combined: CombinedSegment[];
     optimized: ScenarioSegment[] | null;
     mode: "actual" | "optimized";
-    /** Licenses customers hold today — the baseline the estate needs renewed. */
-    estateDemand: number;
-    growthPerMonth: number;
+    /**
+     * Optional forward projection. Omitted on the "what we have today" chart,
+     * supplied on the planner's "what we should have" copy — the difference
+     * between describing the pool and projecting against it.
+     */
+    estateDemand?: number;
+    demand?: DemandModel;
+    /**
+     * Off on the projection, where the story is capacity against demand.
+     * Commitments there have all lapsed by the first cliff, so the line just
+     * falls to zero and adds noise.
+     */
+    showCommitted?: boolean;
     asOf: string;
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
     const [hoverX, setHoverX] = useState<number | null>(null);
+    const [hoverY, setHoverY] = useState<number | null>(null);
 
     const model = useMemo(() => {
         const live = blocks.filter((b) => !b.expired && b.expiration_date);
@@ -161,22 +191,63 @@ function PoolTimelineChart({
         // Pad the right edge so the final cliff label has room to sit.
         const domainEnd = lastExp + Math.max((lastExp - today) * 0.04, 5 * DAY);
 
-        // Group into expiration cohorts, longest-lived first (bottom of stack).
-        const byExp = new Map<string, LicenseBlock[]>();
+        /*
+         * Cohorts are keyed by their whole life, not just expiry: with staggered
+         * purchases two tranches can share an end date but start months apart,
+         * and merging those would misplace capacity in time.
+         *
+         * Ordered by start date so the pool you already own sits at the bottom
+         * and later purchases stack visibly on top of it as they come into
+         * force.
+         */
+        const byLife = new Map<string, LicenseBlock[]>();
         for (const b of live) {
-            const k = b.expiration_date!;
-            byExp.set(k, [...(byExp.get(k) ?? []), b]);
+            const eff = b.effective_date ?? asOf;
+            const k = `${eff}|${b.expiration_date}`;
+            byLife.set(k, [...(byLife.get(k) ?? []), b]);
         }
-        const cohorts = [...byExp.entries()].sort((a, b) => toDate(b[0]) - toDate(a[0]));
+        const cohorts = [...byLife.entries()].sort((a, b) => {
+            const [aEff, aExp] = a[0].split("|");
+            const [bEff, bExp] = b[0].split("|");
+            return toDate(aEff) - toDate(bEff) || toDate(aExp) - toDate(bExp);
+        });
         const colors = rampFor(cohorts.length);
+        // Shade by how long a cohort survives, not by where it sits in the
+        // stack: darkest outlives everything. Stacking order is chronological,
+        // so the two must be derived separately or the ramp inverts.
+        const byLongevity = [...cohorts]
+            .sort((a, b) => toDate(b[0].split("|")[1]) - toDate(a[0].split("|")[1]))
+            .map(([k]) => k);
+
+        const bands: Band[] = cohorts.map(([key, group]) => {
+            const [eff, expiration] = key.split("|");
+            const purchased = group
+                .map((b) => (b as any).purchase_date as string | undefined)
+                .filter(Boolean)
+                .sort()[0];
+            return {
+                key,
+                expiration,
+                start: Math.max(today, toDate(eff)),
+                end: toDate(expiration) + DAY,
+                // Only meaningful when it precedes the start: bought, waiting.
+                purchased:
+                    purchased && toDate(purchased) < toDate(eff)
+                        ? Math.max(today, toDate(purchased))
+                        : null,
+                quantity: group.reduce((s, b) => s + b.quantity, 0),
+                color: colors[byLongevity.indexOf(key)],
+                blocks: group,
+            };
+        });
 
         // The demand line has to fit on the same axis, and with growth on it
         // can rise well above anything the pool ever held.
-        const demandEnd = estateDemand
-            ? demandAt(estateDemand, growthPerMonth, asOf, new Date(domainEnd).toISOString().slice(0, 10))
+        const demandEnd = estateDemand && demand
+            ? demandAt(demand, asOf, new Date(domainEnd).toISOString().slice(0, 10))
             : 0;
         const maxCapacity = Math.max(
-            ...timeline.map((s) => s.capacity), estateDemand, demandEnd, 1,
+            ...timeline.map((s) => s.capacity), estateDemand ?? 0, demandEnd, 1,
         );
 
         const x = (t: number) =>
@@ -214,25 +285,6 @@ function PoolTimelineChart({
         const y = (v: number) =>
             height - padBottom - (v / (maxCapacity * 1.08)) * (height - padTop - padBottom);
 
-        const bands: Band[] = [];
-        let cursor = 0;
-        cohorts.forEach(([expiration, group], i) => {
-            const quantity = group.reduce((s, b) => s + b.quantity, 0);
-            // A cohort not yet in force starts at its effective date, leaving a
-            // visible notch rather than pretending the capacity exists today.
-            const effs = group.map((b) => (b.effective_date ? toDate(b.effective_date) : today));
-            bands.push({
-                key: expiration,
-                expiration,
-                start: Math.max(today, Math.min(...effs)),
-                end: toDate(expiration) + DAY,
-                quantity,
-                color: colors[i],
-                blocks: group,
-            });
-            cursor += quantity;
-        });
-
         // Year gridlines across the domain.
         const ticks: { t: number; label: string }[] = [];
         const firstYear = new Date(today).getUTCFullYear();
@@ -242,12 +294,88 @@ function PoolTimelineChart({
             if (t >= today && t <= domainEnd) ticks.push({ t, label: String(yr) });
         }
 
+        /*
+         * Stack per time segment rather than once globally. Blocks that never
+         * coexist must not pile on top of each other — doing so made the stack
+         * total every licence ever bought, which both misplaced the bands and
+         * pushed them off the top of the axis.
+         */
+        const edges = new Set<number>([today]);
+        for (const b of bands) {
+            if (b.start > today) edges.add(b.start);
+            edges.add(b.end);
+        }
+        const cuts = [...edges].sort((a, z) => a - z);
+        const pieces: {
+            cohort: string; key: string; color: string; quantity: number;
+            x0: number; x1: number; base: number;
+        }[] = [];
+        for (let i = 0; i < cuts.length - 1; i++) {
+            const from = cuts[i], to = cuts[i + 1];
+            let base = 0;
+            for (const b of bands) {
+                if (b.start > from || b.end <= from) continue;
+                // Extend the run rather than emitting a fresh rectangle: a
+                // cohort only needs a new one when something below it changes
+                // and shifts its baseline. Without this a single licence block
+                // is drawn as one rounded box per segment boundary, which reads
+                // as far more buckets than were ever bought.
+                const prev = pieces[pieces.length - 1];
+                const run = pieces.find(
+                    (pc) => pc.cohort === b.key && pc.x1 === from && pc.base === base,
+                );
+                void prev;
+                if (run) {
+                    run.x1 = to;
+                } else {
+                    pieces.push({
+                        cohort: b.key, key: `${b.key}@${from}`, color: b.color,
+                        quantity: b.quantity, x0: from, x1: to, base,
+                    });
+                }
+                base += b.quantity;
+            }
+        }
+
+        /*
+         * Licences bought but not yet started provide no capacity, so they must
+         * not join the stack. They are drawn instead as a hollow lead-in at the
+         * slot the cohort will occupy once its term begins, which is what makes
+         * a staggered activation window visible rather than merely implied.
+         */
+        const pending = bands
+            .filter((b) => b.purchased !== null)
+            .map((b) => {
+                const firstLive = pieces.find((pc) => pc.cohort === b.key);
+                if (!firstLive) return null;
+                return {
+                    key: `${b.key}#pending`,
+                    color: b.color,
+                    x0: b.purchased!,
+                    x1: b.start,
+                    base: firstLive.base,
+                    quantity: b.quantity,
+                };
+            })
+            .filter(Boolean) as {
+                key: string; color: string; x0: number; x1: number;
+                base: number; quantity: number;
+            }[];
+
+        // Label each cohort once, on its widest run.
+        const widest = new Map<string, typeof pieces[number]>();
+        for (const p of pieces) {
+            const cur = widest.get(p.cohort);
+            if (!cur || p.x1 - p.x0 > cur.x1 - cur.x0) widest.set(p.cohort, p);
+        }
+        const labelled = new Set([...widest.values()].map((p) => p.key));
+
         return {
-            live, today, domainEnd, bands, x, y, maxCapacity, ticks, total: cursor,
+            live, today, domainEnd, bands, pieces, pending, labelled, x, y, maxCapacity, ticks,
             height, padTop, padBottom,
             cliffXs, dateRowOf: dateLayout.rowOf, qtyRowOf: qtyLayout.rowOf,
         };
-    }, [blocks, timeline, cliffs, asOf, estateDemand, growthPerMonth]);
+    }, [blocks, timeline, cliffs, asOf, estateDemand, demand]);
 
     /**
      * Where the pool cannot carry the estate, if nothing is bought.
@@ -258,21 +386,28 @@ function PoolTimelineChart({
      * the gap you would have to purchase your way out of.
      */
     const deficit = useMemo(() => {
-        if (!model || !estateDemand) return null;
+        if (!model || !estateDemand || !demand) return null;
         const { x, y, today, domainEnd } = model;
         const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
 
-        const bounds = new Set<number>([today, domainEnd]);
+        // Stop at the pool's real end, not the axis padding. Past the last
+        // expiration capacity is zero, so every chart would carry a permanent
+        // sliver of hatch in the right margin — an artifact of the padding
+        // rather than anything to plan around. The terminal cliff row says it.
+        const poolEnd = timeline.length
+            ? Math.min(toDate(timeline[timeline.length - 1].end) + DAY, domainEnd)
+            : domainEnd;
+        const bounds = new Set<number>([today, poolEnd]);
         for (const s of timeline) {
             bounds.add(Math.max(toDate(s.start), today));
-            bounds.add(Math.min(toDate(s.end) + DAY, domainEnd));
+            bounds.add(Math.min(toDate(s.end) + DAY, poolEnd));
         }
         // With growth the demand line is a ramp, so slice finely enough that
         // the shaded region follows it rather than stepping.
-        if (growthPerMonth) {
+        if (demand!.runRatePerMonth || demand!.churnPctPerMonth) {
             const steps = 60;
             for (let i = 0; i <= steps; i++) {
-                bounds.add(today + ((domainEnd - today) * i) / steps);
+                bounds.add(today + ((poolEnd - today) * i) / steps);
             }
         }
         const pts = [...bounds].sort((a, b) => a - b);
@@ -285,7 +420,7 @@ function PoolTimelineChart({
         let atFirst: number | null = null;
         for (let i = 0; i < pts.length - 1; i++) {
             const t0 = pts[i];
-            const need = demandAt(estateDemand, growthPerMonth, asOf, iso(t0));
+            const need = demandAt(demand!, asOf, iso(t0));
             const cap = capAt(t0);
             if (need <= cap) continue;
             peak = Math.max(peak, need - cap);
@@ -299,19 +434,22 @@ function PoolTimelineChart({
                 h: Math.max(y(cap) - y(need), 0),
             });
         }
-        if (!rects.length) return null;
-
+        // The line is drawn whether or not there is a shortfall — covering the
+        // demand fully is itself worth seeing — so it lives outside `rects`.
         const line: string[] = [];
         pts.forEach((t, i) => {
-            const yv = y(demandAt(estateDemand, growthPerMonth, asOf, iso(t)));
+            const yv = y(demandAt(demand!, asOf, iso(t)));
             line.push(`${i === 0 ? "M" : "L"}${x(t)},${yv}`);
         });
 
         const firstGap = pts.find(
-            (t) => demandAt(estateDemand, growthPerMonth, asOf, iso(t)) > capAt(t),
+            (t) => demandAt(demand!, asOf, iso(t)) > capAt(t),
         );
-        return { rects, line: line.join(" "), peak, atFirst: atFirst ?? 0, firstGap };
-    }, [model, timeline, estateDemand, growthPerMonth, asOf]);
+        return {
+            rects, line: line.join(" "), peak, atFirst: atFirst ?? 0, firstGap,
+            hasGap: rects.length > 0,
+        };
+    }, [model, timeline, estateDemand, demand, asOf]);
 
     /** The commitment set the chart is currently describing. */
     const activeSegments: CombinedSegment[] =
@@ -335,14 +473,29 @@ function PoolTimelineChart({
     }, [model]);
 
     const committedPath = useMemo(
-        () => stepPath(activeSegments),
-        [stepPath, activeSegments],
+        () => (showCommitted ? stepPath(activeSegments) : null),
+        [stepPath, activeSegments, showCommitted],
     );
     /** In optimized mode, keep today's line visible so the gain is legible. */
     const ghostPath = useMemo(
-        () => (mode === "optimized" && optimized ? stepPath(combined) : null),
-        [stepPath, mode, optimized, combined],
+        () => (showCommitted && mode === "optimized" && optimized ? stepPath(combined) : null),
+        [stepPath, mode, optimized, combined, showCommitted],
     );
+
+    /**
+     * The tranche under the cursor. Highlighting the whole cohort — not just
+     * the segment being pointed at — is the point: it traces one purchase
+     * across its life so the moment it drops out is visible.
+     */
+    const hoveredCohort = useMemo(() => {
+        if (!model || hoverX === null || hoverY === null) return null;
+        const { x, y, pieces: ps } = model;
+        for (const p of ps) {
+            if (x(p.x0) > hoverX || x(p.x1) < hoverX) continue;
+            if (y(p.base + p.quantity) <= hoverY && hoverY <= y(p.base)) return p.cohort;
+        }
+        return null;
+    }, [model, hoverX, hoverY]);
 
     const hover = useMemo(() => {
         if (!model || hoverX === null) return null;
@@ -354,9 +507,7 @@ function PoolTimelineChart({
         const iso = new Date(t).toISOString().slice(0, 10);
         const seg = timeline.find((s) => iso >= s.start && iso <= s.end);
         const com = activeSegments.find((s) => iso >= s.start && iso <= s.end);
-        const need = estateDemand
-            ? demandAt(estateDemand, growthPerMonth, asOf, iso)
-            : 0;
+        const need = estateDemand && demand ? demandAt(demand, asOf, iso) : 0;
         return {
             t,
             iso,
@@ -377,7 +528,10 @@ function PoolTimelineChart({
         );
     }
 
-    const { bands, x, y, maxCapacity, ticks, height, padTop, padBottom,
+    const hoveredBand = hoveredCohort
+        ? model.bands.find((b) => b.key === hoveredCohort) ?? null
+        : null;
+    const { bands, pieces, pending, labelled, x, y, maxCapacity, ticks, height, padTop, padBottom,
             cliffXs, dateRowOf, qtyRowOf } = model;
     const yTicks = [0, Math.round(maxCapacity / 2), maxCapacity];
 
@@ -393,8 +547,9 @@ function PoolTimelineChart({
                 onMouseMove={(e) => {
                     const r = svgRef.current!.getBoundingClientRect();
                     setHoverX(((e.clientX - r.left) * VB_W) / r.width);
+                    setHoverY(((e.clientY - r.top) * height) / r.height);
                 }}
-                onMouseLeave={() => setHoverX(null)}
+                onMouseLeave={() => { setHoverX(null); setHoverY(null); }}
             >
                 {/* recessive grid */}
                 {yTicks.map((v) => (
@@ -428,81 +583,131 @@ function PoolTimelineChart({
                     </g>
                 ))}
 
-                {/* capacity bands, stacked longest-lived at the bottom */}
-                {(() => {
-                    let base = 0;
-                    return bands.map((b) => {
-                        const yTop = y(base + b.quantity);
-                        const yBottom = y(base);
-                        base += b.quantity;
-                        const h = Math.max(yBottom - yTop - 2, 1); // 2px surface gap
-                        const w = Math.max(x(b.end) - x(b.start), 1);
-                        const showLabel = h >= 16 && w >= 46;
-                        return (
-                            <g key={b.key}>
-                                <rect
-                                    x={x(b.start)} y={yTop + 1} width={w} height={h}
-                                    rx={4} fill={b.color}
-                                />
-                                {showLabel && (
-                                    <text
-                                        x={x(b.start) + 10} y={yTop + 1 + h / 2 + 4}
-                                        fontSize={13} fontWeight={600} fill={inkOn(b.color)}
-                                        fontFamily="ui-monospace, monospace"
-                                    >
-                                        {b.quantity}
-                                    </text>
-                                )}
-                            </g>
-                        );
-                    });
-                })()}
+                {/* capacity bands, stacked per time segment so the height at any
+                    moment is the capacity actually in force then */}
+                {pieces.map((p) => {
+                    const yTop = y(p.base + p.quantity);
+                    const yBottom = y(p.base);
+                    const rawH = yBottom - yTop;
+                    const w = Math.max(x(p.x1) - x(p.x0), 1);
+                    /*
+                     * Separator and corner radius scale with the band. A fixed
+                     * 2px gap and 3px radius swallow a thin band whole and turn
+                     * a narrow one into a pill, which is what made a plan with
+                     * many small chunks look like scattered bubbles.
+                     */
+                    const gap = rawH > 7 ? 1 : 0;
+                    const h = Math.max(rawH - gap, 0.75);
+                    const r = Math.min(2, rawH / 5, w / 5);
+                    const dim = hoveredCohort !== null && hoveredCohort !== p.cohort;
+                    const showLabel = labelled.has(p.key) && h >= 16 && w >= 46;
+                    return (
+                        <g key={p.key}>
+                            <rect
+                                x={x(p.x0)} y={yTop + gap} width={w} height={h}
+                                rx={r} fill={p.color}
+                                opacity={dim ? 0.42 : 1}
+                            />
+                            {showLabel && (
+                                <text
+                                    x={x(p.x0) + 10} y={yTop + gap + h / 2 + 4}
+                                    fontSize={13} fontWeight={600} fill={inkOn(p.color)}
+                                    fontFamily="ui-monospace, monospace"
+                                    opacity={dim ? 0.5 : 1}
+                                >
+                                    {p.quantity}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
 
-                {/* expiration cliffs — labels stagger onto a second row rather
-                    than overlap when two cliffs fall close together */}
-                {(() => {
-                    return cliffs.map((c, i) => {
-                        const cx = cliffXs[i];
-                        const anchor =
-                            cx > VB_W - M.right - 40 ? "end"
-                            : cx < M.left + 40 ? "start"
-                            : "middle";
-                        const qtyRow = qtyRowOf[i];
-                        const dateRow = dateRowOf[i];
+                {/* outline the hovered tranche across its whole life */}
+                {hoveredCohort !== null && pieces
+                    .filter((p) => p.cohort === hoveredCohort)
+                    .map((p) => (
+                        <rect
+                            key={`${p.key}#hi`}
+                            x={x(p.x0)} y={y(p.base + p.quantity)}
+                            width={Math.max(x(p.x1) - x(p.x0), 1)}
+                            height={Math.max(y(p.base) - y(p.base + p.quantity), 0.75)}
+                            fill="none" stroke="#0b0b0b" strokeWidth={1} opacity={0.45}
+                        />
+                    ))}
 
-                        return (
-                            <g key={c.date}>
+                {/* bought but not yet started — outlined, never filled, because
+                    these licences carry no capacity during the window */}
+                {pending.map((p) => {
+                    const yTop = y(p.base + p.quantity);
+                    const yBottom = y(p.base);
+                    const rawH = yBottom - yTop;
+                    const gap = rawH > 7 ? 1 : 0;
+                    const h = Math.max(rawH - gap, 0.75);
+                    const w = Math.max(x(p.x1) - x(p.x0), 1);
+                    // The wait belongs to the tranche, so it follows the same
+                    // highlight — hovering a chunk shows when it was bought too.
+                    const cohortKey = p.key.replace("#pending", "");
+                    const dim = hoveredCohort !== null && hoveredCohort !== cohortKey;
+                    return (
+                        <g key={p.key} opacity={dim ? 0.4 : 1}>
+                            <rect
+                                x={x(p.x0)} y={yTop + gap} width={w} height={h}
+                                rx={Math.min(2, rawH / 5, w / 5)} fill={p.color} opacity={0.16}
+                            />
+                            {/* Only the activation edge is drawn. A full outline
+                                competed with the cliff lines and band gaps for
+                                attention; the one edge that carries meaning is
+                                where the term actually begins. */}
+                            <line
+                                x1={x(p.x1)} x2={x(p.x1)} y1={yTop + gap} y2={yTop + gap + h}
+                                stroke={p.color} strokeWidth={1} opacity={0.55}
+                            />
+                        </g>
+                    );
+                })}
+
+                {/* expiration cliffs — labels stagger onto extra rows rather than
+                    overlap when several fall close together */}
+                {cliffs.map((c, i) => {
+                    const cx = cliffXs[i];
+                    const anchorSide =
+                        cx > VB_W - M.right - 40 ? "end"
+                        : cx < M.left + 40 ? "start"
+                        : "middle";
+                    const qtyRow = qtyRowOf[i];
+                    const dateRow = dateRowOf[i];
+                    return (
+                        <g key={c.date}>
+                            <line
+                                x1={cx} x2={cx} y1={padTop - 8} y2={height - padBottom}
+                                stroke="#52514e" strokeWidth={1} strokeDasharray="3 3"
+                            />
+                            {/* A leader down to its own row, so a label on a lower
+                                row is still traceable to its line. */}
+                            {dateRow > 0 && (
                                 <line
-                                    x1={cx} x2={cx} y1={padTop - 8} y2={height - padBottom}
-                                    stroke="#52514e" strokeWidth={1} strokeDasharray="3 3"
+                                    x1={cx} x2={cx}
+                                    y1={height - padBottom + 24}
+                                    y2={height - padBottom + 30 + dateRow * DATE_ROW_H}
+                                    stroke="#c9c8c3" strokeWidth={1}
                                 />
-                                {/* A leader down to its own row, so a label on a
-                                    lower row is still traceable to its line. */}
-                                {dateRow > 0 && (
-                                    <line
-                                        x1={cx} x2={cx}
-                                        y1={height - padBottom + 24}
-                                        y2={height - padBottom + 30 + dateRow * DATE_ROW_H}
-                                        stroke="#c9c8c3" strokeWidth={1}
-                                    />
-                                )}
-                                <text
-                                    x={cx} y={padTop - 14 - qtyRow * QTY_ROW_H}
-                                    textAnchor={anchor}
-                                    fontSize={12} fill="#52514e" fontWeight={600}
-                                >
-                                    −{c.quantity_lost}
-                                </text>
-                                <text
-                                    x={cx} y={height - padBottom + 36 + dateRow * DATE_ROW_H}
-                                    textAnchor={anchor} fontSize={11} fill="#52514e"
-                                >
-                                    {fmtDate(c.date)}
-                                </text>
-                            </g>
-                        );
-                    });
-                })()}
+                            )}
+                            <text
+                                x={cx} y={padTop - 14 - qtyRow * QTY_ROW_H}
+                                textAnchor={anchorSide}
+                                fontSize={12} fill="#52514e" fontWeight={600}
+                            >
+                                −{c.quantity_lost}
+                            </text>
+                            <text
+                                x={cx} y={height - padBottom + 36 + dateRow * DATE_ROW_H}
+                                textAnchor={anchorSide} fontSize={11} fill="#52514e"
+                            >
+                                {fmtDate(c.date)}
+                            </text>
+                        </g>
+                    );
+                })}
 
                 {/* today */}
                 <line
@@ -528,7 +733,7 @@ function PoolTimelineChart({
                                 />
                             </pattern>
                         </defs>
-                        {deficit.rects.map((r, i) => (
+                        {deficit.hasGap && deficit.rects.map((r, i) => (
                             <rect
                                 key={i} x={r.x} y={r.y} width={r.w} height={r.h}
                                 fill="url(#deficitHatch)"
@@ -538,10 +743,10 @@ function PoolTimelineChart({
                             d={deficit.line} fill="none" stroke={DEFICIT}
                             strokeWidth={2} strokeDasharray="6 3"
                         />
-                        {deficit.firstGap !== undefined && (
+                        {deficit.hasGap && deficit.firstGap !== undefined && (
                             <text
                                 x={Math.min(x(deficit.firstGap) + 8, VB_W - M.right - 90)}
-                                y={y(estateDemand) - 8}
+                                y={y(estateDemand ?? 0) - 8}
                                 fontSize={11} fill={DEFICIT} fontWeight={700}
                                 stroke="#ffffff" strokeWidth={3}
                                 paintOrder="stroke" strokeLinejoin="round"
@@ -593,6 +798,22 @@ function PoolTimelineChart({
                     }}
                 >
                     <div className="text-gray-500 mb-1">{fmtDate(hover.iso)}</div>
+                    {hoveredBand && (
+                        <div className="mb-1.5 pb-1.5 border-b border-gray-100 flex items-center gap-1.5">
+                            <span
+                                className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: hoveredBand.color }}
+                            />
+                            <span className="font-mono font-semibold text-gray-900">
+                                {hoveredBand.quantity.toLocaleString()}
+                            </span>
+                            <span className="text-gray-500">
+                                {fmtDate(new Date(hoveredBand.start).toISOString().slice(0, 10))}
+                                {" → "}
+                                {fmtDate(hoveredBand.expiration)}
+                            </span>
+                        </div>
+                    )}
                     <table className="border-separate border-spacing-x-2 -mx-2">
                         <tbody>
                             <tr>
@@ -696,7 +917,30 @@ function PoolTimelineChart({
                         </span>
                     </div>
                 )}
+                {pending.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs">
+                        <span
+                            className="w-3 h-3 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: `${RAMP[3]}2e` }}
+                        />
+                        <span className="text-gray-500">
+                            bought, awaiting activation
+                        </span>
+                    </div>
+                )}
                 {deficit && (
+                    <div className="flex items-center gap-2 text-xs">
+                        <span
+                            className="w-3 h-0.5 flex-shrink-0"
+                            style={{
+                                backgroundImage:
+                                    `repeating-linear-gradient(to right, ${DEFICIT} 0 4px, transparent 4px 7px)`,
+                            }}
+                        />
+                        <span className="text-gray-500">projected demand</span>
+                    </div>
+                )}
+                {deficit?.hasGap && (
                     <div className="flex items-center gap-2 text-xs">
                         <span
                             className="w-3 h-3 rounded-sm flex-shrink-0"
@@ -706,7 +950,7 @@ function PoolTimelineChart({
                             }}
                         />
                         <span className="text-gray-500">
-                            deficit — estate demand the pool cannot cover
+                            deficit — projected demand the pool cannot cover
                         </span>
                     </div>
                 )}
@@ -741,14 +985,14 @@ function PoolTimelineChart({
  * is how much coverage ends here versus how much pool is free to renew it.
  */
 function CliffsAhead({
-    cliffs, combined, ecs, estateDemand, growthPerMonth, asOf,
+    cliffs, combined, ecs, estateDemand, demand, asOf,
 }: {
     cliffs: Cliff[];
     combined: CombinedSegment[];
     ecs: EcPosition[];
     /** What customers consume today — the bar any future pool has to clear. */
     estateDemand: number;
-    growthPerMonth: number;
+    demand: DemandModel;
     asOf: string;
 }) {
     const upcoming = cliffs.filter((c) => c.days_out >= 0);
@@ -790,7 +1034,7 @@ function CliffsAhead({
                 const terminal = c.capacity_after === 0;
                 // Estate size on the cliff date, not today's, so the numbers
                 // agree with the demand line on the chart above.
-                const demandThere = demandAt(estateDemand, growthPerMonth, asOf, c.date);
+                const demandThere = demandAt(demand, asOf, c.date);
                 const severe = terminal || renewShort > 0 || overCommitted > 0;
                 const u = urgency(c.days_out);
 
@@ -1159,23 +1403,27 @@ function ChurnGrid({ ecs }: { ecs: EcPosition[] }) {
  * covered; the first place it dips below is the ceiling on the extension.
  */
 function AvailabilityChart({
-    segments, required, maxDate, currentDate, growthPerMonth, asOf,
+    segments, required, maxDate, currentDate, demand, asOf,
 }: {
     segments: PlanSegment[];
     required: number;
     maxDate: string | null;
     currentDate: string | null;
-    growthPerMonth: number;
+    demand: DemandModel;
     asOf: string;
 }) {
-    const H = 150, W = 940;
-    const m = { top: 22, right: 24, bottom: 34, left: 48 };
+    // Matched roughly to the pool chart above so the two read as a pair.
+    const H = 320, W = 940;
+    const m = { top: 30, right: 24, bottom: 42, left: 48 };
+    const svgRef = useRef<SVGSVGElement>(null);
+    const [hoverX, setHoverX] = useState<number | null>(null);
     if (!segments.length) return null;
 
     const today = toDate(asOf);
     const endT = toDate(segments[segments.length - 1].end) + DAY;
     const span = Math.max(endT - today, DAY);
-    const endNeed = demandAt(required, growthPerMonth, asOf, segments[segments.length - 1].end);
+    const scaled = scaleModel(demand, required);
+    const endNeed = demandAt(scaled, asOf, segments[segments.length - 1].end);
     const peak =
         Math.max(...segments.map((s) => s.available), required, endNeed, 1) * 1.12;
 
@@ -1183,6 +1431,26 @@ function AvailabilityChart({
     const y = (v: number) => H - m.bottom - (v / peak) * (H - m.top - m.bottom);
 
     const reqY = y(required);
+
+    /* Same crosshair-and-tooltip contract as the pool charts, so hovering
+       behaves identically wherever you are on the page. */
+    let hover: {
+        iso: string; px: number; available: number; need: number; covered: boolean;
+    } | null = null;
+    if (hoverX !== null) {
+        const frac = (hoverX - m.left) / (W - m.left - m.right);
+        if (frac >= 0 && frac <= 1) {
+            const t = today + frac * span;
+            const iso = new Date(t).toISOString().slice(0, 10);
+            const seg = segments.find((s) => iso >= s.start && iso <= s.end)
+                ?? segments[segments.length - 1];
+            const need = demandAt(scaled, asOf, iso);
+            hover = {
+                iso, px: x(t), available: seg.available, need,
+                covered: seg.available >= need,
+            };
+        }
+    }
     const years: { t: number; label: string }[] = [];
     for (let yr = new Date(today).getUTCFullYear(); yr <= new Date(endT).getUTCFullYear(); yr++) {
         const t = Date.UTC(yr, 0, 1);
@@ -1190,11 +1458,17 @@ function AvailabilityChart({
     }
 
     return (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative">
             <svg
+                ref={svgRef}
                 viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 560 }}
                 role="img"
                 aria-label="Licenses available to this selection over time, against the quantity needed"
+                onMouseMove={(e) => {
+                    const r = svgRef.current!.getBoundingClientRect();
+                    setHoverX(((e.clientX - r.left) * W) / r.width);
+                }}
+                onMouseLeave={() => setHoverX(null)}
             >
                 {years.map((yr) => (
                     <g key={yr.label}>
@@ -1223,12 +1497,12 @@ function AvailabilityChart({
 
                 {/* the quantity the selection needs — a ramp when growth is on,
                     since a flat rule would understate what must be covered later */}
-                {growthPerMonth ? (
+                {demand.runRatePerMonth || demand.churnPctPerMonth ? (
                     <path
                         d={segments
                             .map((s, i) => {
                                 const need = (iso: string) =>
-                                    y(demandAt(required, growthPerMonth, asOf, iso));
+                                    y(demandAt(scaled, asOf, iso));
                                 return `${i === 0 ? "M" : "L"}${x(toDate(s.start))},${need(
                                     s.start,
                                 )} L${x(toDate(s.end) + DAY)},${need(s.end)}`;
@@ -1248,7 +1522,7 @@ function AvailabilityChart({
                     paintOrder="stroke" strokeLinejoin="round"
                 >
                     {required.toLocaleString()} needed
-                    {growthPerMonth ? ` → ${endNeed.toLocaleString()}` : ""}
+                    {endNeed !== required ? ` → ${endNeed.toLocaleString()}` : ""}
                 </text>
 
                 {/* where they expire today vs where they could reach */}
@@ -1278,7 +1552,74 @@ function AvailabilityChart({
                 <line x1={m.left} x2={W - m.right} y1={H - m.bottom} y2={H - m.bottom}
                       stroke="#e8e8e5" strokeWidth={1} />
                 <text x={m.left - 8} y={y(0) + 4} textAnchor="end" fontSize={11} fill="#8a8a85">0</text>
+
+                {hover && (
+                    <line
+                        x1={hover.px} x2={hover.px} y1={m.top} y2={H - m.bottom}
+                        stroke="#0b0b0b" strokeWidth={1} opacity={0.35}
+                    />
+                )}
             </svg>
+
+            {hover && (
+                <div
+                    className="absolute pointer-events-none bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs"
+                    style={{
+                        left: `calc(${(hover.px / W) * 100}% + 8px)`,
+                        top: 4,
+                        transform: hover.px > W * 0.7 ? "translateX(-100%)" : undefined,
+                    }}
+                >
+                    <div className="text-gray-500 mb-1">{fmtDate(hover.iso)}</div>
+                    <table className="border-separate border-spacing-x-2 -mx-2">
+                        <tbody>
+                            <tr>
+                                <td>
+                                    <span
+                                        className="inline-block w-2.5 h-2.5 rounded-sm align-middle"
+                                        style={{
+                                            backgroundColor: hover.covered ? ACCENT : "#c9c8c3",
+                                        }}
+                                    />
+                                </td>
+                                <td className="font-mono font-semibold text-gray-900 text-sm text-right">
+                                    {hover.available.toLocaleString()}
+                                </td>
+                                <td className="text-gray-500 whitespace-nowrap">available</td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <span
+                                        className="inline-block w-2.5 h-0.5 align-middle"
+                                        style={{ backgroundColor: COMMITTED }}
+                                    />
+                                </td>
+                                <td className="font-mono font-semibold text-gray-900 text-sm text-right">
+                                    {hover.need.toLocaleString()}
+                                </td>
+                                <td className="text-gray-500 whitespace-nowrap">needed</td>
+                            </tr>
+                            <tr>
+                                <td />
+                                <td
+                                    className="font-mono text-right"
+                                    style={{ color: hover.covered ? "#8a8a85" : DEFICIT }}
+                                >
+                                    {hover.covered
+                                        ? `+${(hover.available - hover.need).toLocaleString()}`
+                                        : (hover.available - hover.need).toLocaleString()}
+                                </td>
+                                <td
+                                    className="whitespace-nowrap"
+                                    style={{ color: hover.covered ? "#8a8a85" : DEFICIT }}
+                                >
+                                    {hover.covered ? "spare" : "short"}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 }
@@ -1286,27 +1627,122 @@ function AvailabilityChart({
 const FIELD =
     "border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400";
 
+/**
+ * One row per order, expandable to the tranches it creates. A staggered order
+ * is a single purchase with several activation dates, so collapsing it to its
+ * tranches would misrepresent it as several purchases.
+ */
+function PurchaseRow({ p, onRemove }: { p: WhatIfPurchase; onRemove: () => void }) {
+    const [open, setOpen] = useState(false);
+    const blocks = expandPurchase(p);
+    if (!blocks.length) return null;
+
+    const gapDays = (b: (typeof blocks)[number]) =>
+        b.purchase_date && b.effective_date
+            ? Math.round((toDate(b.effective_date) - toDate(b.purchase_date)) / DAY)
+            : 0;
+    const gaps = blocks.map(gapDays);
+    const multi = blocks.length > 1;
+    const firstStart = blocks[0].effective_date!;
+    const lastEnd = blocks.map((b) => b.expiration_date!).sort().slice(-1)[0];
+
+    return (
+        <>
+            <tr
+                className={`border-t border-gray-100 ${multi ? "cursor-pointer hover:bg-gray-50" : ""}`}
+                onClick={() => multi && setOpen((o) => !o)}
+            >
+                <td className="py-2 pl-1 pr-2">
+                    {multi && (
+                        <ChevronRight
+                            size={14}
+                            className={`text-gray-400 transition-transform ${open ? "rotate-90" : ""}`}
+                        />
+                    )}
+                </td>
+                <td className="py-2 pr-4 text-right font-mono font-semibold text-gray-900">
+                    {totalLicenses(p).toLocaleString()}
+                </td>
+                <td className="py-2 pr-4 text-gray-700">{fmtDate(p.startDate)}</td>
+                <td className="py-2 pr-4 text-gray-700">
+                    {fmtDate(firstStart)}
+                    {multi && <span className="text-gray-400"> …</span>}
+                </td>
+                <td className="py-2 pr-4 text-gray-700">{fmtDate(lastEnd)}</td>
+                <td className="py-2 pr-4 text-gray-600">{p.termYears} yr</td>
+                <td className="py-2 pr-4 text-xs text-gray-500">
+                    {multi
+                        ? `${blocks.length} tranches · +${Math.min(...gaps)}–${Math.max(...gaps)}d`
+                        : gaps[0]
+                        ? `+${gaps[0]}d after purchase`
+                        : "starts immediately"}
+                </td>
+                <td className="py-2">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                        className="text-gray-400 hover:text-red-600 font-bold px-1"
+                        aria-label="Remove this hypothetical purchase"
+                    >
+                        ×
+                    </button>
+                </td>
+            </tr>
+            {open && multi && blocks.map((b, i) => (
+                <tr key={i} className="bg-gray-50/60 text-xs text-gray-600">
+                    <td />
+                    <td className="py-1 pr-4 text-right font-mono">{b.quantity}</td>
+                    <td className="py-1 pr-4">{fmtDate(b.purchase_date)}</td>
+                    <td className="py-1 pr-4">{fmtDate(b.effective_date)}</td>
+                    <td className="py-1 pr-4">{fmtDate(b.expiration_date)}</td>
+                    <td className="py-1 pr-4">{p.termYears} yr</td>
+                    <td className="py-1 pr-4 text-gray-400">
+                        {gaps[i] ? `+${gaps[i]}d` : "immediate"}
+                    </td>
+                    <td />
+                </tr>
+            ))}
+        </>
+    );
+}
+
 /** Add hypothetical purchases to the pool and re-plan against them. */
 function WhatIfControls({
-    items, onAdd, onRemove, growthPerMonth, asOf,
+    items, onAdd, onRemove, demand, asOf,
 }: {
     items: WhatIfPurchase[];
     onAdd: (p: Omit<WhatIfPurchase, "id">) => void;
     onRemove: (id: number) => void;
-    growthPerMonth: number;
+    demand: DemandModel;
     asOf: string;
 }) {
-    const [kind, setKind] = useState<"once" | "recurring">("once");
+    const [kind, setKind] = useState<WhatIfPurchase["kind"]>("once");
     const [qty, setQty] = useState(20);
     const [term, setTerm] = useState(3);
     const [startDate, setStartDate] = useState(asOf);
     const [cadence, setCadence] = useState<Cadence>("quarterly");
     const [periods, setPeriods] = useState(8);
+    /** Days from purchase to the term starting; the window allows up to 180. */
+    const [defer, setDefer] = useState(0);
+    const [tranches, setTranches] = useState(6);
+    const [intervalDays, setIntervalDays] = useState(30);
 
+    const trancheCap = maxTranches(intervalDays);
+    // Hard cap: the activation window cannot be exceeded, so the control is
+    // clamped rather than allowed to describe a purchase you cannot place.
+    const trancheCount = Math.min(Math.max(1, tranches), trancheCap);
     const draft: Omit<WhatIfPurchase, "id"> = {
         kind, quantity: qty, termYears: term, startDate, cadence, periods,
+        tranches: trancheCount, intervalDays, deferDays: defer,
     };
+    // Expressed as a date because that is how an order is actually placed,
+    // but stored as an offset so the window is enforced by construction.
+    const startIso = new Date(toDate(startDate) + defer * DAY)
+        .toISOString().slice(0, 10);
+    const windowEnd = new Date(toDate(startDate) + GRACE_WINDOW_DAYS * DAY)
+        .toISOString().slice(0, 10);
     const rate = monthlyRate({ ...draft, id: 0 });
+    const perTranche = Math.floor(qty / trancheCount);
+    const lastOffset = (trancheCount - 1) * intervalDays;
 
     return (
         <div className="space-y-2 text-sm">
@@ -1315,6 +1751,7 @@ function WhatIfControls({
                     [
                         ["once", "One-off"],
                         ["recurring", "Rolling purchase"],
+                        ["staggered", "Staggered activation"],
                     ] as const
                 ).map(([k, label]) => (
                     <button
@@ -1341,7 +1778,28 @@ function WhatIfControls({
                     onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
                     className={`w-20 font-mono ${FIELD}`}
                 />
-                <span className="text-gray-500">licenses</span>
+                <span className="text-gray-500">
+                    {kind === "staggered" ? "licenses in total, activated in" : "licenses"}
+                </span>
+
+                {kind === "staggered" && (
+                    <>
+                        <input
+                            type="number" min={1} max={trancheCap} value={trancheCount}
+                            aria-label="Number of tranches"
+                            onChange={(e) => setTranches(Math.max(1, Number(e.target.value) || 1))}
+                            className={`w-16 font-mono ${FIELD}`}
+                        />
+                        <span className="text-gray-500">tranches,</span>
+                        <input
+                            type="number" min={1} max={GRACE_WINDOW_DAYS} value={intervalDays}
+                            aria-label="Days between activations"
+                            onChange={(e) => setIntervalDays(Math.max(1, Number(e.target.value) || 1))}
+                            className={`w-16 font-mono ${FIELD}`}
+                        />
+                        <span className="text-gray-500">days apart,</span>
+                    </>
+                )}
 
                 {kind === "recurring" && (
                     <>
@@ -1377,36 +1835,68 @@ function WhatIfControls({
                         <option key={y} value={y}>{y} year</option>
                     ))}
                 </select>
-                <span className="text-gray-500">term, starting</span>
+                <span className="text-gray-500">term, purchased</span>
                 <input
                     type="date" value={startDate} min={asOf}
-                    aria-label="Purchase start date"
+                    aria-label="Purchase date"
                     onChange={(e) => setStartDate(e.target.value || asOf)}
                     className={FIELD}
                 />
+                {kind !== "staggered" && (
+                    <>
+                        <span className="text-gray-500">starting</span>
+                        <input
+                            type="date" value={startIso}
+                            min={startDate} max={windowEnd}
+                            aria-label="Term start date"
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if (!v) return setDefer(0);
+                                const days = Math.round(
+                                    (toDate(v) - toDate(startDate)) / DAY,
+                                );
+                                setDefer(Math.min(Math.max(days, 0), GRACE_WINDOW_DAYS));
+                            }}
+                            className={FIELD}
+                        />
+                    </>
+                )}
                 <button
                     onClick={() => onAdd(draft)}
-                    className="px-3 py-1 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700"
+                    className="px-3 py-1 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 print:hidden"
                 >
                     Add
                 </button>
+
+                {kind === "staggered" && (
+                    <span className="text-xs text-gray-400">
+                        ≈ {perTranche.toLocaleString()} per tranche · last starts day{" "}
+                        {lastOffset} of {GRACE_WINDOW_DAYS}
+                        {tranches > trancheCap && (
+                            <span className="text-amber-700">
+                                {" "}· capped at {trancheCap} — {intervalDays}d spacing does
+                                not fit more in the activation window
+                            </span>
+                        )}
+                    </span>
+                )}
 
                 {kind === "recurring" && (
                     <span className="text-xs text-gray-400">
                         = {rate.toFixed(rate % 1 ? 1 : 0)}/mo ·{" "}
                         {(qty * periods).toLocaleString()} total
-                        {growthPerMonth > 0 && (
+                        {demand.runRatePerMonth > 0 && (
                             <span
                                 className={
-                                    rate >= growthPerMonth
+                                    rate >= demand.runRatePerMonth
                                         ? " text-green-700"
                                         : " text-amber-700"
                                 }
                             >
                                 {" "}·{" "}
-                                {rate >= growthPerMonth
-                                    ? `keeps pace with +${growthPerMonth}/mo growth`
-                                    : `behind +${growthPerMonth}/mo growth`}
+                                {rate >= demand.runRatePerMonth
+                                    ? `keeps pace with +${demand.runRatePerMonth}/mo`
+                                    : `behind +${demand.runRatePerMonth}/mo`}
                             </span>
                         )}
                     </span>
@@ -1414,39 +1904,35 @@ function WhatIfControls({
             </div>
 
             {items.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                    {items.map((w) => (
-                        <span
-                            key={w.id}
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-100 text-blue-900 text-xs"
-                        >
-                            {w.kind === "once" ? (
-                                <>
-                                    +{w.quantity.toLocaleString()} × {w.termYears}yr,{" "}
-                                    {fmtDate(w.startDate)} → {fmtDate(purchaseEnds(w))}
-                                </>
-                            ) : (
-                                <>
-                                    +{w.quantity.toLocaleString()}/{CADENCE_LABEL[w.cadence]} ×{" "}
-                                    {w.periods} ({totalLicenses(w).toLocaleString()} total,{" "}
-                                    {w.termYears}yr each), from {fmtDate(w.startDate)}
-                                </>
-                            )}
-                            <button
-                                onClick={() => onRemove(w.id)}
-                                className="hover:text-blue-600 font-bold"
-                                aria-label="Remove this hypothetical purchase"
-                            >
-                                ×
-                            </button>
-                        </span>
-                    ))}
-                    <span className="text-xs text-gray-500 self-center">
-                        {items
-                            .reduce((s, w) => s + totalLicenses(w), 0)
-                            .toLocaleString()}{" "}
-                        licenses added in total
-                    </span>
+                <div className="pt-2">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-xs uppercase tracking-wide text-gray-400 text-left">
+                                <th className="pb-2 pl-1 pr-2 font-medium w-6" />
+                                <th className="pb-2 pr-4 font-medium text-right">Qty</th>
+                                <th className="pb-2 pr-4 font-medium">Purchased</th>
+                                <th className="pb-2 pr-4 font-medium">Starts</th>
+                                <th className="pb-2 pr-4 font-medium">Ends</th>
+                                <th className="pb-2 pr-4 font-medium">Term</th>
+                                <th className="pb-2 pr-4 font-medium">Activation</th>
+                                <th className="pb-2 font-medium w-6" />
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items.map((w) => (
+                                <PurchaseRow key={w.id} p={w} onRemove={() => onRemove(w.id)} />
+                            ))}
+                            <tr className="border-t border-gray-200">
+                                <td />
+                                <td className="pt-2 pr-4 text-right font-mono font-semibold text-gray-900">
+                                    {items.reduce((s, w) => s + totalLicenses(w), 0).toLocaleString()}
+                                </td>
+                                <td className="pt-2 text-xs text-gray-500" colSpan={6}>
+                                    licenses added in total
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             )}
         </div>
@@ -1454,7 +1940,7 @@ function WhatIfControls({
 }
 
 function ExtensionPlanner({
-    ecs, plan, required, onRequiredChange, selectedCount, asOf, earliest, growthPerMonth,
+    ecs, plan, required, onRequiredChange, selectedCount, asOf, earliest, demand,
 }: {
     ecs: EcPosition[];
     plan: PlanResult;
@@ -1463,7 +1949,7 @@ function ExtensionPlanner({
     selectedCount: number;
     asOf: string;
     earliest: StartWindow | null;
-    growthPerMonth: number;
+    demand: DemandModel;
 }) {
     if (!selectedCount) {
         return (
@@ -1595,7 +2081,7 @@ function ExtensionPlanner({
                 required={required}
                 maxDate={plan.feasible ? plan.maxDate : null}
                 currentDate={plan.currentDate}
-                growthPerMonth={growthPerMonth}
+                demand={demand}
                 asOf={asOf}
             />
 
@@ -1927,7 +2413,20 @@ function MspLicensing() {
     /** null = follow the selection's own license count. */
     const [qtyOverride, setQtyOverride] = useState<number | null>(null);
     /** Loose planning assumption: licences the estate adds each month. */
-    const [growthPerMonth, setGrowthPerMonth] = useState(0);
+    const [runRate, setRunRate] = useState(0);
+    const [churnPct, setChurnPct] = useState(0);
+    /** null = follow the estate's real assigned total. */
+    const [baseOverride, setBaseOverride] = useState<number | null>(null);
+
+    const demandModel: DemandModel = useMemo(
+        () => ({
+            base: baseOverride ?? data?.assigned_total ?? 0,
+            runRatePerMonth: runRate,
+            churnPctPerMonth: churnPct,
+        }),
+        [baseOverride, data, runRate, churnPct],
+    );
+
 
     // Start with every customer selected — the whole-estate view is the most
     // useful default, and narrowing down reads better than building up. Seeded
@@ -1963,14 +2462,72 @@ function MspLicensing() {
         [data],
     );
 
+    /*
+     * Blocks the user has excluded. R1 can carry entitlements that should not
+     * count toward the real pool, and leaving them in quietly inflates every
+     * number on the page. Tracked as exclusions rather than selections so a
+     * refresh that surfaces a genuinely new block includes it by default.
+     */
+    const [excluded, setExcluded] = useState<Set<string>>(new Set());
+    const selectedPool = useMemo(
+        () => actualPool.filter((b) => !excluded.has(blockKey(b))),
+        [actualPool, excluded],
+    );
+    const excludedBlocks = useMemo(
+        () => actualPool.filter((b) => excluded.has(blockKey(b))),
+        [actualPool, excluded],
+    );
+    const excludedQty = excludedBlocks.reduce((s, b) => s + b.quantity, 0);
+
+    /*
+     * Everything the pool drives, recomputed from the selected blocks. The
+     * server ships the same figures for the full pool; these reproduce them
+     * exactly when nothing is excluded, and stay correct when something is.
+     */
+    const view = useMemo(() => {
+        if (!data) return null;
+        const asOf = data.as_of;
+        const summary = poolSummary(selectedPool, asOf);
+        const combined = commitmentTimeline(selectedPool, planEcs, asOf);
+        const tail = [...combined].reverse().find((x) => x.capacity > 0) ?? null;
+        return {
+            timeline: poolTimeline(selectedPool, asOf),
+            cliffs: poolCliffs(selectedPool, asOf),
+            summary,
+            combined,
+            idleTail:
+                tail && tail.committed === 0 && tail.headroom > 0
+                    ? { from: tail.start, until: tail.end, quantity: tail.headroom }
+                    : null,
+        };
+    }, [data, selectedPool, planEcs]);
+
     // Hypothetical purchases feed every planning view — the planner, the
     // allocation plan and the utilization score — but never the pool chart,
     // which stays a picture of what is actually owned.
     const [whatIf, setWhatIf] = useState<WhatIfPurchase[]>([]);
     const livePool: AllocBlock[] = useMemo(() => {
         if (!data) return actualPool;
-        return [...actualPool, ...whatIf.flatMap(expandPurchase)];
-    }, [actualPool, whatIf, data]);
+        return [...selectedPool, ...whatIf.flatMap(expandPurchase)];
+    }, [selectedPool, whatIf, data]);
+
+    /*
+     * What the extension planner may quote against.
+     *
+     * A tenant can be extended into licences already bought — including ones
+     * still inside their activation window, since those are paid for and will
+     * switch on — but NOT into an order that has not been placed. A future
+     * purchase in the what-if list is a plan, not capacity, and quoting a
+     * customer against it would promise a term nothing yet backs.
+     */
+    const quotablePool = useMemo(
+        () =>
+            livePool.filter(
+                (b: any) => !b.purchase_date || b.purchase_date <= (data?.as_of ?? ""),
+            ),
+        [livePool, data],
+    );
+    const unpurchased = livePool.length - quotablePool.length;
 
     /** What each customer could reach on its own, at its current size. */
     const maxAlone = useMemo(() => {
@@ -1978,10 +2535,10 @@ function MspLicensing() {
         if (!data) return out;
         for (const ec of planEcs) {
             if (!ec.quantity) continue;
-            out.set(ec.tenant_id, planForSingleEc(livePool, planEcs, ec, data.as_of));
+            out.set(ec.tenant_id, planForSingleEc(quotablePool, planEcs, ec, data.as_of));
         }
         return out;
-    }, [data, planEcs, livePool]);
+    }, [data, planEcs, quotablePool]);
 
     const selectedQty = useMemo(
         () =>
@@ -1996,20 +2553,20 @@ function MspLicensing() {
         () =>
             data
                 ? planMaxPeriod(
-                      livePool, planEcs, selected, data.as_of, requiredQty, growthPerMonth,
+                      quotablePool, planEcs, selected, data.as_of, requiredQty, demandModel,
                   )
                 : null,
-        [data, livePool, planEcs, selected, requiredQty, growthPerMonth],
+        [data, quotablePool, planEcs, selected, requiredQty, demandModel],
     );
 
     const earliest = useMemo(
         () =>
             data && plan && !plan.feasible
                 ? planEarliestStart(
-                      livePool, planEcs, selected, data.as_of, requiredQty, growthPerMonth,
+                      quotablePool, planEcs, selected, data.as_of, requiredQty, demandModel,
                   )
                 : null,
-        [data, plan, livePool, planEcs, selected, requiredQty, growthPerMonth],
+        [data, plan, quotablePool, planEcs, selected, requiredQty, demandModel],
     );
 
     const alloc = useMemo(
@@ -2031,17 +2588,64 @@ function MspLicensing() {
         if (!data) return null;
         const demand = data.assigned_total ?? 0;
         if (!demand) return null;
-        const seg = (data.combined_timeline ?? []).find(
-            (s) => s.capacity < demandAt(demand, growthPerMonth, data.as_of, s.start),
+        const seg = (view?.combined ?? []).find(
+            (s) => s.capacity < demand,
         );
         return seg
             ? {
                   from: seg.start,
                   capacity: seg.capacity,
-                  demand: demandAt(demand, growthPerMonth, data.as_of, seg.start),
+                  demand,
               }
             : null;
-    }, [data, growthPerMonth]);
+    }, [data, view]);
+
+    /*
+     * The forward-looking twin of `view`: the same pool maths, but over the
+     * pool as it *would* be — selected blocks plus any hypothetical purchases.
+     * Kept separate so the top chart stays a description of what exists today.
+     */
+    const projected = useMemo(() => {
+        if (!data) return null;
+        return {
+            timeline: poolTimeline(livePool, data.as_of),
+            cliffs: poolCliffs(livePool, data.as_of),
+            combined: commitmentTimeline(livePool, planEcs, data.as_of),
+        };
+    }, [data, livePool, planEcs]);
+
+    /*
+     * What it would actually take to meet the demand curve: orders placed at a
+     * cadence, each sized to the worst moment before the next one, and each
+     * expiring in its turn so its own replacement shows up further down.
+     * Planned against livePool, so anything already added above is credited.
+     */
+    const [planTerm, setPlanTerm] = useState(3);
+    const [planCadence, setPlanCadence] = useState<Cadence>("annual");
+    /*
+     * How finely each order is broken up inside its activation window.
+     * 60 days by default: tighter staggers track demand marginally better
+     * (30d saves ~7% more idle capacity) but nearly double the line items and
+     * the bands on the chart, which is a poor trade for the extra precision.
+     */
+    const [planStagger, setPlanStagger] = useState(60);
+    /** null = plan to the end of what is currently owned. */
+    const [planYears, setPlanYears] = useState<number | null>(null);
+    const planHorizon = useMemo(() => {
+        if (!data) return null;
+        if (planYears === null) return view?.summary.last_expiration ?? null;
+        const d = new Date(toDate(data.as_of));
+        d.setUTCFullYear(d.getUTCFullYear() + planYears);
+        return d.toISOString().slice(0, 10);
+    }, [data, view, planYears]);
+
+    const purchasePlan = useMemo(() => {
+        if (!data || !planHorizon) return null;
+        return requiredPurchases(
+            livePool, demandModel, data.as_of, planHorizon, planTerm, planCadence,
+            planStagger,
+        );
+    }, [data, livePool, demandModel, planHorizon, planTerm, planCadence, planStagger]);
 
     const [chartMode, setChartMode] = useState<"actual" | "optimized">("actual");
     // Deliberately planned against the ACTUAL pool, not the what-if one: this
@@ -2050,11 +2654,23 @@ function MspLicensing() {
     // not exist.
     const optimizedTimeline = useMemo(() => {
         if (!data) return null;
-        const actualAlloc = optimalAllocation(actualPool, planEcs, data.as_of);
+        const actualAlloc = optimalAllocation(selectedPool, planEcs, data.as_of);
         return actualAlloc.rows.length
-            ? allocationTimeline(actualPool, actualAlloc, data.as_of)
+            ? allocationTimeline(selectedPool, actualAlloc, data.as_of)
             : null;
-    }, [data, actualPool, planEcs]);
+    }, [data, selectedPool, planEcs]);
+
+    const exportWorkbook = () => {
+        if (!data || !view) return;
+        const sheets = buildExportSheets({
+            data, view, actualPool, selectedPool, excluded, blockKey,
+            demandModel, whatIf, plan, selectedEcIds: selected,
+            requiredQty, alloc, maxAlone, util,
+        });
+        const stamp = new Date().toISOString().slice(0, 10);
+        const who = (activeControllerName ?? "msp").replace(/[^A-Za-z0-9]+/g, "-");
+        downloadBlob(buildWorkbook(sheets), `msp-licensing-${who}-${stamp}.xlsx`);
+    };
 
     const toggle = (id: string) =>
         setSelected((prev) => {
@@ -2094,23 +2710,63 @@ function MspLicensing() {
         );
     }
 
-    const { pool, compliance } = data;
-    const firstCliff = pool.cliffs?.[0];
+    const { compliance } = data;
+    const pool = view?.summary ?? null;
+    if (!pool || !view) return null;
+    const firstCliff = view.cliffs[0] ?? null;
     const hasTail = (pool.tail_days ?? 0) > 0;
     const unassigned = (pool.capacity_today ?? 0) - (data.assigned_total ?? 0);
 
     return (
-        <div className="p-4">
+        <div className="p-4 msp-licensing-print">
+            <style>{`
+                @media print {
+                    /* Everything outside this tool — nav, sidebar, other tools */
+                    body * { visibility: hidden; }
+                    .msp-licensing-print, .msp-licensing-print * { visibility: visible; }
+                    .msp-licensing-print {
+                        position: absolute; left: 0; top: 0; width: 100%; padding: 0;
+                    }
+                    .print\\:hidden { display: none !important; }
+                    /* Keep a panel and its chart on one sheet wherever it fits */
+                    .msp-licensing-print .bg-white { break-inside: avoid; page-break-inside: avoid; }
+                    /* Charts scroll horizontally on screen; on paper let them size down */
+                    .msp-licensing-print .overflow-x-auto { overflow: visible !important; }
+                    .msp-licensing-print svg { min-width: 0 !important; max-width: 100%; }
+                    /* Inputs render as flat text so the configuration is legible */
+                    .msp-licensing-print input, .msp-licensing-print select {
+                        border: none !important; -webkit-appearance: none; appearance: none;
+                    }
+                    .msp-licensing-print input[type="checkbox"] { -webkit-appearance: checkbox; appearance: checkbox; }
+                }
+                @page { margin: 12mm; size: A4 landscape; }
+            `}</style>
             <div className="flex items-center justify-between mb-1">
                 <h2 className="text-xl font-semibold text-gray-700">
                     MSP Licensing {activeControllerName ? `— ${activeControllerName}` : ""}
                 </h2>
-                <button
-                    onClick={refresh}
-                    className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
-                >
-                    <RefreshCw size={14} /> Refresh
-                </button>
+                <div className="flex items-center gap-1 print:hidden">
+                    <button
+                        onClick={exportWorkbook}
+                        title="Every table on this page, as configured, one sheet each"
+                        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                    >
+                        <Download size={14} /> Export data
+                    </button>
+                    <button
+                        onClick={() => window.print()}
+                        title="Charts print as vectors — choose Save as PDF"
+                        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                    >
+                        <Printer size={14} /> Print / PDF
+                    </button>
+                    <button
+                        onClick={refresh}
+                        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                    >
+                        <RefreshCw size={14} /> Refresh
+                    </button>
+                </div>
             </div>
             <p className="text-xs text-gray-400 mb-5">As of {fmtDate(data.as_of)}</p>
 
@@ -2128,8 +2784,10 @@ function MspLicensing() {
                     label="Capacity today"
                     value={(pool.capacity_today ?? 0).toLocaleString()}
                     sub={
-                        pool.courtesy
-                            ? `${pool.purchased.toLocaleString()} purchased + ${pool.courtesy} courtesy`
+                        excluded.size
+                            ? `${selectedPool.length} of ${actualPool.length} blocks · ${excludedQty.toLocaleString()} excluded`
+                            : data.pool.courtesy
+                            ? `${data.pool.purchased.toLocaleString()} purchased + ${data.pool.courtesy} courtesy`
                             : `${pool.block_count} license block${pool.block_count === 1 ? "" : "s"}`
                     }
                 />
@@ -2181,6 +2839,26 @@ function MspLicensing() {
                 </div>
             )}
 
+            {/* Never let an exclusion be invisible — every figure below moves. */}
+            {excluded.size > 0 && (
+                <div className="mb-5 rounded-xl border border-gray-300 bg-gray-50 px-4 py-3 flex gap-3">
+                    <Info size={18} className="text-gray-500 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-gray-700">
+                        Excluding <strong>{excluded.size}</strong> license block
+                        {excluded.size === 1 ? "" : "s"} (
+                        <strong>{excludedQty.toLocaleString()}</strong> licenses). Every
+                        figure, chart and plan on this page reflects the remaining{" "}
+                        <strong>{pool.capacity_today.toLocaleString()}</strong>.{" "}
+                        <button
+                            onClick={() => setExcluded(new Set())}
+                            className="underline hover:text-gray-900"
+                        >
+                            Include all
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* The top-up question: when does the pool stop being able to carry
                 the estate at its current size? */}
             {shortfallPoint && (
@@ -2190,10 +2868,7 @@ function MspLicensing() {
                         From <strong>{fmtDate(shortfallPoint.from)}</strong> the pool holds{" "}
                         <strong>{shortfallPoint.capacity.toLocaleString()}</strong> licenses
                         against <strong>{shortfallPoint.demand.toLocaleString()}</strong>{" "}
-                        {growthPerMonth
-                            ? `the estate needs by then at +${growthPerMonth}/mo`
-                            : "your customers use today"}{" "}
-                        — enough for{" "}
+                        your customers hold today — enough for{" "}
                         <strong>
                             {Math.round(
                                 (shortfallPoint.capacity / shortfallPoint.demand) * 100,
@@ -2210,13 +2885,13 @@ function MspLicensing() {
             )}
 
             {/* Pool outliving every assignment — the mirror of the cliff problem */}
-            {data.idle_tail && data.idle_tail.quantity > 0 && (
+            {view.idleTail && view.idleTail.quantity > 0 && (
                 <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex gap-3">
                     <Info size={18} className="text-amber-700 mt-0.5 flex-shrink-0" />
                     <div className="text-sm text-amber-900">
-                        From <strong>{fmtDate(data.idle_tail.from)}</strong> to{" "}
-                        <strong>{fmtDate(data.idle_tail.until)}</strong>,{" "}
-                        <strong>{data.idle_tail.quantity.toLocaleString()}</strong> licenses
+                        From <strong>{fmtDate(view.idleTail.from)}</strong> to{" "}
+                        <strong>{fmtDate(view.idleTail.until)}</strong>,{" "}
+                        <strong>{view.idleTail.quantity.toLocaleString()}</strong> licenses
                         have no customer assigned against them — pool you own but
                         nobody is holding.
                     </div>
@@ -2253,60 +2928,25 @@ function MspLicensing() {
                     )}
                 </div>
                 <div className="text-xs text-gray-400 mb-3">
-                    Each band is an expiration cohort; the longest-lived sits at the bottom.
+                    Bands stack in the order they come into force, shaded darker the
+                    longer they last.
                     {chartMode === "optimized" && (
                         <span className="text-blue-700">
                             {" "}Showing the plan from Optimal allocation below — every
                             customer runs to the end of the block they were packed into.
-                            {whatIf.length > 0 &&
-                                " Hypothetical purchases are excluded here, since this chart plots only the blocks you own."}
+
                         </span>
                     )}
                 </div>
                 <PoolTimelineChart
-                    blocks={pool.blocks}
-                    cliffs={pool.cliffs}
-                    timeline={pool.timeline}
-                    combined={data.combined_timeline ?? []}
+                    blocks={selectedPool}
+                    cliffs={view.cliffs}
+                    timeline={view.timeline}
+                    combined={view.combined}
                     optimized={optimizedTimeline}
                     mode={chartMode}
-                    estateDemand={data.assigned_total ?? 0}
-                    growthPerMonth={growthPerMonth}
                     asOf={data.as_of}
                 />
-
-                {/* Growth assumption — drives the demand line above, the cliff
-                    maths below, and the extension planner. */}
-                <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2 text-sm">
-                    <span className="text-gray-500">Assume the estate grows by</span>
-                    <input
-                        type="number" min={0} step={1} value={growthPerMonth}
-                        aria-label="Estate growth in licenses per month"
-                        onChange={(e) =>
-                            setGrowthPerMonth(Math.max(0, Number(e.target.value) || 0))
-                        }
-                        className="w-20 border border-gray-200 rounded px-2 py-1 font-mono focus:outline-none focus:border-blue-400"
-                    />
-                    <span className="text-gray-500">licenses per month</span>
-                    {growthPerMonth > 0 && (
-                        <span className="text-xs text-gray-400">
-                            · {(data.assigned_total ?? 0).toLocaleString()} today →{" "}
-                            {demandAt(
-                                data.assigned_total ?? 0, growthPerMonth, data.as_of,
-                                pool.last_expiration ?? data.as_of,
-                            ).toLocaleString()}{" "}
-                            by {fmtDate(pool.last_expiration)}
-                        </span>
-                    )}
-                    {growthPerMonth > 0 && (
-                        <button
-                            onClick={() => setGrowthPerMonth(0)}
-                            className="text-xs text-gray-400 hover:text-gray-700 underline ml-1"
-                        >
-                            reset
-                        </button>
-                    )}
-                </div>
 
                 <div className="mt-5 pt-4 border-t border-gray-100">
                     <div className="text-sm font-semibold text-gray-700 mb-1">
@@ -2317,11 +2957,11 @@ function MspLicensing() {
                         on that date, and whether enough pool is left to renew them.
                     </div>
                     <CliffsAhead
-                        cliffs={pool.cliffs}
-                        combined={data.combined_timeline ?? []}
+                        cliffs={view.cliffs}
+                        combined={view.combined}
                         ecs={data.ecs}
                         estateDemand={data.assigned_total ?? 0}
-                        growthPerMonth={growthPerMonth}
+                        demand={demandModel}
                         asOf={data.as_of}
                     />
                 </div>
@@ -2365,12 +3005,41 @@ function MspLicensing() {
             {/* Pool blocks + MSP device counts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
                 <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="text-sm font-semibold text-gray-700 mb-3">
-                        License pool ({pool.block_count} blocks)
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                        <div className="text-sm font-semibold text-gray-700">
+                            License pool ({selectedPool.length} of {actualPool.length} blocks)
+                        </div>
+                        {excluded.size > 0 && (
+                            <button
+                                onClick={() => setExcluded(new Set())}
+                                className="text-xs text-gray-500 hover:text-gray-800 underline"
+                            >
+                                include all
+                            </button>
+                        )}
+                    </div>
+                    <div className="text-xs text-gray-400 mb-3">
+                        Untick a block to leave it out of every figure on this page — for
+                        entitlements R1 is carrying that should not count toward your pool.
                     </div>
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-xs uppercase tracking-wide text-gray-400 text-left">
+                                <th className="pb-2 pl-1 pr-2 font-medium w-8">
+                                    <input
+                                        type="checkbox"
+                                        checked={excluded.size === 0}
+                                        aria-label="Include all license blocks"
+                                        onChange={() =>
+                                            setExcluded(
+                                                excluded.size === 0
+                                                    ? new Set(actualPool.map(blockKey))
+                                                    : new Set(),
+                                            )
+                                        }
+                                        className="cursor-pointer"
+                                    />
+                                </th>
                                 <th className="pb-2 pr-4 font-medium">SKU</th>
                                 <th className="pb-2 pr-4 font-medium text-right">Qty</th>
                                 <th className="pb-2 pr-4 font-medium">Term</th>
@@ -2380,11 +3049,35 @@ function MspLicensing() {
                             </tr>
                         </thead>
                         <tbody>
-                            {pool.blocks.map((b) => (
+                            {actualPool.map((b) => {
+                              const key = blockKey(b);
+                              const off = excluded.has(key);
+                              return (
                                 <tr
-                                    key={String(b.id)}
-                                    className={`border-t border-gray-100 ${b.expired ? "text-gray-400" : "text-gray-700"}`}
+                                    key={key}
+                                    className={`border-t border-gray-100 ${
+                                        off
+                                            ? "text-gray-300 line-through"
+                                            : b.expired
+                                            ? "text-gray-400"
+                                            : "text-gray-700"
+                                    }`}
                                 >
+                                    <td className="py-2 pl-1 pr-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={!off}
+                                            aria-label={`Include ${b.sku} expiring ${b.expiration_date}`}
+                                            onChange={() =>
+                                                setExcluded((prev) => {
+                                                    const next = new Set(prev);
+                                                    next.has(key) ? next.delete(key) : next.add(key);
+                                                    return next;
+                                                })
+                                            }
+                                            className="cursor-pointer"
+                                        />
+                                    </td>
                                     <td className="py-2 pr-4 font-mono text-xs">
                                         {b.sku}
                                         {b.is_trial && (
@@ -2399,7 +3092,8 @@ function MspLicensing() {
                                     <td className="py-2 pr-4">{fmtDate(b.expiration_date)}</td>
                                     <td className="py-2 text-right">{fmtDuration(b.days_remaining)}</td>
                                 </tr>
-                            ))}
+                              );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -2466,7 +3160,7 @@ function MspLicensing() {
                     <WhatIfControls
                         items={whatIf}
                         asOf={data.as_of}
-                        growthPerMonth={growthPerMonth}
+                        demand={demandModel}
                         onAdd={(draft) =>
                             setWhatIf((prev) => [
                                 ...prev,
@@ -2477,11 +3171,348 @@ function MspLicensing() {
                     />
                     {whatIf.length > 0 && (
                         <div className="text-xs text-blue-700 mt-2">
-                            Planning against a hypothetical pool. The capacity chart above
-                            still shows what you actually own.
+                            Included in the projection below. "Licensed capacity over
+                            time" at the top of the page still shows only what you own.
                         </div>
                     )}
                 </div>
+
+                {/* Demand model — three independent levers driving the projection
+                    below and the extension maths. */}
+                <div className="mb-4 pb-4 border-b border-gray-100">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                        Demand model
+                    </div>
+                    <div className="flex flex-wrap items-end gap-x-6 gap-y-3 text-sm">
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+                                Base
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <input
+                                    type="number" min={0}
+                                    value={baseOverride ?? (data.assigned_total ?? 0)}
+                                    aria-label="Base licenses in play today"
+                                    onChange={(e) =>
+                                        setBaseOverride(Math.max(0, Number(e.target.value) || 0))
+                                    }
+                                    className={`w-24 font-mono ${FIELD}`}
+                                />
+                                <span className="text-gray-500 text-xs">licenses today</span>
+                                {baseOverride !== null &&
+                                    baseOverride !== (data.assigned_total ?? 0) && (
+                                        <button
+                                            onClick={() => setBaseOverride(null)}
+                                            className="text-xs text-gray-400 hover:text-gray-700 underline"
+                                        >
+                                            reset
+                                        </button>
+                                    )}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                                Run rate
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-gray-400 font-mono">+</span>
+                                <input
+                                    type="number" min={0} step={1} value={runRate}
+                                    aria-label="New licenses won per month"
+                                    onChange={(e) => setRunRate(Math.max(0, Number(e.target.value) || 0))}
+                                    className={`w-20 font-mono ${FIELD}`}
+                                />
+                                <span className="text-gray-500 text-xs">new / month</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                                Churn
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-gray-400 font-mono">−</span>
+                                <input
+                                    type="number" min={0} max={100} step={0.1} value={churnPct}
+                                    aria-label="Percent of licenses lost per month"
+                                    onChange={(e) =>
+                                        setChurnPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))
+                                    }
+                                    className={`w-20 font-mono ${FIELD}`}
+                                />
+                                <span className="text-gray-500 text-xs">% / month</span>
+                            </div>
+                        </div>
+
+                        {(runRate > 0 || churnPct > 0) && (
+                            <div className="text-xs text-gray-500 pb-1">
+                                {demandModel.base.toLocaleString()} today →{" "}
+                                <strong className="text-gray-900">
+                                    {demandAt(
+                                        demandModel, data.as_of,
+                                        pool.last_expiration ?? data.as_of,
+                                    ).toLocaleString()}
+                                </strong>{" "}
+                                by {fmtDate(pool.last_expiration)}
+                                {steadyState(demandModel) !== null && (
+                                    <span className="text-gray-400">
+                                        {" "}· settles at{" "}
+                                        {steadyState(demandModel)!.toLocaleString()} once
+                                        churn and new business balance
+                                    </span>
+                                )}
+                                <button
+                                    onClick={() => { setRunRate(0); setChurnPct(0); }}
+                                    className="ml-2 underline hover:text-gray-800"
+                                >
+                                    clear
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-2">
+                        Churn compounds monthly on everything held, new business included,
+                        so a high run rate cannot outrun it.
+                    </div>
+                </div>
+
+
+                {/* Same chart as "what we have today", projected forward: the pool
+                    including hypothetical purchases, against modelled demand. */}
+                {projected && (
+                    <div className="mb-4 pb-4 border-b border-gray-100">
+                        <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                            Projected capacity over time
+                        </div>
+                        <div className="text-xs text-gray-400 mb-3">
+                            The pool you would hold — selected blocks plus anything bought
+                            above — against demand under the model.
+                        </div>
+                        <PoolTimelineChart
+                            blocks={livePool as any}
+                            cliffs={projected.cliffs}
+                            timeline={projected.timeline}
+                            combined={projected.combined}
+                            optimized={null}
+                            mode="actual"
+                            showCommitted={false}
+                            estateDemand={data.assigned_total ?? 0}
+                            demand={demandModel}
+                            asOf={data.as_of}
+                        />
+                    </div>
+                )}
+
+                {/* What meeting that demand curve actually costs in orders */}
+                {purchasePlan && (
+                    <div className="mb-4 pb-4 border-b border-gray-100">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+                            <div className="text-xs uppercase tracking-wide text-gray-500">
+                                Required purchases
+                            </div>
+                            <div className="flex items-center gap-2 text-xs print:hidden">
+                                <span className="text-gray-500">through</span>
+                                <select
+                                    value={planYears ?? ""}
+                                    aria-label="Planning horizon"
+                                    onChange={(e) =>
+                                        setPlanYears(e.target.value === "" ? null : Number(e.target.value))
+                                    }
+                                    className={FIELD}
+                                >
+                                    <option value="">end of current pool</option>
+                                    {[1, 2, 3, 5, 7, 10].map((y) => (
+                                        <option key={y} value={y}>
+                                            {y} year{y === 1 ? "" : "s"} out
+                                        </option>
+                                    ))}
+                                </select>
+                                <span className="text-gray-500">ordering</span>
+                                <select
+                                    value={planCadence}
+                                    aria-label="Ordering cadence"
+                                    onChange={(e) => setPlanCadence(e.target.value as Cadence)}
+                                    className={FIELD}
+                                >
+                                    {(Object.keys(CADENCE_LABEL) as Cadence[]).map((c) => (
+                                        <option key={c} value={c}>
+                                            every {CADENCE_LABEL[c]}
+                                        </option>
+                                    ))}
+                                </select>
+                                <span className="text-gray-500">on a</span>
+                                <select
+                                    value={planTerm}
+                                    aria-label="Term for required purchases"
+                                    onChange={(e) => setPlanTerm(Number(e.target.value))}
+                                    className={FIELD}
+                                >
+                                    {[1, 2, 3, 4, 5].map((y) => (
+                                        <option key={y} value={y}>{y} year</option>
+                                    ))}
+                                </select>
+                                <span className="text-gray-500">term, activating every</span>
+                                <select
+                                    value={planStagger}
+                                    aria-label="Activation stagger"
+                                    onChange={(e) => setPlanStagger(Number(e.target.value))}
+                                    className={FIELD}
+                                >
+                                    {[30, 45, 60, 90, 180].map((d) => (
+                                        <option key={d} value={d}>{d} days</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="text-xs text-gray-400 mb-3">
+                            Orders needed to hold the demand line through{" "}
+                            {fmtDate(purchasePlan.horizon)}, counting what you own, anything
+                            bought above, and each order's own expiry. Each order is broken
+                            into chunks that switch on as demand reaches them, using the{" "}
+                            {GRACE_WINDOW_DAYS}-day window so capacity tracks demand instead
+                            of sitting above it. The chart may still show a deficit past the
+                            horizon — nothing is provisioned beyond it.
+                        </div>
+
+                        {purchasePlan.alreadyCovered ? (
+                            <div className="text-sm text-gray-600 py-3">
+                                Nothing to buy — what you hold covers the demand model all
+                                the way to {fmtDate(purchasePlan.horizon)}.
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex flex-wrap items-end gap-6 mb-3">
+                                    <div>
+                                        <div className="text-2xl font-semibold font-mono text-gray-900">
+                                            {purchasePlan.totalLicenses.toLocaleString()}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                            licenses across {new Set(purchasePlan.purchases.map((p) => p.purchaseDate)).size} order
+                                            {new Set(purchasePlan.purchases.map((p) => p.purchaseDate)).size === 1 ? "" : "s"}
+                                            {", "}
+                                            {purchasePlan.purchases.length} activation
+                                            {purchasePlan.purchases.length === 1 ? "" : "s"}
+                                        </div>
+                                    </div>
+                                    <div className="text-sm">
+                                        <span className="font-mono font-semibold text-gray-900">
+                                            {purchasePlan.totalReplacing.toLocaleString()}
+                                        </span>{" "}
+                                        <span className="text-gray-500">
+                                            replacing licenses that lapse
+                                        </span>
+                                        <span className="text-gray-300"> · </span>
+                                        <span className="font-mono font-semibold text-gray-900">
+                                            {purchasePlan.totalForGrowth.toLocaleString()}
+                                        </span>{" "}
+                                        <span className="text-gray-500">for growth</span>
+                                        <div className="text-xs text-gray-400 mt-0.5">
+                                            {purchasePlan.idleLicenseDays.toLocaleString()}{" "}
+                                            license-days carried above demand — the cost of
+                                            switching on before it is needed
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() =>
+                                            setWhatIf((prev) => {
+                                                let id = prev.reduce((m, w) => Math.max(m, w.id), 0);
+                                                return [
+                                                    ...prev,
+                                                    ...purchasePlan.purchases.map((p) => ({
+                                                        id: ++id,
+                                                        kind: "once" as const,
+                                                        quantity: p.quantity,
+                                                        termYears: p.termYears,
+                                                        startDate: p.purchaseDate,
+                                                        deferDays: p.deferDays,
+                                                        cadence: "annual" as Cadence,
+                                                        periods: 1,
+                                                        tranches: 1,
+                                                        intervalDays: 30,
+                                                    })),
+                                                ];
+                                            })
+                                        }
+                                        className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 print:hidden"
+                                        title="Adds each order above as a purchase, so the chart shows the gap closing"
+                                    >
+                                        Add these to the plan
+                                    </button>
+                                </div>
+
+<table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-xs uppercase tracking-wide text-gray-400 text-left">
+                                            <th className="pb-2 pr-4 font-medium">Order placed</th>
+                                            <th className="pb-2 pr-4 font-medium">Activates</th>
+                                            <th className="pb-2 pr-4 font-medium text-right">Defer</th>
+                                            <th className="pb-2 pr-4 font-medium text-right">Licenses</th>
+                                            <th className="pb-2 pr-4 font-medium text-right">Replacing</th>
+                                            <th className="pb-2 pr-4 font-medium text-right">Growth</th>
+                                            <th className="pb-2 pr-4 font-medium">Expires</th>
+                                            <th className="pb-2 font-medium text-right">Demand then</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {purchasePlan.purchases.map((p, idx, arr) => {
+                                            // Chunks belong to an order; only the first
+                                            // of each repeats the order date so the
+                                            // grouping is readable at a glance.
+                                            const newOrder =
+                                                idx === 0 || arr[idx - 1].purchaseDate !== p.purchaseDate;
+                                            return (
+                                                <tr
+                                                    key={idx}
+                                                    className={`text-gray-700 ${
+                                                        newOrder ? "border-t border-gray-200" : ""
+                                                    }`}
+                                                >
+                                                    <td className="py-1.5 pr-4">
+                                                        {newOrder ? (
+                                                            <span className="font-medium text-gray-900">
+                                                                {fmtDate(p.purchaseDate)}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-gray-300">↳</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4">{fmtDate(p.startDate)}</td>
+                                                    <td className="py-1.5 pr-4 text-right font-mono text-gray-500">
+                                                        {p.deferDays ? `+${p.deferDays}d` : "—"}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-right font-mono font-semibold">
+                                                        {p.quantity.toLocaleString()}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-right font-mono text-gray-500">
+                                                        {p.replacing ? p.replacing.toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4 text-right font-mono text-gray-500">
+                                                        {p.forGrowth ? p.forGrowth.toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="py-1.5 pr-4">{fmtDate(p.expires)}</td>
+                                                    <td className="py-1.5 text-right font-mono text-gray-500">
+                                                        {p.demandThen.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </>
+                        )}
+                    </div>
+                )}
+
+                {unpurchased > 0 && (
+                    <div className="mb-3 text-xs text-gray-500">
+                        {unpurchased} planned purchase{unpurchased === 1 ? "" : "s"} above
+                        {unpurchased === 1 ? " is" : " are"} not yet placed, so
+                        {unpurchased === 1 ? " it is" : " they are"} excluded from the
+                        extension figures below — a customer cannot be committed to a term
+                        nothing has been ordered for.
+                    </div>
+                )}
 
                 {plan && (
                     <ExtensionPlanner
@@ -2492,7 +3523,7 @@ function MspLicensing() {
                         selectedCount={selected.size}
                         asOf={data.as_of}
                         earliest={earliest}
-                        growthPerMonth={growthPerMonth}
+                        demand={demandModel}
                     />
                 )}
             </div>
@@ -2510,7 +3541,7 @@ function MspLicensing() {
                                     setSelected(new Set());
                                     setQtyOverride(null);
                                 }}
-                                className="text-xs text-gray-500 hover:text-gray-800 underline"
+                                className="text-xs text-gray-500 hover:text-gray-800 underline print:hidden"
                             >
                                 clear {selected.size} selected
                             </button>
@@ -2520,7 +3551,7 @@ function MspLicensing() {
                                 setSelected(new Set(data.ecs.map((e) => e.tenant_id)));
                                 setQtyOverride(null);
                             }}
-                            className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                            className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 print:hidden"
                         >
                             Select all
                         </button>
@@ -2528,7 +3559,7 @@ function MspLicensing() {
                             value={filter}
                             onChange={(e) => setFilter(e.target.value)}
                             placeholder="Filter by name…"
-                            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-blue-400"
+                            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-48 focus:outline-none focus:border-blue-400 print:hidden"
                         />
                     </div>
                 </div>
