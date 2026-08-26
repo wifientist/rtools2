@@ -45,6 +45,7 @@ CLIENT_MAP_FIELDS = [
     "radioStatus",
     "networkInformation",
     "trafficStatus",
+    "venueInformation",
 ]
 
 
@@ -184,7 +185,12 @@ class FloorplanService:
         for page in pages:
             body = {
                 "fields": CLIENT_MAP_FIELDS,
-                "filters": {"venueId": [venue_id]},
+                # NOT `venueId` — on the CLIENTS endpoint that filter is
+                # accepted and ignored, which would put every client in the
+                # tenant onto one floor plan. (The AP query above is a
+                # different endpoint and does honour `venueId`.) See
+                # ClientsService.query_all_clients_for_venue.
+                "filters": {"venueInformation.id": [venue_id]},
                 "sortField": "macAddress",
                 "sortOrder": "ASC",
                 "page": page,
@@ -210,6 +216,11 @@ class FloorplanService:
                         continue
                     seen.add(mac)
                     new_in_page += 1
+                # Re-check scope locally rather than trusting it; a client from
+                # another venue drawn on this floor plan would be silent and wrong.
+                venue = row.get("venueInformation")
+                if isinstance(venue, dict) and venue.get("id") and venue["id"] != venue_id:
+                    continue
                 all_clients.append(row)
 
             if len(rows) < page_size:

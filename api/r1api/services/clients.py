@@ -26,7 +26,16 @@ class ClientsService:
         """
         Enumerate every client currently visible in a single venue.
 
-        R1's /venues/aps/clients/query has two quirks we have to work around:
+        R1's /venues/aps/clients/query has three quirks we have to work around:
+
+        0. **The obvious venue filter does nothing.** `filters.venueId` is
+           accepted and silently ignored: a deliberately bogus venue id returns
+           the same totalCount as sending no filter at all, so this helper was
+           returning every client in the TENANT for years while looking
+           per-venue. The nested `filters.venueInformation.id` is honoured (a
+           bogus id there returns 0). Verified live 2026-08-26 across four
+           tenants. `filters.apInformation.serialNumber` also works if a
+           per-AP scope is ever needed; the flat `apSerialNumber` does not.
 
         1. **Off-by-one on page 0/1.** `page=0` and `page=1` both return the
            same first block — the endpoint is effectively 1-indexed but
@@ -68,9 +77,14 @@ class ClientsService:
         fields = list(fields) if fields else ["macAddress"]
         if "macAddress" not in fields:
             fields.append("macAddress")
+        # Always ask for the venue so the scoping can be re-checked locally
+        # rather than trusted — see the row filter below.
+        if "venueInformation" not in fields:
+            fields.append("venueInformation")
 
         all_clients: list = []
         seen: set = set()
+        off_venue = 0
 
         # Effective page sequence: 0, 2, 3, 4, ..., 10.
         # Stop at page 10 — page 11 triggers ES max_result_window (10*1000=10000).
@@ -80,7 +94,13 @@ class ClientsService:
         for page in pages:
             body = {
                 "fields": fields,
-                "filters": {"venueId": [venue_id]},
+                # NOT `venueId`. This endpoint silently ignores a flat
+                # `venueId` filter — a deliberately bogus venue id returns the
+                # same totalCount as no filter at all, so every "per-venue"
+                # client query was really returning the whole tenant. The
+                # nested dotted path IS honoured (a bogus id there returns 0).
+                # Verified against a live tenant 2026-08-26.
+                "filters": {"venueInformation.id": [venue_id]},
                 "sortField": "macAddress",
                 "sortOrder": "ASC",
                 "page": page,
@@ -117,6 +137,16 @@ class ClientsService:
                         continue
                     seen.add(mac)
                     new_in_page += 1
+                # Belt and braces on the server-side filter. R1 has already
+                # been caught ignoring one client filter key; if the nested one
+                # ever goes the same way this keeps the result venue-scoped
+                # instead of silently widening to the tenant. Rows with no
+                # venue reported are kept — dropping them would lose real
+                # clients whenever the projection comes back partial.
+                venue = row.get("venueInformation")
+                if isinstance(venue, dict) and venue.get("id") and venue["id"] != venue_id:
+                    off_venue += 1
+                    continue
                 all_clients.append(row)
 
             if len(rows) < page_size:
@@ -138,6 +168,13 @@ class ClientsService:
                 f"venue={venue_id} hit ES max_result_window (10000) — venue "
                 f"may have additional clients that require time-range "
                 f"partitioning to retrieve"
+            )
+
+        if off_venue:
+            logger.warning(
+                f"[query_all_clients_for_venue] tenant={tenant_id} "
+                f"venue={venue_id} dropped {off_venue} row(s) belonging to another "
+                f"venue — the server-side venue filter is not being honoured"
             )
 
         logger.info(

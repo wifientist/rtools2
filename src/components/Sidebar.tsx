@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, ArrowLeftRight, Tag, Download, Radio, Map, Cable } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, ArrowLeftRight, Tag, Download, Radio, Map, Cable, ClipboardCheck } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -58,6 +58,7 @@ const Sidebar = () => {
         { to: "/migration-dashboard", icon: <BarChart3 size={20} />, label: "Migration", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/r1-details", icon: <CloudCog size={20} />, label: "R1 Details", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/maps", icon: <Map size={20} />, label: "Maps", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
+        { to: "/pisr", icon: <ClipboardCheck size={20} />, label: "PISR", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/sz-audit", icon: <ClipboardList size={20} />, label: "SZ Audit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/firmware-matrix", icon: <Table2 size={20} />, label: "Firmware Matrix", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/diagrams", icon: <Network size={20} />, label: "Network Diagrams", requiresAuth: true, requiresAlpha: true, isExternal: true },

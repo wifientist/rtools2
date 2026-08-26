@@ -38,6 +38,7 @@ from routers.wiredwiz import router as wiredwiz_router
 from routers.data_studio_export import router as data_studio_export_router
 from routers.dfs_blacklist import router as dfs_blacklist_router
 from routers.maps import router as maps_router
+from routers.pisr import router as pisr_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -214,6 +215,9 @@ app.include_router(bulk_ap_tagging_router, tags=["Bulk AP Tagging"])
 
 # WiredWiz - read-only switch crawler / loop hunter
 app.include_router(wiredwiz_router, tags=["WiredWiz"])
+
+# PISR — read-only Property Install Status Report, one venue at a time
+app.include_router(pisr_router, tags=["PISR"])
 
 # Data Studio Export — automated R1 Data Studio CSV exports
 app.include_router(data_studio_export_router, tags=["Data Studio Export"])
