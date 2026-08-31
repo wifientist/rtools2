@@ -392,7 +392,8 @@ class DpskService:
         description: str = None,
         expiration_date: str = None,
         max_devices: int = None,
-        vlan_id: str = None
+        vlan_id: str = None,
+        identity_id: str = None
     ):
         """
         Create a new DPSK passphrase
@@ -415,7 +416,17 @@ class DpskService:
 
         if passphrase:
             payload["passphrase"] = passphrase
-        if user_name:
+        # Attaching to an identity that already exists.
+        #
+        # Sending `username` makes R1 run BULK_CREATE_PERSONAS and mint a NEW
+        # identity, which fails with GENERAL-010 ("An identity with this name
+        # already exists in the group") whenever the identity survived but its
+        # passphrase did not -- an aborted run, a partial cleanup, a deleted
+        # passphrase. Sending `identityId` instead attaches the passphrase to
+        # the existing identity, which is what we actually want.
+        if identity_id:
+            payload["identityId"] = identity_id
+        elif user_name:
             payload["username"] = user_name  # FIXED: API uses 'username' not 'userName'
         if user_email:
             payload["email"] = user_email  # FIXED: API uses 'email' not 'userEmail'

@@ -318,14 +318,18 @@ CloudpathImportWorkflow = Workflow(
         ),
 
         # =====================================================================
-        # Phase 7a: Activate Network Venue-Wide (ssid_mode="single" only)
+        # Phase 7a: Activate the property SSID (ssid_mode="single" ONLY)
+        # Named for the mode, not the action: in per_unit mode this phase is
+        # correctly skipped while activate_ap_group does the venue-wide
+        # activation for the property SSID. The old name ("Activate Network
+        # Venue-Wide") made a correct skip look like missing work.
         # Property-wide SSID - just activate on all AP groups, no targeting.
         # Uses cloudpath-specific phase to avoid touching the shared
         # activate_network phase used by the Per-Unit SSID tool.
         # =====================================================================
         Phase(
             id="activate_venue_wide",
-            name="Activate Network Venue-Wide",
+            name="Activate Property SSID (single-SSID mode)",
             description=(
                 "Activate property-wide SSID on all AP groups. "
                 "Only runs for ssid_mode='single'."
@@ -355,7 +359,7 @@ CloudpathImportWorkflow = Workflow(
         # =====================================================================
         Phase(
             id="activate_ap_group",
-            name="Activate SSIDs on AP Groups",
+            name="Activate SSIDs (AP Groups + property-wide)",
             description=(
                 "Bind each unit's SSID directly to its AP Group without a "
                 "venue-wide broadcast step."

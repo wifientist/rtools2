@@ -207,10 +207,15 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 # Extract VLAN ID if present (per-identity VLAN from Cloudpath)
                 vlan_id = pp.get('vlan_id')
 
+                # If validate already found this username's identity, attach
+                # to it rather than asking R1 to mint another one (GENERAL-010).
+                known_identity = pp.get('existing_identity_id')
+
                 # Create the passphrase in R1
                 result = await self.r1_client.dpsk.create_passphrase(
                     pool_id=pool_id,
                     user_name=username,
+                    identity_id=known_identity,
                     passphrase=passphrase_value,
                     tenant_id=self.tenant_id,
                     expiration_date=expiration,
@@ -243,6 +248,51 @@ class CreatePassphrasesPhase(PhaseExecutor):
 
             except Exception as e:
                 error_msg = str(e)
+
+                # The identity exists but we didn't know its id (created after
+                # validation ran, or missed). Resolve by name and attach to it
+                # instead of surfacing GENERAL-010 as a failure.
+                if (
+                    'GENERAL-010' in error_msg
+                    or 'identity with this name already exists' in error_msg.lower()
+                ) and not pp.get('existing_identity_id') and inputs.identity_group_id:
+                    try:
+                        by_name = await self._identities_by_name(
+                            inputs.identity_group_id
+                        )
+                        found = by_name.get(username)
+                        if found:
+                            result = await self.r1_client.dpsk.create_passphrase(
+                                pool_id=pool_id,
+                                user_name=username,
+                                identity_id=found,
+                                passphrase=passphrase_value,
+                                tenant_id=self.tenant_id,
+                                expiration_date=expiration,
+                                description=f"Imported from Cloudpath: {guid}",
+                                vlan_id=vlan_id,
+                            )
+                            logger.info(
+                                f"Attached passphrase for {username} to its "
+                                f"existing identity {found}"
+                            )
+                            return PassphraseResult(
+                                cloudpath_guid=guid,
+                                username=username,
+                                passphrase_id=(
+                                    result.get('id') if isinstance(result, dict) else None
+                                ),
+                                identity_id=found,
+                                existing_identity_id=found,
+                                vlan_id=vlan_id,
+                                success=True,
+                            )
+                    except Exception as retry_err:
+                        logger.warning(
+                            f"Could not attach {username} to its existing "
+                            f"identity: {retry_err}"
+                        )
+
                 # Check for duplicate
                 if 'already exists' in error_msg.lower() or 'duplicate' in error_msg.lower():
                     return PassphraseResult(
