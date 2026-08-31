@@ -53,6 +53,8 @@ class CreatePassphrasesPhase(PhaseExecutor):
     class Inputs(BaseModel):
         import_mode: str = "property_wide"
         dpsk_pool_id: Optional[str] = None  # For per-unit mode
+        # Used only to backfill identity ids R1 was too slow to report
+        identity_group_id: Optional[str] = None
         dpsk_pool_ids: Dict[str, str] = Field(
             default_factory=dict,
             description="Map of pool names to IDs (property-wide)"
@@ -262,6 +264,54 @@ class CreatePassphrasesPhase(PhaseExecutor):
             progress_interval=max(1, len(passphrases) // 20),  # ~5% intervals
         )
 
+        # ------------------------------------------------------------------
+        # Backfill identity ids R1 did not report.
+        #
+        # create_passphrase resolves identityId by re-reading the pool, but R1
+        # links the identity a moment after it writes the passphrase, so under
+        # concurrency some records come back with identityId still null. Every
+        # one of those silently loses BOTH its Cloudpath GUID description and
+        # its suffix rename downstream, because each consumer just skips a
+        # result with no identity id.
+        #
+        # The identity name is the username we supplied, so one paged read of
+        # the group recovers all of them at once.
+        # ------------------------------------------------------------------
+        missing = [
+            r for r in results.succeeded
+            if r is not None and not r.skipped and not r.identity_id and r.username
+        ]
+        if missing and inputs.identity_group_id:
+            await self.emit(
+                f"Resolving {len(missing)} identities R1 did not report at "
+                f"creation time"
+            )
+            by_name = await self._identities_by_name(inputs.identity_group_id)
+            recovered = 0
+            for r in missing:
+                found = by_name.get(r.username)
+                if found:
+                    r.identity_id = found
+                    recovered += 1
+            if recovered:
+                await self.emit(
+                    f"Recovered {recovered} of {len(missing)} identity ids",
+                    "success" if recovered == len(missing) else "warning",
+                )
+            if recovered < len(missing):
+                await self.emit(
+                    f"{len(missing) - recovered} identities could not be "
+                    f"resolved — they will miss their Cloudpath GUID and "
+                    f"keep their username suffix",
+                    "warning",
+                )
+        elif missing:
+            await self.emit(
+                f"{len(missing)} passphrases have no identity id and no "
+                f"identity group to resolve them against",
+                "warning",
+            )
+
         # Categorize results
         created: List[PassphraseResult] = []
         failed: List[PassphraseResult] = []
@@ -313,6 +363,35 @@ class CreatePassphrasesPhase(PhaseExecutor):
             created_passphrases=created,
             failed_passphrases=failed,
         )
+
+    async def _identities_by_name(self, group_id: str) -> Dict[str, str]:
+        """Page the identity group once, returning name -> identity id."""
+        by_name: Dict[str, str] = {}
+        page, size = 0, 100
+        try:
+            while True:
+                result = await self.r1_client.identity.get_identities_in_group(
+                    group_id=group_id,
+                    tenant_id=self.tenant_id,
+                    page=page,
+                    size=size,
+                )
+                items = result.get('content', result.get('data', []))
+                if not items:
+                    break
+                for identity in items:
+                    name, ident_id = identity.get('name'), identity.get('id')
+                    if name and ident_id:
+                        by_name[name] = ident_id
+                if len(items) < size:
+                    break
+                page += 1
+                if page > 5000:
+                    logger.warning("Identity pagination safety limit reached")
+                    break
+        except Exception as e:
+            logger.warning(f"Could not page identity group {group_id}: {e}")
+        return by_name
 
     async def validate(self, inputs: 'Inputs') -> PhaseValidation:
         """Validate passphrase creation inputs."""

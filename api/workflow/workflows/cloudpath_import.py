@@ -192,7 +192,8 @@ CloudpathImportWorkflow = Workflow(
             critical=True,
             inputs=[
                 "import_mode", "dpsk_pool_id", "passphrases",
-                "options", "dpsk_pool_ids"
+                "options", "dpsk_pool_ids",
+                "identity_group_id",  # to backfill ids R1 reports late
             ],
             outputs=[
                 "created_count", "failed_count", "skipped_count",

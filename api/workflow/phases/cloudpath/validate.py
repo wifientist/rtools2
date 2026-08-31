@@ -775,6 +775,8 @@ class ValidateCloudpathPhase(PhaseExecutor):
         policy_set_name = options.get('policy_set_name') or None
         policies_to_create = 0
         policies_existing = 0
+        policies_skipped_no_unit_ssid = 0
+        colliding_accounts: List[str] = []
         radius_groups_to_create = 0
         radius_groups_existing = 0
         existing_radius_groups: Set[str] = set()
@@ -832,15 +834,47 @@ class ValidateCloudpathPhase(PhaseExecutor):
             # the run then hit 409s on the ones that already existed.
             from workflow.phases.create_access_policies import sanitize_policy_name
 
+            # Count by DISTINCT policy name. R1 rejects a duplicate name with
+            # 409, so two passphrases collapsing to one name yield ONE policy,
+            # not two — counting per passphrase overstated the plan and hid
+            # the collision until the run hit the conflict.
+            planned_policy_names: Dict[str, List[str]] = defaultdict(list)
             for pp in passphrases:
-                for ssid in pp.ssid_list:
-                    if UNIT_SSID_PATTERN.match(ssid):
-                        account = pp.name.rsplit("_", 1)[0] if "_" in pp.name else pp.name
-                        policy_name = sanitize_policy_name(account, ssid)
-                        if policy_name in existing_policy_names:
-                            policies_existing += 1
-                        else:
-                            policies_to_create += 1
+                unit_ssids = [
+                    s for s in pp.ssid_list if UNIT_SSID_PATTERN.match(s)
+                ]
+                if not unit_ssids:
+                    # Property-wide only — nothing to scope a policy to.
+                    policies_skipped_no_unit_ssid += 1
+                    continue
+                account = pp.name.rsplit("_", 1)[0] if "_" in pp.name else pp.name
+                planned_policy_names[sanitize_policy_name(account)].append(pp.name)
+
+            for policy_name, sources in planned_policy_names.items():
+                if policy_name in existing_policy_names:
+                    policies_existing += 1
+                else:
+                    policies_to_create += 1
+                if len(sources) > 1:
+                    colliding_accounts.append(policy_name)
+
+            if policies_skipped_no_unit_ssid:
+                await self.emit(
+                    f"{policies_skipped_no_unit_ssid} residents are on the "
+                    f"property-wide SSID only and will get no adaptive policy "
+                    f"(their passphrases still import normally)",
+                    "warning",
+                )
+            if colliding_accounts:
+                sample = ", ".join(sorted(colliding_accounts)[:5])
+                await self.emit(
+                    f"{len(colliding_accounts)} account(s) appear more than "
+                    f"once with different tier suffixes ({sample}"
+                    f"{'...' if len(colliding_accounts) > 5 else ''}). Each "
+                    f"collapses to ONE identity and ONE policy, so the extra "
+                    f"copies keep their suffix and get no policy of their own.",
+                    "warning",
+                )
 
         await self.emit(
             f"Resource check: IDG={'exists' if ig_exists else 'new'}, "
@@ -1426,6 +1460,20 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 notes = [f"Suffixes: {', '.join(sorted(suffix_patterns))}"]
                 if policies_existing > 0:
                     notes.append(f"{policies_existing} already exist")
+                # State the shortfall on the confirmation screen. A policy is
+                # scoped by a unit-SSID condition, so these two are the only
+                # reasons an imported resident ends up without one, and both
+                # used to be invisible until someone counted rows in R1.
+                if policies_skipped_no_unit_ssid > 0:
+                    notes.append(
+                        f"{policies_skipped_no_unit_ssid} residents on the "
+                        f"property-wide SSID only get no policy"
+                    )
+                if colliding_accounts:
+                    notes.append(
+                        f"{len(colliding_accounts)} account(s) listed twice "
+                        f"collapse to one policy and one identity"
+                    )
                 actions.append(ResourceAction(
                     action="create",
                     resource_type="adaptive_policies",
@@ -1486,6 +1534,9 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 passphrases_existing=planned_passphrase_existing,
                 policies_to_create=policies_to_create,
                 policies_existing=policies_existing,
+                policies_skipped_no_unit_ssid=policies_skipped_no_unit_ssid,
+                policy_name_collisions=len(colliding_accounts),
+                colliding_accounts=sorted(colliding_accounts)[:20],
                 radius_groups_to_create=radius_groups_to_create,
                 radius_groups_existing=radius_groups_existing,
                 total_api_calls=self._estimate_api_calls(

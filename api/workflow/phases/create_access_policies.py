@@ -59,33 +59,22 @@ class IdentityRenameResult(BaseModel):
     error: Optional[str] = None
 
 
-def site_from_ssid(ssid: str) -> str:
+def sanitize_policy_name(account: str) -> str:
     """
-    Extract the site token from a unit SSID: "101@CedarPoint" -> "CedarPoint".
+    Build a policy name from the account alone: "resident101a".
 
-    Returns "" when the SSID carries no site (property-wide SSIDs).
+    This used to append the site from the SSID ("resident101a@CedarPoint")
+    so a cleanup could tell one property's policies from another's. That is
+    no longer load-bearing: cleanup/inventory.py collects adaptive policies
+    tenant-wide (scoping by @site stranded most of them) and uses site tokens
+    only to flag policy SETS, which are named from the policy_set_name option
+    rather than from here.
+
+    Note the names are tenant-scoped, so two properties importing the same
+    account id now collide: the second import will find the existing policy
+    by name and UPDATE it rather than create its own.
     """
-    if not ssid or '@' not in ssid:
-        return ""
-    return re.sub(r'[^a-zA-Z0-9_]', '', ssid.rsplit('@', 1)[-1])
-
-
-def sanitize_policy_name(account: str, ssid: str = None) -> str:
-    """
-    Build a policy name that identifies which site the policy belongs to:
-    "resident101a" + "101@CedarPoint" -> "resident101a@CedarPoint".
-
-    Policies are tenant-scoped in R1 with no venue attribute, so the name is
-    the only thing tying one to a property. Without the site suffix a cleanup
-    cannot tell this property's policies from another's, and the only safe
-    action would be to leave them all behind.
-
-    The previous version's regex stripped '@' despite its docstring claiming
-    otherwise, so every policy was named for the account alone.
-    """
-    safe_account = re.sub(r'[^a-zA-Z0-9_]', '', account)
-    site = site_from_ssid(ssid) if ssid else ""
-    return f"{safe_account}@{site}" if site else safe_account
+    return re.sub(r'[^a-zA-Z0-9_]', '', account)
 
 
 def regex_pattern_for_value(value: str) -> str:
@@ -149,6 +138,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         policies_created: int = 0
         policies_failed: int = 0
         identities_renamed: int = 0
+        renames_no_identity: int = 0
+        renames_failed: int = 0
+        skipped_no_ssid: int = 0
+        skipped_no_unit_ssid: int = 0
         policy_set_id: Optional[str] = None
         policy_results: List[PolicyResult] = Field(default_factory=list)
         rename_results: List[IdentityRenameResult] = Field(default_factory=list)
@@ -293,6 +286,15 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             f"Found {len(parsed_entries)} policy entries, "
             f"{len(unique_suffixes)} unique suffixes: {unique_suffixes}"
         )
+        # These were previously reported only when NOTHING was built, so a
+        # partial run looked clean while dozens of passphrases got no policy.
+        if skipped_no_ssid or skipped_no_unit_ssid:
+            await self.emit(
+                f"No policy for {skipped_no_ssid + skipped_no_unit_ssid} "
+                f"passphrases: {skipped_no_ssid} had no SSID mapping, "
+                f"{skipped_no_unit_ssid} had no unit SSID (property-wide only)",
+                "warning",
+            )
 
         # Step 2: Validate/create RADIUS attribute groups
         suffix_to_group_id: Dict[str, str] = {}
@@ -499,7 +501,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 policies_failed += 1
                 continue
 
-            policy_name = sanitize_policy_name(account, ssid)
+            policy_name = sanitize_policy_name(account)
 
             try:
                 # Check if policy already exists
@@ -656,6 +658,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         # Step 5: Rename identities (strip suffix)
         rename_results: List[IdentityRenameResult] = []
         identities_renamed = 0
+        renames_no_identity = 0
+        renames_failed = 0
 
         if identities_to_rename:
             await self.emit(f"Renaming {len(identities_to_rename)} identities to remove suffix")
@@ -670,6 +674,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     new_name = identity["new_name"]
 
                     if not identity_id:
+                        # No identity id means we never learned which identity
+                        # this passphrase belongs to, so the suffix stays on
+                        # the name. Count it — this used to vanish silently.
+                        renames_no_identity += 1
                         continue
 
                     try:
@@ -689,6 +697,13 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         identities_renamed += 1
 
                     except Exception as e:
+                        # The common cause is a base-name collision: two
+                        # passphrases for one account on different tiers
+                        # (acct_gigabit + acct_superfast) both strip to the
+                        # same name, and R1 rejects the second with
+                        # GENERAL-010. Non-fatal — that identity keeps its
+                        # suffix, which is what keeps the two distinguishable.
+                        renames_failed += 1
                         logger.warning(f"Failed to rename identity {old_name}: {e}")
                         rename_results.append(IdentityRenameResult(
                             identity_id=identity_id,
@@ -698,7 +713,26 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                             error=str(e)
                         ))
 
-                await self.emit(f"Renamed {identities_renamed} identities")
+                if renames_no_identity or renames_failed:
+                    detail = []
+                    if renames_no_identity:
+                        detail.append(
+                            f"{renames_no_identity} skipped with no identity id"
+                        )
+                    if renames_failed:
+                        detail.append(
+                            f"{renames_failed} rejected by R1 (usually two "
+                            f"tiers of one account colliding on the same "
+                            f"stripped name)"
+                        )
+                    await self.emit(
+                        f"Renamed {identities_renamed} identities; "
+                        + "; ".join(detail)
+                        + " — these keep their username suffix",
+                        "warning",
+                    )
+                else:
+                    await self.emit(f"Renamed {identities_renamed} identities")
 
         await self.emit(
             f"Access policies complete: {policies_created} policies, "
@@ -712,6 +746,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             policies_created=policies_created,
             policies_failed=policies_failed,
             identities_renamed=identities_renamed,
+            renames_no_identity=renames_no_identity,
+            renames_failed=renames_failed,
+            skipped_no_ssid=skipped_no_ssid,
+            skipped_no_unit_ssid=skipped_no_unit_ssid,
             policy_set_id=policy_set_id,
             policy_results=policy_results,
             rename_results=rename_results,

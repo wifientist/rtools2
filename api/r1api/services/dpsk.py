@@ -490,8 +490,12 @@ class DpskService:
                 if passphrase:
                     import asyncio
 
-                    lookup_delays = [0, 2, 4, 8]  # first pass immediate
+                    lookup_delays = [0, 2, 4, 8, 12]  # first pass immediate
                     found_passphrases = []
+                    # Best record seen so far that matched by passphrase but
+                    # still had no identityId. Returned only once the retries
+                    # are exhausted, so the caller at least keeps the id.
+                    partial_match = None
 
                     for attempt, delay in enumerate(lookup_delays):
                         if delay:
@@ -526,6 +530,22 @@ class DpskService:
                                     except (ValueError, TypeError):
                                         pp_vlan = None
 
+                                # R1 writes the passphrase row before it links
+                                # the identity, so a record found too early has
+                                # identityId=None. Returning it anyway is what
+                                # silently stripped identities out of the GUID
+                                # update AND the suffix rename (77 of 215 on one
+                                # import). Treat it as a miss and keep retrying;
+                                # only fall back to it once attempts run out.
+                                if not pp.get('identityId'):
+                                    partial_match = pp
+                                    logger.debug(
+                                        f"Passphrase {passphrase[:8]}... found but "
+                                        f"identityId not populated yet "
+                                        f"(attempt {attempt + 1}/{len(lookup_delays)})"
+                                    )
+                                    break
+
                                 if pp_vlan != normalized_vlan:
                                     # Passphrase matches but VLAN doesn't - still return it
                                     logger.debug(
@@ -542,6 +562,19 @@ class DpskService:
                                         f"identityId={pp.get('identityId')}"
                                     )
                                 return pp
+
+                    # Retries exhausted. If we matched the passphrase but R1
+                    # never populated identityId, hand back what we have — the
+                    # id is still useful and create_passphrases will backfill
+                    # the identity by username.
+                    if partial_match is not None:
+                        logger.warning(
+                            f"Passphrase {passphrase[:8]}... created and found, but "
+                            f"identityId still unpopulated after "
+                            f"{len(lookup_delays)} attempts — identity will be "
+                            f"resolved by username instead"
+                        )
+                        return partial_match
 
                     # Passphrase not found after creation - this shouldn't happen.
                     # The caller gets no identityId, so this identity will not
