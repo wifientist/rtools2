@@ -490,7 +490,14 @@ class DpskService:
                 if passphrase:
                     import asyncio
 
-                    lookup_delays = [0, 2, 4, 8, 12]  # first pass immediate
+                    # Kept deliberately short. Every retry is a full
+                    # 500-record pool query, and this runs per passphrase at
+                    # max_concurrent, so a long ladder here is what pushes the
+                    # whole per-unit create_passphrases phase past its 600s
+                    # timeout on a large property. Stragglers do not need to be
+                    # caught here: create_passphrases backfills any identity it
+                    # is still missing by username in one paged read.
+                    lookup_delays = [0, 1, 2]  # first pass immediate
                     found_passphrases = []
                     # Best record seen so far that matched by passphrase but
                     # still had no identityId. Returned only once the retries
@@ -568,11 +575,10 @@ class DpskService:
                     # id is still useful and create_passphrases will backfill
                     # the identity by username.
                     if partial_match is not None:
-                        logger.warning(
-                            f"Passphrase {passphrase[:8]}... created and found, but "
-                            f"identityId still unpopulated after "
-                            f"{len(lookup_delays)} attempts — identity will be "
-                            f"resolved by username instead"
+                        logger.info(
+                            f"Passphrase {passphrase[:8]}... created; identityId "
+                            f"not populated after {len(lookup_delays)} attempts "
+                            f"— will be resolved by username in the backfill"
                         )
                         return partial_match
 
