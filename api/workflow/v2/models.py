@@ -356,6 +356,15 @@ class ValidationSummary(BaseModel):
     # Access policies
     policies_to_create: int = 0
     policies_existing: int = 0
+    # Residents carrying only the property-wide SSID. A policy is scoped by a
+    # unit SSID condition, so there is nothing to write one against — they
+    # import fine but get no rate-limit policy.
+    policies_skipped_no_unit_ssid: int = 0
+    # Accounts appearing more than once after the tier suffix is stripped
+    # (e.g. acct_gigabit + acct_superfast). They collapse to one identity and
+    # one policy name, so the duplicates lose a policy and a rename.
+    policy_name_collisions: int = 0
+    colliding_accounts: List[str] = Field(default_factory=list)
     radius_groups_to_create: int = 0
     radius_groups_existing: int = 0
     total_api_calls: int = 0
