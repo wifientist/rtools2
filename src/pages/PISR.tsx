@@ -776,15 +776,16 @@ function SpectrumChart({ band }: { band: any }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ display: "block", width: "100%", height: "auto" }}>
-      {/* Regulatory sub-bands behind everything; DFS tinted amber. Adjacent
-          bands alternate between two greys and carry a divider at each
-          boundary — on 6 GHz there are four in a row, none of them DFS, and a
-          single flat grey said nothing about where one ended. */}
+      {/* Regulatory sub-bands behind everything. Adjacent bands alternate
+          between two greys and carry a divider at each boundary — on 6 GHz
+          there are four in a row and a single flat grey said nothing about
+          where one ended. DFS is called out in the label, not by a fill: a
+          tint that loud competed with the channel blocks in front of it. */}
       {(band.regions || []).map((r: any, ri: number) => {
         const x0 = xr(r.clipLoMhz), x1 = xr(r.clipHiMhz);
         if (x1 - x0 < 2) return null;
-        const fill = r.dfs ? "#fef3c7" : (ri % 2 ? "#eceff3" : "#f8fafc");
-        const stroke = r.dfs ? "#fde68a" : (ri % 2 ? "#dfe4ea" : "#eef2f6");
+        const fill = ri % 2 ? "#eceff3" : "#f8fafc";
+        const stroke = ri % 2 ? "#dfe4ea" : "#eef2f6";
         return (
           <g key={r.label}>
             <rect x={x0} y={REGION} width={x1 - x0} height={axisY - REGION + 4}
@@ -795,7 +796,7 @@ function SpectrumChart({ band }: { band: any }) {
             )}
             {x1 - x0 > 46 && (
               <text x={(x0 + x1) / 2} y={REGION - 4} textAnchor="middle" fontSize="12"
-                    fontWeight="600" fill={r.dfs ? "#b45309" : "#94a3b8"}>
+                    fontWeight="600" fill={r.dfs ? "#64748b" : "#94a3b8"}>
                 {r.label}{r.dfs ? " · DFS" : ""}
               </text>
             )}
@@ -900,9 +901,10 @@ function ChannelPlan({ plan }: { plan: any[] }) {
         </p>
       </div>
       <p className="text-[11px] text-gray-500 mb-3">
-        One row per bonding width, labelled by the bonded centre channel. Shaded bands are
-        the regulatory sub-bands; amber shading is DFS. On 6 GHz a dotted violet line marks
-        a Preferred Scanning Channel — a client only probes those.
+        One row per bonding width, labelled by the bonded centre channel. The alternating
+        grey bands are the regulatory sub-bands; DFS ones are marked in their label. On
+        6 GHz a dotted violet line marks a Preferred Scanning Channel — a client only
+        probes those.
       </p>
       {plan.map((band) => (
         <div key={band.band} className="mb-4">
