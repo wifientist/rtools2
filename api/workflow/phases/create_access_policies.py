@@ -209,12 +209,21 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 success = pp.success
                 skipped = getattr(pp, 'skipped', False)
                 username = getattr(pp, 'username', '')
-                identity_id = getattr(pp, 'identity_id', '')
+                # Fall back to existing_identity_id so a re-run repairs the
+                # identities an aborted run left half-finished, rather than
+                # skipping them. update_identity_descriptions has always done
+                # this; the rename never did, so suffixes survived a re-run.
+                identity_id = (
+                    getattr(pp, 'identity_id', '')
+                    or getattr(pp, 'existing_identity_id', '')
+                )
             elif isinstance(pp, dict):
                 success = pp.get('success', False)
                 skipped = pp.get('skipped', False)
                 username = pp.get('username', '')
-                identity_id = pp.get('identity_id', '')
+                identity_id = (
+                    pp.get('identity_id', '') or pp.get('existing_identity_id', '')
+                )
             else:
                 logger.warning(f"Unknown created_passphrase format: {type(pp)}")
                 continue
