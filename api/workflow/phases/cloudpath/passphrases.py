@@ -164,11 +164,18 @@ class CreatePassphrasesPhase(PhaseExecutor):
                             needs_description_update=pp.get('needs_description_update', False),
                         )
                 else:
-                    # No update needed, skip — but carry identity info for Phase 4 re-runs
+                    # Nothing to write to the passphrase, but this row still
+                    # has repair work downstream: on a re-run after an aborted
+                    # attempt its identity may still carry the _tier suffix.
+                    # identity_id is what every consumer keys off, so populate
+                    # it here exactly as the VLAN-update path above does —
+                    # leaving it None is what made a second run skip these
+                    # instead of finishing the job.
                     return PassphraseResult(
                         cloudpath_guid=guid,
                         username=username,
                         passphrase_id=existing_id,
+                        identity_id=pp.get('existing_identity_id'),
                         vlan_id=vlan_id,
                         success=True,
                         skipped=True,
@@ -277,9 +284,12 @@ class CreatePassphrasesPhase(PhaseExecutor):
         # The identity name is the username we supplied, so one paged read of
         # the group recovers all of them at once.
         # ------------------------------------------------------------------
+        # Skipped rows are included deliberately: a passphrase that already
+        # exists still needs its identity repaired if a previous run died
+        # before stripping the suffix.
         missing = [
             r for r in results.succeeded
-            if r is not None and not r.skipped and not r.identity_id and r.username
+            if r is not None and not r.identity_id and r.username
         ]
         if missing and inputs.identity_group_id:
             await self.emit(
@@ -288,21 +298,39 @@ class CreatePassphrasesPhase(PhaseExecutor):
             )
             by_name = await self._identities_by_name(inputs.identity_group_id)
             recovered = 0
+            already_correct = 0
             for r in missing:
                 found = by_name.get(r.username)
                 if found:
+                    # Still filed under its Cloudpath name, suffix and all —
+                    # hand downstream the id so it gets renamed and GUID'd.
                     r.identity_id = found
                     recovered += 1
+                    continue
+                # Absent under that name. If the stripped name is present, an
+                # earlier run already renamed it and there is nothing to fix.
+                base = (
+                    r.username.rsplit('_', 1)[0]
+                    if '_' in r.username else r.username
+                )
+                if base != r.username and base in by_name:
+                    already_correct += 1
+            unresolved = len(missing) - recovered - already_correct
             if recovered:
                 await self.emit(
-                    f"Recovered {recovered} of {len(missing)} identity ids",
-                    "success" if recovered == len(missing) else "warning",
+                    f"Recovered {recovered} identity id(s) for repair "
+                    f"(created by an earlier run, still unfinished)",
+                    "success",
                 )
-            if recovered < len(missing):
+            if already_correct:
                 await self.emit(
-                    f"{len(missing) - recovered} identities could not be "
-                    f"resolved — they will miss their Cloudpath GUID and "
-                    f"keep their username suffix",
+                    f"{already_correct} identities were already renamed by a "
+                    f"previous run — nothing to repair"
+                )
+            if unresolved > 0:
+                await self.emit(
+                    f"{unresolved} identities could not be resolved — they "
+                    f"will miss their Cloudpath GUID and keep their suffix",
                     "warning",
                 )
         elif missing:
