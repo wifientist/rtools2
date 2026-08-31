@@ -82,19 +82,25 @@ class RedisStateManagerV2:
             f"units={len(job.units)}"
         )
 
-        pipe = self.redis.pipeline()
-        pipe.setex(key, JOB_TTL_SECONDS, job_data)
-        pipe.zadd(f"{PREFIX}:jobs:index", {job.id: job.created_at.timestamp()})
+        # `async with` guarantees the pipeline is reset even if this coroutine
+        # is CANCELLED between building and executing it. A phase timeout
+        # cancels its task mid-flight, and a bare pipeline abandoned that way
+        # never returns its connection — enough of them exhaust the pool and
+        # every Redis call in the process starts raising "No connection
+        # available" ("Unclosed Pipeline client" is the tell).
+        async with self.redis.pipeline() as pipe:
+            pipe.setex(key, JOB_TTL_SECONDS, job_data)
+            pipe.zadd(f"{PREFIX}:jobs:index", {job.id: job.created_at.timestamp()})
 
-        if job.venue_id:
-            pipe.sadd(f"{PREFIX}:jobs:by_venue:{job.venue_id}", job.id)
+            if job.venue_id:
+                pipe.sadd(f"{PREFIX}:jobs:by_venue:{job.venue_id}", job.id)
 
-        if job.status == JobStatus.RUNNING:
-            pipe.sadd(f"{PREFIX}:jobs:active", job.id)
-        else:
-            pipe.srem(f"{PREFIX}:jobs:active", job.id)
+            if job.status == JobStatus.RUNNING:
+                pipe.sadd(f"{PREFIX}:jobs:active", job.id)
+            else:
+                pipe.srem(f"{PREFIX}:jobs:active", job.id)
 
-        await pipe.execute()
+            await pipe.execute()
         return True
 
     async def get_job(self, job_id: str) -> Optional[WorkflowJobV2]:
@@ -153,12 +159,12 @@ class RedisStateManagerV2:
             await self.redis.delete(*keys)
 
         # Clean up indexes
-        pipe = self.redis.pipeline()
-        pipe.zrem(f"{PREFIX}:jobs:index", job_id)
-        pipe.srem(f"{PREFIX}:jobs:active", job_id)
-        if venue_id:
-            pipe.srem(f"{PREFIX}:jobs:by_venue:{venue_id}", job_id)
-        await pipe.execute()
+        async with self.redis.pipeline() as pipe:
+            pipe.zrem(f"{PREFIX}:jobs:index", job_id)
+            pipe.srem(f"{PREFIX}:jobs:active", job_id)
+            if venue_id:
+                pipe.srem(f"{PREFIX}:jobs:by_venue:{venue_id}", job_id)
+            await pipe.execute()
 
         return True
 
@@ -243,11 +249,11 @@ class RedisStateManagerV2:
 
     async def save_all_units(self, job_id: str, units: Dict[str, UnitMapping]) -> bool:
         """Save all units in a pipeline (used during initial setup)."""
-        pipe = self.redis.pipeline()
-        for unit_id, unit in units.items():
-            key = f"{PREFIX}:jobs:{job_id}:units:{unit_id}"
-            pipe.setex(key, JOB_TTL_SECONDS, unit.model_dump_json())
-        await pipe.execute()
+        async with self.redis.pipeline() as pipe:
+            for unit_id, unit in units.items():
+                key = f"{PREFIX}:jobs:{job_id}:units:{unit_id}"
+                pipe.setex(key, JOB_TTL_SECONDS, unit.model_dump_json())
+            await pipe.execute()
         return True
 
     async def get_all_units(self, job_id: str) -> Dict[str, UnitMapping]:
@@ -394,10 +400,10 @@ class RedisStateManagerV2:
 
     async def complete_activity(self, activity_id: str, job_id: str) -> bool:
         """Remove a completed activity from tracking."""
-        pipe = self.redis.pipeline()
-        pipe.hdel(f"{PREFIX}:activities:pending", activity_id)
-        pipe.srem(f"{PREFIX}:jobs:{job_id}:activities", activity_id)
-        await pipe.execute()
+        async with self.redis.pipeline() as pipe:
+            pipe.hdel(f"{PREFIX}:activities:pending", activity_id)
+            pipe.srem(f"{PREFIX}:jobs:{job_id}:activities", activity_id)
+            await pipe.execute()
         return True
 
     # =========================================================================

@@ -2047,7 +2047,11 @@ class WorkflowBrain:
         # All AP Groups). The DELETE is idempotent — if the SSID isn't on
         # the venue, it returns 404 which deactivate_ssid_from_venue handles.
         try:
-            ssid_name = unit.resolved.ssid_name or unit_id
+            # ssid_name lives on the PLAN (UnitPlan), not UnitResolved.
+            # Reading it off resolved raised AttributeError inside the failure
+            # handler, turning every recoverable deactivate-and-requeue into a
+            # hard unit failure exactly when the job was already in trouble.
+            ssid_name = unit.plan.ssid_name or unit_id
             logger.info(
                 f"Job {job.id}: [SSID-GATE] {unit_id} DEACTIVATING orphaned SSID "
                 f"'{ssid_name}' from venue to free R1 slot "
