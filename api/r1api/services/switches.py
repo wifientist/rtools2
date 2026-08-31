@@ -109,6 +109,59 @@ class SwitchService:
             "shortfalls": bad,
         }
 
+    def _supersede(self, path: str, filters: Dict[str, Any]) -> None:
+        """
+        Drop a window-capped completeness entry that a narrower fan-out replaced.
+
+        When a venue query hits the ES window we refetch that venue per switch.
+        The capped venue query is then no longer the coverage claim -- the
+        per-switch queries are -- so leaving it in the report would show a
+        permanent shortfall on every venue big enough to overflow.
+        """
+        for i in range(len(self.last_completeness) - 1, -1, -1):
+            c = self.last_completeness[i]
+            if c["path"] == path and c["filters"] == filters and c.get("windowCapped"):
+                del self.last_completeness[i]
+                return
+
+    def _fanout_by_switch(self, venue_id: str, batch: List[Dict[str, Any]],
+                          tenant_id: Optional[str], fetch, identity, label: str) -> int:
+        """
+        Refetch an overflowed venue one switch at a time, appending only rows the
+        capped venue result did not already have.
+
+        The capped rows are KEPT as a seed rather than discarded: they can cover
+        switches that `online_only` inventory leaves out, so throwing them away
+        would trade one coverage gap for another.
+
+        Returns the number of rows recovered. Zero means the fan-out bought us
+        nothing -- the caller must leave the venue marked incomplete rather than
+        pretend the ceiling was cleared.
+        """
+        logger.info("venue %s overflowed the %d-row ES window; refetching per switch",
+                    venue_id, ES_WINDOW)
+        seen = {identity(r) for r in batch}
+        added = 0
+        for sw in self.list_switches(tenant_id, venue_id=venue_id, online_only=True):
+            mac = sw.get("switchMac") or sw.get("id")
+            if not mac:
+                continue
+            for row in fetch(mac, tenant_id):
+                ident = identity(row)
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                batch.append(row)
+                added += 1
+        if added:
+            logger.info("venue %s: per-switch refetch recovered %d extra %s (%d total)",
+                        venue_id, added, label, len(batch))
+        else:
+            logger.warning("venue %s: per-switch refetch recovered no extra %s -- the "
+                           "venue result is still capped at %d rows",
+                           venue_id, label, ES_WINDOW)
+        return added
+
     # ---------- primitives ----------
 
     def _query(self, path: str, payload: Dict[str, Any], tenant_id: Optional[str]) -> Dict[str, Any]:
@@ -166,7 +219,10 @@ class SwitchService:
                 rows.extend(fresh)
 
         collected, expected = len(rows), total
-        if expected >= ES_WINDOW:
+        # totalCount SATURATES at the window, so once we are here `expected` is a
+        # floor, not a count -- the real total is unknowable from this response.
+        window_capped = expected >= ES_WINDOW
+        if window_capped:
             logger.warning(
                 "%s filters=%s hit the %d-row ES window (totalCount=%s, collected=%d) -- "
                 "narrow the filter further", path, filters, ES_WINDOW, expected, collected)
@@ -176,7 +232,12 @@ class SwitchService:
         self.last_completeness.append({
             "path": path, "filters": filters,
             "expected": expected, "collected": collected,
-            "complete": collected >= min(expected, ES_WINDOW),
+            "windowCapped": window_capped,
+            # A window-capped query is NOT complete. The previous
+            # `collected >= min(expected, ES_WINDOW)` reported exactly 10000 of
+            # 10000 as a full result, which is how a truncated MAC crawl passed
+            # itself off as a complete one.
+            "complete": (not window_capped) and collected >= expected,
         })
         return rows
 
@@ -222,27 +283,32 @@ class SwitchService:
         if venue_ids is None:
             venue_ids = list(self.venues_with_switches(tenant_id))
 
+        path = "/venues/switches/switchPorts/query"
         rows: List[Dict[str, Any]] = []
         for vid in venue_ids:
-            batch = self._query_all("/venues/switches/switchPorts/query", PORT_FIELDS,
-                                    {"venueId": [vid]}, tenant_id,
+            batch = self._query_all(path, PORT_FIELDS, {"venueId": [vid]}, tenant_id,
                                     sort_field="id", unique_fields=["id"])
             if len(batch) >= ES_WINDOW:
-                logger.info("venue %s overflowed the ES window; refetching per switch", vid)
-                seen = {r.get("id") for r in batch}
-                for sw in self.list_switches(tenant_id, venue_id=vid, online_only=True):
-                    mac = sw.get("switchMac") or sw.get("id")
-                    if not mac:
-                        continue
-                    for row in self.ports_for_switch(mac, tenant_id):
-                        if row.get("id") not in seen:
-                            seen.add(row.get("id"))
-                            batch.append(row)
+                if self._fanout_by_switch(vid, batch, tenant_id, self.ports_for_switch,
+                                          lambda r: r.get("id"), "ports"):
+                    self._supersede(path, {"venueId": [vid]})
             rows.extend(batch)
             logger.debug("venue %s: %d ports", vid, len(batch))
         return rows
 
     # ---------- MAC table ----------
+
+    def macs_for_switch(self, switch_mac: str,
+                        tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Exact per-switch MAC table fetch. `switchMac` is a working filter key on
+        this endpoint (verified live: a venue pull totalling 3,024 rows narrowed
+        to 41 for one switch, every row matching that switch).
+        """
+        return self._query_all("/venues/switches/clients/query", MAC_FIELDS,
+                               {"switchMac": [switch_mac]}, tenant_id,
+                               sort_field="clientMac",
+                               unique_fields=["clientMac", "switchPortId"])
 
     def crawl_mac_table(self, tenant_id: Optional[str] = None,
                         venue_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -250,16 +316,30 @@ class SwitchService:
         The switch MAC address table, one row per learned address. `clientIpv4Addr`
         is the only MAC->IP binding R1 offers -- there is no ARP endpoint -- and its
         coverage varies a lot by tenant (38% to 88% observed).
+
+        Fans out per switch for any venue that overflows the ES window, exactly as
+        crawl_ports does. Without this a venue holding more than ES_WINDOW learned
+        addresses returned exactly 10000 rows and called itself complete -- and a
+        MAC table silently cut off at the ceiling is the worst possible input to a
+        loop hunter, because the duplicate-MAC-across-ports signal it looks for is
+        precisely what gets truncated away.
         """
         if venue_ids is None:
             venue_ids = list(self.venues_with_switches(tenant_id))
 
+        path = "/venues/switches/clients/query"
+        identity = lambda r: (r.get("clientMac"), r.get("switchPortId"))
         rows: List[Dict[str, Any]] = []
         for vid in venue_ids:
-            rows.extend(self._query_all("/venues/switches/clients/query", MAC_FIELDS,
-                                        {"venueId": [vid]}, tenant_id,
-                                        sort_field="clientMac",
-                                        unique_fields=["clientMac", "switchPortId"]))
+            batch = self._query_all(path, MAC_FIELDS, {"venueId": [vid]}, tenant_id,
+                                    sort_field="clientMac",
+                                    unique_fields=["clientMac", "switchPortId"])
+            if len(batch) >= ES_WINDOW:
+                if self._fanout_by_switch(vid, batch, tenant_id, self.macs_for_switch,
+                                          identity, "MACs"):
+                    self._supersede(path, {"venueId": [vid]})
+            rows.extend(batch)
+            logger.debug("venue %s: %d MACs", vid, len(batch))
         return rows
 
     # ---------- config ----------

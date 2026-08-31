@@ -208,7 +208,8 @@ async def list_snapshots(controller_id: int,
                          user: User = Depends(get_current_user)):
     c = _controller(controller_id, db)
     _, key = _resolve_tenant(c, tenant_id)
-    return {"snapshots": store.list_snapshots(key)}
+    return {"snapshots": store.list_snapshots(key),
+            "ttlDays": store.SNAPSHOT_TTL_DAYS}
 
 
 @router.delete("/{controller_id}/snapshots/{file}")
@@ -256,10 +257,12 @@ async def list_switches(controller_id: int,
     """
     c = _controller(controller_id, db)
     _, key = _resolve_tenant(c, tenant_id)
-    snap = store.load(key)
+    # load_covering, not load: the newest snapshot is not necessarily one that
+    # covers the venues being viewed, and filtering a non-covering snapshot down
+    # yields a near-empty inventory that looks like data loss rather than scope.
+    snap, scope = store.load_covering(key, _venue_ids(venue_ids))
     if not snap:
         raise HTTPException(404, "No snapshots yet — run a crawl first.")
-    snap = store.scope_snapshot(snap, _venue_ids(venue_ids))
 
     ports_by_sw: Dict[str, int] = {}
     up_by_sw: Dict[str, int] = {}
@@ -286,18 +289,26 @@ async def list_switches(controller_id: int,
             "learnedMacs": macs_by_sw.get(mac, 0),
         })
     rows.sort(key=lambda r: (r.get("venueName") or "", r.get("name") or ""))
-    return {"takenAt": snap["takenAt"], "venues": snap.get("venues", {}), "switches": rows}
+    return {"takenAt": snap["takenAt"], "venues": snap.get("venues", {}),
+            "switches": rows, "scope": scope}
 
 
 @router.get("/{controller_id}/switches/{switch_id}/ports")
 async def switch_ports(controller_id: int, switch_id: str,
                        tenant_id: Optional[str] = Query(None),
+                       venue_ids: Optional[str] = Query(None),
                        db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
-    """Port detail for one switch from the latest snapshot, with learned MACs."""
+    """
+    Port detail for one switch, with learned MACs.
+
+    Takes the same venue scope as the inventory so both read the same snapshot --
+    otherwise a scoped inventory and an unscoped port view can disagree about a
+    switch that only one of their snapshots saw.
+    """
     c = _controller(controller_id, db)
     _, key = _resolve_tenant(c, tenant_id)
-    snap = store.load(key)
+    snap, _scope = store.load_covering(key, _venue_ids(venue_ids))
     if not snap:
         raise HTTPException(404, "No snapshots yet — run a crawl first.")
 
@@ -440,16 +451,32 @@ async def create_baseline(controller_id: int,
     """
     c = _controller(controller_id, db)
     override, key = _resolve_tenant(c, tenant_id)
+    wanted = _venue_ids(venue_ids)
 
-    snap = store.load(key)
+    snap, scope = store.load_covering(key, wanted)
     if not snap:
         raise HTTPException(404, "Crawl first — the baseline needs the switch inventory.")
+    # Refuse rather than fall back here, unlike the read-only views. The fallback
+    # snapshot covers whatever it happens to cover, so baselining against it would
+    # spend a per-switch bulk read on the WRONG venues and store the result under
+    # the scope the user asked for. 409, not 404: snapshots exist, they just do
+    # not cover this selection.
+    if scope.get("insufficientCoverage"):
+        missing = (scope.get("excluded") or [{}])[0].get("missingVenueIds") or []
+        raise HTTPException(409, "No crawl covers the selected venue(s), so there is no "
+                                 "switch inventory to baseline against. Crawl at this "
+                                 "scope first."
+                                 + (f" Missing venue ids: {', '.join(missing[:5])}."
+                                    if missing else ""))
 
     r1 = create_r1_client_from_controller(controller_id, db)
-    wanted = _venue_ids(venue_ids)
+    # snap is already narrowed to `wanted` by load_covering.
     targets = [s for s in snap["switches"]
-               if s.get("deviceStatus") == "ONLINE" and s.get("venueId")
-               and (not wanted or s.get("venueId") in wanted)]
+               if s.get("deviceStatus") == "ONLINE" and s.get("venueId")]
+    if not targets:
+        raise HTTPException(409, "The crawl covering this selection holds no ONLINE "
+                                 "switches, so there is nothing to read a config from. "
+                                 "Re-crawl and check the switches are online.")
 
     configs, no_backup, rejected = {}, 0, []
     for sw in targets:
@@ -480,7 +507,7 @@ async def create_baseline(controller_id: int,
         "file": filename, "takenAt": baseline["takenAt"],
         "switchesTargeted": len(targets), "configsStored": len(configs),
         "noBackup": no_backup, "rejectedByRedaction": len(rejected),
-        "rejectedSwitches": rejected,
+        "rejectedSwitches": rejected, "scope": scope,
     }
 
 
@@ -491,7 +518,8 @@ async def list_baselines(controller_id: int,
                          user: User = Depends(get_current_user)):
     c = _controller(controller_id, db)
     _, key = _resolve_tenant(c, tenant_id)
-    return {"baselines": store.list_baselines(key)}
+    return {"baselines": store.list_baselines(key),
+            "ttlDays": store.BASELINE_TTL_DAYS}
 
 
 @router.delete("/{controller_id}/baselines/{file}")
