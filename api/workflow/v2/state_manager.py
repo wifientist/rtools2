@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 # TTL Settings
 JOB_TTL_SECONDS = 604800      # 7 days
+# Liveness key TTL. Must comfortably exceed the Brain's heartbeat interval
+# so a busy-but-slow job is never mistaken for a dead one.
+JOB_HEARTBEAT_TTL = 120
 LOCK_TTL_SECONDS = 300         # 5 minutes
 UNIT_LOCK_TTL_SECONDS = 60     # 1 minute (shorter for fine-grained ops)
 
@@ -489,6 +492,83 @@ class RedisStateManagerV2:
         """Release distributed lock for a job."""
         key = f"{PREFIX}:jobs:{job_id}:lock"
         return (await self.redis.delete(key)) > 0
+
+    # =========================================================================
+    # Liveness
+    #
+    # A job document says RUNNING until something writes a terminal status.
+    # Nothing survives a process restart, and a hard kill runs no handler, so
+    # an interrupted job stays RUNNING forever and the UI spins on it. A short
+    # TTL heartbeat makes "is anyone actually working on this" answerable
+    # without trusting updated_at.
+    # =========================================================================
+
+    async def touch_job_heartbeat(self, job_id: str) -> None:
+        """Refresh the liveness key for a job the engine is actively running."""
+        try:
+            await self.redis.setex(
+                f"{PREFIX}:jobs:{job_id}:heartbeat", JOB_HEARTBEAT_TTL, "1"
+            )
+        except Exception as e:
+            logger.debug(f"Heartbeat write failed for {job_id}: {e}")
+
+    async def job_has_heartbeat(self, job_id: str) -> bool:
+        """True if some process claims to be running this job right now."""
+        try:
+            return bool(await self.redis.exists(f"{PREFIX}:jobs:{job_id}:heartbeat"))
+        except Exception:
+            # Can't tell — assume alive rather than declare a live job dead.
+            return True
+
+    async def reap_stranded_jobs(self) -> List[str]:
+        """
+        Mark RUNNING jobs with no live heartbeat as FAILED.
+
+        Called at startup: no workflow survives a restart, so any job still
+        claiming RUNNING with no heartbeat is provably orphaned. Without this
+        they stay RUNNING forever and the only symptom is a UI that never
+        stops loading.
+        """
+        reaped: List[str] = []
+        try:
+            keys = [
+                k async for k in self.redis.scan_iter(match=f"{PREFIX}:jobs:*")
+                if ":units:" not in k
+                and ":activities" not in k
+                and ":heartbeat" not in k
+                and "by_venue" not in k
+                and not k.endswith(("index", "active"))
+            ]
+        except Exception as e:
+            logger.warning(f"Could not scan for stranded jobs: {e}")
+            return reaped
+
+        for key in keys:
+            try:
+                job_id = key.rsplit(":", 1)[-1]
+                job = await self.get_job(job_id)
+                if not job or job.status != JobStatus.RUNNING:
+                    continue
+                if await self.job_has_heartbeat(job_id):
+                    continue
+                job.status = JobStatus.FAILED
+                job.errors.append(
+                    "Interrupted: the process running this job stopped before "
+                    "it finished (restart, crash, or shutdown). Marked failed "
+                    "at startup so it does not report as running forever."
+                )
+                job.completed_at = datetime.utcnow()
+                await self.save_job(job)
+                reaped.append(job_id)
+            except Exception as e:
+                logger.warning(f"Could not reap job from {key}: {e}")
+
+        if reaped:
+            logger.warning(
+                f"Marked {len(reaped)} stranded job(s) as FAILED at startup: "
+                f"{[j[:8] for j in reaped]}"
+            )
+        return reaped
 
     def _unit_lock(self, job_id: str, unit_id: str):
         """Context manager for per-unit locking."""
