@@ -22,10 +22,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._redis = None
 
     async def _get_redis(self):
-        """Lazy Redis init — avoids import/connection at middleware construction time."""
+        """
+        Lazy Redis init — avoids import/connection at middleware construction.
+
+        Uses the dedicated REQUEST pool, not the workflow one. This middleware
+        runs on every request, so sharing a pool with the workflow engine meant
+        a large import could drain it and leave every page — including the
+        session check — blocking for the full pool timeout. The request pool is
+        small and impatient, and the except-block below already fails open, so
+        the worst case is that rate limiting is briefly skipped.
+        """
         if self._redis is None:
-            from redis_client import get_redis_client
-            self._redis = await get_redis_client()
+            from redis_client import get_request_redis
+            self._redis = await get_request_redis()
         return self._redis
 
     async def dispatch(self, request: Request, call_next):

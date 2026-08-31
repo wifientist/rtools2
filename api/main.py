@@ -59,6 +59,23 @@ async def lifespan(app: FastAPI):
     # === Startup ===
     logger.info("Starting application services...")
 
+    # Reap workflow jobs stranded by the previous process.
+    #
+    # No workflow survives a restart, so any job still claiming RUNNING with
+    # no live heartbeat is provably orphaned. Left alone it reports RUNNING
+    # forever and the UI spins on it with nothing behind it. Non-fatal: a
+    # Redis problem here must not stop the app from booting.
+    try:
+        from redis_client import get_redis_client
+        from workflow.v2.state_manager import RedisStateManagerV2
+        reaped = await RedisStateManagerV2(await get_redis_client()).reap_stranded_jobs()
+        if reaped:
+            logger.warning(
+                f"Marked {len(reaped)} interrupted workflow job(s) as failed"
+            )
+    except Exception as e:
+        logger.warning(f"Stranded-job reap skipped: {e}")
+
     # Initialize and start the scheduler service
     scheduler = init_scheduler()
     await scheduler.start(SessionLocal)

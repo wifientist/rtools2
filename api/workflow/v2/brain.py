@@ -343,6 +343,7 @@ class WorkflowBrain:
         job.status = JobStatus.RUNNING
         job.started_at = datetime.utcnow()
         await self.state.save_job(job)
+        await self.state.touch_job_heartbeat(job.id)
         await self._publish_event(job.id, "workflow_started", {})
         last_heartbeat = time.time()
 
@@ -583,9 +584,14 @@ class WorkflowBrain:
                 # Periodic heartbeat (every 15 seconds) - ensures frontend
                 # sees progress even during long-running phases like 3-step config
                 now_ts = time.time()
-                if now_ts - last_heartbeat >= 15 and in_flight:
+                if now_ts - last_heartbeat >= 15:
                     last_heartbeat = now_ts
-                    await self._log_diagnostic_summary(job, in_flight)
+                    # Liveness first: this is what stops a crashed job from
+                    # reporting RUNNING forever. Unconditional, so a job that
+                    # is briefly idle still counts as alive.
+                    await self.state.touch_job_heartbeat(job.id)
+                    if in_flight:
+                        await self._log_diagnostic_summary(job, in_flight)
 
                 # SSID gate reconciliation (every 30s when activate_network
                 # phases are in-flight — either new activations or recovery
@@ -597,6 +603,24 @@ class WorkflowBrain:
                 if has_activation_work and now_ts - last_reconcile >= 30:
                     last_reconcile = now_ts
                     await self._reconcile_venue_wide_limit(job)
+
+        except asyncio.CancelledError:
+            # Process shutdown or an outer cancel. CancelledError is NOT an
+            # Exception, so this used to fall straight past the handler below
+            # and skip the terminal-status write entirely, stranding the job
+            # in RUNNING with nothing left to finish it.
+            logger.warning(f"Job {job.id}: execution cancelled — marking cancelled")
+            job.status = JobStatus.CANCELLED
+            job.errors.append("Execution cancelled (shutdown or user cancel)")
+            for key, task in in_flight.items():
+                if not task.done():
+                    task.cancel()
+            try:
+                job.completed_at = datetime.utcnow()
+                await self.state.save_job(job)
+            except Exception as save_err:
+                logger.error(f"Job {job.id}: could not persist cancel: {save_err}")
+            raise
 
         except Exception as e:
             logger.error(f"Job {job.id}: Workflow execution error: {e}")
@@ -1822,12 +1846,29 @@ class WorkflowBrain:
                     f"({self.tracker.pending_count} tracked)"
                 )
 
+        # Redis pool utilisation. A pool that climbs and never falls -- above
+        # all one that stays high after a job ends -- means connections are
+        # being leaked, which is otherwise invisible until the pool is empty
+        # and the process has to be restarted to recover.
+        pool_status = ""
+        try:
+            from redis_client import redis_pool_stats
+            parts = [
+                f"{name} {st['in_use']}/{st['max']} ({st['percent']}%)"
+                for name, st in sorted(redis_pool_stats().items())
+            ]
+            if parts:
+                pool_status = f" | Redis: {', '.join(parts)}"
+        except Exception:
+            pass
+
         logger.info(
             f"Job {job.id} DIAGNOSTIC: "
             f"Units: {unit_summary} | "
             f"SSID-GATE: {self._ssid_gate_status()}, "
             f"queued={self._units_waiting_count}"
             f"{activity_status}"
+            f"{pool_status}"
         )
 
         # Log phase breakdown for phases with failures
