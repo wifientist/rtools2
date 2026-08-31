@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,9 +36,87 @@ MAX_PER_TENANT = 48
 
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")
 
+# ── Age-based retention ──────────────────────────────────────────────────────
+# MAX_PER_TENANT and MAX_BASELINES bound how MUCH is kept; these bound how LONG.
+# Count caps alone meant a baseline survived until ten newer ones displaced it,
+# which for occasional use is indefinitely -- and a baseline is redacted device
+# configuration, the artefact here least worth keeping past its usefulness.
+#
+# Enforced on READ as well as on write, deliberately: retention that only runs
+# when something is written keeps stale configs forever the moment someone stops
+# crawling, which is precisely the case worth protecting against. A sweep is one
+# stat() per file and never parses JSON.
+SNAPSHOT_TTL_DAYS = float(os.environ.get("WIREDWIZ_SNAPSHOT_TTL_DAYS", "7"))
+BASELINE_TTL_DAYS = float(os.environ.get("WIREDWIZ_BASELINE_TTL_DAYS", "7"))
+HEALTH_TTL_DAYS = float(os.environ.get("WIREDWIZ_HEALTH_TTL_DAYS", "7"))
+
+
+def _sweep(d: Path, pattern: str, ttl_days: float) -> List[Path]:
+    """
+    Delete everything in `d` matching `pattern` older than `ttl_days`, and return
+    the survivors OLDEST FIRST.
+
+    Ages off mtime, matching _snap_files: these files are written once and never
+    rewritten, so mtime is creation time, and reading it costs no parse.
+    """
+    if not d.exists():
+        return []
+    cutoff = time.time() - ttl_days * 86400
+    alive = []
+    for f in d.glob(pattern):
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue                       # vanished under us; not our problem
+        if mtime >= cutoff:
+            alive.append((mtime, f))
+            continue
+        try:
+            f.unlink()
+            logger.info("wiredwiz: expired %s (older than %g days)", f.name, ttl_days)
+        except OSError:
+            # A concurrent request may have swept it already. One unremovable
+            # file must never take down the whole listing.
+            logger.warning("could not expire %s", f)
+    return [f for _, f in sorted(alive, key=lambda x: (x[0], x[1].name))]
+
 
 def _tenant_dir(tenant_id: str) -> Path:
     return SNAPSHOT_DIR / _SAFE.sub("", tenant_id or "unknown")[:64]
+
+
+def _snap_files(d: Path) -> List[Path]:
+    """
+    Every snapshot file for a tenant, OLDEST FIRST.
+
+    Ordered by mtime, deliberately not by name. This directory holds two naming
+    schemes -- `snap_<stamp>.json` written by the API and
+    `snap_<tenantprefix>_<stamp>.json` written by the CLI script -- and
+    lexicographically every `snap_0...` sorts ahead of every `snap_2...`, so a
+    name sort can hand back a months-old CLI snapshot as "the newest one".
+    Snapshots are written once and never rewritten, so mtime is creation time.
+
+    Also expires anything past SNAPSHOT_TTL_DAYS -- see _sweep.
+    """
+    return _sweep(d, "snap_*.json", SNAPSHOT_TTL_DAYS)
+
+
+def _read(path: Path) -> Optional[Dict[str, Any]]:
+    """A snapshot that will not parse is skipped, never allowed to abort a listing."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        logger.warning("unreadable snapshot %s", path)
+        return None
+
+
+def _coverage(snap: Dict[str, Any]) -> set:
+    """
+    The venues a snapshot can actually answer for: its explicit crawl scope when
+    it has one, otherwise whatever venues it happened to see.
+    """
+    explicit = snap.get("scopeVenueIds")
+    return set(explicit) if explicit else set((snap.get("venues") or {}).keys())
 
 
 def save(tenant_id: str, snapshot: Dict[str, Any]) -> str:
@@ -51,8 +130,7 @@ def save(tenant_id: str, snapshot: Dict[str, Any]) -> str:
 
 
 def _prune(d: Path):
-    files = sorted(d.glob("snap_*.json"))
-    for old in files[:-MAX_PER_TENANT]:
+    for old in _snap_files(d)[:-MAX_PER_TENANT]:
         try:
             old.unlink()
         except OSError:
@@ -65,13 +143,10 @@ def list_snapshots(tenant_id: str) -> List[Dict[str, Any]]:
     MAX_PER_TENANT modest; a summary index would be the next optimisation.
     """
     d = _tenant_dir(tenant_id)
-    if not d.exists():
-        return []
     out = []
-    for f in sorted(d.glob("snap_*.json")):
-        try:
-            s = json.loads(f.read_text())
-        except (OSError, ValueError):
+    for f in _snap_files(d):
+        s = _read(f)
+        if s is None:
             continue
         c = s.get("completeness") or {}
         out.append({
@@ -85,6 +160,7 @@ def list_snapshots(tenant_id: str) -> List[Dict[str, Any]]:
             "expected": c.get("expected"),
             "collected": c.get("collected"),
             "sizeBytes": f.stat().st_size,
+            "expiresAtEpoch": f.stat().st_mtime + SNAPSHOT_TTL_DAYS * 86400,
         })
     return out
 
@@ -93,22 +169,101 @@ def load(tenant_id: str, file: Optional[str] = None) -> Optional[Dict[str, Any]]
     d = _tenant_dir(tenant_id)
     if file:
         p = d / Path(file).name          # never let a caller escape the directory
-        return json.loads(p.read_text()) if p.exists() else None
-    files = sorted(d.glob("snap_*.json"))
-    return json.loads(files[-1].read_text()) if files else None
+        return _read(p) if p.exists() else None
+    files = _snap_files(d)
+    return _read(files[-1]) if files else None
+
+
+# Every load_covering() branch returns these keys, so a caller never has to tell
+# "no coverage problem" apart from "the key was not set on this path".
+_INFO_NONE = {"scoped": False, "venueCount": 0, "venueIds": [], "excluded": [],
+              "reason": None, "insufficientCoverage": False}
+
+
+def load_covering(tenant_id: str, venue_ids=None, scan: int = 12):
+    """
+    The newest snapshot that COVERS the requested venues, narrowed to them.
+
+    `load()` returns the newest snapshot whatever it covers, and the detail
+    endpoints then filtered that down to the venues being viewed. Crawl venue A,
+    then open venue B, and you got a near-empty inventory with nothing saying
+    why -- the numbers simply disagreed with the crawl you had just run, which
+    reads as the tool being broken rather than as a scope mismatch.
+
+    This is the single-snapshot sibling of comparable(), and it follows the same
+    two rules: a snapshot that does not cover the request is passed over rather
+    than intersected down, and when nothing covers the request we still return
+    the best available and say so loudly instead of returning a thin slice
+    silently.
+
+    Only the most recent `scan` snapshots are considered -- if none of those
+    covers the venue, the answer is "re-crawl at this scope", and reading the
+    whole 48-deep tail (~10 MB each) to prove it is not worth the I/O.
+
+    Returns (snapshot, info); `info` matches comparable()'s shape so the UI's
+    ScopeNote renders it with no changes.
+    """
+    files = _snap_files(_tenant_dir(tenant_id))[-scan:]
+    if not files:
+        return None, _INFO_NONE.copy()
+
+    target = set(venue_ids) if venue_ids else None
+    considered = []                       # (snapshot, coverage), newest first
+
+    for f in reversed(files):
+        snap = _read(f)
+        if snap is None:
+            continue
+        if target is None:
+            # No scope asked for: newest readable snapshot, as-is.
+            return snap, {"scoped": False, "venueCount": len(_coverage(snap)),
+                          "venueIds": sorted(_coverage(snap)), "excluded": [],
+                          "reason": None, "insufficientCoverage": False}
+        cov = _coverage(snap)
+        if target <= cov:
+            narrowed = scope_snapshot(snap, target) if cov != target else snap
+            return narrowed, {
+                "scoped": cov != target,
+                "venueCount": len(target),
+                "venueIds": sorted(target),
+                "excluded": [_excluded_entry(s, c, target) for s, c in considered],
+                "reason": ("narrowed to the requested venues" if cov != target else None),
+                "insufficientCoverage": False,
+            }
+        considered.append((snap, cov))
+
+    if not considered:
+        return None, _INFO_NONE.copy()
+
+    # Nothing covers the request. Fall back to the widest overlap, flagged.
+    best, cov = max(considered, key=lambda x: len(x[1] & target))
+    shown = (cov & target) or cov
+    return scope_snapshot(best, shown), {
+        "scoped": True,
+        "venueCount": len(shown),
+        "venueIds": sorted(shown),
+        "excluded": [_excluded_entry(s, c, target) for s, c in considered if s is not best],
+        "reason": "no snapshot covers the requested venues; showing the closest "
+                  "available crawl instead — re-crawl at this scope for accurate "
+                  "results",
+        "insufficientCoverage": True,
+    }
+
+
+def _excluded_entry(snap: Dict[str, Any], cov: set, target: set) -> Dict[str, Any]:
+    return {"takenAt": snap.get("takenAt"),
+            "covered": len(cov), "requested": len(target),
+            "missingVenueIds": sorted(target - cov)[:10]}
 
 
 def load_all(tenant_id: str, limit: int = 12) -> List[Dict[str, Any]]:
     """Most recent `limit` snapshots, oldest first."""
     d = _tenant_dir(tenant_id)
-    if not d.exists():
-        return []
     out = []
-    for f in sorted(d.glob("snap_*.json"))[-limit:]:
-        try:
-            out.append(json.loads(f.read_text()))
-        except (OSError, ValueError):
-            continue
+    for f in _snap_files(d)[-limit:]:
+        s = _read(f)
+        if s is not None:
+            out.append(s)
     out.sort(key=lambda s: s.get("takenAtEpoch") or 0)
     return out
 
@@ -129,13 +284,23 @@ def delete(tenant_id: str, file: str) -> bool:
 MAX_BASELINES = 10
 
 
+def _baseline_dir(tenant_id: str) -> Path:
+    return _tenant_dir(tenant_id) / "baselines"
+
+
+def _baseline_files(tenant_id: str) -> List[Path]:
+    """Surviving baselines, oldest first, expiring anything past BASELINE_TTL_DAYS."""
+    return _sweep(_baseline_dir(tenant_id), "baseline_*.json", BASELINE_TTL_DAYS)
+
+
 def save_baseline(tenant_id: str, baseline: Dict[str, Any]) -> str:
-    d = _tenant_dir(tenant_id) / "baselines"
+    d = _baseline_dir(tenant_id)
     d.mkdir(parents=True, exist_ok=True)
     stamp = baseline["takenAt"].replace(":", "").replace("-", "").split(".")[0]
     path = d / f"baseline_{stamp}.json"
     path.write_text(json.dumps(baseline))
-    for old in sorted(d.glob("baseline_*.json"))[:-MAX_BASELINES]:
+    # Sweep by age first, then apply the count cap to whatever is left.
+    for old in _baseline_files(tenant_id)[:-MAX_BASELINES]:
         try:
             old.unlink()
         except OSError:
@@ -144,16 +309,13 @@ def save_baseline(tenant_id: str, baseline: Dict[str, Any]) -> str:
 
 
 def list_baselines(tenant_id: str) -> List[Dict[str, Any]]:
-    d = _tenant_dir(tenant_id) / "baselines"
-    if not d.exists():
-        return []
     out = []
-    for f in sorted(d.glob("baseline_*.json")):
-        try:
-            b = json.loads(f.read_text())
-        except (OSError, ValueError):
+    for f in _baseline_files(tenant_id):
+        b = _read(f)
+        if b is None:
             continue
         out.append({
+            "expiresAtEpoch": f.stat().st_mtime + BASELINE_TTL_DAYS * 86400,
             "file": f.name,
             "takenAt": b.get("takenAt"),
             "takenAtEpoch": b.get("takenAtEpoch"),
@@ -166,15 +328,18 @@ def list_baselines(tenant_id: str) -> List[Dict[str, Any]]:
 
 
 def load_baseline(tenant_id: str, file: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Newest baseline unless a specific file is named."""
-    d = _tenant_dir(tenant_id) / "baselines"
-    if not d.exists():
-        return None
+    """
+    Newest baseline unless a specific file is named.
+
+    Expired baselines are swept before the lookup, so a named file that has aged
+    out reads as absent rather than being resurrected by name.
+    """
+    files = _baseline_files(tenant_id)
     if file:
-        p = d / Path(file).name
-        return json.loads(p.read_text()) if p.exists() else None
-    files = sorted(d.glob("baseline_*.json"))
-    return json.loads(files[-1].read_text()) if files else None
+        wanted = Path(file).name          # never let a caller escape the directory
+        match = next((f for f in files if f.name == wanted), None)
+        return _read(match) if match else None
+    return _read(files[-1]) if files else None
 
 
 def delete_baseline(tenant_id: str, file: str) -> bool:
@@ -199,13 +364,15 @@ def save_health(tenant_id: str, result: Dict[str, Any]) -> None:
 
 
 def load_health(tenant_id: str) -> Optional[Dict[str, Any]]:
-    p = _tenant_dir(tenant_id) / "health.json"
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except (OSError, ValueError):
-        return None
+    """
+    The last stored check result, if it has not aged out.
+
+    Subject to the same TTL as the rest: findings quote VLAN ids, spanning-tree
+    state and remediation commands derived from device configuration, so this is
+    not the innocuous leftover it looks like.
+    """
+    files = _sweep(_tenant_dir(tenant_id), "health.json", HEALTH_TTL_DAYS)
+    return _read(files[0]) if files else None
 
 
 def scope_snapshot(snapshot: Dict[str, Any], venue_ids) -> Dict[str, Any]:
@@ -250,10 +417,7 @@ def comparable(snapshots: List[Dict[str, Any]], venue_ids=None):
     if not snapshots:
         return [], {"scoped": False, "venueCount": 0, "excluded": []}
 
-    def coverage(s):
-        explicit = s.get("scopeVenueIds")
-        return set(explicit) if explicit else set((s.get("venues") or {}).keys())
-
+    coverage = _coverage
     covers = [(s, coverage(s)) for s in snapshots]
     target = set(venue_ids) if venue_ids else set().union(*(c for _, c in covers))
 

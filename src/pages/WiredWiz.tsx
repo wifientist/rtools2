@@ -22,7 +22,7 @@ interface SnapshotMeta {
   file: string; takenAt: string; takenAtEpoch: number;
   switches: number; ports: number; macs: number;
   complete: boolean; expected: number | null; collected: number | null;
-  sizeBytes: number;
+  sizeBytes: number; expiresAtEpoch?: number;
 }
 
 interface VenueRow {
@@ -104,6 +104,10 @@ export default function WiredWiz() {
 
   const [health, setHealth] = useState<any>(null);
   const [baselines, setBaselines] = useState<any[]>([]);
+  // Retention is enforced server-side; the UI reads it back rather than
+  // hardcoding it, so stored data never disappears without the page saying why.
+  const [snapshotTtlDays, setSnapshotTtlDays] = useState<number | null>(null);
+  const [baselineTtlDays, setBaselineTtlDays] = useState<number | null>(null);
   const [macTables, setMacTables] = useState<any>(null);
   const [catalogue, setCatalogue] = useState<any>(null);
   const [catFilter, setCatFilter] = useState("");
@@ -120,6 +124,9 @@ export default function WiredWiz() {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [analysis, setAnalysis] = useState<any>(null);
   const [switches, setSwitches] = useState<SwitchRow[]>([]);
+  // Which snapshot the inventory actually came from. Without this a scope
+  // mismatch shows up only as counts that disagree with the crawl you just ran.
+  const [switchesScope, setSwitchesScope] = useState<any>(null);
   const [switchFilter, setSwitchFilter] = useState("");
   const [selectedSwitch, setSelectedSwitch] = useState<SwitchRow | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -145,7 +152,11 @@ export default function WiredWiz() {
   const loadSnapshots = useCallback(async () => {
     if (!scopeReady) return;
     const res = await apiFetch(`${base}/snapshots${qs()}`, { credentials: "include" });
-    if (res.ok) setSnapshots((await res.json()).snapshots || []);
+    if (res.ok) {
+      const body = await res.json();
+      setSnapshots(body.snapshots || []);
+      setSnapshotTtlDays(body.ttlDays ?? null);
+    }
   }, [base, qs, scopeReady]);
 
   const loadAnalysis = useCallback(async () => {
@@ -211,7 +222,11 @@ export default function WiredWiz() {
   const loadBaselines = useCallback(async () => {
     if (!scopeReady) return;
     const res = await apiFetch(`${base}/baselines${qs()}`, { credentials: "include" });
-    if (res.ok) setBaselines((await res.json()).baselines || []);
+    if (res.ok) {
+      const body = await res.json();
+      setBaselines(body.baselines || []);
+      setBaselineTtlDays(body.ttlDays ?? null);
+    }
   }, [base, qs, scopeReady]);
 
   const runBaseline = async () => {
@@ -242,14 +257,19 @@ export default function WiredWiz() {
   const loadSwitches = useCallback(async () => {
     if (!scopeReady) return;
     const res = await apiFetch(`${base}/switches${qs()}`, { credentials: "include" });
-    if (res.ok) setSwitches((await res.json()).switches || []);
-    else if (res.status === 404) setSwitches([]);
+    if (res.ok) {
+      const body = await res.json();
+      setSwitches(body.switches || []);
+      setSwitchesScope(body.scope || null);
+    } else if (res.status === 404) {
+      setSwitches([]); setSwitchesScope(null);
+    }
   }, [base, qs, scopeReady]);
 
   // EC changed → reset everything and fetch its venues.
   useEffect(() => {
     setVenues([]); setSelectedVenues([]); setVenueFilter("");
-    setAnalysis(null); setSwitches([]); setSnapshots([]); setHealth(null);
+    setAnalysis(null); setSwitches([]); setSwitchesScope(null); setSnapshots([]); setHealth(null);
     setBaselines([]); setMacTables(null); setSelectedSwitch(null); setConfig(null);
     setError(""); setNotice("");
     if (ecChosen) loadVenues();
@@ -277,11 +297,19 @@ export default function WiredWiz() {
         return;
       }
       const r = await res.json();
+      // A window-capped query reports collected === expected === the ceiling, so
+      // "only 10,000 of 10,000 rows came back" would be nonsense. Name the real
+      // cause instead: the query ceiling truncated a venue we could not split.
+      const capped = (r.completeness?.shortfalls || []).filter((s: any) => s.windowCapped);
       setNotice(
         r.complete
           ? `Crawled ${r.switches} switches, ${fmtNum(r.ports, 0)} ports, ${fmtNum(r.macs, 0)} MACs across `
             + `${Object.keys(r.venues || {}).length} venue(s) in ${fmtDuration(r.elapsedSeconds)}.`
-          : `INCOMPLETE crawl — only ${fmtNum(r.completeness?.collected, 0)} of ${fmtNum(r.completeness?.expected, 0)} rows came back. This snapshot will not be used for rates.`,
+          : capped.length
+            ? `TRUNCATED crawl — ${capped.length} quer${capped.length === 1 ? "y" : "ies"} hit the `
+              + `10,000-row query ceiling and splitting per switch did not clear it, so some rows `
+              + `were never returned. Crawl a narrower venue selection. This snapshot will not be used for rates.`
+            : `INCOMPLETE crawl — only ${fmtNum(r.completeness?.collected, 0)} of ${fmtNum(r.completeness?.expected, 0)} rows came back. This snapshot will not be used for rates.`,
       );
       await Promise.all([loadSnapshots(), loadAnalysis(), loadSwitches(), loadMacTables()]);
     } finally {
@@ -453,32 +481,47 @@ export default function WiredWiz() {
           ) : (
             <>
           {/* ── control bar ───────────────────────────────── */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-wrap items-center gap-4">
-            <button
-              onClick={runCrawl}
-              disabled={crawling}
-              className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-            >
-              {crawling ? "Crawling…" : `Crawl ${venueScopeLabel}`}
-            </button>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              Rate window
-              <select value={minWindow} onChange={(e) => setMinWindow(Number(e.target.value))}
-                      className="border rounded px-2 py-1 text-sm">
-                <option value={300}>5 min</option>
-                <option value={900}>15 min (recommended)</option>
-                <option value={1800}>30 min</option>
-                <option value={3600}>1 hour</option>
-              </select>
-            </label>
-            <span className="text-xs text-gray-500 max-w-md">
-              R1 refreshes port counters about every 5 minutes, so rates need two
-              snapshots at least that far apart — shorter windows report fake spikes.
-              Nothing here runs on a timer: take the second snapshot when you want it.
-            </span>
-            <div className="ml-auto text-xs text-gray-500">
-              {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} stored
+          {/* Capture on the left, read-back settings on the right. The rate window
+              used to sit immediately beside the Crawl button, where it read as a
+              crawl interval — it is not one: it never triggers anything, it only
+              chooses which two snapshots you ALREADY took get differenced. */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={runCrawl}
+                disabled={crawling}
+                className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {crawling ? "Crawling…" : `Crawl ${venueScopeLabel}`}
+              </button>
+              <span className="text-xs text-gray-500 max-w-xs">
+                One snapshot per click. Nothing here runs on a timer — take the next
+                one whenever you want it.
+              </span>
             </div>
+
+            <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2 justify-end">
+              <div className="text-xs text-gray-500">
+                {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} stored
+              </div>
+              <div className="h-8 w-px bg-gray-200 hidden sm:block" />
+              <label className="flex items-center gap-2 text-sm text-gray-700"
+                     title="Applies to the Findings and Health tabs. It selects which stored snapshots are compared; it never starts a crawl.">
+                <span className="text-gray-500">Compare snapshots taken at least</span>
+                <select value={minWindow} onChange={(e) => setMinWindow(Number(e.target.value))}
+                        className="border rounded px-2 py-1 text-sm">
+                  <option value={300}>5 min</option>
+                  <option value={900}>15 min</option>
+                  <option value={1800}>30 min</option>
+                  <option value={3600}>1 hour</option>
+                </select>
+                <span className="text-gray-500">apart</span>
+              </label>
+            </div>
+            <p className="w-full text-xs text-gray-500 -mt-1">
+              R1 refreshes port counters about every 5 minutes, so a pair closer together
+              than that reports fake spikes — 15 min is the safe default.
+            </p>
           </div>
 
           {error && (
@@ -518,6 +561,7 @@ export default function WiredWiz() {
               openFinding={openFinding}
               setOpenFinding={setOpenFinding}
               baselines={baselines}
+              baselineTtlDays={baselineTtlDays}
               baselining={baselining}
               onBaseline={runBaseline}
               scopeLabel={venueScopeLabel}
@@ -535,7 +579,8 @@ export default function WiredWiz() {
 
           {tab === "inventory" && (
             <Inventory rows={filteredSwitches} filter={switchFilter} setFilter={setSwitchFilter}
-                       onOpenConfig={openConfig} total={switches.length} />
+                       onOpenConfig={openConfig} total={switches.length}
+                       scope={switchesScope} />
           )}
 
           {tab === "config" && (
@@ -546,7 +591,7 @@ export default function WiredWiz() {
             <Catalogue data={catalogue} filter={catFilter} setFilter={setCatFilter} />
           )}
 
-          {tab === "snapshots" && <Snapshots rows={snapshots} />}
+          {tab === "snapshots" && <Snapshots rows={snapshots} ttlDays={snapshotTtlDays} />}
             </>
           )}
         </>
@@ -561,6 +606,14 @@ export default function WiredWiz() {
  * Surfaces what the backend actually analysed. A snapshot silently dropped for
  * insufficient venue coverage would otherwise look like missing data.
  */
+function expiresIn(epoch?: number | null): string | null {
+  if (!epoch) return null;
+  const hours = (epoch - Date.now() / 1000) / 3600;
+  if (hours <= 0) return "expired";
+  if (hours < 24) return `expires in ${Math.max(1, Math.round(hours))}h`;
+  return `expires in ${Math.round(hours / 24)}d`;
+}
+
 function ScopeNote({ scope }: { scope: any }) {
   if (!scope) return null;
   const excluded = scope.excluded || [];
@@ -692,6 +745,7 @@ function VenuePicker({
 function HealthChecks({
   health, running, auditConfigs, setAuditConfigs, onRun, openFinding, setOpenFinding,
   baselines, baselining, onBaseline, scopeLabel, exportBase, exportQs, exportLabel,
+  baselineTtlDays,
 }: any) {
   const newest = baselines?.[baselines.length - 1];
   const ageHours = newest
@@ -717,10 +771,14 @@ function HealthChecks({
                 <span className={ageHours !== null && ageHours > 24 ? "text-amber-700" : "text-gray-500"}>
                   captured {fmtTime(newest.takenAt)}
                   {ageHours !== null && ` (${ageHours < 1 ? "under an hour" : `${Math.round(ageHours)}h`} old)`}
+                  {expiresIn(newest.expiresAtEpoch) && ` · ${expiresIn(newest.expiresAtEpoch)}`}
                 </span>
                 <span className="block text-xs text-gray-500 mt-0.5">
                   Config checks run against this at no API cost. Keeping it is what makes
                   drift detectable — re-read live below to see what changed since.
+                  {baselineTtlDays
+                    ? ` Stored configs are deleted after ${baselineTtlDays} day${baselineTtlDays === 1 ? "" : "s"}.`
+                    : ""}
                 </span>
               </>
             ) : (
@@ -730,7 +788,8 @@ function HealthChecks({
                   A one-off bulk read of every online switch&apos;s running config
                   (~one request per switch, ~30s for 200), redacted and stored. It powers
                   the loop-containment, forensics and hygiene checks, and gives later runs
-                  something to diff against. Triggered only by this button — never on a timer.
+                  something to diff against. Triggered only by this button — never on a
+                  timer, and{baselineTtlDays ? ` deleted after ${baselineTtlDays} day${baselineTtlDays === 1 ? "" : "s"}.` : " not kept indefinitely."}
                 </span>
               </>
             )}
@@ -1248,15 +1307,22 @@ function MacTables({ data, filter, setFilter }: any) {
 
 /* ── Inventory ────────────────────────────────────────────── */
 
-function Inventory({ rows, filter, setFilter, onOpenConfig, total }: any) {
+function Inventory({ rows, filter, setFilter, onOpenConfig, total, scope }: any) {
   if (!total) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
-        Nothing crawled yet. Hit <strong>Crawl now</strong>.
+      <div className="space-y-4">
+        <ScopeNote scope={scope} />
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
+          {scope?.insufficientCoverage
+            ? <>No crawl covers the selected venue(s). Hit <strong>Crawl now</strong> at this scope.</>
+            : <>Nothing crawled yet. Hit <strong>Crawl now</strong>.</>}
+        </div>
       </div>
     );
   }
   return (
+    <div className="space-y-4">
+    <ScopeNote scope={scope} />
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       <input
         value={filter}
@@ -1305,6 +1371,7 @@ function Inventory({ rows, filter, setFilter, onOpenConfig, total }: any) {
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }
@@ -1464,16 +1531,27 @@ function Catalogue({ data, filter, setFilter }: any) {
 
 /* ── Snapshots ────────────────────────────────────────────── */
 
-function Snapshots({ rows }: { rows: SnapshotMeta[] }) {
+function Snapshots({ rows, ttlDays }: { rows: SnapshotMeta[]; ttlDays: number | null }) {
+  const retention = ttlDays ? (
+    <div className="text-xs text-gray-500">
+      Snapshots hold learned MACs, client IPs and LLDP topology — never device
+      configuration. They are deleted {ttlDays} day{ttlDays === 1 ? "" : "s"} after
+      capture, whether or not you crawl again.
+    </div>
+  ) : null;
+
   if (!rows.length) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
-        No snapshots stored yet.
+      <div className="space-y-2">
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-sm text-gray-600">
+          No snapshots stored yet.
+        </div>
+        {retention}
       </div>
     );
   }
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4">
+    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
       <table className="min-w-full text-sm">
         <thead className="text-xs text-gray-500 border-b">
           <tr>
@@ -1482,7 +1560,8 @@ function Snapshots({ rows }: { rows: SnapshotMeta[] }) {
             <th className="text-right py-1 pr-3">Ports</th>
             <th className="text-right py-1 pr-3">MACs</th>
             <th className="text-right py-1 pr-3">Size</th>
-            <th className="text-left py-1">Crawl</th>
+            <th className="text-left py-1 pr-3">Crawl</th>
+            <th className="text-left py-1">Retention</th>
           </tr>
         </thead>
         <tbody>
@@ -1493,17 +1572,19 @@ function Snapshots({ rows }: { rows: SnapshotMeta[] }) {
               <td className="py-1 pr-3 text-right">{fmtNum(s.ports, 0)}</td>
               <td className="py-1 pr-3 text-right">{fmtNum(s.macs, 0)}</td>
               <td className="py-1 pr-3 text-right text-xs">{(s.sizeBytes / 1048576).toFixed(1)} MB</td>
-              <td className="py-1 text-xs">
+              <td className="py-1 pr-3 text-xs">
                 {s.complete
                   ? <span className="text-green-700">complete</span>
                   : <span className="text-orange-700 font-medium">
                       incomplete ({fmtNum(s.collected, 0)}/{fmtNum(s.expected, 0)}) — excluded from rates
                     </span>}
               </td>
+              <td className="py-1 text-xs text-gray-500">{expiresIn(s.expiresAtEpoch) || "—"}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      {retention}
     </div>
   );
 }
