@@ -564,9 +564,16 @@ class ValidateCloudpathPhase(PhaseExecutor):
         # Build username -> {identity_id, description} map so Phase 4 can skip
         # identities that already have the correct GUID in their description field.
         existing_identities: Dict[str, Dict[str, Any]] = {}  # username -> {id, description}
-        if ig_id and existing_passphrases:
+        # cloudpath guid -> identity. Stable across renames; see the scan below.
+        existing_identities_by_guid: Dict[str, Dict[str, Any]] = {}
+        # Scan whenever the group exists -- NOT only when passphrases do.
+        # The case that mints duplicate identities is precisely the one where
+        # the passphrases were deleted and the identities were left behind
+        # (a partial cleanup). Gating on existing_passphrases skipped the scan
+        # exactly when it was needed most.
+        if ig_id:
             try:
-                await self.emit("Fetching existing identities for description check...")
+                await self.emit("Fetching existing identities...")
                 id_page = 0
                 id_page_size = 100
 
@@ -584,11 +591,23 @@ class ValidateCloudpathPhase(PhaseExecutor):
 
                     for identity in id_items:
                         uname = identity.get('name', '')
+                        desc = identity.get('description', '') or ''
+                        record = {
+                            'id': identity.get('id'),
+                            'description': desc,
+                            'name': uname,
+                        }
                         if uname:
-                            existing_identities[uname] = {
-                                'id': identity.get('id'),
-                                'description': identity.get('description', ''),
-                            }
+                            existing_identities[uname] = record
+                        # The Cloudpath GUID is written into the description by
+                        # update_identity_descriptions, and unlike the name it
+                        # never changes. Once a run strips the _tier suffix the
+                        # identity no longer matches its Cloudpath username, so
+                        # a name-only lookup misses it and the next import mints
+                        # a SECOND identity for the same resident -- whose
+                        # rename then collides with the first.
+                        if desc:
+                            existing_identities_by_guid[desc] = record
 
                     if len(id_items) < id_page_size:
                         break
@@ -601,7 +620,9 @@ class ValidateCloudpathPhase(PhaseExecutor):
 
                 if existing_identities:
                     await self.emit(
-                        f"Found {len(existing_identities)} existing identities in group"
+                        f"Found {len(existing_identities)} existing identities "
+                        f"in group ({len(existing_identities_by_guid)} carry a "
+                        f"Cloudpath GUID and can be matched after a rename)"
                     )
             except Exception as e:
                 logger.warning(f"Error fetching existing identities: {e}")
@@ -615,29 +636,53 @@ class ValidateCloudpathPhase(PhaseExecutor):
         description_updates_needed = 0
         passphrases_with_exists: List[Dict[str, Any]] = []
 
+        identities_matched_by_guid = 0
+
         for pp in passphrases:
             pp_dict = pp.model_dump()
+
+            # ---------------------------------------------------------------
+            # Resolve this resident's identity BEFORE deciding anything else,
+            # and for every passphrase rather than only ones already imported.
+            #
+            # GUID first: it is stamped into the description and survives the
+            # suffix rename, so it still matches after a previous run turned
+            # "acct_gigabit" into "acct". Name second, for identities created
+            # before their description was written (e.g. a run that died
+            # before update_identity_descriptions).
+            #
+            # This must run for NEW passphrases too. Previously it only ran
+            # for ones that already existed, so a renamed identity whose
+            # passphrase had been deleted was invisible -- the import created
+            # a second identity for that resident and every rename afterwards
+            # collided with the first.
+            # ---------------------------------------------------------------
+            identity_info = None
+            if pp.guid:
+                identity_info = existing_identities_by_guid.get(pp.guid)
+                if identity_info:
+                    identities_matched_by_guid += 1
+            if not identity_info:
+                identity_info = existing_identities.get(pp.name)
+
+            if identity_info:
+                pp_dict['existing_identity_id'] = identity_info['id']
+                pp_dict['existing_description'] = identity_info['description']
+                pp_dict['needs_description_update'] = (
+                    identity_info['description'] != pp.guid
+                )
+                if pp_dict['needs_description_update']:
+                    description_updates_needed += 1
+            else:
+                pp_dict['existing_identity_id'] = None
+                pp_dict['existing_description'] = None
+                pp_dict['needs_description_update'] = False
+
             if pp.passphrase in existing_passphrases:
                 existing_info = existing_passphrases[pp.passphrase]
                 pp_dict['exists'] = True
                 pp_dict['existing_id'] = existing_info['id']
                 pp_dict['existing_vlan_id'] = existing_info['vlan_id']
-
-                # Populate identity info for Phase 4 idempotent re-runs
-                identity_info = existing_identities.get(pp.name)
-                if identity_info:
-                    pp_dict['existing_identity_id'] = identity_info['id']
-                    pp_dict['existing_description'] = identity_info['description']
-                    # Check if description already has the correct GUID
-                    if identity_info['description'] != pp.guid:
-                        pp_dict['needs_description_update'] = True
-                        description_updates_needed += 1
-                    else:
-                        pp_dict['needs_description_update'] = False
-                else:
-                    pp_dict['existing_identity_id'] = None
-                    pp_dict['existing_description'] = None
-                    pp_dict['needs_description_update'] = False
 
                 # Check if VLAN needs update
                 if pp.vlan_id != existing_info['vlan_id']:
@@ -657,6 +702,13 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 pp_dict['needs_description_update'] = False
                 passphrases_to_create_count += 1
             passphrases_with_exists.append(pp_dict)
+
+        if identities_matched_by_guid:
+            await self.emit(
+                f"{identities_matched_by_guid} identities matched by Cloudpath "
+                f"GUID rather than username — they were renamed by a previous "
+                f"run and will be reused, not duplicated"
+            )
 
         if description_updates_needed > 0:
             await self.emit(
