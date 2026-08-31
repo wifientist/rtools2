@@ -865,8 +865,12 @@ function CloudpathImport() {
 
     // Build CSV content using filtered data
     const hasJsonGuids = filteredIdentityData.some(r => r.cloudpath_guid_json);
+    // The passphrase value itself is deliberately excluded: this audit is for
+    // reconciling identities to their Cloudpath GUIDs, and a CSV of live
+    // credentials is not something to hand around. passphrase_id still
+    // identifies the record.
     const headers = [
-      'dpsk_pool_name', 'dpsk_pool_id', 'username', 'passphrase',
+      'dpsk_pool_name', 'dpsk_pool_id', 'username',
       'cloudpath_guid',
       ...(hasJsonGuids ? ['cloudpath_guid_json'] : []),
       'identity_id', 'passphrase_id', 'identity_group_name'
@@ -2129,9 +2133,6 @@ function CloudpathImport() {
                             Username
                           </th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Passphrase
-                          </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Cloudpath GUID
                           </th>
                           {cloudpathGuidMap && (
@@ -2156,9 +2157,6 @@ function CloudpathImport() {
                             </td>
                             <td className="px-3 py-2 whitespace-nowrap text-gray-900">
                               {row.username}
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
-                              {row.passphrase || <span className="text-gray-400">-</span>}
                             </td>
                             <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-600">
                               {row.cloudpath_guid || <span className="text-gray-400">-</span>}
