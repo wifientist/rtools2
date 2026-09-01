@@ -524,10 +524,12 @@ class RedisStateManagerV2:
         """
         Mark RUNNING jobs with no live heartbeat as FAILED.
 
-        Called at startup: no workflow survives a restart, so any job still
-        claiming RUNNING with no heartbeat is provably orphaned. Without this
-        they stay RUNNING forever and the only symptom is a UI that never
-        stops loading.
+        Called at startup AND periodically. Startup alone is not enough: the
+        dead process's heartbeat outlives a quick restart (120s TTL), so the
+        job looks alive at boot, is skipped, and is then never re-examined --
+        it stays RUNNING forever. A restart faster than the TTL is the normal
+        case, which made the startup-only sweep miss the very situation it
+        was written for.
         """
         reaped: List[str] = []
         try:

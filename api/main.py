@@ -90,6 +90,8 @@ async def lifespan(app: FastAPI):
     from jobs.data_studio_export_job import ensure_registered as ensure_data_studio_export
     from jobs.fileshare_cleanup_job import ensure_registered as ensure_fileshare_cleanup
     from jobs.dfs_blacklist_job import ensure_registered as ensure_dfs_blacklist
+    from jobs.stranded_job_reaper import ensure_registered as ensure_stranded_reaper
+    await ensure_stranded_reaper(scheduler)
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
     await ensure_signup_cleanup(scheduler)
