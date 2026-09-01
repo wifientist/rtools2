@@ -34,7 +34,9 @@ DEFAULT_BANDWIDTH = 10_000_000_000  # 10Gbps
 DEFAULT_SUFFIX = "gigabit"
 
 # Pattern to detect unit-specific SSIDs like "108@Property_Name"
-UNIT_SSID_PATTERN = re.compile(r'^(\d+)@(.+)$')
+from workflow.phases.cloudpath.unit_ssid import (  # noqa: F401
+    UNIT_SSID_PATTERN, unit_from_ssid, is_unit_ssid,
+)
 
 
 class PolicyResult(BaseModel):
@@ -262,7 +264,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 continue
 
             # Filter to unit SSIDs only (e.g., "101@PropertyName")
-            unit_ssids = [s for s in ssid_list if UNIT_SSID_PATTERN.match(s)]
+            unit_ssids = [s for s in ssid_list if is_unit_ssid(s)]
 
             if not unit_ssids:
                 skipped_no_unit_ssid += 1
@@ -271,8 +273,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             for ssid in unit_ssids:
                 # Extract unit number: "101@Sunrise" → "101"
-                unit_match = UNIT_SSID_PATTERN.match(ssid)
-                unit_num = unit_match.group(1) if unit_match else "unknown"
+                unit_num = unit_from_ssid(ssid) or "unknown"
 
                 parsed_entries.append({
                     "account": account,
@@ -782,7 +783,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         policy_count = 0
         for pp in original_passphrases:
             ssid_list = pp.get('ssid_list', pp.get('ssidList', []))
-            unit_ssids = [s for s in ssid_list if UNIT_SSID_PATTERN.match(s)]
+            unit_ssids = [s for s in ssid_list if is_unit_ssid(s)]
             policy_count += len(unit_ssids)
 
         return PhaseValidation(
