@@ -363,8 +363,13 @@ class ValidationSummary(BaseModel):
     # Accounts appearing more than once after the tier suffix is stripped
     # (e.g. acct_gigabit + acct_superfast). They collapse to one identity and
     # one policy name, so the duplicates lose a policy and a rename.
+    # Accounts appearing twice IN THE EXPORT FILE (two tier suffixes).
     policy_name_collisions: int = 0
     colliding_accounts: List[str] = Field(default_factory=list)
+    # Residents with MORE THAN ONE identity IN RUCKUSONE (same Cloudpath GUID),
+    # left behind by an earlier run. A different problem from the above, and
+    # one only manual cleanup can resolve.
+    duplicate_identities_in_r1: int = 0
     radius_groups_to_create: int = 0
     radius_groups_existing: int = 0
     total_api_calls: int = 0
