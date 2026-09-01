@@ -370,6 +370,9 @@ class ValidationSummary(BaseModel):
     # left behind by an earlier run. A different problem from the above, and
     # one only manual cleanup can resolve.
     duplicate_identities_in_r1: int = 0
+    # SSIDs excluded because their unit name is an export artefact
+    # ("undefined@Property"). Named so a broken export is obvious in the plan.
+    excluded_junk_ssids: List[str] = Field(default_factory=list)
     radius_groups_to_create: int = 0
     radius_groups_existing: int = 0
     total_api_calls: int = 0

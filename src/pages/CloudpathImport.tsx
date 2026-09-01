@@ -66,6 +66,11 @@ interface ScenarioDetection {
   site_wide_ssid: string;             // "" when the export has none
   passphrases_with_unit: number;      // carry a unit SSID
   passphrases_on_property: number;    // listed on the property-wide SSID
+  // Every unit SSID with how many passphrases name it. A unit SSID carried
+  // only by the pool's master list (count 0) still gets an SSID and AP Group.
+  unit_ssid_counts: { ssid: string; unit: string; count: number }[];
+  passphrases_without_unit: number;   // no unit SSID at all
+  excluded_junk_ssids: string[];      // "undefined@Property" etc — not created
 }
 
 // Import mode is controlled by ssid_mode:
@@ -259,9 +264,27 @@ function CloudpathImport() {
   // Analyze uploaded JSON for scenario detection and suffix patterns (client-side preview)
   const analyzeCloudpathData = (data: Record<string, any>): ScenarioDetection => {
     const dpsks = data.dpsks || [];
-    const unitPattern = /^(\d+)@(.+)$/;
+    // Split on the LAST '@': everything before it is the unit, everything
+    // after is the property. Mirrors unit_ssid.py on the backend -- keep the
+    // two in step. The old /^(\d+)@(.+)$/ required an all-digit unit, so a
+    // property using "1-101@Name" detected almost none of its units, and the
+    // same regex drives the AP-assignment CSV seed as well as the counts.
+    const unitPattern = /^(.+)@([^@]+)$/;
+    // Unit tokens that mean a broken export rather than a unit. Mirrors
+    // JUNK_UNIT_TOKENS in unit_ssid.py -- keep the two in step. Excluded from
+    // the unit count so the UI matches what the import will actually create.
+    const JUNK_UNITS = new Set(["undefined", "null", "none", "nan", "nil", "-"]);
+    const unitOf = (ssid: string): string | null => {
+      const m = ssid.match(unitPattern);
+      if (!m) return null;
+      const t = (m[1] || "").trim();
+      return !t || JUNK_UNITS.has(t.toLowerCase()) ? null : t;
+    };
+    const isJunkSsid = (ssid: string): boolean =>
+      !!ssid.match(unitPattern) && unitOf(ssid) === null;
 
     const uniqueUnits = new Set<string>();
+    const junkSsids = new Set<string>();
     const allSsids = new Set<string>();
     let unitPassphrases = 0;
 
@@ -272,9 +295,11 @@ function CloudpathImport() {
     let masterSiteWideSsid = "";
     for (const ssid of poolSsids) {
       allSsids.add(ssid);
-      const match = ssid.match(unitPattern);
-      if (match) {
-        uniqueUnits.add(match[1]);
+      const u = unitOf(ssid);
+      if (u) {
+        uniqueUnits.add(u);
+      } else if (isJunkSsid(ssid)) {
+        junkSsids.add(ssid);
       } else if (!masterSiteWideSsid) {
         masterSiteWideSsid = ssid;
       }
@@ -293,15 +318,17 @@ function CloudpathImport() {
       const ssidList = dpsk.ssidList || [];
       ssidList.forEach((ssid: string) => {
         allSsids.add(ssid);
-        if (!ssid.match(unitPattern)) {
+        if (isJunkSsid(ssid)) {
+          junkSsids.add(ssid);
+        } else if (!ssid.match(unitPattern)) {
           nonUnitSsidCounts.set(ssid, (nonUnitSsidCounts.get(ssid) || 0) + 1);
         }
       });
 
       for (const ssid of ssidList) {
-        const match = ssid.match(unitPattern);
-        if (match) {
-          uniqueUnits.add(match[1]);
+        const u = unitOf(ssid);
+        if (u) {
+          uniqueUnits.add(u);
           unitPassphrases++;
           break;
         }
@@ -350,6 +377,29 @@ function CloudpathImport() {
       siteWideSsid = ranked[0][0];
     }
 
+    // Passphrases per unit SSID. Counting per SSID (not per unit token) is
+    // what makes an unexpected unit count explainable: a stray SSID shows up
+    // here as its own row instead of silently inflating the total.
+    const perSsid = new Map<string, number>();
+    for (const ssid of poolSsids) {
+      if (unitOf(ssid)) perSsid.set(ssid, 0);
+    }
+    for (const dpsk of dpsks) {
+      for (const ssid of (dpsk.ssidList || [])) {
+        if (unitOf(ssid)) {
+          perSsid.set(ssid, (perSsid.get(ssid) || 0) + 1);
+        }
+      }
+    }
+    const unitSsidCounts = Array.from(perSsid.entries())
+      .map(([ssid, count]) => ({
+        ssid,
+        unit: unitOf(ssid) || ssid,
+        count,
+      }))
+      .sort((a, b) =>
+        a.unit.localeCompare(b.unit, undefined, { numeric: true }));
+
     // How many passphrases list the property-wide SSID
     let passphrasesOnProperty = 0;
     for (const dpsk of dpsks) {
@@ -388,6 +438,9 @@ function CloudpathImport() {
       site_wide_ssid: siteWideSsid,
       passphrases_with_unit: unitPassphrases,
       passphrases_on_property: passphrasesOnProperty,
+      unit_ssid_counts: unitSsidCounts,
+      excluded_junk_ssids: Array.from(junkSsids).sort(),
+      passphrases_without_unit: dpsks.length - unitPassphrases,
     };
   };
 
@@ -1103,11 +1156,91 @@ function CloudpathImport() {
                   {scenarioDetection.unit_count} units detected,{' '}
                   {Math.round(scenarioDetection.unit_coverage * 100)}% with unit-specific SSIDs
                 </div>
-                {scenarioDetection.unique_ssids.length > 0 && (
-                  <div className="text-xs text-blue-600 mt-1">
-                    Sample SSIDs: {scenarioDetection.unique_ssids.slice(0, 5).join(', ')}
-                    {scenarioDetection.unique_ssids.length > 5 && '...'}
+                {/* Where every passphrase lands. Shown in full rather than as
+                    a 5-SSID sample: an unexpected unit count is only
+                    explainable if you can see which SSIDs produced it. */}
+                <div className="text-xs text-blue-800 mt-2 space-y-0.5">
+                  <div>
+                    <span className="font-medium">
+                      {scenarioDetection.passphrases_with_unit}
+                    </span>{' '}
+                    passphrases on a unit SSID
                   </div>
+                  {!!scenarioDetection.site_wide_ssid && (
+                    <div>
+                      <span className="font-medium">
+                        {scenarioDetection.passphrases_on_property}
+                      </span>{' '}
+                      on the property-wide SSID
+                      <span className="font-mono ml-1">
+                        "{scenarioDetection.site_wide_ssid}"
+                      </span>
+                    </div>
+                  )}
+                  {scenarioDetection.passphrases_without_unit > 0 && (
+                    <div className="text-amber-700">
+                      <span className="font-medium">
+                        {scenarioDetection.passphrases_without_unit}
+                      </span>{' '}
+                      with NO unit SSID — these import, but get no per-unit
+                      SSID, AP Group or adaptive policy
+                    </div>
+                  )}
+                </div>
+
+                {scenarioDetection.excluded_junk_ssids.length > 0 && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                    <div className="font-medium">
+                      {scenarioDetection.excluded_junk_ssids.length} SSID(s) will
+                      NOT be created — unusable unit name
+                    </div>
+                    <div className="font-mono mt-1 break-all">
+                      {scenarioDetection.excluded_junk_ssids.slice(0, 5).join(', ')}
+                      {scenarioDetection.excluded_junk_ssids.length > 5 &&
+                        ` … and ${scenarioDetection.excluded_junk_ssids.length - 5} more`}
+                    </div>
+                    <div className="mt-1">
+                      These come from a broken export — something wrote
+                      "undefined" where the unit should be. Passphrases on them
+                      still import; they just get no SSID, AP Group or policy.
+                      Worth fixing at the source.
+                    </div>
+                  </div>
+                )}
+
+                {scenarioDetection.unit_ssid_counts.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-blue-700 cursor-pointer hover:text-blue-900 select-none">
+                      Show all {scenarioDetection.unit_ssid_counts.length} unit
+                      SSIDs and their passphrase counts
+                    </summary>
+                    <div className="mt-2 max-h-64 overflow-y-auto border border-blue-200 rounded bg-white">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-blue-50 sticky top-0">
+                          <tr>
+                            <th className="px-2 py-1 text-left font-medium text-blue-900">Unit</th>
+                            <th className="px-2 py-1 text-left font-medium text-blue-900">SSID</th>
+                            <th className="px-2 py-1 text-right font-medium text-blue-900">Passphrases</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-blue-100">
+                          {scenarioDetection.unit_ssid_counts.map((r) => (
+                            <tr key={r.ssid} className={r.count === 0 ? 'bg-amber-50' : ''}>
+                              <td className="px-2 py-1 font-mono text-gray-900">{r.unit}</td>
+                              <td className="px-2 py-1 font-mono text-gray-600">{r.ssid}</td>
+                              <td className={`px-2 py-1 text-right ${r.count === 0 ? 'text-amber-700 font-medium' : 'text-gray-700'}`}>
+                                {r.count === 0 ? '0 — SSID only' : r.count}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Rows with 0 come from the pool's master SSID list and have no
+                      passphrase of their own. They still get an SSID and AP Group.
+                    </p>
+                  </details>
                 )}
               </div>
             </div>

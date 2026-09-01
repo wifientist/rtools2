@@ -51,7 +51,10 @@ from workflow.v2.models import (
 logger = logging.getLogger(__name__)
 
 # Pattern to detect unit-specific SSIDs like "108@Property_Name"
-UNIT_SSID_PATTERN = re.compile(r'^(\d+)@(.+)$')
+from workflow.phases.cloudpath.unit_ssid import (  # noqa: F401
+    UNIT_SSID_PATTERN, unit_from_ssid, is_unit_ssid,
+    is_property_ssid, is_junk_unit_ssid,
+)
 
 
 class CloudpathPoolConfig(BaseModel):
@@ -185,17 +188,23 @@ class ValidateCloudpathPhase(PhaseExecutor):
         # =====================================================================
         pool_ssid_list: List[str] = pool_data.get('ssidList', [])
         master_unit_ssids: Dict[str, str] = {}  # unit_number -> ssid_name
+        # SSIDs shaped like a unit whose token is unusable (undefined/null/blank).
+        # Collected so the plan can name them rather than silently dropping them.
+        junk_unit_ssids: Set[str] = set()
         master_site_wide_ssid: Optional[str] = None
 
         for ssid in pool_ssid_list:
-            match = UNIT_SSID_PATTERN.match(ssid)
-            if match:
-                unit_num = match.group(1)
+            unit_num = unit_from_ssid(ssid)
+            if unit_num:
                 master_unit_ssids[unit_num] = ssid
-            else:
-                # Non-unit SSID is the site-wide one
-                if not master_site_wide_ssid:
-                    master_site_wide_ssid = ssid
+            elif is_junk_unit_ssid(ssid):
+                # Shaped like a unit but the unit token is an export artefact
+                # ("undefined@Property"). Excluded from the import entirely --
+                # and NOT allowed to become the property-wide SSID, which is
+                # what would happen if we simply called it "not a unit".
+                junk_unit_ssids.add(ssid)
+            elif not master_site_wide_ssid:
+                master_site_wide_ssid = ssid
 
         if pool_ssid_list:
             await self.emit(
@@ -225,9 +234,11 @@ class ValidateCloudpathPhase(PhaseExecutor):
             # Also add any new unit SSIDs to dpsk_unit_ssids for merging
             unit_number = None
             for ssid in ssid_list:
-                match = UNIT_SSID_PATTERN.match(ssid)
-                if match:
-                    unit_num = match.group(1)
+                if is_junk_unit_ssid(ssid):
+                    junk_unit_ssids.add(ssid)
+                    continue
+                unit_num = unit_from_ssid(ssid)
+                if unit_num:
                     if not unit_number:
                         unit_number = unit_num
                     unit_ssid_counts[unit_num] += 1
@@ -330,6 +341,18 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 f"{'...' if len(unique_aps) > 5 else ''})"
             )
 
+        if junk_unit_ssids:
+            sample = ", ".join(sorted(junk_unit_ssids)[:5])
+            await self.emit(
+                f"EXCLUDED: {len(junk_unit_ssids)} SSID(s) in this export have "
+                f"an unusable unit name and will NOT be created "
+                f"({sample}{'...' if len(junk_unit_ssids) > 5 else ''}). These "
+                f"come from a broken export — an extractor wrote 'undefined' "
+                f"where the unit should be. Passphrases on them still import; "
+                f"they just get no SSID, AP Group or policy of their own.",
+                "warning",
+            )
+
         await self.emit(f"Parsed {len(passphrases)} passphrases")
 
         # =====================================================================
@@ -388,7 +411,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
             total = len(passphrases)
             for ssid, count in sorted(ssid_counts.items(), key=lambda x: -x[1]):
                 # Site-wide SSID should appear in most DPSKs and NOT match unit pattern
-                if count >= total * 0.5 and not UNIT_SSID_PATTERN.match(ssid):
+                if count >= total * 0.5 and is_property_ssid(ssid):
                     site_wide_ssid = ssid
                     await self.emit(
                         f"Detected site-wide SSID: '{ssid}' (appears in {count}/{total} DPSKs)"
@@ -399,7 +422,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
             if not site_wide_ssid:
                 for p in passphrases:
                     for ssid in p.ssid_list:
-                        if not UNIT_SSID_PATTERN.match(ssid):
+                        if is_property_ssid(ssid):
                             site_wide_ssid = ssid
                             await self.emit(
                                 f"Using fallback site-wide SSID: '{ssid}'"
@@ -925,7 +948,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
             planned_policy_names: Dict[str, List[str]] = defaultdict(list)
             for pp in passphrases:
                 unit_ssids = [
-                    s for s in pp.ssid_list if UNIT_SSID_PATTERN.match(s)
+                    s for s in pp.ssid_list if is_unit_ssid(s)
                 ]
                 if not unit_ssids:
                     # Property-wide only — nothing to scope a policy to.
@@ -1219,7 +1242,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                         sample_pp = unit_pps[0] if unit_pps else None
                         if sample_pp and sample_pp.ssid_list:
                             for ssid in sample_pp.ssid_list:
-                                if UNIT_SSID_PATTERN.match(ssid):
+                                if is_unit_ssid(ssid):
                                     ssid_name = ssid
                                     break
                             if not ssid_name:
@@ -1621,6 +1644,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 policies_skipped_no_unit_ssid=policies_skipped_no_unit_ssid,
                 policy_name_collisions=len(colliding_accounts),
                 duplicate_identities_in_r1=len(duplicate_identities),
+                excluded_junk_ssids=sorted(junk_unit_ssids)[:20],
                 colliding_accounts=sorted(colliding_accounts)[:20],
                 radius_groups_to_create=radius_groups_to_create,
                 radius_groups_existing=radius_groups_existing,
