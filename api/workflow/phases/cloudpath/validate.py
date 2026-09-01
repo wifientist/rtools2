@@ -566,6 +566,9 @@ class ValidateCloudpathPhase(PhaseExecutor):
         existing_identities: Dict[str, Dict[str, Any]] = {}  # username -> {id, description}
         # cloudpath guid -> identity. Stable across renames; see the scan below.
         existing_identities_by_guid: Dict[str, Dict[str, Any]] = {}
+        # guid -> [names] for residents represented by MORE THAN ONE identity
+        # in R1. Distinct from a collision inside the export file.
+        duplicate_identities: Dict[str, List[str]] = {}
         # Scan whenever the group exists -- NOT only when passphrases do.
         # The case that mints duplicate identities is precisely the one where
         # the passphrases were deleted and the identities were left behind
@@ -607,7 +610,22 @@ class ValidateCloudpathPhase(PhaseExecutor):
                         # a SECOND identity for the same resident -- whose
                         # rename then collides with the first.
                         if desc:
-                            existing_identities_by_guid[desc] = record
+                            prior = existing_identities_by_guid.get(desc)
+                            if prior:
+                                # Two identities in R1 carry the SAME Cloudpath
+                                # GUID: this resident was duplicated by an
+                                # earlier run. Record it, and deterministically
+                                # keep the copy whose name has already had its
+                                # suffix stripped -- renaming the suffixed copy
+                                # onto that name would collide (GENERAL-010).
+                                duplicate_identities.setdefault(
+                                    desc, [prior.get('name', '')]
+                                ).append(uname)
+                                prior_suffixed = '_' in (prior.get('name') or '')
+                                if prior_suffixed and '_' not in uname:
+                                    existing_identities_by_guid[desc] = record
+                            else:
+                                existing_identities_by_guid[desc] = record
 
                     if len(id_items) < id_page_size:
                         break
@@ -702,6 +720,20 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 pp_dict['needs_description_update'] = False
                 passphrases_to_create_count += 1
             passphrases_with_exists.append(pp_dict)
+
+        if duplicate_identities:
+            sample = "; ".join(
+                " / ".join(names) for names in
+                list(duplicate_identities.values())[:3]
+            )
+            await self.emit(
+                f"IN RUCKUSONE: {len(duplicate_identities)} resident(s) have "
+                f"MORE THAN ONE identity in the group (same Cloudpath GUID) "
+                f"— e.g. {sample}. The import will reuse the already-renamed "
+                f"copy and leave the extra one untouched; the duplicates need "
+                f"removing by hand.",
+                "warning",
+            )
 
         if identities_matched_by_guid:
             await self.emit(
@@ -920,8 +952,8 @@ class ValidateCloudpathPhase(PhaseExecutor):
             if colliding_accounts:
                 sample = ", ".join(sorted(colliding_accounts)[:5])
                 await self.emit(
-                    f"{len(colliding_accounts)} account(s) appear more than "
-                    f"once with different tier suffixes ({sample}"
+                    f"IN THE EXPORT FILE: {len(colliding_accounts)} account(s) "
+                    f"appear more than once with different tier suffixes ({sample}"
                     f"{'...' if len(colliding_accounts) > 5 else ''}). Each "
                     f"collapses to ONE identity and ONE policy, so the extra "
                     f"copies keep their suffix and get no policy of their own.",
@@ -1588,6 +1620,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 policies_existing=policies_existing,
                 policies_skipped_no_unit_ssid=policies_skipped_no_unit_ssid,
                 policy_name_collisions=len(colliding_accounts),
+                duplicate_identities_in_r1=len(duplicate_identities),
                 colliding_accounts=sorted(colliding_accounts)[:20],
                 radius_groups_to_create=radius_groups_to_create,
                 radius_groups_existing=radius_groups_existing,

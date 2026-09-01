@@ -856,12 +856,21 @@ class WorkflowBrain:
         per_unit_phase_ids = {p.id for p in job.phase_definitions if p.per_unit}
 
         for phase_id in per_unit_phase_ids:
-            # Check if all units have completed this phase
-            all_complete = all(
+            phase_def_pu = job.get_phase_definition(phase_id)
+            non_critical = bool(phase_def_pu and not phase_def_pu.critical)
+            # "Settled", not "completed". A global phase waiting on a per-unit
+            # one used to require EVERY unit to complete it, so one unit
+            # failing a non-critical phase -- or failing outright and never
+            # running anything again -- stranded the global phase forever.
+            # This mirrors the rule already used for global dependencies:
+            # a non-critical failure must not block downstream work.
+            all_settled = all(
                 phase_id in unit.completed_phases
+                or (non_critical and phase_id in unit.failed_phases)
+                or unit.status == UnitStatus.FAILED
                 for unit in job.units.values()
             )
-            if all_complete:
+            if all_settled:
                 per_unit_completed_all.add(phase_id)
 
         for phase_def in job.phase_definitions:

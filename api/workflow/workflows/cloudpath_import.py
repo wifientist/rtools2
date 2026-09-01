@@ -245,7 +245,15 @@ CloudpathImportWorkflow = Workflow(
                 "Strips suffix from identity names after creating policies."
             ),
             executor="create_access_policies",
-            depends_on=["create_passphrases"],
+            # Also waits on update_identity_descriptions: this phase STRIPS the
+            # _tier suffix from identity names, and the Cloudpath GUID written
+            # by that phase is the only key that still matches afterwards. Renaming
+            # first leaves an identity that neither GUID nor username can find, so
+            # the next import mints a duplicate for that resident.
+            # Nothing is skipped for a missing GUID -- an identity without one is
+            # still renamed and still imported; the ordering just stops us
+            # destroying the key when we do have it.
+            depends_on=["create_passphrases", "update_identity_descriptions"],
             per_unit=False,  # Global phase - dedupe RADIUS groups
             critical=False,  # Non-critical - import succeeds without policies
             skip_if="not options.get('enable_access_policies', False)",
