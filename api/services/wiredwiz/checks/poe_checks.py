@@ -211,7 +211,8 @@ def poe_no_priority(ctx):
         + (f" {len(at_risk)} of these switches are already above 70% allocation, so this is "
            "not hypothetical." if at_risk else ""),
         {"switchesWithoutPriority": len(missing), "switchesAudited": len(ctx.configs),
-         "aboveSeventyPercent": at_risk[:12]},
+         "switchesMissingPriority": sorted(missing),
+         "aboveSeventyPercent": at_risk},
         "Set `inline power priority 1` on uplink-critical APs and 3 on discretionary "
         "devices, starting with the switches nearest their ceiling.",
         confidence="medium" if not at_risk else "high",
@@ -236,6 +237,6 @@ def poe_allocation_inconsistent(ctx):
         "available budget depending on which mode it is in, which makes capacity planning "
         "unreliable and hides real shortages behind reservation artefacts.",
         {"dynamicCount": len(dynamic), "staticCount": len(static),
-         "staticSwitches": sorted(static)[:15]},
+         "staticSwitches": sorted(static)},
         "Standardise on dynamic allocation unless a site has a specific reason not to.",
     )

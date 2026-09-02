@@ -104,7 +104,7 @@ def broadcast_bidirectional(ctx):
              "ports": [{"port": r["port"], "vlan": r["vlan"] or "trunk",
                         "broadcastInPerSec": round(r["broadcastIn"]),
                         "broadcastOutPerSec": round(r["broadcastOut"]),
-                        "lldpNeighbour": r["lldp"] or None} for _, r in rows[:15]],
+                        "lldpNeighbour": r["lldp"] or None} for _, r in rows],
              "worstPort": worst["port"]},
             "Start at the worst port. If these are all trunks on a distribution switch, "
             "the loop is downstream of it — follow the highest-rate trunk toward the "
@@ -277,7 +277,7 @@ def half_duplex(ctx):
             "autonegotiation failed or one end is hard-coded, and it produces late "
             "collisions and CRC errors that look like a cable fault.",
             {"portSpeed": speed, "configured": p.get("portSpeedConfig"),
-             "neighbour": p.get("neighborName")},
+             "neighbour": ctx.neighbour(p)},
             "Set both ends to auto, or hard-code both ends identically — never one of each.",
         )
 
@@ -313,7 +313,7 @@ def copper_link_underspeed(ctx):
         if cap_mbps < 1000 or spd_mbps >= 1000:
             continue
         slow.append({"label": ctx.port_label(p), "speed": speed, "capacity": cap,
-                     "neighbour": p.get("neighborName") or None,
+                     "neighbour": ctx.neighbour(p),
                      "crcErr": p.get("crcErr"), "mbps": spd_mbps})
 
     if not slow:
@@ -327,7 +327,7 @@ def copper_link_underspeed(ctx):
             "10 Mb/s on a gigabit copper port is almost always a physically damaged run — "
             "it is the speed a link falls back to when only one pair is usable. Anything "
             "behind these ports is running at a hundredth of its available bandwidth.",
-            {"ports": very_slow[:15], "count": len(very_slow)},
+            {"ports": very_slow, "count": len(very_slow)},
             "Test or replace these cable runs. Check the termination at both ends.",
         )
     hundred = [x for x in slow if x["mbps"] > 10]
@@ -343,7 +343,7 @@ def copper_link_underspeed(ctx):
             "100 Mb/s and never reports a fault."
             + (f" {len(with_errors)} of them also have CRC errors, which points at the cable "
                "rather than the device." if with_errors else ""),
-            {"ports": hundred[:20], "count": len(hundred),
+            {"ports": hundred, "count": len(hundred),
              "alsoHaveCrcErrors": len(with_errors)},
             "Start with any that also show CRC errors — those are cable faults rather than "
             "slow devices.",
@@ -407,7 +407,7 @@ def port_flapping(ctx):
             f"(now {hist[-1][1]}). RUCKUS ONE keeps no flap log, so this is reconstructed "
             "from the snapshots — the real transition count between samples may be higher.",
             {"transitions": [{"at": t[2], "from": t[1], "to": t[3]} for t in transitions],
-             "currentStatus": hist[-1][1], "neighbour": p.get("neighborName"),
+             "currentStatus": hist[-1][1], "neighbour": ctx.neighbour(p),
              "vlan": p.get("unTaggedVlan"), "crcErr": p.get("crcErr")},
             "Cross-check against CRC errors on the same port: errors plus flapping is a "
             "physical fault; clean flapping is more likely STP topology churn.",
@@ -537,7 +537,7 @@ def mass_visibility_loss(ctx):
          "from": first["takenAt"], "to": last["takenAt"],
          "switches": [{"name": x.get("name"), "uptime": x.get("uptime"),
                        "venue": x.get("venueName"), "ip": x.get("ipAddress")}
-                      for x in newly[:15]]},
+                      for x in newly]},
         "Find what these switches have in common — venue, uplink path, or IP range. If "
         "their uptime is intact they are probably still forwarding; confirm from the data "
         "plane before declaring an outage.",
@@ -596,7 +596,7 @@ def unblocked_redundant_path(ctx):
             f"spanningTreeStatus is only populated on {stp_reported} of {total_ports} of "
             "these ports on this platform, so this is unconfirmed, not proof of a fault. "
             "Most will be intentional closet daisy-chains.",
-            {"unconfirmedPairs": unconfirmed[:25], "unconfirmedCount": len(unconfirmed),
+            {"unconfirmedPairs": unconfirmed, "unconfirmedCount": len(unconfirmed),
              "confirmedBlockingCount": len(confirmed),
              "stpStatusReportedOn": stp_reported, "totalPorts": total_ports},
             "Spot-check a few with `show spanning-tree` on the CLI. If both ends of any "
@@ -704,7 +704,7 @@ def macs_on_down_port(ctx):
             "R1's MAC view is a periodic snapshot, so some of this can be normal aging.",
             {"macCount": n, "status": p.get("status"), "adminStatus": p.get("adminStatus"),
              "vlan": p.get("unTaggedVlan"), "crcErr": p.get("crcErr"),
-             "neighbour": p.get("neighborName") or None,
+             "neighbour": ctx.neighbour(p),
              "sampleMacs": [m.get("clientMac") for m in ctx.macs_by_port.get(p["id"], [])[:5]]},
             "Check this port's link history on the switch CLI (`show interface`) for its "
             "last-change timestamp and error counters.",
@@ -846,7 +846,7 @@ def mac_count_mismatch(ctx):
         "was verified complete, so this is R1 reporting two different numbers, not a "
         "collection failure. It means the MAC-table-derived checks are working from a "
         "partial view on these switches.",
-        {"switches": bad[:15], "count": len(bad),
+        {"switches": bad, "count": len(bad),
          "totalQueryRows": summary["totals"]["learnedTotal"],
          "totalClientCount": summary["totals"]["clientCountTotal"]},
         "Treat MAC counts on these switches as a floor, not an exact figure. Confirm on "

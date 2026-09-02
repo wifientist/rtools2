@@ -91,7 +91,7 @@ def no_unknown_unicast_limit(ctx):
         + (f" {len(exposed)} of these are core or distribution switches, where the blast "
            "radius is the whole site." if exposed else ""),
         {"missingCount": len(missing), "switchesAudited": len(ctx.configs),
-         "aggregationSwitchesAffected": exposed[:10]},
+         "aggregationSwitchesAffected": exposed},
         "Apply `unknown-unicast limit <kbps>` on access ports, and treat the aggregation "
         "switches as the priority.",
     )
@@ -234,7 +234,7 @@ def multicast_flood_suspected(ctx):
             {"switch": switch, "vlan": vlan, "ports": len(rows),
              "meanPacketsPerSec": round(mean),
              "spreadPercent": round(spread * 100, 1),
-             "examplePorts": [x[1].get("port") for x in rows[:8]]},
+             "allPorts": [x[1].get("port") for x in rows]},
             "Enable IGMP snooping (`ip multicast version 2`) so multicast is delivered only "
             "to ports that asked for it.",
         )

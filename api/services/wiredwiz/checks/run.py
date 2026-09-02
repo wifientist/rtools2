@@ -16,6 +16,19 @@ from .framework import CheckContext, IcxConfig, run_checks
 logger = logging.getLogger(__name__)
 
 
+def _lldp_name(p) -> str:
+    """
+    An LLDP neighbour name, with the 32-character cap made visible.
+
+    RUCKUS APs cap the LLDP System Name TLV at 32 characters, so a name that is
+    exactly 32 long is almost certainly a prefix. This runs before the
+    CheckContext exists, so unlike CheckContext.neighbour() it cannot resolve the
+    name against managed inventory -- it only marks the cut.
+    """
+    n = p.get("neighborName") or ""
+    return f"{n}\u2026" if len(n) == 32 else n
+
+
 def _full_rates(snaps: List[dict], min_window: int) -> Optional[Dict[str, Any]]:
     """
     Per-port rates for EVERY compared port, plus the per-VLAN summary.
@@ -43,7 +56,7 @@ def _full_rates(snaps: List[dict], min_window: int) -> Optional[Dict[str, Any]]:
         "switchName": r["port"].get("switchName"),
         "port": r["port"].get("portIdentifier"),
         "vlan": r["port"].get("unTaggedVlan"),
-        "lldp": r["port"].get("neighborName") or "",
+        "lldp": _lldp_name(r["port"]),
         "broadcastIn": r["rates"]["broadcastIn"],
         "broadcastOut": r["rates"]["broadcastOut"],
         "multicastIn": r["rates"]["multicastIn"],

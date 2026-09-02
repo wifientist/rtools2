@@ -89,7 +89,7 @@ def mac_table_not_reported(ctx):
         "returned zero. The forwarding table was not reported, so these switches "
         "contribute nothing to " + ", ".join(MAC_DERIVED_CHECKS) + ". Those checks "
         "passing on these switches means nothing was examined, not that nothing is wrong.",
-        {"switches": blind[:15], "count": len(blind),
+        {"switches": blind, "count": len(blind),
          "blindChecks": MAC_DERIVED_CHECKS},
         "Confirm on the switch with `show mac-address count` — if the CLI shows entries "
         "the gap is in R1's reporting, and a re-crawl often fills it. Until then, do not "
@@ -193,7 +193,7 @@ def crawl_incomplete(ctx):
          "hitQueryWindow": len(capped),
          "shortfalls": [{"path": c.get("path"), "filters": c.get("filters"),
                          "expected": c.get("expected"), "collected": c.get("collected")}
-                        for c in shortfalls[:10]]},
+                        for c in shortfalls]},
         "Re-run the crawl scoped to fewer venues at a time. If a single venue alone "
         "exceeds the window, the per-switch fallback in crawl_ports covers ports but "
         "the MAC table has no equivalent — treat MAC results for that venue as partial.",

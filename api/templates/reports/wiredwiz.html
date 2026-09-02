@@ -142,10 +142,10 @@
           {% if f.evidence %}
             <div class="ev">
               {%- for k, v in f.evidence.items() -%}
-                {{ k }}={% if v is sequence and v is not string and v|length > 6 -%}
-                  [{{ v[:6] | join(', ') | truncate(400, true, '…') }}, +{{ v|length - 6 }} more]
+                {{ k }}={% if v is sequence and v is not string and v|length > 10 -%}
+                  [{{ v[:10] | join(', ') | truncate(1200, false, '…') }}, +{{ v|length - 10 }} more — full list in the CSV/JSON export]
                 {%- else -%}
-                  {{ v | string | truncate(400, true, '…') }}
+                  {{ v | string | truncate(600, false, '…') }}
                 {%- endif %}{{ " · " if not loop.last }}
               {%- endfor -%}
             </div>
