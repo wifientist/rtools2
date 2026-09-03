@@ -614,6 +614,195 @@ function expiresIn(epoch?: number | null): string | null {
   return `expires in ${Math.round(hours / 24)}d`;
 }
 
+/*
+ * Evidence rendering.
+ *
+ * Findings used to dump `JSON.stringify(evidence)` into a <pre>. Combined with
+ * the checks truncating their lists to 8, "wrong on 31 switches" gave you eight
+ * names in a JSON blob and no way to reach the other 23. The lists are complete
+ * now, so this shows a preview and lets you expand and copy the whole thing —
+ * the point is to get the list into a change ticket without transcribing it.
+ */
+const EVIDENCE_PREVIEW = 8;
+
+function isEntityList(v: any): boolean {
+  return Array.isArray(v) && v.length > 0
+    && v.every((x) => typeof x === "string" || typeof x === "number");
+}
+
+/* Rows: a list of flat objects, e.g. [{switch, port, lldpNeighbour}, ...]. These
+ * used to fall through to a JSON dump clipped at max-h-60, which is where long
+ * hostnames looked truncated. They get a real table. */
+function isRowList(v: any): boolean {
+  return Array.isArray(v) && v.length > 0
+    && v.every((x) => x && typeof x === "object" && !Array.isArray(x))
+    && v.every((x) => Object.values(x).every((c) => c === null || typeof c !== "object"));
+}
+
+/*
+ * Copy that works over plain HTTP.
+ *
+ * navigator.clipboard is undefined outside a secure context, and this app is
+ * served over http on port 80, so the promise threw and the old catch swallowed
+ * it -- the button did nothing at all. Falls back to execCommand, and reports
+ * failure rather than pretending.
+ */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to the legacy path */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "ok" | "fail">("idle");
+  return (
+    <button
+      onClick={async () => {
+        setState(await copyText(text) ? "ok" : "fail");
+        setTimeout(() => setState("idle"), 2500);
+      }}
+      className={`px-1.5 py-0.5 rounded border hover:bg-white/60 ${
+        state === "fail" ? "border-red-400 text-red-700" : "border-current/30"}`}
+      title={state === "fail"
+        ? "Your browser blocked clipboard access — select the text and copy manually"
+        : "Copies the complete list, not just the preview"}>
+      {state === "ok" ? "Copied" : state === "fail" ? "Copy blocked — select manually" : label}
+    </button>
+  );
+}
+
+function EvidenceList({ name, values, capped }: { name: string; values: any[]; capped?: any }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? values : values.slice(0, EVIDENCE_PREVIEW);
+  const hidden = values.length - shown.length;
+
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        <span className="font-mono font-semibold">{name}</span>
+        <span className="opacity-60">({values.length})</span>
+        {values.length > EVIDENCE_PREVIEW && (
+          <button onClick={() => setShowAll(!showAll)}
+                  className="px-1.5 py-0.5 rounded border border-current/30 hover:bg-white/60">
+            {showAll ? "Collapse" : `Show all ${values.length}`}
+          </button>
+        )}
+        <CopyButton text={values.join("\n")} />
+        {capped && (
+          <span className="text-orange-700 font-medium">
+            capped at {capped.shown} of {capped.total} — full list in the CSV/JSON export
+          </span>
+        )}
+      </div>
+      {/* break-all: switch hostnames here run to 40+ characters with no spaces,
+          so without it they overflow the card instead of wrapping. */}
+      <div className={`bg-white/60 rounded p-2 font-mono break-all ${
+        showAll ? "max-h-96 overflow-y-auto" : ""}`}>
+        {shown.map((v: any, i: number) => <div key={i} className="py-px">{String(v)}</div>)}
+        {hidden > 0 && (
+          <button onClick={() => setShowAll(true)} className="opacity-60 underline">
+            … {hidden} more
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceRows({ name, rows }: { name: string; rows: any[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const cols = Array.from(rows.reduce((set: Set<string>, r: any) => {
+    Object.keys(r).forEach((k) => set.add(k));
+    return set;
+  }, new Set<string>())) as string[];
+  const shown = showAll ? rows : rows.slice(0, EVIDENCE_PREVIEW);
+  const hidden = rows.length - shown.length;
+  const tsv = [cols.join("\t"),
+               ...rows.map((r: any) => cols.map((c) => r[c] ?? "").join("\t"))].join("\n");
+
+  return (
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        <span className="font-mono font-semibold">{name}</span>
+        <span className="opacity-60">({rows.length})</span>
+        {rows.length > EVIDENCE_PREVIEW && (
+          <button onClick={() => setShowAll(!showAll)}
+                  className="px-1.5 py-0.5 rounded border border-current/30 hover:bg-white/60">
+            {showAll ? "Collapse" : `Show all ${rows.length}`}
+          </button>
+        )}
+        <CopyButton text={tsv} label="Copy (TSV)" />
+      </div>
+      <div className={`bg-white/60 rounded overflow-x-auto ${showAll ? "max-h-96 overflow-y-auto" : ""}`}>
+        <table className="min-w-full font-mono">
+          <thead className="text-left opacity-60 border-b border-current/10">
+            <tr>{cols.map((c) => <th key={c} className="py-1 px-2 font-semibold">{c}</th>)}</tr>
+          </thead>
+          <tbody>
+            {shown.map((r: any, i: number) => (
+              <tr key={i} className="border-b border-current/5 last:border-0">
+                {cols.map((c) => (
+                  <td key={c} className="py-1 px-2 align-top break-all">
+                    {r[c] === null || r[c] === undefined ? "" : String(r[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {hidden > 0 && (
+          <button onClick={() => setShowAll(true)} className="opacity-60 underline p-2">
+            … {hidden} more
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Evidence({ evidence, capped }: { evidence: any; capped?: any }) {
+  if (!evidence || !Object.keys(evidence).length) return null;
+  const entries = Object.entries(evidence);
+  const lists = entries.filter(([, v]) => isEntityList(v));
+  const rows = entries.filter(([, v]) => isRowList(v));
+  const rest = Object.fromEntries(
+    entries.filter(([, v]) => !isEntityList(v) && !isRowList(v)));
+
+  return (
+    <div className="text-xs">
+      {lists.map(([k, v]) => (
+        <EvidenceList key={k} name={k} values={v as any[]} capped={capped?.[k]} />
+      ))}
+      {rows.map(([k, v]) => <EvidenceRows key={k} name={k} rows={v as any[]} />)}
+      {Object.keys(rest).length > 0 && (
+        <pre className="bg-white/60 rounded p-2 overflow-auto max-h-60 whitespace-pre-wrap break-all">
+          {JSON.stringify(rest, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function ScopeNote({ scope }: { scope: any }) {
   if (!scope) return null;
   const excluded = scope.excluded || [];
@@ -768,6 +957,11 @@ function HealthChecks({
                 <span className="font-medium">
                   Baseline: {newest.switches} switch configs
                 </span>{" "}
+                <a href={`${exportBase}/configs.zip${exportQs}`}
+                   className="inline-block align-baseline px-2 py-0.5 rounded border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                   title="All stored configs as a zip, one file per switch. Redacted — see the README inside.">
+                  Download all as .zip
+                </a>{" "}
                 <span className={ageHours !== null && ageHours > 24 ? "text-amber-700" : "text-gray-500"}>
                   captured {fmtTime(newest.takenAt)}
                   {ageHours !== null && ` (${ageHours < 1 ? "under an hour" : `${Math.round(ageHours)}h`} old)`}
@@ -779,6 +973,9 @@ function HealthChecks({
                   {baselineTtlDays
                     ? ` Stored configs are deleted after ${baselineTtlDays} day${baselineTtlDays === 1 ? "" : "s"}.`
                     : ""}
+                  {" "}The zip is built from this stored baseline, so it costs no extra
+                  RUCKUS ONE calls — but its configs are <strong>redacted</strong> and are
+                  not a restorable backup. RUCKUS ONE holds the real ones.
                 </span>
               </>
             ) : (
@@ -951,11 +1148,9 @@ function HealthChecks({
                             <span className="font-semibold">What to do: </span>{f.remediation}
                           </p>
                         )}
-                        <details className="text-xs">
-                          <summary className="cursor-pointer opacity-70">Evidence</summary>
-                          <pre className="mt-1 bg-white/60 rounded p-2 overflow-auto max-h-60 whitespace-pre-wrap">
-                            {JSON.stringify(f.evidence, null, 2)}
-                          </pre>
+                        <details className="text-xs" open>
+                          <summary className="cursor-pointer opacity-70 mb-1">Evidence</summary>
+                          <Evidence evidence={f.evidence} capped={f.evidenceCapped} />
                         </details>
                       </div>
                     )}

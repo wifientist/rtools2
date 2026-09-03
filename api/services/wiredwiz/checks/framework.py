@@ -28,6 +28,17 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 # "info" is hygiene worth knowing but not urgent.
 SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 
+# Evidence lists are stored in FULL -- a finding that says "wrong on 31 switches"
+# and then names 8 of them is not actionable, and the missing 23 used to be
+# discarded at generation time, so no export could recover them.
+#
+# This is the backstop, not a display limit: port- and MAC-level checks can
+# legitimately produce thousands of rows on a 24k-port tenant, and one finding
+# must never be able to bloat stored state. When it bites, the finding records
+# that it was cut -- a truncated list must never be mistakable for a complete
+# one, which is the entire bug this exists to prevent.
+MAX_EVIDENCE_LIST = 500
+
 
 @dataclass
 class Finding:
@@ -56,13 +67,36 @@ class Finding:
             return [Finding._tidy(v) for v in value]
         return value
 
+    def _cap(self, evidence):
+        """
+        Apply MAX_EVIDENCE_LIST to every list in the evidence, recording any cut.
+
+        Returns (evidence, capped) where `capped` maps the evidence key to
+        {shown, total}. Only top-level lists are capped: nested structures are
+        per-row detail whose size is already bounded by the row count.
+        """
+        out, capped = {}, {}
+        for k, v in evidence.items():
+            if isinstance(v, list) and len(v) > MAX_EVIDENCE_LIST:
+                capped[k] = {"shown": MAX_EVIDENCE_LIST, "total": len(v)}
+                out[k] = v[:MAX_EVIDENCE_LIST]
+            else:
+                out[k] = v
+        return out, capped
+
     def as_dict(self):
-        return {
+        evidence, capped = self._cap(self.evidence)
+        d = {
             "checkId": self.check_id, "title": self.title, "severity": self.severity,
             "category": self.category, "entity": self.entity, "detail": self.detail,
-            "evidence": self._tidy(self.evidence), "remediation": self.remediation,
+            "evidence": self._tidy(evidence), "remediation": self.remediation,
             "confidence": self.confidence,
         }
+        if capped:
+            # Surfaced as its own field so the UI and the exports can say "this
+            # list is incomplete" rather than quietly showing a short list.
+            d["evidenceCapped"] = capped
+        return d
 
 
 @dataclass
@@ -233,6 +267,31 @@ class CheckContext:
     # helpers the checks share
     def port_label(self, p) -> str:
         return f"{p.get('switchName')} {p.get('portIdentifier')}"
+
+    def neighbour(self, p) -> Optional[str]:
+        """
+        The LLDP neighbour's name, resolved against managed inventory first.
+
+        LLDP System Name is whatever the neighbour chooses to advertise, and
+        RUCKUS APs cap theirs at 32 characters. Measured on a 195-switch estate:
+        2,430 of 4,647 neighbour names are exactly 32 long, with a cliff straight
+        after (33 chars: 2, 34: 8) -- the signature of a hard cap, not a naming
+        convention. So a name taken straight off the wire is frequently a prefix
+        of the device's real name.
+
+        Two consequences handled here: when the neighbour is a switch we manage,
+        its full name comes from inventory rather than the wire; when it is not,
+        an exactly-32-character name is marked with an ellipsis so a truncated
+        value is never presented as the whole name. The switch's OWN name is
+        unaffected -- that comes from R1 inventory and is full length.
+        """
+        sw = self.switch_by_mac.get(_norm_mac(p.get("neighborMacAddress")))
+        if sw and sw.get("name"):
+            return sw["name"]
+        name = p.get("neighborName")
+        if not name:
+            return None
+        return f"{name}…" if len(name) == 32 else name
 
     def is_uplink(self, p) -> bool:
         return p["id"] in self.uplink_ports

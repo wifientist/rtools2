@@ -102,8 +102,8 @@ def stp_vlan_uncovered(ctx):
                 "see the stp-instance-limit finding."
                 if blocked else "")),
             {"vlan": vid, "switchesWithStp": covered[vid],
-             "switchesWithout": len(switches), "examples": sorted(switches)[:8],
-             "switchesAtInstanceCeiling": sorted(blocked)[:8],
+             "switchesWithout": len(switches), "switchesMissingStp": sorted(switches),
+             "switchesAtInstanceCeiling": sorted(blocked),
              "blockedCount": len(blocked)},
             (f"Add `spanning-tree 802-1w` inside `vlan {vid}` on every switch that carries "
              "it." if not blocked else
@@ -131,7 +131,7 @@ def stp_mode_mixed(ctx):
             "Switches in the same layer-2 domain run different spanning-tree modes. "
             "Convergence falls back to the slower protocol's timers (up to 50s), which "
             "is long enough for a transient loop to flood the domain.",
-            {k: {"count": len(v), "examples": sorted(v)[:6]} for k, v in modes.items()},
+            {k: {"count": len(v), "switches": sorted(v)} for k, v in modes.items()},
             "Standardise on `spanning-tree 802-1w` (RSTP) fleet-wide.",
         )
 
@@ -180,7 +180,7 @@ def no_loop_detection(ctx):
             "protects links that participate in it — an unmanaged switch or a cable "
             "patched between two access ports forms a loop STP cannot see, and nothing "
             "here will shut it down.",
-            {"switchesAudited": len(missing)},
+            {"switchesAudited": len(missing), "switches": sorted(missing)},
             "Enable `loop-detection` globally and `loop-detection-shutdown <seconds>` so "
             "an offending port disables itself instead of melting the VLAN.",
         )
@@ -190,7 +190,7 @@ def no_loop_detection(ctx):
             "warning", CAT_STP, "fabric",
             "Loop detection is configured on some switches but not others, leaving "
             "unprotected edges.",
-            {"missing": sorted(missing)[:12], "missingCount": len(missing)},
+            {"missing": sorted(missing), "missingCount": len(missing)},
             "Enable `loop-detection` on the remaining switches.",
         )
 
@@ -212,7 +212,7 @@ def no_storm_control(ctx):
             "at line rate before anyone can react, and CPU-bound control traffic "
             "(including STP BPDUs) starts getting dropped — which can prevent STP from "
             "converging and break the very mechanism meant to stop the loop.",
-            {"switchesAudited": len(missing)},
+            {"switchesAudited": len(missing), "switches": sorted(missing)},
             "Apply `broadcast limit <kbps>` and `multicast limit <kbps>` on access ports.",
         )
 
@@ -228,7 +228,7 @@ def no_bpdu_guard(ctx):
             "warning" if len(missing) < len(_cfgs(ctx)) else "critical", CAT_STP, "fabric",
             "Without BPDU guard, anyone plugging a switch into an access port can inject "
             "BPDUs, win the root election and re-shape the whole topology.",
-            {"missing": sorted(missing)[:12], "missingCount": len(missing),
+            {"missing": sorted(missing), "missingCount": len(missing),
              "switchesAudited": len(_cfgs(ctx))},
             "Apply `spanning-tree 802-1w admin-edge-port` plus BPDU guard on access ports.",
         )
@@ -246,7 +246,7 @@ def no_root_guard(ctx):
             "fabric",
             "No switch uses root guard, so the root bridge can be taken over by any device "
             "advertising a better bridge ID.",
-            {"switchesAudited": len(missing)},
+            {"switchesAudited": len(missing), "switches": sorted(missing)},
             "Apply `spanning-tree root-protect` on downstream-facing distribution ports "
             "(interface level; disabled by default).",
             confidence="medium",
@@ -281,7 +281,7 @@ def no_syslog(ctx):
         "it is per-switch, small, and rolls over.) RUCKUS ONE exposes no port-flap history "
         "through its API either, so there is no central record of when a link went down or "
         "why, and every investigation has to catch the fault live.",
-        {"missing": sorted(missing)[:12], "missingCount": len(missing),
+        {"missing": sorted(missing), "missingCount": len(missing),
          "switchesAudited": total, "withLocalBuffer": buffered,
          "withPersistence": persistent},
         "Point them at a collector: `logging host <ip>` plus `logging buffered 4096`. "
@@ -301,7 +301,7 @@ def no_ntp(ctx):
             "Without synchronised clocks, log lines from different switches cannot be put "
             "in order, so you cannot tell which end of a link dropped first — which is "
             "exactly the question a flap investigation turns on.",
-            {"missing": sorted(missing)[:12], "missingCount": len(missing)},
+            {"missing": sorted(missing), "missingCount": len(missing)},
             "Configure `ntp server <ip>` (two sources) and set the timezone consistently.",
         )
 
@@ -323,7 +323,7 @@ def no_igmp_snooping(ctx):
             "With snooping off, every multicast frame is flooded to every port in the "
             "VLAN exactly like broadcast. On a campus with wireless APs this can be the "
             "dominant traffic class and it makes broadcast-rate analysis much noisier.",
-            {"switchesAudited": len(missing)},
+            {"switchesAudited": len(missing), "switches": sorted(missing)},
             "Enable IGMP snooping globally with `ip multicast version 2` (or `3`).",
         )
 
@@ -341,7 +341,7 @@ def jumbo_inconsistent(ctx):
             f"{len(on)} switch(es) have jumbo enabled and {len(off)} do not. Across a trunk "
             "this drops oversized frames silently — the symptom is 'some things work, big "
             "transfers fail', not a clean link failure.",
-            {"jumboOn": sorted(on)[:8], "jumboOff": sorted(off)[:8],
+            {"jumboOn": sorted(on), "jumboOff": sorted(off),
              "onCount": len(on), "offCount": len(off)},
             "Set `jumbo` consistently across every switch in the L2 domain, then reload.",
         )
@@ -375,7 +375,7 @@ def no_dhcp_snooping(ctx):
         + ("" if all_missing else
            f" It is configured on the other {len(have)}, so this is a coverage gap "
            "rather than a policy decision."),
-        {"missing": sorted(missing)[:15], "missingCount": len(missing),
+        {"missing": sorted(missing), "missingCount": len(missing),
          "configuredCount": len(have), "switchesAudited": len(_cfgs(ctx))},
         "Enable `ip dhcp snooping` globally and `ip dhcp snooping vlan <list>`, trusting "
         "only uplink ports.",
@@ -408,7 +408,7 @@ def telnet_not_disabled(ctx):
         "switches are most likely accepting cleartext management sessions on the same "
         "wire as user traffic. A few ICX7150 variants ship with Telnet off, which is why "
         "this is worth confirming rather than assuming.",
-        {"switches": sorted(bad)[:12], "count": len(bad),
+        {"switches": sorted(bad), "count": len(bad),
          "switchesAudited": len(_cfgs(ctx))},
         "Confirm with `show telnet`, then `no telnet server` and manage over SSH only.",
         confidence="medium",
@@ -427,7 +427,7 @@ def snmp_v2c(ctx):
             "Community strings are sent in cleartext and shared across devices. "
             "(WiredWiz never stores the value — it is redacted before the config leaves "
             "the backend.)",
-            {"switches": sorted(bad)[:12], "count": len(bad)},
+            {"switches": sorted(bad), "count": len(bad)},
             "Move to SNMPv3 with auth+priv, then remove the v2c communities.",
         )
 
@@ -545,8 +545,8 @@ def config_drift(ctx):
             {"switch": cfg.name, "baselineTakenAt": baseline.get("takenAt"),
              "addedCount": len(added), "removedCount": len(removed),
              "note": "counts are distinct changed lines, not occurrences",
-             "significantChanges": hot[:20],
-             "added": added[:20], "removed": removed[:20]},
+             "significantChanges": hot,
+             "added": added, "removed": removed},
             "Confirm the change was intentional. If it was not, this is the most likely "
             "cause of a network that behaved differently yesterday.",
         )
@@ -587,7 +587,7 @@ def config_syntax_scope(ctx):
         "train a command may be spelled differently, in which case the pattern will not "
         "match and the check will look like it passed. Treat config findings for these "
         "switches as unverified rather than clean.",
-        {"versions": {k: sorted(v)[:8] for k, v in off_train.items()},
+        {"versions": {k: sorted(v) for k, v in off_train.items()},
          "affectedCount": total, "validatedFor": "FastIron 10.0.x"},
         "Either align these switches on 10.0.x, or verify the affected commands by hand "
         "on one of them.",

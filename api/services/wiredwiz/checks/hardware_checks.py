@@ -216,7 +216,7 @@ def port_err_disabled(ctx):
                "on its own."),
             {"reason": reason, "status": p.get("status"),
              "adminStatus": p.get("adminStatus"), "vlan": p.get("unTaggedVlan"),
-             "neighbour": p.get("neighborName") or None,
+             "neighbour": ctx.neighbour(p),
              "learnedMacs": ctx.mac_count(p)},
             "Find out what is physically connected here before re-enabling. Clearing it "
             "without removing the cause just repeats the event.",
@@ -379,7 +379,7 @@ def poe_port_overdraw(ctx):
             "power alarm.",
             {"usedMilliwatts": used, "allocatedMilliwatts": total,
              "percent": round(pct), "poeType": p.get("poeType"),
-             "device": p.get("neighborName") or None},
+             "device": ctx.neighbour(p)},
             "Raise the port's PoE class allocation, or move the device to a port with more "
             "budget.",
         )
@@ -408,7 +408,7 @@ def port_utilization_high(ctx):
             "queuing delay and discards long before it shows as an outage.",
             {"inPercent": sin / 100, "outPercent": sout / 100,
              "portSpeed": p.get("portSpeed"), "capacity": p.get("portSpeedCapacity"),
-             "neighbour": p.get("neighborName") or None,
+             "neighbour": ctx.neighbour(p),
              "inDiscard": p.get("inDiscard")},
             "If this is an uplink, consider a LAG or a faster optic. Check discards on the "
             "same port to see whether it is already dropping.",

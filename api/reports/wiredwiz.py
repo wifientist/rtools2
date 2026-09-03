@@ -158,16 +158,42 @@ def findings_csv(tenant_key: str) -> str:
     if not health:
         raise ValueError("No check run stored yet — run the checks before exporting.")
 
+    def _is_entity_list(v):
+        return (isinstance(v, list) and v
+                and all(isinstance(x, (str, int, float)) for x in v))
+
+    def _render(v):
+        """Lists pipe-separated rather than as a Python repr — this column gets
+        split back into rows by whoever works the list."""
+        return "|".join(str(x) for x in v) if _is_entity_list(v) else str(v)
+
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["severity", "category", "check_id", "entity", "title", "confidence",
-                "detail", "remediation", "evidence"])
+                "detail", "remediation", "affected_count", "affected", "evidence",
+                "evidence_capped"])
     for f in health.get("findings", []):
+        ev = f.get("evidence") or {}
+        # Every named switch/port this finding is about, in one column, so the CSV
+        # can be split into a work list. This is the whole reason the checks stopped
+        # truncating: a finding that says "wrong on 31 switches" has to be able to
+        # hand over 31 names.
+        affected, seen = [], set()
+        for v in ev.values():
+            if not _is_entity_list(v):
+                continue
+            for x in v:
+                if str(x) not in seen:
+                    seen.add(str(x))
+                    affected.append(str(x))
+        capped = f.get("evidenceCapped") or {}
         w.writerow([
             f.get("severity"), f.get("category"), f.get("checkId"), f.get("entity"),
             f.get("title"), f.get("confidence"),
             " ".join((f.get("detail") or "").split()),
             " ".join((f.get("remediation") or "").split()),
-            "; ".join(f"{k}={v}" for k, v in (f.get("evidence") or {}).items()),
+            len(affected), "|".join(affected),
+            "; ".join(f"{k}={_render(v)}" for k, v in ev.items()),
+            "; ".join(f"{k}: {c['shown']} of {c['total']}" for k, c in capped.items()),
         ])
     return buf.getvalue()

@@ -20,6 +20,7 @@ entry point -- there is intentionally nothing here for a scheduler to call.
   GET    /wiredwiz/{cid}/macTables              MAC table size per switch
   GET    /wiredwiz/{cid}/checks                 the rule library (what gets checked)
   POST   /wiredwiz/{cid}/baseline               explicit bulk config read, stored
+  GET    /wiredwiz/{cid}/configs.zip            stored configs as a zip (redacted)
   GET    /wiredwiz/{cid}/baselines              stored baselines
   DELETE /wiredwiz/{cid}/baselines/{file}
   POST   /wiredwiz/{cid}/health                 run the checks and return findings
@@ -37,10 +38,13 @@ Baselines are kept precisely so config *drift* is detectable -- comparing a fres
 read against the baseline answers "what changed?", which no live metric can.
 """
 
+import csv
+import io
 import json
 import logging
 import re
 import time
+import zipfile
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -67,6 +71,9 @@ from services.wiredwiz.mactable import summarize_mac_tables
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wiredwiz", tags=["WiredWiz"])
+
+# Switch names become filenames inside the config archive.
+_SAFE_FILE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 @lru_cache(maxsize=1)
@@ -478,12 +485,14 @@ async def create_baseline(controller_id: int,
                                  "switches, so there is nothing to read a config from. "
                                  "Re-crawl and check the switches are online.")
 
-    configs, no_backup, rejected = {}, 0, []
+    configs, no_backup, rejected = {}, [], []
     for sw in targets:
         entry = fetch_redacted_config(r1, override, sw["venueId"], sw["id"],
                                       sw.get("name"), sw.get("model"))
         if entry is None:
-            no_backup += 1
+            # Name them. A count alone tells you coverage is short without
+            # telling you where, which is the gap you actually have to chase.
+            no_backup.append(sw.get("name") or sw["id"])
             continue
         if entry.get("dropped"):
             rejected.append(sw.get("name") or sw["id"])
@@ -496,19 +505,129 @@ async def create_baseline(controller_id: int,
         "tenantId": key,
         "scopeVenueIds": wanted,
         "configs": configs,
-        "noBackup": no_backup,
+        "noBackup": len(no_backup),
+        "noBackupSwitches": sorted(no_backup),
         "rejectedByRedaction": len(rejected),
         "rejectedSwitches": rejected,
     }
     filename = store.save_baseline(key, baseline)
     logger.info("wiredwiz: baseline %s stored — %d configs, %d without backup, %d rejected",
-                filename, len(configs), no_backup, len(rejected))
+                filename, len(configs), len(no_backup), len(rejected))
     return {
         "file": filename, "takenAt": baseline["takenAt"],
         "switchesTargeted": len(targets), "configsStored": len(configs),
-        "noBackup": no_backup, "rejectedByRedaction": len(rejected),
+        "noBackup": len(no_backup), "noBackupSwitches": sorted(no_backup),
+        "rejectedByRedaction": len(rejected),
         "rejectedSwitches": rejected, "scope": scope,
     }
+
+
+@router.get("/{controller_id}/configs.zip")
+async def download_configs(controller_id: int,
+                           tenant_id: Optional[str] = Query(None),
+                           file: Optional[str] = Query(
+                               None, description="A specific baseline file. Default: newest."),
+                           db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """
+    Every stored switch config as a zip, one file per switch.
+
+    Built entirely from the stored baseline, so it costs ZERO calls against
+    RUCKUS ONE -- the bulk read already happened when the baseline was captured,
+    and repeating it here would be a second whole-estate config pull that nobody
+    asked for.
+
+    THESE CONFIGS ARE REDACTED AND ARE NOT A RESTORABLE BACKUP. Every credential
+    -- enable/user passwords, SNMP communities, RADIUS/TACACS keys, OSPF/BGP/
+    VRRP/NTP auth keys -- has been replaced with <REDACTED> by utils.icx_redact
+    before storage, and a config the redactor could not vouch for was dropped
+    rather than stored. Pushing one of these back onto a switch would strip every
+    secret on it. The real backups live in RUCKUS ONE, which is where these were
+    read from in the first place.
+
+    What it IS good for: offline diffing, grep across the estate, audit evidence,
+    and change review.
+    """
+    c = _controller(controller_id, db)
+    _, key = _resolve_tenant(c, tenant_id)
+
+    baseline = store.load_baseline(key, file)
+    if not baseline:
+        raise HTTPException(409, "No config baseline stored — capture one first. The "
+                                 "archive is built from the stored baseline so it costs "
+                                 "no extra reads against RUCKUS ONE.")
+    configs = baseline.get("configs") or {}
+    if not configs:
+        raise HTTPException(409, "The stored baseline holds no configs. Re-capture it and "
+                                 "check the switches have backups in RUCKUS ONE.")
+
+    taken = baseline.get("takenAt", "unknown")
+    used: Dict[str, int] = {}
+
+    def _name(entry, sid):
+        base = _SAFE_FILE.sub("_", (entry.get("switchName") or sid)).strip("_") or sid
+        # Two switches can share a name; never let one silently overwrite another.
+        used[base] = used.get(base, 0) + 1
+        return f"{base}.cfg" if used[base] == 1 else f"{base}__{used[base]}.cfg"
+
+    buf = io.BytesIO()
+    manifest = io.StringIO()
+    mw = csv.writer(manifest)
+    mw.writerow(["file", "switch_id", "switch_name", "model", "backup_id",
+                 "backup_created", "backup_type", "redacted_lines"])
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for sid, entry in sorted(configs.items(),
+                                 key=lambda kv: (kv[1].get("switchName") or kv[0]).lower()):
+            fname = _name(entry, sid)
+            z.writestr(f"configs/{fname}", entry.get("config") or "")
+            stats = entry.get("redactionStats") or {}
+            mw.writerow([f"configs/{fname}", sid, entry.get("switchName") or "",
+                         entry.get("model") or "", entry.get("backupId") or "",
+                         entry.get("createdDate") or "", entry.get("backupType") or "",
+                         sum(v for v in stats.values() if isinstance(v, int))])
+
+        # Gaps belong in the archive. An archive that silently omits switches
+        # reads as a complete estate export and is worse than no archive.
+        no_backup = baseline.get("noBackupSwitches") or []
+        rejected = baseline.get("rejectedSwitches") or []
+        no_backup_lines = [f"  - {n}" for n in no_backup] or ["  (none)"]
+        rejected_lines = [f"  - {n}" for n in rejected] or ["  (none)"]
+        z.writestr("MANIFEST.csv", manifest.getvalue())
+        z.writestr("README.txt", "\n".join([
+            "WiredWiz switch configuration archive",
+            "=" * 60,
+            f"Baseline captured : {taken}",
+            f"Tenant            : {baseline.get('tenantId')}",
+            f"Venue scope       : "
+            + (", ".join(baseline.get("scopeVenueIds") or []) or "whole tenant"),
+            f"Configs included  : {len(configs)}",
+            f"No backup in R1   : {len(no_backup)}",
+            f"Dropped by redactor: {len(rejected)}",
+            "",
+            "*** REDACTED -- NOT A RESTORABLE BACKUP ***",
+            "",
+            "Every credential in these files has been replaced with <REDACTED>:",
+            "enable and username passwords, SNMP communities and v3 auth, RADIUS and",
+            "TACACS keys, OSPF/BGP/VRRP/ISIS/NTP authentication keys, and 802.1X",
+            "secrets. Pushing one of these onto a switch would strip every secret on",
+            "it. Use these for diffing, grep, audit and change review -- not restore.",
+            "",
+            "The real backups are in RUCKUS ONE; that is where these were read from.",
+            "WiredWiz is read-only and never creates a backup.",
+            "",
+            "Switches with NO backup in RUCKUS ONE (not in this archive):",
+            *no_backup_lines,
+            "",
+            "Switches dropped because the redactor could not vouch for them:",
+            *rejected_lines,
+        ]))
+
+    stamp = re.sub(r"[^0-9T]", "", taken.replace("-", "").replace(":", ""))[:15]
+    return Response(
+        buf.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="wiredwiz-configs-{stamp or "baseline"}.zip"'})
 
 
 @router.get("/{controller_id}/baselines")
