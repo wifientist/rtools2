@@ -71,6 +71,7 @@ interface ScenarioDetection {
   unit_ssid_counts: { ssid: string; unit: string; count: number }[];
   passphrases_without_unit: number;   // no unit SSID at all
   excluded_junk_ssids: string[];      // "undefined@Property" etc — not created
+  property_name: string;              // the part after '@' on the unit SSIDs
 }
 
 // Import mode is controlled by ssid_mode:
@@ -107,6 +108,43 @@ const PASSPHRASE_FORMATS: { value: PassphraseFormat; label: string; hint: string
 
 const isPerUnitMode = (mode: SsidMode) => mode === "per_unit";
 
+// Seed rows for the AP-assignment CSV.
+//
+// The second column is what the import matches an AP by, and in practice the
+// APs are named after the AP Group / SSID they serve rather than a bare unit
+// number. So the default mirrors exactly how validate.py names an AP Group:
+// prefix+unit+postfix when either is set, otherwise the unit's own SSID
+// ("1-101@Fieldhouse"). Seeding a bare unit number matched almost nothing.
+const buildApAssignmentCsv = (
+  detection: ScenarioDetection | null,
+  prefix: string,
+  postfix: string,
+  groupPrefix: string,
+  groupPostfix: string,
+): string => {
+  if (!detection || detection.unit_numbers.length === 0) return "";
+  // Third column is INFORMATIONAL. parseApAssignmentCsv reads only the first
+  // two, so editing it changes nothing -- it is here so the AP Group names
+  // can be eyeballed against what R1 will show, since the AP and its AP Group
+  // follow separate patterns and need not match.
+  //
+  // Strictly prefix + unit + postfix, with NO implicit fallback. The postfix
+  // is prefilled with "@Property" on upload, so the default is expressed in
+  // the box rather than hidden in a branch -- clearing it now visibly yields
+  // a bare unit name instead of silently re-deriving the SSID.
+  const groupName = (u: string) => `${groupPrefix}${u}${groupPostfix}`;
+  // Strictly prefix + unit + postfix, with NO fallback. An earlier version
+  // fell back to the unit's SSID when both boxes were empty, so clearing the
+  // postfix and pressing Update regenerated the identical text and looked
+  // like the button was broken. What the boxes say is what you get.
+  const rows = detection.unit_numbers.map(
+    (u) => `${u},${prefix}${u}${postfix},${groupName(u)}`,
+  );
+  // Header kept so the column order stays visible while editing;
+  // parseApAssignmentCsv skips it.
+  return ["unit_number,ap_identifier,ap_group_name", ...rows].join("\n");
+};
+
 function CloudpathImport() {
   const {
     activeControllerId,
@@ -142,6 +180,12 @@ function CloudpathImport() {
   const [createPropertySsid, setCreatePropertySsid] = useState(true);
   const [apGroupPrefix, setApGroupPrefix] = useState("");
   const [apGroupPostfix, setApGroupPostfix] = useState("");
+  // AP NAMES are a separate namespace from AP GROUP names. The CSV's second
+  // column matches an AP by serial or name, not by an AP Group, and the two
+  // conventions do not have to agree — one property may name APs
+  // "1-101@Fieldhouse" while its AP Groups are "Unit-1-101-APs".
+  const [apNamePrefix, setApNamePrefix] = useState("");
+  const [apNamePostfix, setApNamePostfix] = useState("");
   const [apAssignmentMode, setApAssignmentMode] = useState<"skip" | "csv">("skip");
   const [apAssignments, setApAssignments] = useState<{unit_number: string, ap_identifier: string}[]>([]);
   const [apAssignmentError, setApAssignmentError] = useState("");
@@ -440,6 +484,20 @@ function CloudpathImport() {
       passphrases_on_property: passphrasesOnProperty,
       unit_ssid_counts: unitSsidCounts,
       excluded_junk_ssids: Array.from(junkSsids).sort(),
+      // Most common property token across the unit SSIDs. Used to prefill the
+      // AP Group postfix so the seeded list and the "Update AP list" button
+      // agree — otherwise the default produced "unit@Property" while the
+      // postfix box sat empty, and the button would rewrite it to a bare unit.
+      property_name: (() => {
+        const tally = new Map<string, number>();
+        for (const r of unitSsidCounts) {
+          const prop = r.ssid.split('@').pop() || '';
+          if (prop) tally.set(prop, (tally.get(prop) || 0) + 1);
+        }
+        let best = '', bestN = 0;
+        tally.forEach((n, prop) => { if (n > bestN) { best = prop; bestN = n; } });
+        return best;
+      })(),
       passphrases_without_unit: dpsks.length - unitPassphrases,
     };
   };
@@ -576,6 +634,20 @@ function CloudpathImport() {
   };
 
   // Handle text paste/edit for AP assignments
+  // Rebuild the seeded CSV from the CURRENT naming options. The AP names in
+  // column two are derived from the prefix/postfix, so changing those after
+  // upload leaves the seeded list pointing at names that no longer exist.
+  const regenerateApAssignmentCsv = () => {
+    const seeded = buildApAssignmentCsv(
+      scenarioDetection, apNamePrefix, apNamePostfix,
+      apGroupPrefix, apGroupPostfix,
+    );
+    if (!seeded) return;
+    seededApCsvRef.current = seeded;
+    setApAssignmentText(seeded);
+    parseApAssignmentCsv(seeded);
+  };
+
   const handleApAssignmentTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setApAssignmentText(text);
@@ -623,6 +695,8 @@ function CloudpathImport() {
     setCreatePropertySsid(true);
     setApGroupPrefix("");
     setApGroupPostfix("");
+    setApNamePrefix("");
+    setApNamePostfix("");
     setSkipIdentityDescriptions(false);
     setEnableAccessPolicies(true);
 
@@ -697,13 +771,31 @@ function CloudpathImport() {
           // this is right often enough to be worth correcting rather than
           // typing from scratch. Always seeded: resetImportState() just
           // cleared whatever the previous file left behind.
-          if (detection.unit_numbers.length > 0) {
-            // Header included so the expected column order stays visible
-            // while editing; parseApAssignmentCsv skips it.
-            const seeded = [
-              "unit_number,ap_identifier",
-              ...detection.unit_numbers.map((u) => `${u},${u}`),
-            ].join("\n");
+          // Seed AP NAMES, not AP Group names. Most properties name the AP
+          // after the unit it serves ("1-101@Fieldhouse"), so default the AP
+          // name postfix to the detected property. Populating the box rather
+          // than leaving it blank-but-implicit is what makes the Update
+          // button reproduce the seed instead of silently diverging from it.
+          const detectedPostfix = detection.property_name
+            ? `@${detection.property_name}`
+            : apNamePostfix;
+          if (detection.property_name) setApNamePostfix(detectedPostfix);
+
+          // Same for the AP GROUP postfix. Its default is the unit's SSID
+          // ("1-101@Fieldhouse"), which is exactly unit + "@Property" -- so
+          // populate the box instead of leaving it blank and implicit.
+          // Otherwise the field shows nothing while column 3 shows
+          // "@Property", and pressing Update appears to do nothing.
+          const detectedGroupPostfix = detection.property_name
+            ? `@${detection.property_name}`
+            : apGroupPostfix;
+          if (detection.property_name) setApGroupPostfix(detectedGroupPostfix);
+
+          const seeded = buildApAssignmentCsv(
+            detection, apNamePrefix, detectedPostfix,
+            apGroupPrefix, detectedGroupPostfix,
+          );
+          if (seeded) {
             seededApCsvRef.current = seeded;
             setApAssignmentText(seeded);
             parseApAssignmentCsv(seeded);
@@ -1483,40 +1575,19 @@ function CloudpathImport() {
                     </div>
                   </label>
 
-                  {/* AP Group Naming */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      AP Group Naming
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={apGroupPrefix}
-                        onChange={(e) => setApGroupPrefix(e.target.value)}
-                        placeholder="Prefix (e.g., Unit-)"
-                        disabled={processing}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      />
-                      <span className="text-gray-500 font-mono text-sm">{'{unit}'}</span>
-                      <input
-                        type="text"
-                        value={apGroupPostfix}
-                        onChange={(e) => setApGroupPostfix(e.target.value)}
-                        placeholder="Postfix (e.g., -APs)"
-                        disabled={processing}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Example: {apGroupPrefix || 'Unit-'}108{apGroupPostfix || '-APs'}
-                    </p>
-                  </div>
-
                   {/* AP Assignment */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      AP Assignment (Optional)
+                      AP Assignment to AP Groups (Optional)
                     </label>
+                    <p className="text-xs text-amber-700 mb-2">
+                      This moves APs into each unit's <strong>AP Group</strong> so
+                      the unit's SSID reaches them. It is <strong>not</strong> the
+                      Property Management AP&nbsp;→&nbsp;Unit mapping, which this
+                      tool does not touch. The second column identifies an AP by
+                      its <strong>serial number or AP name</strong> — not by an AP
+                      Group name.
+                    </p>
                     <p className="text-xs text-gray-500 mb-2">
                       Assign APs to units. Format: <code className="bg-gray-200 px-1 rounded">unit_number,ap_identifier</code> (one per line)
                     </p>
@@ -1545,6 +1616,99 @@ function CloudpathImport() {
                       <span className="text-xs text-gray-500">or paste directly</span>
                       <div className="flex-1 border-t border-gray-300"></div>
                     </div>
+
+                  {/* AP name pattern — drives the seeded CSV below */}
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      AP Name Pattern
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={apNamePrefix}
+                        onChange={(e) => setApNamePrefix(e.target.value)}
+                        placeholder="Prefix"
+                        disabled={processing}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <span className="text-gray-500 font-mono text-sm">{'{unit}'}</span>
+                      <input
+                        type="text"
+                        value={apNamePostfix}
+                        onChange={(e) => setApNamePostfix(e.target.value)}
+                        placeholder="Postfix (e.g. @Property)"
+                        disabled={processing}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      {!!scenarioDetection?.unit_numbers.length && (
+                        <button
+                          type="button"
+                          onClick={regenerateApAssignmentCsv}
+                          disabled={processing}
+                          title="Rebuild the assignment list below from both naming patterns"
+                          className="shrink-0 px-3 py-2 text-sm rounded-md border border-blue-300
+                            text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          Update list
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Column 2 of the list — the AP matched by serial or name.
+                      Produces <span className="font-mono">
+                        {`${apNamePrefix}1-101${apNamePostfix}`}
+                      </span>.
+                    </p>
+                  </div>
+
+                  {/* AP Group Naming */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      AP Group Naming
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={apGroupPrefix}
+                        onChange={(e) => setApGroupPrefix(e.target.value)}
+                        placeholder="Prefix (e.g., Unit-)"
+                        disabled={processing}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      <span className="text-gray-500 font-mono text-sm">{'{unit}'}</span>
+                      <input
+                        type="text"
+                        value={apGroupPostfix}
+                        onChange={(e) => setApGroupPostfix(e.target.value)}
+                        placeholder="Postfix (e.g., -APs)"
+                        disabled={processing}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                      />
+                      {!!scenarioDetection?.unit_numbers.length && (
+                        <button
+                          type="button"
+                          onClick={regenerateApAssignmentCsv}
+                          disabled={processing}
+                          title="Rebuild the assignment list below from both naming patterns"
+                          className="shrink-0 px-3 py-2 text-sm rounded-md border border-blue-300
+                            text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          Update list
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Names the AP GROUP. Example:{' '}
+                      <span className="font-mono">
+                        {apGroupPrefix || apGroupPostfix
+                          ? `${apGroupPrefix}1-101${apGroupPostfix}`
+                          : `1-101@${scenarioDetection?.property_name || 'Property'}`}
+                      </span>
+                      {' '}Shown as column 3 of the list for eyeballing against
+                      R1; it is not read back, so edit the pattern rather than
+                      the text.
+                    </p>
+                  </div>
 
                     {/* Text Paste Area */}
                     <div>
@@ -1583,15 +1747,7 @@ function CloudpathImport() {
                         </button>
                       </div>
                     )}
-                    {apAssignmentText &&
-                      apAssignmentText === seededApCsvRef.current && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        Pre-filled as <code>unit,unit</code> for each detected unit,
-                        assuming APs are named after their unit. Edit or replace any
-                        row whose AP uses a different name or serial &mdash; unmatched
-                        rows are reported and skipped, not fatal.
-                      </p>
-                    )}
+
                     {apAssignments.length === 0 && !apAssignmentText && (
                       <p className="text-xs text-yellow-600 mt-2">
                         Without AP assignments, AP Groups will be created but APs won't be assigned.
