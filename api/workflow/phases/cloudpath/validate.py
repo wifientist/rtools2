@@ -1261,16 +1261,16 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     will_create_ap_group = False
 
                     if per_unit_ssid:
-                        if ap_group_prefix or ap_group_postfix:
-                            # Explicit naming supplied by the user
-                            ap_group_name = (
-                                f"{ap_group_prefix}{unit_num}{ap_group_postfix}"
-                            )
-                        else:
-                            # Default to the unit's SSID name (e.g. "101@CedarPoint")
-                            # rather than a bare unit number, so the AP Group and
-                            # the SSID it carries line up in the R1 UI.
-                            ap_group_name = ssid_name
+                        # Strictly prefix + unit + postfix. The UI prefills the
+                        # postfix with "@Property" so the old implicit default
+                        # (fall back to the unit's SSID when both are blank) is
+                        # now expressed in the field instead of hidden here.
+                        # Keeping the branch made the form lie: the postfix box
+                        # sat empty while the planned AP Group still carried a
+                        # property suffix, and clearing the box changed nothing.
+                        ap_group_name = (
+                            f"{ap_group_prefix}{unit_num}{ap_group_postfix}"
+                        )
                         if ap_group_name in existing_ap_groups:
                             ap_group_exists = True
                             ap_group_id = existing_ap_groups[ap_group_name]
