@@ -53,7 +53,12 @@ class ActivateApGroupPhase(PhaseExecutor):
         ap_group_id: str
         ap_group_name: str = ""
         ssid_name: str = ""
-        default_vlan: str = "1"
+        # VLAN for the AP-Group binding. EMPTY MEANS INHERIT: R1 treats a
+        # vlanId on the AP Group entry as a per-group OVERRIDE and shows it as
+        # "vlan-N (custom)", so sending one unconditionally pinned every
+        # activation to a custom VLAN instead of the network's own. Deliberately
+        # NOT default_vlan -- that one is the network's VLAN and must stay set.
+        ap_group_vlan: str = ""
         dpsk_pool_id: Optional[str] = None
         already_activated: bool = False
         is_venue_wide: bool = False
@@ -118,7 +123,13 @@ class ActivateApGroupPhase(PhaseExecutor):
                 f"AP Group '{inputs.ap_group_name}'..."
             )
 
-        vlan_id = int(inputs.default_vlan) if inputs.default_vlan else None
+        # None => omit vlanId => the AP Group inherits the network's VLAN,
+        # which is what doing this by hand in R1 produces.
+        vlan_id = (
+            int(inputs.ap_group_vlan)
+            if str(inputs.ap_group_vlan).strip()
+            else None
+        )
 
         try:
             await self.r1_client.venues.activate_ssid_for_ap_group_direct(

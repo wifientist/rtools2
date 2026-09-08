@@ -108,6 +108,11 @@ CloudpathImportWorkflow = Workflow(
 
         # Network settings
         "default_vlan": "1",
+        # VLAN override for the per-unit AP Group binding. Empty = inherit the
+        # network's VLAN, which is the sane default and what R1 shows when the
+        # binding is made by hand. Setting it pins the AP Group to a custom
+        # VLAN, which for DPSK also overrides per-resident VLANs.
+        "ap_group_vlan": "",
         "name_conflict_resolution": "keep",  # "keep" | "replace" | "rename"
 
         # LAN port configuration (optional)
@@ -379,7 +384,7 @@ CloudpathImportWorkflow = Workflow(
             skip_if="options.get('ssid_mode') != 'per_unit'",
             inputs=[
                 "unit_id", "unit_number", "network_id", "ssid_name",
-                "ap_group_id", "ap_group_name", "default_vlan",
+                "ap_group_id", "ap_group_name", "ap_group_vlan",
                 "dpsk_pool_id", "already_activated", "is_venue_wide",
             ],
             outputs=["activated", "already_active"],
