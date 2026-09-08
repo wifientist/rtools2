@@ -62,6 +62,7 @@ const Sidebar = () => {
         { to: "/sz-audit", icon: <ClipboardList size={20} />, label: "SZ Audit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/firmware-matrix", icon: <Table2 size={20} />, label: "Firmware Matrix", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/diagrams", icon: <Network size={20} />, label: "Network Diagrams", requiresAuth: true, requiresAlpha: true, isExternal: true },
+        { to: "/topology", icon: <Network size={20} />, label: "Topology", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
       ],
     },
     {

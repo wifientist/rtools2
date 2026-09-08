@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -52,6 +52,9 @@ import DataStudioExport from "@/pages/DataStudioExport";
 import DfsBlacklist from "@/pages/DfsBlacklist";
 import Maps from "@/pages/Maps";
 import WiredWiz from "@/pages/WiredWiz";
+// Lazy, unlike every other page here: React Flow + dagre are ~2 MB, and users
+// who never open the map should not pay for them. Deliberate inconsistency.
+const Topology = lazy(() => import("@/pages/Topology"));
 import PISR from "@/pages/PISR";
 import FilesharePage from "@/pages/Fileshare/FilesharePage";
 import FolderView from "@/pages/Fileshare/FolderView";
@@ -106,6 +109,24 @@ const App = () => {
           <Route path="/dfs-blacklist" element={<AlphaRoute element={<DfsBlacklist />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
           <Route path="/wiredwiz" element={<AlphaRoute element={<WiredWiz />} />} />
+          <Route
+            path="/topology"
+            element={
+              <AlphaRoute
+                element={
+                  <Suspense
+                    fallback={
+                      <div className="flex items-center justify-center p-12">
+                        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600" />
+                      </div>
+                    }
+                  >
+                    <Topology />
+                  </Suspense>
+                }
+              />
+            }
+          />
           <Route path="/pisr" element={<AlphaRoute element={<PISR />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
