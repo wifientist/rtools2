@@ -55,7 +55,7 @@ from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML as WeasyHTML
 from sqlalchemy.orm import Session
 
-from clients.r1_client import create_r1_client_from_controller
+from clients.r1_client import create_r1_client_from_controller, validate_controller_access
 from dependencies import get_current_user, get_db
 from models.controller import Controller
 from models.user import User
@@ -83,10 +83,18 @@ def _jinja() -> Environment:
         str(Path(__file__).resolve().parent.parent.parent / "templates")))
 
 
-def _controller(controller_id: int, db: Session) -> Controller:
-    c = db.query(Controller).filter(Controller.id == controller_id).first()
-    if not c:
-        raise HTTPException(404, f"Controller {controller_id} not found")
+def _controller(controller_id: int, user: User, db: Session) -> Controller:
+    """
+    The requested controller, ONLY if this user owns it.
+
+    Ownership is delegated to the shared `validate_controller_access`, which
+    every other tool in this app already uses -- it 404s an id that does not
+    exist and 403s one belonging to somebody else. This helper previously
+    filtered on the id alone, so any authenticated user could read any other
+    user's switch inventory, MAC tables and redacted configs by guessing a
+    controller id. WiredWiz was the only router in the codebase with that gap.
+    """
+    c = validate_controller_access(controller_id, user, db)
     if c.controller_type != "RuckusONE":
         raise HTTPException(400, f"WiredWiz needs a RuckusONE controller; "
                                  f"'{c.name}' is {c.controller_type}")
@@ -120,7 +128,7 @@ def _venue_ids(raw: Optional[str]) -> Optional[List[str]]:
 async def get_scope(controller_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Tells the UI whether it has to ask for an MSP-EC before anything else."""
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     return {
         "controllerId": c.id,
         "controllerName": c.name,
@@ -142,10 +150,10 @@ async def list_venues(controller_id: int,
     Deliberately live rather than snapshot-derived: the picker has to work before
     the first crawl. It is one cheap query — switch ids and venue names only.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     override, key = _resolve_tenant(c, tenant_id)
 
-    r1 = create_r1_client_from_controller(controller_id, db)
+    r1 = create_r1_client_from_controller(controller_id, user, db)
     rows = r1.switches.list_switches(override)
 
     venues: Dict[str, Dict[str, Any]] = {}
@@ -186,10 +194,10 @@ async def crawl(controller_id: int,
     One snapshot, one request. Ports, MAC table and topology only -- configuration
     is never collected here.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     override, key = _resolve_tenant(c, tenant_id)
 
-    r1 = create_r1_client_from_controller(controller_id, db)
+    r1 = create_r1_client_from_controller(controller_id, user, db)
     snap = take_snapshot(r1, override, venue_ids=_venue_ids(venue_ids))
     filename = store.save(key, snap)
 
@@ -213,7 +221,7 @@ async def list_snapshots(controller_id: int,
                          tenant_id: Optional[str] = Query(None),
                          db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     return {"snapshots": store.list_snapshots(key),
             "ttlDays": store.SNAPSHOT_TTL_DAYS}
@@ -224,7 +232,7 @@ async def delete_snapshot(controller_id: int, file: str,
                           tenant_id: Optional[str] = Query(None),
                           db: Session = Depends(get_db),
                           user: User = Depends(get_current_user)):
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     if not store.delete(key, file):
         raise HTTPException(404, f"No snapshot named {file}")
@@ -239,7 +247,7 @@ async def get_analysis(controller_id: int,
                        limit: int = Query(12, le=48),
                        db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     snaps = store.load_all(key, limit=limit)
     if not snaps:
@@ -262,7 +270,7 @@ async def list_switches(controller_id: int,
     Inventory as of the latest snapshot, with per-switch port and MAC counts so
     the UI can show what has actually been crawled.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     # load_covering, not load: the newest snapshot is not necessarily one that
     # covers the venues being viewed, and filtering a non-covering snapshot down
@@ -313,7 +321,7 @@ async def switch_ports(controller_id: int, switch_id: str,
     otherwise a scoped inventory and an unscoped port view can disagree about a
     switch that only one of their snapshots saw.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     snap, _scope = store.load_covering(key, _venue_ids(venue_ids))
     if not snap:
@@ -350,10 +358,10 @@ async def switch_config(controller_id: int, switch_id: str,
     this specific switch. The text has passed icx_redact.assert_clean — a config
     the redactor cannot vouch for is reported as unavailable, never returned raw.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     override, _ = _resolve_tenant(c, tenant_id)
 
-    r1 = create_r1_client_from_controller(controller_id, db)
+    r1 = create_r1_client_from_controller(controller_id, user, db)
     entry = fetch_redacted_config(r1, override, venue_id, switch_id)
     if entry is None:
         raise HTTPException(404, "This switch has no configuration backup in RUCKUS ONE. "
@@ -380,7 +388,7 @@ async def mac_tables(controller_id: int,
     hardware table size, so sizing is peer-relative and growth-based. See
     services/wiredwiz/mactable.py for why.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     snaps = store.load_all(key, limit=limit)
     if not snaps:
@@ -401,7 +409,7 @@ async def list_checks(controller_id: int,
     the checks that will be skipped without config data. A check nobody knows
     exists is a check nobody trusts.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
 
     # Fold in the last run so the catalogue shows what actually happened to each
@@ -456,7 +464,7 @@ async def create_baseline(controller_id: int,
     Configs are redacted and re-verified before being written. A config the
     redactor cannot vouch for is counted and skipped, never stored raw.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     override, key = _resolve_tenant(c, tenant_id)
     wanted = _venue_ids(venue_ids)
 
@@ -476,7 +484,7 @@ async def create_baseline(controller_id: int,
                                  + (f" Missing venue ids: {', '.join(missing[:5])}."
                                     if missing else ""))
 
-    r1 = create_r1_client_from_controller(controller_id, db)
+    r1 = create_r1_client_from_controller(controller_id, user, db)
     # snap is already narrowed to `wanted` by load_covering.
     targets = [s for s in snap["switches"]
                if s.get("deviceStatus") == "ONLINE" and s.get("venueId")]
@@ -548,7 +556,7 @@ async def download_configs(controller_id: int,
     What it IS good for: offline diffing, grep across the estate, audit evidence,
     and change review.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
 
     baseline = store.load_baseline(key, file)
@@ -635,7 +643,7 @@ async def list_baselines(controller_id: int,
                          tenant_id: Optional[str] = Query(None),
                          db: Session = Depends(get_db),
                          user: User = Depends(get_current_user)):
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     return {"baselines": store.list_baselines(key),
             "ttlDays": store.BASELINE_TTL_DAYS}
@@ -646,7 +654,7 @@ async def delete_baseline(controller_id: int, file: str,
                           tenant_id: Optional[str] = Query(None),
                           db: Session = Depends(get_db),
                           user: User = Depends(get_current_user)):
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     if not store.delete_baseline(key, file):
         raise HTTPException(404, f"No baseline named {file}")
@@ -686,7 +694,7 @@ async def health(controller_id: int,
     Configs read for an audit are held in memory for the duration of the request
     and never written to the snapshot store.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     override, key = _resolve_tenant(c, tenant_id)
 
     snaps = store.load_all(key, limit=limit)
@@ -706,7 +714,7 @@ async def health(controller_id: int,
                   "baselineSwitches": len((baseline or {}).get("configs") or {}),
                   "source": None}
     if audit_configs:
-        r1 = create_r1_client_from_controller(controller_id, db)
+        r1 = create_r1_client_from_controller(controller_id, user, db)
         latest = snaps[-1]
         targets = [s for s in latest["switches"]
                    if s.get("deviceStatus") == "ONLINE" and s.get("venueId")
@@ -767,7 +775,7 @@ async def last_health(controller_id: int,
     This exists so the dashboard can show findings on load instead of a blank
     page. `ranAt` is returned so a stale result cannot pass as current.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     result = store.load_health(key)
     if not result:
@@ -818,7 +826,7 @@ async def report_pdf(controller_id: int,
     catalogue (what was tested and the exact condition each check fires on), the
     skipped checks, and the standing caveats about the underlying data.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
 
     try:
@@ -843,7 +851,7 @@ async def report_csv(controller_id: int,
                      db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     """Findings as CSV — for pasting into a tracker or sorting by switch."""
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     try:
         csv_text = findings_csv(key)
@@ -865,7 +873,7 @@ async def report_json(controller_id: int,
     The stored check result verbatim — every finding with full evidence, the
     checks that ran, the ones that were skipped and why, and the scope.
     """
-    c = _controller(controller_id, db)
+    c = _controller(controller_id, user, db)
     _, key = _resolve_tenant(c, tenant_id)
     result = store.load_health(key)
     if not result:
