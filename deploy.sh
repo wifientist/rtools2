@@ -128,6 +128,44 @@ if [[ -n "${API_HOST:-}" ]]; then
   fi
 fi
 
+# Regression gates
+#
+# Each of these guards a bug that reached production and was invisible until
+# someone went looking: the Redis pool leak that required restarts, AP
+# assignment that reported success while moving no APs, jobs that went quiet
+# for five minutes instead of failing, and the scheduler deadlocking with no
+# error. They run against the deployed containers, so they check what is
+# actually live rather than what is in the tree.
+#
+# Named explicitly -- scripts/ also holds interactive R1 probes that must
+# never run unattended. Add a gate here when you add one.
+REGRESSION_TESTS=(
+    test_redis_pool_leak.py
+    test_ap_assignment_matching.py
+    test_job_failsafe.py
+    test_workflow_stall.py
+)
+
+echo "🧪 Running regression gates..."
+FAILED_TESTS=()
+for t in "${REGRESSION_TESTS[@]}"; do
+    if docker compose --env-file .env.production exec -T backend \
+            python "scripts/$t" > /tmp/deploy_$t.log 2>&1; then
+        echo "  ✅ $t"
+    else
+        echo "  ❌ $t"
+        sed 's/^/       /' /tmp/deploy_$t.log | tail -20
+        FAILED_TESTS+=("$t")
+    fi
+done
+
+if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
+    echo "🚨 ${#FAILED_TESTS[@]} regression gate(s) failed: ${FAILED_TESTS[*]}"
+    echo "   The deploy is live. Investigate before running imports."
+    exit 1
+fi
+echo "✅ All regression gates passed"
+
 echo "✅ Deployment complete!"
 
 # Send Slack notification on successful deployment

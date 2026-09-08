@@ -49,6 +49,17 @@ logger = logging.getLogger(__name__)
 # How long to wait between checking for ready work
 SCHEDULE_INTERVAL = 0.25  # seconds
 
+# How long the scheduler may sit with nothing running and nothing ready
+# before it declares the workflow stuck. Nothing can change during that
+# window -- only task completions advance state, and there are no tasks --
+# so this is pure paranoia against a condition I have not thought of. Kept
+# well under the 300s reaper sweep, which is what used to "handle" this.
+STALL_GRACE_SECONDS = 30
+
+
+class WorkflowStalled(RuntimeError):
+    """Nothing is running and nothing can become ready."""
+
 # Concurrency control: limit parallel phase executions to prevent Redis connection exhaustion
 # With 50 units, unbounded parallelism can spawn 50+ concurrent tasks, each doing 3-5 Redis ops
 # This semaphore ensures we don't exceed Redis connection pool capacity
@@ -424,6 +435,8 @@ class WorkflowBrain:
         # otherwise raise NameError in the finally and bury the real error.
         in_flight: Dict[str, asyncio.Task] = {}  # "unit:phase" → task
         last_reconcile = time.time()
+        stalled_since: Optional[float] = None   # when the scheduler went idle
+        stall_recovery_tried = False            # one self-heal attempt, then fail
 
         try:
             # Pre-flight: verify against ACTUAL R1 state.
@@ -479,10 +492,51 @@ class WorkflowBrain:
                         in_flight[key] = task
 
                 if not in_flight:
-                    # No work in flight and nothing ready - shouldn't happen
-                    # unless all work is done or blocked
+                    # Nothing is running and nothing became ready, while the
+                    # workflow is not complete. Only task completions advance
+                    # state and there are no tasks, so this does not resolve
+                    # itself -- it is a deadlock, not a lull.
+                    #
+                    # This branch used to sleep and `continue` forever. Because
+                    # the heartbeat below sits AFTER it, the job also stopped
+                    # reporting alive, so the reaper failed it up to 300s later
+                    # with a generic "stranded" message while the loop kept
+                    # spinning at 4Hz for the life of the process. That is the
+                    # "stopped after a phase or two, then failed 5 minutes
+                    # later" report, with no crash involved.
+                    now_ts = time.time()
+                    if stalled_since is None:
+                        stalled_since = now_ts
+                        logger.warning(
+                            f"Job {job.id}: nothing running and nothing ready "
+                            f"- watching for {STALL_GRACE_SECONDS}s before "
+                            f"declaring a stall"
+                        )
+                    # Stay alive while we work out what happened.
+                    await self.state.touch_job_heartbeat(job.id)
+                    last_heartbeat = now_ts
+
+                    if now_ts - stalled_since >= STALL_GRACE_SECONDS:
+                        # A unit still flagged as running a phase can never be
+                        # scheduled again (_find_ready_work skips busy units),
+                        # and with nothing in flight nothing owns that flag.
+                        # Clearing it is safe here and un-sticks the job.
+                        if not stall_recovery_tried:
+                            stall_recovery_tried = True
+                            freed = await self._recover_orphaned_units(job)
+                            if freed:
+                                logger.warning(
+                                    f"Job {job.id}: freed {freed} unit(s) stuck "
+                                    f"mid-phase with no task running; resuming"
+                                )
+                                stalled_since = None
+                                continue
+                        raise WorkflowStalled(self._diagnose_stall(job, graph))
+
                     await asyncio.sleep(SCHEDULE_INTERVAL)
                     continue
+
+                stalled_since = None
 
                 # Wait for at least one task to complete
                 done, _ = await asyncio.wait(
@@ -645,7 +699,16 @@ class WorkflowBrain:
         # Determine final status
         job = self._determine_final_status(job)
         job.completed_at = datetime.utcnow()
-        await self.state.save_job(job)
+        try:
+            await self.state.save_job(job)
+        except Exception as save_err:
+            # The launcher's failsafe will mark the job FAILED, but with THIS
+            # exception -- so carry the outcome we were trying to record into
+            # it, or the actual reason the run ended is lost entirely.
+            raise RuntimeError(
+                f"Could not persist final status {job.status.value} "
+                f"({'; '.join(job.errors[-3:]) or 'no errors'}): {save_err}"
+            ) from save_err
 
         # Emit unit_completed for successful units
         # (Failed units already had unit_completed emitted when they failed)
@@ -803,6 +866,99 @@ class WorkflowBrain:
     # =========================================================================
     # Work Scheduling
     # =========================================================================
+
+    async def _recover_orphaned_units(self, job: WorkflowJobV2) -> int:
+        """
+        Clear current_phase on units nothing is actually working on.
+
+        _find_ready_work skips any unit whose current_phase is set, treating
+        it as busy. If a task died without clearing that flag, the unit is
+        never scheduled again -- and if every remaining unit is in that state
+        the whole workflow stops with no error anywhere.
+
+        Only called with an empty in-flight map, so nothing owns these flags
+        and clearing them cannot race a running task.
+
+        Returns:
+            Number of units freed.
+        """
+        freed = 0
+        for unit in job.units.values():
+            if unit.current_phase is None:
+                continue
+            logger.warning(
+                f"Job {job.id}: unit {unit.unit_number} was flagged as running "
+                f"'{unit.current_phase}' with no task to match; clearing"
+            )
+            unit.current_phase = None
+            if unit.status == UnitStatus.RUNNING:
+                unit.status = UnitStatus.PENDING
+            try:
+                await self.state.save_unit(job.id, unit)
+            except Exception as e:
+                logger.error(
+                    f"Job {job.id}: could not persist recovery for unit "
+                    f"{unit.unit_number}: {e}"
+                )
+            freed += 1
+        return freed
+
+    def _diagnose_stall(self, job: WorkflowJobV2, graph: DependencyGraph) -> str:
+        """
+        Say what the workflow is waiting for, in the failure message itself.
+
+        "Workflow stalled" on its own sends someone digging through logs. The
+        whole point of failing fast here is that the reason travels with the
+        failure, so name the phases that never became ready and the
+        dependencies they are still missing.
+        """
+        settled = self._settled_global_phases(job)
+        lines: List[str] = []
+
+        # Global phases that never ran, and what they are waiting on.
+        for phase in job.phase_definitions:
+            if phase.per_unit or phase.id in settled:
+                continue
+            unmet = sorted(graph.get_dependencies(phase.id) - settled)
+            lines.append(
+                f"global '{phase.id}' waiting on {unmet}" if unmet
+                else f"global '{phase.id}' ready but never scheduled"
+            )
+
+        # Per-unit phases, aggregated: 400 units blocked the same way should
+        # read as one line, not four hundred.
+        blocked: Dict[str, int] = {}
+        busy: Dict[str, int] = {}
+        for unit in job.units.values():
+            if unit.status in (UnitStatus.COMPLETED, UnitStatus.FAILED):
+                continue
+            if unit.current_phase is not None:
+                busy[unit.current_phase] = busy.get(unit.current_phase, 0) + 1
+                continue
+            done = set(unit.completed_phases) | set(unit.failed_phases) | settled
+            for phase in job.phase_definitions:
+                if not phase.per_unit or phase.id in done:
+                    continue
+                unmet = sorted(graph.get_dependencies(phase.id) - done)
+                key = (
+                    f"unit phase '{phase.id}' waiting on {unmet}" if unmet
+                    else f"unit phase '{phase.id}' ready but never scheduled"
+                )
+                blocked[key] = blocked.get(key, 0) + 1
+                break   # first blocked phase per unit is the informative one
+
+        for key, count in sorted(blocked.items(), key=lambda kv: -kv[1]):
+            lines.append(f"{count} unit(s): {key}")
+        for phase_id, count in sorted(busy.items(), key=lambda kv: -kv[1]):
+            lines.append(
+                f"{count} unit(s) flagged as running '{phase_id}' with no task"
+            )
+
+        detail = "; ".join(lines) if lines else "no outstanding phases found"
+        return (
+            f"Workflow stalled: nothing running and nothing can become ready "
+            f"after {STALL_GRACE_SECONDS}s. {detail}"
+        )
 
     def _find_ready_work(
         self,
