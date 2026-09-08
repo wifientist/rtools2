@@ -18,6 +18,11 @@ from pydantic import BaseModel, Field
 
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
+from workflow.phases.ap_fields import (
+    ap_serial,
+    index_aps_by_serial,
+    index_aps_by_name,
+)
 from workflow.v2.models import (
     UnitMapping, UnitPlan, UnitResolved, UnitStatus,
     ValidationResult, ValidationSummary, ResourceAction,
@@ -78,12 +83,11 @@ class ValidateApRegroupPhase(PhaseExecutor):
             raise RuntimeError(f"Could not list APs in this venue: {e}")
         await self.emit(f"Found {len(all_venue_aps)} APs in the venue")
 
-        # Match on serial OR name, exactly as assign_aps does.
-        by_serial = {
-            (ap.get('serialNumber') or ap.get('serial') or ''): ap
-            for ap in all_venue_aps
-        }
-        by_name = {(ap.get('name') or ''): ap for ap in all_venue_aps}
+        # Match on serial OR name, exactly as assign_aps does. The shared
+        # readers skip records missing the key, so a serial-less AP is never
+        # indexed under "" where a blank identifier would match it.
+        by_serial = index_aps_by_serial(all_venue_aps)
+        by_name = index_aps_by_name(all_venue_aps)
 
         # ---- existing AP groups ----------------------------------------
         existing_groups: Dict[str, str] = {}
@@ -111,7 +115,7 @@ class ValidateApRegroupPhase(PhaseExecutor):
             if not ap:
                 unmatched.append(row.ap_identifier)
                 continue
-            serial = ap.get('serialNumber') or ap.get('serial') or ''
+            serial = ap_serial(ap)
             if not serial:
                 unmatched.append(row.ap_identifier)
                 continue

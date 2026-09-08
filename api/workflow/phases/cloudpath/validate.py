@@ -43,6 +43,11 @@ from typing import List, Dict, Any, Optional, Set
 from r1api.constants import DpskPassphraseFormat, DpskScaleLimits
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
+from workflow.phases.ap_fields import (
+    ap_serial,
+    index_aps_by_serial,
+    index_aps_by_name,
+)
 from workflow.v2.models import (
     UnitMapping, UnitPlan, UnitResolved, UnitStatus, ValidationResult,
     ValidationSummary, ResourceAction,
@@ -1146,9 +1151,11 @@ class ValidateCloudpathPhase(PhaseExecutor):
             ap_assignments = options.get('ap_assignments', [])
 
             if ap_assignments and all_venue_aps:
-                # Build lookup tables for venue APs
-                serial_to_ap = {ap.get('serial', ''): ap for ap in all_venue_aps}
-                name_to_ap = {ap.get('name', ''): ap for ap in all_venue_aps}
+                # Build lookup tables for venue APs.
+                # all_venue_aps is R1 raw, so the serial lives under
+                # 'serialNumber' -- see workflow.phases.ap_fields.
+                serial_to_ap = index_aps_by_serial(all_venue_aps)
+                name_to_ap = index_aps_by_name(all_venue_aps)
 
                 matched_count = 0
                 unmatched = []
@@ -1164,10 +1171,14 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     matched_ap = serial_to_ap.get(ap_id) or name_to_ap.get(ap_id)
 
                     if matched_ap:
-                        serial = matched_ap.get('serial', '')
+                        serial = ap_serial(matched_ap)
                         if serial and serial not in unit_to_aps[unit_num]:
                             unit_to_aps[unit_num].append(serial)
                             matched_count += 1
+                        elif not serial:
+                            # Matched a venue AP with no serial to act on.
+                            # Silently dropping this is what hid the bug.
+                            unmatched.append(f"{unit_num}:{ap_id} (no serial)")
                     else:
                         unmatched.append(f"{unit_num}:{ap_id}")
 
@@ -1186,8 +1197,8 @@ class ValidateCloudpathPhase(PhaseExecutor):
             # Also extract AP assignments from DPSK records that have ap_identifier
             # This allows embedding AP info directly in the Cloudpath export JSON
             if all_venue_aps:
-                serial_to_ap = {ap.get('serial', ''): ap for ap in all_venue_aps}
-                name_to_ap = {ap.get('name', ''): ap for ap in all_venue_aps}
+                serial_to_ap = index_aps_by_serial(all_venue_aps)
+                name_to_ap = index_aps_by_name(all_venue_aps)
 
                 dpsk_ap_count = 0
                 for pp in passphrases:
@@ -1196,7 +1207,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                         # Try to match by serial first, then by name
                         matched_ap = serial_to_ap.get(ap_id) or name_to_ap.get(ap_id)
                         if matched_ap:
-                            serial = matched_ap.get('serial', '')
+                            serial = ap_serial(matched_ap)
                             if serial and serial not in unit_to_aps[pp.unit_number]:
                                 unit_to_aps[pp.unit_number].append(serial)
                                 dpsk_ap_count += 1

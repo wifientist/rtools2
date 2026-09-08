@@ -17,6 +17,11 @@ from typing import List, Dict, Any, Tuple
 
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
+from workflow.phases.ap_fields import (
+    ap_serial,
+    index_aps_by_serial,
+    index_aps_by_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +94,13 @@ class AssignAPsPhase(PhaseExecutor):
                 f"[{inputs.unit_number}] No APs matched from "
                 f"{len(inputs.ap_serial_numbers)} identifiers"
             )
+            # error, not warning: the unit asked for APs and got none, which
+            # leaves its SSID reaching nothing. Not fatal (the AP may simply
+            # not be installed yet) but it must not read as a clean run.
             await self.emit(
                 f"[{inputs.unit_number}] No APs matched from "
                 f"{len(inputs.ap_serial_numbers)} identifiers",
-                "warning",
+                "error",
             )
         else:
             logger.info(
@@ -135,20 +143,11 @@ class AssignAPsPhase(PhaseExecutor):
         if not ap_identifiers:
             return []
 
-        # Build lookup maps for O(1) matching (exact only)
-        by_serial = {}
-        by_name = {}
-        for ap in all_venue_aps:
-            # R1 spells this both ways depending on the endpoint, and the
-            # codebase reads both. Matching only 'serialNumber' meant a caller
-            # that had resolved a serial from 'serial' matched NOTHING here --
-            # the phase then reported success having moved zero APs.
-            serial = ap.get('serialNumber') or ap.get('serial') or ''
-            name = ap.get('name', '')
-            if serial:
-                by_serial[serial] = ap
-            if name:
-                by_name[name] = ap
+        # Build lookup maps for O(1) matching (exact only).
+        # Both readers skip records missing the key, so an AP with no serial
+        # can never be indexed under "" and match an empty identifier.
+        by_serial = index_aps_by_serial(all_venue_aps)
+        by_name = index_aps_by_name(all_venue_aps)
 
         matched = []
         unmatched = []
@@ -157,8 +156,7 @@ class AssignAPsPhase(PhaseExecutor):
             if ap:
                 matched.append(ap)
                 logger.debug(
-                    f"Matched AP: {ap.get('name')} "
-                    f"({ap.get('serialNumber')})"
+                    f"Matched AP: {ap.get('name')} ({ap_serial(ap)})"
                 )
             else:
                 unmatched.append(identifier)
@@ -190,11 +188,22 @@ class AssignAPsPhase(PhaseExecutor):
         """
         assigned = 0
         skipped = 0
+        failures: List[str] = []
 
         for ap in matched_aps:
             current_group_id = ap.get('apGroupId')
-            ap_serial = ap.get('serialNumber')
-            ap_name = ap.get('name', ap_serial)
+            serial = ap_serial(ap)
+            ap_name = ap.get('name') or serial or '<unnamed AP>'
+
+            # No serial means no URL to PUT to. Without this the request went
+            # to /aps/None, failed, and was swallowed as a warning.
+            if not serial:
+                failures.append(f"{ap_name} (no serial number)")
+                logger.warning(
+                    f"[{unit_number}] {ap_name} has no serial number in the "
+                    f"venue AP record -- cannot assign"
+                )
+                continue
 
             # Idempotency: skip if already in correct group
             if current_group_id == ap_group_id:
@@ -213,7 +222,7 @@ class AssignAPsPhase(PhaseExecutor):
                     tenant_id=self.tenant_id,
                     venue_id=self.venue_id,
                     ap_group_id=ap_group_id,
-                    ap_serial_number=ap_serial,
+                    ap_serial_number=serial,
                     wait_for_completion=not use_activity_tracker,
                 )
 
@@ -231,9 +240,25 @@ class AssignAPsPhase(PhaseExecutor):
                     f"'{ap_group_name}' ({assigned}/{len(matched_aps) - skipped})"
                 )
             except Exception as e:
+                failures.append(f"{ap_name}: {e}")
                 logger.warning(
-                    f"[{unit_number}] Failed to assign AP {ap_serial}: {e}"
+                    f"[{unit_number}] Failed to assign AP {serial}: {e}"
                 )
+
+        # Do not report success for work that did not happen. A phase that
+        # moved no APs while having APs to move is a failure, not a no-op.
+        if failures:
+            detail = "; ".join(failures[:5])
+            if not assigned:
+                raise RuntimeError(
+                    f"No APs could be assigned to '{ap_group_name}' "
+                    f"({len(failures)} failed): {detail}"
+                )
+            await self.emit(
+                f"[{unit_number}] {len(failures)} of {len(matched_aps)} APs "
+                f"could not be assigned to '{ap_group_name}': {detail}",
+                "error",
+            )
 
         return assigned, skipped
 
