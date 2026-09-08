@@ -238,8 +238,13 @@ class RedisStateManagerV2:
         This is the primary update method for multi-worker execution.
         """
         key = f"{PREFIX}:jobs:{job_id}:units:{unit.unit_id}"
-        unit_data = unit.model_dump_json()
-        await self.redis.setex(key, JOB_TTL_SECONDS, unit_data)
+        async with self.redis.pipeline() as pipe:
+            pipe.setex(key, JOB_TTL_SECONDS, unit.model_dump_json())
+            # Keep the id index in step with the key it points at, so
+            # get_all_units never has to scan the keyspace. See _unit_ids_key.
+            pipe.sadd(self._unit_ids_key(job_id), unit.unit_id)
+            pipe.expire(self._unit_ids_key(job_id), JOB_TTL_SECONDS)
+            await pipe.execute()
         return True
 
     async def get_unit(self, job_id: str, unit_id: str) -> Optional[UnitMapping]:
@@ -256,6 +261,9 @@ class RedisStateManagerV2:
             for unit_id, unit in units.items():
                 key = f"{PREFIX}:jobs:{job_id}:units:{unit_id}"
                 pipe.setex(key, JOB_TTL_SECONDS, unit.model_dump_json())
+            if units:
+                pipe.sadd(self._unit_ids_key(job_id), *units.keys())
+                pipe.expire(self._unit_ids_key(job_id), JOB_TTL_SECONDS)
             await pipe.execute()
         return True
 
@@ -285,10 +293,40 @@ class RedisStateManagerV2:
             if cursor == 0:
                 return keys
 
+    def _unit_ids_key(self, job_id: str) -> str:
+        """SET of this job's unit ids, so reads never scan the keyspace."""
+        return f"{PREFIX}:jobs:{job_id}:unit_ids"
+
     async def get_all_units(self, job_id: str) -> Dict[str, UnitMapping]:
-        """Get all units for a job using batch MGET for performance."""
-        # Collect all unit keys via SCAN
-        keys = await self._scan_keys(f"{PREFIX}:jobs:{job_id}:units:*")
+        """
+        Get all units for a job using batch MGET for performance.
+
+        Reads the unit ids from a SET rather than scanning. get_job() calls
+        this, and get_job() runs on every status poll and every SSE
+        reconnect -- so this used to SCAN the whole keyspace several times a
+        second while a job was open, at a cost that grew with everything else
+        stored in Redis, not just with this job.
+
+        Jobs created before the index exists fall back to the scan and
+        backfill it, so nothing in flight during a deploy is lost.
+        """
+        unit_ids = await self.redis.smembers(self._unit_ids_key(job_id))
+
+        if unit_ids:
+            keys = [
+                f"{PREFIX}:jobs:{job_id}:units:{uid}" for uid in sorted(unit_ids)
+            ]
+        else:
+            keys = await self._scan_keys(f"{PREFIX}:jobs:{job_id}:units:*")
+            if keys:
+                ids = [k.rsplit(":", 1)[-1] for k in keys]
+                try:
+                    async with self.redis.pipeline() as pipe:
+                        pipe.sadd(self._unit_ids_key(job_id), *ids)
+                        pipe.expire(self._unit_ids_key(job_id), JOB_TTL_SECONDS)
+                        await pipe.execute()
+                except Exception as e:
+                    logger.debug(f"Could not backfill unit index for {job_id}: {e}")
 
         if not keys:
             return {}
