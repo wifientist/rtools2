@@ -45,6 +45,10 @@ PerUnitDPSKWorkflow = Workflow(
     default_options={
         "name_conflict_resolution": "keep",
         "configure_lan_ports": False,
+        # AP-Group VLAN OVERRIDE. Empty = inherit the network's VLAN. With
+        # DPSK the per-resident VLAN rides on each passphrase, so pinning one
+        # here overrides every resident's own VLAN.
+        "ap_group_vlan": "",
         # Single shared resources for all units
         "identity_group_name": "",
         "dpsk_pool_name": "",
@@ -206,6 +210,10 @@ PerUnitDPSKWorkflow = Workflow(
             critical=True,
             inputs=[
                 "unit_id", "unit_number", "network_id", "ssid_name",
+                # Was absent entirely, so the phase fell back to its own
+                # default of "1" and pinned every activation to VLAN 1 with
+                # no way to influence it. Empty = inherit.
+                "ap_group_vlan",
             ],
             outputs=["activated", "already_active"],
             api_calls_per_unit=1,
