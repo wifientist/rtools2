@@ -38,6 +38,7 @@ import SpeedExplainer from "@/pages/SpeedExplainer";
 import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathImport from "@/pages/CloudpathImport";
+import APRegroup from "@/pages/APRegroup";
 import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
 import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
 import MigrationAudit from "@/pages/MigrationAudit";
@@ -87,6 +88,7 @@ const App = () => {
           <Route path="/pop-swap" element={<AlphaRoute element={<APPopAndSwap />} />} />
           <Route path="/bulk-ap-tagging" element={<BetaRoute element={<BulkAPTagging />} />} />
           <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />
+          <Route path="/ap-regroup" element={<ProtectedRoute element={<APRegroup />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />

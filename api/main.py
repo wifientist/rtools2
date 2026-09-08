@@ -138,6 +138,11 @@ app.add_middleware(
 models.user.Base.metadata.create_all(bind=engine, checkfirst=True)
 
 # Include Routers
+# NOTE: the app sets root_path="/api", so routers must NOT add an /api prefix
+# themselves -- doing so serves them at /api/api/... and every call 404s.
+from routers.ap_regroup import v2_endpoints as ap_regroup_v2
+app.include_router(ap_regroup_v2.router, tags=["AP Regroup V2"])
+
 app.include_router(status.router)
 app.include_router(opt43.router)
 app.include_router(users.router)
