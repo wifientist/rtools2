@@ -19,7 +19,7 @@ For each identity:
 import logging
 import re
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
@@ -138,10 +138,16 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         radius_groups_created: int = 0
         radius_groups_existing: int = 0
         policies_created: int = 0
+        # Reported so a re-run is legible: "0 created, 0 updated, 212 already
+        # correct" is the shape of a healthy repeat import. policies_updated
+        # was computed but never returned, so the audit could not show it.
+        policies_updated: int = 0
+        policies_unchanged: int = 0
         policies_failed: int = 0
         identities_renamed: int = 0
         renames_no_identity: int = 0
         renames_failed: int = 0
+        renames_already_done: int = 0
         skipped_no_ssid: int = 0
         skipped_no_unit_ssid: int = 0
         policy_set_id: Optional[str] = None
@@ -470,6 +476,62 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             f"RADIUS groups resolved: {list(suffix_to_group_id.keys())}"
         )
 
+        # =====================================================================
+        # Collapse entries to the policies we actually intend to exist.
+        #
+        # parsed_entries is one row per (account x unit SSID), but the policy
+        # name is the account alone -- so several rows can name ONE policy.
+        # The old loop processed each row against the same policy in turn,
+        # which meant a second row silently overwrote the first's RADIUS group
+        # and, because the condition check only asked "is there an SSID
+        # condition" rather than "is it THIS SSID", quietly dropped the second
+        # SSID. Collapsing first makes those collisions visible instead.
+        # =====================================================================
+        desired: Dict[str, Dict[str, Any]] = {}
+        suffix_conflicts: List[str] = []
+        multi_ssid: List[str] = []
+
+        for entry in parsed_entries:
+            name = sanitize_policy_name(entry["account"])
+            plan = desired.get(name)
+            if plan is None:
+                desired[name] = {
+                    "account": entry["account"],
+                    "suffix": entry["suffix"],
+                    "ssids": [entry["ssid"]],
+                }
+                continue
+            if entry["suffix"] != plan["suffix"]:
+                suffix_conflicts.append(
+                    f"{entry['account']} ({plan['suffix']} vs {entry['suffix']})"
+                )
+            if entry["ssid"] not in plan["ssids"]:
+                plan["ssids"].append(entry["ssid"])
+
+        for name, plan in desired.items():
+            if len(plan["ssids"]) > 1:
+                multi_ssid.append(f"{plan['account']} -> {plan['ssids']}")
+
+        if suffix_conflicts:
+            await self.emit(
+                f"{len(suffix_conflicts)} account(s) appear with more than one "
+                f"speed suffix; the policy can carry only one RADIUS group and "
+                f"the first wins: {', '.join(suffix_conflicts[:5])}",
+                "warning",
+            )
+        if multi_ssid:
+            await self.emit(
+                f"{len(multi_ssid)} account(s) map to more than one unit SSID; "
+                f"a policy carries a single SSID condition, so only the first "
+                f"is enforced: {', '.join(multi_ssid[:5])}",
+                "warning",
+            )
+
+        await self.emit(
+            f"{len(parsed_entries)} entries collapse to {len(desired)} "
+            f"policies (named by account)"
+        )
+
         # Build lookup of existing policies by name
         existing_policies: Dict[str, dict] = {}
         try:
@@ -487,16 +549,41 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         except Exception as e:
             logger.warning(f"Could not query existing policies: {e}")
 
+        # Existing policy-set membership, fetched once. The old code fired an
+        # assign call for every policy on every run and swallowed the
+        # "already assigned" error, so a re-run of 200 policies made 200
+        # pointless writes.
+        assigned_policy_ids: Set[str] = set()
+        try:
+            prioritized = await self.r1_client.policy_sets.get_prioritized_policies(
+                policy_set_id=policy_set_id,
+                tenant_id=self.tenant_id,
+            )
+            if isinstance(prioritized, dict):
+                prioritized = prioritized.get('content', prioritized.get('data', []))
+            for row in prioritized or []:
+                if isinstance(row, dict):
+                    pid = row.get('policyId') or row.get('id')
+                    if pid:
+                        assigned_policy_ids.add(pid)
+            await self.emit(
+                f"Policy set already holds {len(assigned_policy_ids)} policies"
+            )
+        except Exception as e:
+            # Fall back to attempting the assign, as before.
+            logger.warning(f"Could not list policy set members: {e}")
+            assigned_policy_ids = set()
+
         policy_results: List[PolicyResult] = []
         policies_created = 0
         policies_updated = 0
+        policies_unchanged = 0
         policies_failed = 0
 
-        for entry in parsed_entries:
-            account = entry["account"]
-            suffix = entry["suffix"]
-            ssid = entry["ssid"]
-            unit_num = entry["unit_number"]
+        for policy_name, plan in desired.items():
+            account = plan["account"]
+            suffix = plan["suffix"]
+            ssid = plan["ssids"][0]
 
             # Get RADIUS group ID for this suffix
             radius_group_id = suffix_to_group_id.get(suffix)
@@ -511,70 +598,118 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 policies_failed += 1
                 continue
 
-            policy_name = sanitize_policy_name(account)
+            want_user = regex_pattern_for_value(account)
+            want_ssid = regex_pattern_for_value(ssid)
 
             try:
-                # Check if policy already exists
                 existing_policy = existing_policies.get(policy_name)
                 policy_id = None
+                changes: List[str] = []
 
                 if existing_policy:
-                    # Policy exists - update it and add conditions
+                    # =========================================================
+                    # Compare before writing.
+                    #
+                    # A re-run used to PATCH the policy, GET its conditions,
+                    # and POST an assignment for every policy whether or not
+                    # anything differed. Now nothing is written unless it is
+                    # actually wrong, so a repeat import over an unchanged
+                    # property makes reads only.
+                    # =========================================================
                     policy_id = existing_policy.get('id')
-                    logger.info(f"Policy '{policy_name}' exists ({policy_id}), updating...")
 
-                    # Update RADIUS group response if different
-                    await self.r1_client.policy_sets.update_template_policy(
-                        template_id=DPSK_POLICY_TEMPLATE_ID,
-                        policy_id=policy_id,
-                        policy_data={"onMatchResponse": radius_group_id},
-                        tenant_id=self.tenant_id
-                    )
+                    current_response = existing_policy.get('onMatchResponse')
+                    if current_response is None and 'onMatchResponse' not in existing_policy:
+                        # The list payload does not carry it; ask for the policy.
+                        try:
+                            full = await self.r1_client.policy_sets.get_template_policy(
+                                template_id=DPSK_POLICY_TEMPLATE_ID,
+                                policy_id=policy_id,
+                                tenant_id=self.tenant_id,
+                            )
+                            if isinstance(full, dict):
+                                current_response = full.get('onMatchResponse')
+                        except Exception as e:
+                            logger.debug(
+                                f"Could not read '{policy_name}' for comparison "
+                                f"({e}); treating the RADIUS group as unknown"
+                            )
+                            current_response = None
 
-                    # Check existing conditions to avoid duplicates
+                    if current_response != radius_group_id:
+                        await self.r1_client.policy_sets.update_template_policy(
+                            template_id=DPSK_POLICY_TEMPLATE_ID,
+                            policy_id=policy_id,
+                            policy_data={"onMatchResponse": radius_group_id},
+                            tenant_id=self.tenant_id
+                        )
+                        changes.append("RADIUS group")
+
                     existing_conditions = await self.r1_client.policy_sets.get_policy_conditions(
                         template_id=DPSK_POLICY_TEMPLATE_ID,
                         policy_id=policy_id,
                         tenant_id=self.tenant_id
                     )
-
-                    # Handle various response formats
                     if isinstance(existing_conditions, dict):
-                        existing_conditions = existing_conditions.get('content', existing_conditions.get('data', []))
-
-                    has_username_cond = False
-                    has_ssid_cond = False
-                    for cond in existing_conditions:
-                        # Handle both dict and unexpected formats
-                        if isinstance(cond, dict):
-                            attr_id = cond.get('templateAttributeId')
-                            if attr_id == ATTR_DPSK_USERNAME:
-                                has_username_cond = True
-                            elif attr_id == ATTR_WIRELESS_SSID:
-                                has_ssid_cond = True
-                        else:
-                            logger.warning(f"Unexpected condition format: {type(cond)} - {cond}")
-
-                    # Add missing conditions
-                    if not has_username_cond:
-                        await self.r1_client.policy_sets.create_string_condition(
-                            template_id=DPSK_POLICY_TEMPLATE_ID,
-                            policy_id=policy_id,
-                            attribute_id=ATTR_DPSK_USERNAME,
-                            regex_pattern=regex_pattern_for_value(account),
-                            tenant_id=self.tenant_id
+                        existing_conditions = existing_conditions.get(
+                            'content', existing_conditions.get('data', [])
                         )
 
-                    if not has_ssid_cond:
-                        await self.r1_client.policy_sets.create_string_condition(
-                            template_id=DPSK_POLICY_TEMPLATE_ID,
-                            policy_id=policy_id,
-                            attribute_id=ATTR_WIRELESS_SSID,
-                            regex_pattern=regex_pattern_for_value(ssid),
-                            tenant_id=self.tenant_id
+                    # attribute id -> (condition id, current regex). Comparing
+                    # the PATTERN matters: checking only that a condition of
+                    # the right type existed left stale usernames and SSIDs in
+                    # place forever.
+                    by_attr: Dict[int, Tuple[Optional[str], Optional[str]]] = {}
+                    for cond in existing_conditions or []:
+                        if not isinstance(cond, dict):
+                            logger.warning(
+                                f"Unexpected condition format: {type(cond)} - {cond}"
+                            )
+                            continue
+                        rule = cond.get('evaluationRule') or {}
+                        by_attr[cond.get('templateAttributeId')] = (
+                            cond.get('id'),
+                            rule.get('regexStringCriteria'),
                         )
 
-                    policies_updated += 1
+                    for attr_id, want, label in (
+                        (ATTR_DPSK_USERNAME, want_user, "username condition"),
+                        (ATTR_WIRELESS_SSID, want_ssid, "SSID condition"),
+                    ):
+                        cond_id, current = by_attr.get(attr_id, (None, None))
+                        if cond_id is None:
+                            await self.r1_client.policy_sets.create_string_condition(
+                                template_id=DPSK_POLICY_TEMPLATE_ID,
+                                policy_id=policy_id,
+                                attribute_id=attr_id,
+                                regex_pattern=want,
+                                tenant_id=self.tenant_id
+                            )
+                            changes.append(f"added {label}")
+                        elif current != want:
+                            await self.r1_client.policy_sets.update_policy_condition(
+                                template_id=DPSK_POLICY_TEMPLATE_ID,
+                                policy_id=policy_id,
+                                condition_id=cond_id,
+                                condition_data={
+                                    "evaluationRule": {
+                                        "criteriaType": "StringCriteria",
+                                        "regexStringCriteria": want,
+                                    }
+                                },
+                                tenant_id=self.tenant_id
+                            )
+                            changes.append(f"corrected {label}")
+
+                    if changes:
+                        policies_updated += 1
+                        logger.info(
+                            f"Policy '{policy_name}' ({policy_id}) updated: "
+                            f"{', '.join(changes)}"
+                        )
+                    else:
+                        policies_unchanged += 1
+                        logger.debug(f"Policy '{policy_name}' already correct")
 
                 else:
                     # Create new policy
@@ -601,21 +736,19 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         tenant_id=self.tenant_id
                     )
 
-                    # Add username condition with ^ and $ anchors for exact match
+                    # Username and SSID conditions, anchored for exact match
                     await self.r1_client.policy_sets.create_string_condition(
                         template_id=DPSK_POLICY_TEMPLATE_ID,
                         policy_id=policy_id,
                         attribute_id=ATTR_DPSK_USERNAME,
-                        regex_pattern=regex_pattern_for_value(account),
+                        regex_pattern=want_user,
                         tenant_id=self.tenant_id
                     )
-
-                    # Add SSID condition
                     await self.r1_client.policy_sets.create_string_condition(
                         template_id=DPSK_POLICY_TEMPLATE_ID,
                         policy_id=policy_id,
                         attribute_id=ATTR_WIRELESS_SSID,
-                        regex_pattern=regex_pattern_for_value(ssid),
+                        regex_pattern=want_ssid,
                         tenant_id=self.tenant_id
                     )
 
@@ -626,17 +759,30 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         'template_id': DPSK_POLICY_TEMPLATE_ID,
                     })
 
-                # Assign to policy set (idempotent - will skip if already assigned)
-                try:
-                    await self.r1_client.policy_sets.assign_policy_to_policy_set(
-                        policy_set_id=policy_set_id,
-                        policy_id=policy_id,
-                        tenant_id=self.tenant_id
-                    )
-                except Exception as assign_err:
-                    # Ignore "already assigned" errors
-                    if 'already' not in str(assign_err).lower():
-                        logger.warning(f"Failed to assign policy to set: {assign_err}")
+                # Assign to the policy set only if it is not already a member.
+                if policy_id and policy_id not in assigned_policy_ids:
+                    try:
+                        await self.r1_client.policy_sets.assign_policy_to_policy_set(
+                            policy_set_id=policy_set_id,
+                            policy_id=policy_id,
+                            tenant_id=self.tenant_id
+                        )
+                        assigned_policy_ids.add(policy_id)
+                    except Exception as assign_err:
+                        if 'already' in str(assign_err).lower():
+                            assigned_policy_ids.add(policy_id)
+                        else:
+                            # A policy that is not in the set does nothing, so
+                            # this is a real failure, not a footnote.
+                            logger.error(
+                                f"Policy '{policy_name}' created but NOT assigned "
+                                f"to the policy set: {assign_err}"
+                            )
+                            await self.emit(
+                                f"Policy '{policy_name}' is not in the policy set "
+                                f"and will not take effect: {assign_err}",
+                                "error",
+                            )
 
                 policy_results.append(PolicyResult(
                     account=account,
@@ -644,7 +790,12 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     suffix=suffix,
                     policy_id=policy_id,
                     policy_name=policy_name,
-                    success=True
+                    success=True,
+                    skipped=bool(existing_policy) and not changes,
+                    skip_reason=(
+                        "already correct"
+                        if existing_policy and not changes else None
+                    ),
                 ))
 
             except Exception as e:
@@ -661,7 +812,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 policies_failed += 1
 
         await self.emit(
-            f"Policies: {policies_created} created, {policies_updated} updated, {policies_failed} failed",
+            f"Policies: {policies_created} created, {policies_updated} updated, "
+            f"{policies_unchanged} already correct, {policies_failed} failed",
             "success" if policies_failed == 0 else "warning"
         )
 
@@ -670,18 +822,28 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         identities_renamed = 0
         renames_no_identity = 0
         renames_failed = 0
+        renames_already_done = 0
 
         if identities_to_rename:
-            await self.emit(f"Renaming {len(identities_to_rename)} identities to remove suffix")
+            await self.emit(f"Checking {len(identities_to_rename)} identities for suffix removal")
 
             if not identity_group_id:
                 logger.warning("No identity group ID available, skipping identity renames")
                 await self.emit("Skipping identity renames: no group ID available", "warning")
             else:
+                # What the group holds right now, so a re-run does not PATCH
+                # every identity it already renamed on the last one. One
+                # paged read replaces N writes.
+                current_names = await self._identity_names_by_id(identity_group_id)
+
                 for identity in identities_to_rename:
                     identity_id = identity["identity_id"]
                     old_name = identity["old_name"]
                     new_name = identity["new_name"]
+
+                    if identity_id and current_names.get(identity_id) == new_name:
+                        renames_already_done += 1
+                        continue
 
                     if not identity_id:
                         # No identity id means we never learned which identity
@@ -705,6 +867,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                             success=True
                         ))
                         identities_renamed += 1
+                        current_names[identity_id] = new_name
 
                     except Exception as e:
                         # The common cause is a base-name collision: two
@@ -746,7 +909,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
         await self.emit(
             f"Access policies complete: {policies_created} policies, "
-            f"{groups_created} new RADIUS groups, {identities_renamed} identities renamed",
+            f"{groups_created} new RADIUS groups, {identities_renamed} identities renamed"
+            + (f", {renames_already_done} already renamed" if renames_already_done else ""),
             "success"
         )
 
@@ -754,16 +918,55 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             radius_groups_created=groups_created,
             radius_groups_existing=groups_existing,
             policies_created=policies_created,
+            policies_updated=policies_updated,
+            policies_unchanged=policies_unchanged,
             policies_failed=policies_failed,
             identities_renamed=identities_renamed,
             renames_no_identity=renames_no_identity,
             renames_failed=renames_failed,
+            renames_already_done=renames_already_done,
             skipped_no_ssid=skipped_no_ssid,
             skipped_no_unit_ssid=skipped_no_unit_ssid,
             policy_set_id=policy_set_id,
             policy_results=policy_results,
             rename_results=rename_results,
         )
+
+    async def _identity_names_by_id(self, group_id: str) -> Dict[str, str]:
+        """
+        Page the identity group once, returning identity id -> current name.
+
+        Used so a re-run only renames what still carries a suffix. Without it
+        the phase PATCHed every identity it had already renamed, every time.
+        On failure it returns {} -- which falls back to the old behaviour of
+        attempting each rename, rather than skipping work that may be needed.
+        """
+        by_id: Dict[str, str] = {}
+        page, size = 0, 100
+        try:
+            while True:
+                result = await self.r1_client.identity.get_identities_in_group(
+                    group_id=group_id,
+                    tenant_id=self.tenant_id,
+                    page=page,
+                    size=size,
+                )
+                items = result.get('content', result.get('data', []))
+                if not items:
+                    break
+                for identity in items:
+                    ident_id, name = identity.get('id'), identity.get('name')
+                    if ident_id and name:
+                        by_id[ident_id] = name
+                if len(items) < size:
+                    break
+                page += 1
+                if page > 5000:
+                    logger.warning("Identity pagination safety limit reached")
+                    break
+        except Exception as e:
+            logger.warning(f"Could not page identity group {group_id}: {e}")
+        return by_id
 
     async def validate(self, inputs: 'Inputs') -> PhaseValidation:
         """Validate access policy creation inputs."""

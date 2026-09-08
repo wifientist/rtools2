@@ -144,6 +144,7 @@ REGRESSION_TESTS=(
     test_ap_assignment_matching.py
     test_job_failsafe.py
     test_workflow_stall.py
+    test_access_policy_idempotency.py
 )
 
 echo "🧪 Running regression gates..."
