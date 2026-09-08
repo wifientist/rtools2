@@ -57,10 +57,11 @@ const Home = () => {
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
-            <h3 className="text-lg font-semibold text-blue-900 mb-2">🎨 Network Diagrams</h3>
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">🗺️ Topology <span className="text-xs bg-blue-200 text-blue-900 px-1.5 py-0.5 rounded">ALPHA</span></h3>
             <p className="text-sm text-blue-800">
-              Integrated fossFLOW diagramming tool for visualizing network topologies,
-              documenting deployments, and creating technical diagrams.
+              An interactive map of what is plugged into what, inferred from LLDP,
+              MAC tables and what each device reports — with the evidence behind
+              every link, and how sure it is.
             </p>
           </div>
 
@@ -214,9 +215,17 @@ const Home = () => {
             <h3 className="font-semibold text-gray-900 mb-1">Open Source Projects</h3>
             <ul className="list-disc list-inside space-y-1 text-sm">
               <li>
-                <a href="https://github.com/stan-smith/fossFLOW" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                  fossFLOW
-                </a> - Network diagramming tool by Stan Smith
+                <a href="https://github.com/xyflow/xyflow" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  React Flow
+                </a> - the canvas the Topology map is drawn on
+              </li>
+              <li>
+                <a href="https://github.com/dagrejs/dagre" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  dagre
+                </a> and{" "}
+                <a href="https://github.com/d3/d3-force" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  d3-force
+                </a> - the hierarchical and organic layouts
               </li>
             </ul>
           </div>
