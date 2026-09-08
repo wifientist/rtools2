@@ -25,6 +25,7 @@ from redis_client import get_redis_client
 
 from workflow.v2.models import JobStatus, WorkflowJobV2
 from workflow.v2.state_manager import RedisStateManagerV2
+from workflow.v2.failsafe import fail_job
 from workflow.v2.activity_tracker import ActivityTracker
 from workflow.v2.brain import WorkflowBrain
 from workflow.v2.graph import DependencyGraph
@@ -189,6 +190,11 @@ async def run_v2_execution_background(
         logger.exception(
             f"[AP Port V2] Execution failed for job {job_id}: {e}"
         )
+        # The engine could not record its own death -- usually because
+        # Redis is what broke. Without this the job stays RUNNING until
+        # the stranded-job reaper clears it, up to five minutes later,
+        # and with a generic message instead of this exception.
+        await fail_job(None, job_id, e, source="AP Port V2")
 
     finally:
         db.close()

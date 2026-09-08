@@ -63,6 +63,7 @@ from schemas.r1_inventory import R1VenueInventory
 # M4: Workflow engine imports
 from workflow.v2.models import JobStatus
 from workflow.v2.state_manager import RedisStateManagerV2
+from workflow.v2.failsafe import fail_job
 from workflow.v2.activity_tracker import ActivityTracker
 from workflow.v2.brain import WorkflowBrain
 from workflow.v2.graph import DependencyGraph
@@ -805,6 +806,11 @@ async def _run_migration_execution_background(
 
     except Exception as e:
         logger.exception(f"[SZ→R1] Execution failed for job {job_id}: {e}")
+        # The engine could not record its own death -- usually because
+        # Redis is what broke. Without this the job stays RUNNING until
+        # the stranded-job reaper clears it, up to five minutes later,
+        # and with a generic message instead of this exception.
+        await fail_job(None, job_id, e, source="SZ→R1")
 
     finally:
         db.close()

@@ -417,21 +417,30 @@ class WorkflowBrain:
             f"(buffer={SSID_SAFETY_BUFFER})"
         )
 
-        # Pre-flight: verify against ACTUAL R1 state.
-        # Validation data may be stale if user waited before confirming.
-        await self._reconcile_venue_wide_limit(job)
-
-        # Pre-complete phases whose outcomes are already determined by
-        # validation data (pre-resolved IDs, no APs, already activated).
-        # This immediately reflects in progress stats and avoids scheduling
-        # overhead for no-op phase executions.
-        await self._pre_complete_resolved_phases(job)
-
-        # Track in-flight work
+        # Track in-flight work.
+        #
+        # Declared before the try because the finally clears it, and because
+        # the setup below now runs INSIDE the try -- a crash there would
+        # otherwise raise NameError in the finally and bury the real error.
         in_flight: Dict[str, asyncio.Task] = {}  # "unit:phase" → task
         last_reconcile = time.time()
 
         try:
+            # Pre-flight: verify against ACTUAL R1 state.
+            # Validation data may be stale if user waited before confirming.
+            #
+            # This and the pre-completion below used to sit outside the try.
+            # Both do Redis and R1 work, so both can fail -- and when they did,
+            # the exception skipped every terminal-status write here and left
+            # the job RUNNING for the reaper to clean up minutes later.
+            await self._reconcile_venue_wide_limit(job)
+
+            # Pre-complete phases whose outcomes are already determined by
+            # validation data (pre-resolved IDs, no APs, already activated).
+            # This immediately reflects in progress stats and avoids scheduling
+            # overhead for no-op phase executions.
+            await self._pre_complete_resolved_phases(job)
+
             while not await self._is_workflow_complete(job, graph):
                 # Check for cancellation
                 if await self.state.is_cancelled(job.id):
