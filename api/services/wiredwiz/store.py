@@ -25,6 +25,15 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# Shared with the Topology store. `write_json_atomic` writes to a temp file in
+# the same directory and renames, which is atomic within a filesystem: a reader
+# sees either the whole previous version or the whole new one. The plain
+# `write_text` these calls used could leave a truncated file if the process
+# died mid-write -- survivable for a snapshot, which _read discards and which
+# can be recrawled, but not for `health.json`, which is what every export is
+# generated from and is rewritten in place on every run.
+from services.storekit import write_json_atomic
+
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_DIR = Path(os.environ.get("WIREDWIZ_DATA_DIR", "/app/wiredwiz_data"))
@@ -124,7 +133,7 @@ def save(tenant_id: str, snapshot: Dict[str, Any]) -> str:
     d.mkdir(parents=True, exist_ok=True)
     stamp = snapshot["takenAt"].replace(":", "").replace("-", "").split(".")[0]
     path = d / f"snap_{stamp}.json"
-    path.write_text(json.dumps(snapshot))
+    write_json_atomic(path, snapshot)
     _prune(d)
     return path.name
 
@@ -298,7 +307,7 @@ def save_baseline(tenant_id: str, baseline: Dict[str, Any]) -> str:
     d.mkdir(parents=True, exist_ok=True)
     stamp = baseline["takenAt"].replace(":", "").replace("-", "").split(".")[0]
     path = d / f"baseline_{stamp}.json"
-    path.write_text(json.dumps(baseline))
+    write_json_atomic(path, baseline)
     # Sweep by age first, then apply the count cap to whatever is left.
     for old in _baseline_files(tenant_id)[:-MAX_BASELINES]:
         try:
@@ -360,7 +369,7 @@ def delete_baseline(tenant_id: str, file: str) -> bool:
 def save_health(tenant_id: str, result: Dict[str, Any]) -> None:
     d = _tenant_dir(tenant_id)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "health.json").write_text(json.dumps(result))
+    write_json_atomic(d / "health.json", result)
 
 
 def load_health(tenant_id: str) -> Optional[Dict[str, Any]]:

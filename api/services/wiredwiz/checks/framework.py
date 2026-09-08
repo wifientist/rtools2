@@ -206,8 +206,9 @@ class IcxConfig:
 
 # ── Context ──────────────────────────────────────────────────────────────────
 
-def _norm_mac(m) -> str:
-    return (m or "").lower().replace("-", ":").replace(".", "")
+# One implementation, not two. These were byte-identical copies of the same
+# buggy normaliser; keeping a second one is how they drift apart.
+from ..analyze import is_stack_link, mac_display, norm_mac as _norm_mac  # noqa: E402
 
 
 def _as_int(v) -> int:

@@ -18,6 +18,7 @@ Four independent signals, because no single R1 field says "loop here":
   4. LLDP topology cycles, minus LAG members and stack links.
 """
 
+import re
 import statistics
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,8 +30,35 @@ COUNTER_FIELDS = ["broadcastIn", "broadcastOut", "multicastIn", "multicastOut",
 MIN_WINDOW = 900
 
 
+_MAC_JUNK = re.compile(r"[^0-9a-fA-F]")
+_MAC_HEX = re.compile(r"^[0-9a-f]{12}$")
+
+
 def norm_mac(m) -> str:
-    return (m or "").lower().replace("-", ":").replace(".", "")
+    """
+    A MAC as 12 lowercase hex characters, or "" if it is not a MAC.
+
+    STRICT on purpose. The previous version did
+    `.lower().replace("-", ":").replace(".", "")`, which produced TWO different
+    canonical forms depending on the separator it was given: colon-separated and
+    dash-separated input came back colon-form, while Cisco-style dotted and bare
+    input came back as plain hex. Two values for the same address never compare
+    equal, so a MAC written one way silently failed to match the same MAC
+    written the other. Every R1 field WiredWiz reads happens to be colon-form,
+    which is why it never bit -- but it is a trap for the next caller, and the
+    Topology tool hit exactly this.
+
+    Anything that will not normalise returns "" rather than falling through as
+    a truthy value: a malformed MAC must never become a join key.
+    """
+    s = _MAC_JUNK.sub("", str(m or "")).lower()
+    return s if _MAC_HEX.match(s) else ""
+
+
+def mac_display(m) -> str:
+    """Colon form, for anywhere a MAC is shown rather than compared."""
+    s = norm_mac(m)
+    return ":".join(s[i:i + 2] for i in range(0, 12, 2)) if s else str(m or "")
 
 
 def as_int(v) -> int:
@@ -72,6 +100,23 @@ def pick_pair(snaps: List[Dict], min_window: int = MIN_WINDOW) -> Optional[Tuple
             if snaps[i]["takenAtEpoch"] - snaps[j]["takenAtEpoch"] >= min_window:
                 return snaps[j], snaps[i]
     return None
+
+
+def is_stack_link(p) -> bool:
+    """
+    Whether a port is ACTUALLY part of a formed stack.
+
+    `usedInFormingStack` is a CAPABILITY flag, not a state: it is true on every
+    stacking-capable port of a stacking-capable model, whether or not a stack
+    exists. Measured on a 195-switch estate: 332 ports carried the flag but only
+    18 named a stacking peer, and 178 of the rest were live switch-to-switch
+    uplinks -- including a distribution switch's uplink to the core.
+
+    Loop and redundancy detection excluded all 332, so it was blind to any ring
+    running through those 178 links. Only a populated `stackingNeighborPort`
+    shows a stack interconnect that exists.
+    """
+    return bool(str(p.get("stackingNeighborPort") or "").strip())
 
 
 def uplink_ports(snap: Dict) -> set:
@@ -162,10 +207,11 @@ def mac_analysis(snaps: List[Dict]) -> Dict[str, Any]:
                 move_detail[mac].append((a, b))
 
     return {
-        "duplicates": [{"mac": m, "snapshots": n, "places": sorted(dupe_detail[m])}
+        "duplicates": [{"mac": mac_display(m), "snapshots": n,
+                        "places": sorted(dupe_detail[m])}
                        for m, n in dupes.most_common(50)],
         "suppressedUplinkDuplicates": suppressed,
-        "moves": [{"mac": m, "count": n, "last": move_detail[m][-1]}
+        "moves": [{"mac": mac_display(m), "count": n, "last": move_detail[m][-1]}
                   for m, n in moves.most_common(50)],
     }
 
@@ -204,27 +250,43 @@ def topology(snap: Dict) -> Dict[str, Any]:
             edges.append((me, nb, p))
 
     pairs = defaultdict(list)
+    # Ports each switch has facing the other, kept PER SIDE. `edges` holds one
+    # entry per port row, so a single cable between A:1/3/1 and B:1/2/3 appears
+    # twice -- once from each end. Counting distinct port identifiers across
+    # both ends therefore called every ordinary link with mismatched port
+    # numbers a "redundant pair", which on a 195-switch estate was most of them.
+    # Redundancy means ONE switch has TWO ports facing the same neighbour.
+    per_side = defaultdict(lambda: defaultdict(set))
     for me, nb, p in edges:
-        pairs[tuple(sorted((me, nb)))].append(p)
+        key = tuple(sorted((me, nb)))
+        pairs[key].append(p)
+        per_side[key][me].add(p.get("portIdentifier"))
+
     redundant = [
-        {"a": names.get(a, a), "b": names.get(b, b),
-         "ports": sorted({p.get("portIdentifier") for p in ports})}
+        {"a": names.get(a) or mac_display(a), "b": names.get(b) or mac_display(b),
+         "ports": sorted({ident for side in per_side[(a, b)].values()
+                          for ident in side})}
         for (a, b), ports in pairs.items()
-        if len({p.get("portIdentifier") for p in ports}) > 1
+        if max((len(side) for side in per_side[(a, b)].values()), default=0) > 1
         and not any(as_int(p.get("lagId")) for p in ports)
-        and not any(str(p.get("usedInFormingStack")).lower() == "true" for p in ports)
+        and not any(is_stack_link(p) for p in ports)
     ]
 
     # Back edges in the LLDP graph, excluding LAG members and stack links.
     adj = defaultdict(set)
     for me, nb, p in edges:
-        if as_int(p.get("lagId")) or str(p.get("usedInFormingStack")).lower() == "true":
+        if as_int(p.get("lagId")) or is_stack_link(p):
             continue
         adj[me].add(nb)
         adj[nb].add(me)
 
+    # Sorted iteration, deliberately. The walk below reports one edge per ring
+    # as the "back edge", and which one it picks depends entirely on traversal
+    # order -- so iterating sets made the answer depend on string hashing and
+    # shift between runs for the same data. Any edge of a ring is a defensible
+    # answer; silently reporting a different one each time is not.
     seen, parent, back = set(), {}, []
-    for root in list(adj):
+    for root in sorted(adj):
         if root in seen:
             continue
         seen.add(root)
@@ -232,7 +294,7 @@ def topology(snap: Dict) -> Dict[str, Any]:
         stack = [root]
         while stack:
             node = stack.pop()
-            for nb in adj[node]:
+            for nb in sorted(adj[node]):
                 if nb not in seen:
                     seen.add(nb)
                     parent[nb] = node
@@ -245,7 +307,8 @@ def topology(snap: Dict) -> Dict[str, Any]:
     return {
         "linkCount": len(edges),
         "switchCount": len(snap["switches"]),
-        "cycles": [{"a": names.get(a, a), "b": names.get(b, b)} for a, b in back],
+        "cycles": [{"a": names.get(a) or mac_display(a),
+                    "b": names.get(b) or mac_display(b)} for a, b in back],
         "redundantPairs": redundant,
     }
 
