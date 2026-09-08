@@ -268,7 +268,12 @@ CloudpathImportWorkflow = Workflow(
             ],
             outputs=[
                 "radius_groups_created", "policies_created", "policy_set_id",
-                "identities_renamed"
+                "identities_renamed",
+                # A re-run's shape is "0 created, N already correct"; without
+                # these the audit could only see the zero and read it as a
+                # phase that did nothing.
+                "policies_updated", "policies_unchanged",
+                "renames_already_done",
             ],
             api_calls_per_unit="dynamic",
         ),
