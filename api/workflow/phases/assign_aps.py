@@ -139,7 +139,11 @@ class AssignAPsPhase(PhaseExecutor):
         by_serial = {}
         by_name = {}
         for ap in all_venue_aps:
-            serial = ap.get('serialNumber', '')
+            # R1 spells this both ways depending on the endpoint, and the
+            # codebase reads both. Matching only 'serialNumber' meant a caller
+            # that had resolved a serial from 'serial' matched NOTHING here --
+            # the phase then reported success having moved zero APs.
+            serial = ap.get('serialNumber') or ap.get('serial') or ''
             name = ap.get('name', '')
             if serial:
                 by_serial[serial] = ap
