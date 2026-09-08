@@ -43,7 +43,18 @@ class ActivateNetworkDirectPhase(PhaseExecutor):
         ap_group_id: str
         ap_group_name: str = ""
         ssid_name: str = ""
-        default_vlan: str = "1"
+        # AP-Group VLAN OVERRIDE, empty means inherit.
+        #
+        # R1 treats vlanId on an AP Group activation as a per-group OVERRIDE
+        # and shows it as "vlan-N (custom)", so sending one unconditionally
+        # pinned every activation to a custom VLAN instead of the network's
+        # own. With DPSK the per-resident VLAN rides on each passphrase, and a
+        # VLAN pinned here overrides those.
+        #
+        # Deliberately NOT default_vlan: that one is the NETWORK's VLAN (and
+        # the LAN port VLAN) and must stay set. Same split as the Cloudpath
+        # import's activate_ap_group phase.
+        ap_group_vlan: str = ""
         already_activated: bool = False
         is_venue_wide: bool = False
 
@@ -81,7 +92,13 @@ class ActivateNetworkDirectPhase(PhaseExecutor):
             )
 
         use_activity_tracker = self.context.activity_tracker is not None
-        vlan_id = int(inputs.default_vlan) if inputs.default_vlan else None
+        # None => omit vlanId => the AP Group inherits the network's VLAN,
+        # which is what doing this by hand in R1 produces.
+        vlan_id = (
+            int(inputs.ap_group_vlan)
+            if str(inputs.ap_group_vlan).strip()
+            else None
+        )
 
         try:
             result = await self.r1_client.venues.activate_network_direct(

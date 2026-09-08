@@ -33,6 +33,10 @@ PerUnitPSKWorkflow = Workflow(
     default_options={
         "name_conflict_resolution": "keep",
         "configure_lan_ports": False,
+        # AP-Group VLAN OVERRIDE. Empty = inherit the network's VLAN, which is
+        # what doing this by hand in R1 produces. Deliberately separate from
+        # default_vlan, which is the network's own VLAN and the LAN port VLAN.
+        "ap_group_vlan": "",
     },
     phases=[
         # Phase 0: Validate & Plan (global)
@@ -108,7 +112,7 @@ PerUnitPSKWorkflow = Workflow(
             per_unit=True,
             critical=True,
             inputs=["unit_id", "unit_number", "network_id", "ap_group_id",
-                    "ap_group_name", "ssid_name", "default_vlan",
+                    "ap_group_name", "ssid_name", "ap_group_vlan",
                     "already_activated", "is_venue_wide"],
             outputs=["activated", "already_active"],
             api_calls_per_unit=1,
