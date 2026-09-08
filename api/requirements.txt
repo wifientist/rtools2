@@ -29,7 +29,10 @@ python-dotenv==1.0.1
 PyYAML==6.0.1
 python-jose==3.4.0
 python-multipart==0.0.20
-redis==5.0.1
+# 5.0.8 minimum: earlier BlockingConnectionPool holds its condition lock
+# while connecting, so any failure or cancellation there self-deadlocks and
+# permanently leaks the connection. Do not downgrade. See redis_client.py.
+redis==5.0.8
 requests==2.32.3
 rsa==4.9
 six==1.17.0
