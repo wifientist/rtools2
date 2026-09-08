@@ -153,9 +153,9 @@ class RedisStateManagerV2:
 
         # Find all related keys
         keys = []
-        async for key in self.redis.scan_iter(match=f"{PREFIX}:jobs:{job_id}*"):
+        for key in await self._scan_keys(f"{PREFIX}:jobs:{job_id}*"):
             keys.append(key)
-        async for key in self.redis.scan_iter(match=f"{PREFIX}:units:{job_id}*"):
+        for key in await self._scan_keys(f"{PREFIX}:units:{job_id}*"):
             keys.append(key)
 
         if keys:
@@ -259,14 +259,36 @@ class RedisStateManagerV2:
             await pipe.execute()
         return True
 
+    async def _scan_keys(self, match: str, count: int = 500) -> List[str]:
+        """
+        Collect keys with an explicit SCAN cursor loop, 500 at a time.
+
+        The point is the count. scan_iter() defaults to whatever the server
+        does -- 10 -- so scanning the unit keys of a 600-unit job costs ~60
+        round trips, and get_job() -> get_all_units() runs on every status
+        poll and every SSE reconnect. At 500 it is one or two.
+
+        (This started life as a suspected fix for the connection leak, on the
+        theory that an abandoned scan_iter generator stranded its connection.
+        That was wrong: the leak was redis-py's BlockingConnectionPool
+        deadlocking on its own condition lock, fixed by the 5.0.8 pin. Scans
+        made it worse only because more commands means more chances to be
+        cancelled inside the bad window.)
+        """
+        keys: List[str] = []
+        cursor = 0
+        while True:
+            cursor, batch = await self.redis.scan(
+                cursor=cursor, match=match, count=count
+            )
+            keys.extend(batch)
+            if cursor == 0:
+                return keys
+
     async def get_all_units(self, job_id: str) -> Dict[str, UnitMapping]:
         """Get all units for a job using batch MGET for performance."""
         # Collect all unit keys via SCAN
-        keys = []
-        async for key in self.redis.scan_iter(
-            match=f"{PREFIX}:jobs:{job_id}:units:*"
-        ):
-            keys.append(key)
+        keys = await self._scan_keys(f"{PREFIX}:jobs:{job_id}:units:*")
 
         if not keys:
             return {}
@@ -534,7 +556,7 @@ class RedisStateManagerV2:
         reaped: List[str] = []
         try:
             keys = [
-                k async for k in self.redis.scan_iter(match=f"{PREFIX}:jobs:*")
+                k for k in await self._scan_keys(f"{PREFIX}:jobs:*")
                 if ":units:" not in k
                 and ":activities" not in k
                 and ":heartbeat" not in k
@@ -619,7 +641,7 @@ class RedisStateManagerV2:
 
         # 3. Clean by_venue sets — remove stale job IDs, delete empty sets
         by_venue_keys = []
-        async for key in self.redis.scan_iter(match=f"{PREFIX}:jobs:by_venue:*"):
+        for key in await self._scan_keys(f"{PREFIX}:jobs:by_venue:*"):
             by_venue_keys.append(key)
 
         for venue_key in by_venue_keys:

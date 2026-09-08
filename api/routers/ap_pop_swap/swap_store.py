@@ -106,7 +106,7 @@ class SwapStore:
         """List all swap records across all companies (super admin)."""
         # Gather from all company sets — scan for company keys
         all_ids = set()
-        async for key in self.redis.scan_iter(match=f"{COMPANY_SET_PREFIX}*"):
+        async for key in self.redis.scan_iter(match=f"{COMPANY_SET_PREFIX}*", count=500):
             ids = await self.redis.smembers(key)
             all_ids.update(ids)
         return await self._get_many(all_ids)

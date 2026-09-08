@@ -257,7 +257,7 @@ class ZoneCacheManager:
         pattern = f"{self.cache_prefix}:*"
         count = 0
 
-        async for key in self.redis.scan_iter(match=pattern):
+        async for key in self.redis.scan_iter(match=pattern, count=500):
             await self.redis.delete(key)
             count += 1
 
@@ -276,7 +276,7 @@ class ZoneCacheManager:
         # Count cached zones
         pattern = f"{self.cache_prefix}:zone:*"
         cached_count = 0
-        async for _ in self.redis.scan_iter(match=pattern):
+        async for _ in self.redis.scan_iter(match=pattern, count=500):
             cached_count += 1
 
         return {

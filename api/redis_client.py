@@ -13,16 +13,68 @@ Splitting them means a drained workflow pool degrades imports and leaves
 people able to log in. The request pool is also deliberately small and
 fast-failing: the middleware already fails open on error, so a short timeout
 turns "every page hangs for 20s" into "rate limiting is skipped for a moment".
+
+REQUIRES redis-py >= 5.0.8.
+
+Up to 5.0.7, BlockingConnectionPool.get_connection() held self._condition
+across the call that opens the socket:
+
+    async with self._condition:
+        await self._condition.wait_for(self.can_get_connection)
+        return await super().get_connection(...)   # <- connects in here
+
+and the base class's failure path is "except BaseException: await
+self.release(connection)" -- where release() is "async with self._condition".
+asyncio.Lock is not reentrant, so ANY failure while connecting (a cancelled
+task, a dropped socket, a bad password) deadlocked against the lock the same
+task already held. The pool timeout then fired and raised the misleading
+ConnectionError("No connection available."), and the connection stayed in
+_in_use_connections forever.
+
+That is a permanent, per-incident leak with no recovery short of a restart,
+and it hides the real error behind an exhaustion message. Measured on 5.0.1:
+450 cancelled commands leaked 24 of 25 connections; cancelling scans drained
+the pool outright. On 5.0.8 the same runs return every connection, because
+the connect happens outside the lock. The version is checked below so this
+cannot regress silently via a stale image or an unpinned rebuild.
 """
 import logging
 import os
-import redis.asyncio as redis
+import re
+import redis as redis_pkg           # the package, for __version__
+import redis.asyncio as redis       # the async client, used everywhere below
 from redis.asyncio.connection import ConnectionPool, BlockingConnectionPool
 from redis.asyncio.retry import Retry
 from redis.backoff import ExponentialBackoff
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# See the module docstring: below 5.0.8 the pool leaks a connection on every
+# failed or cancelled connect and reports it as "No connection available".
+# Fail at import rather than let a stale image quietly reintroduce it.
+MIN_REDIS_VERSION = (5, 0, 8)
+
+
+def _parse_version(raw: str) -> tuple:
+    """(5, 0, 8) from "5.0.8"; tolerant of "5.1.0b1" and short strings."""
+    parts = []
+    for chunk in raw.split(".")[:3]:
+        digits = re.match(r"\d+", chunk)
+        if not digits:
+            break
+        parts.append(int(digits.group()))
+    return tuple(parts)
+
+
+_installed = _parse_version(redis_pkg.__version__)
+if _installed and _installed < MIN_REDIS_VERSION:
+    raise RuntimeError(
+        f"redis-py {redis_pkg.__version__} is installed, but "
+        f"{'.'.join(map(str, MIN_REDIS_VERSION))}+ is required: earlier "
+        "BlockingConnectionPool versions self-deadlock while connecting and "
+        "permanently leak the connection. Rebuild against api/requirements.txt."
+    )
 
 # name -> (env var for size, default size, env var for timeout, default timeout)
 POOL_PROFILES = {
