@@ -45,11 +45,21 @@ SWITCH_FIELDS = [
     # Management addressing, for consistency checks
     "defaultGateway", "dns", "subnetMask", "staticOrDynamic",
     "switchType", "veCount", "tags",
+    # Physical placement, for a floorplan-based view. Verified accepted by the
+    # query; on a tenant with no floorplans drawn they come back as
+    # floorplanId "" and 0.0/0.0, which callers must read as UNPLACED rather
+    # than as a position at the origin.
+    "floorplanId", "xPercent", "yPercent",
 ]
 
 PORT_FIELDS = [
     "id", "switchMac", "switchName", "switchSerial", "portIdentifier",
     "portIdentifierFormatted", "name",
+    # Per-port MAC and model. Both measured 100% populated on a 112-switch
+    # venue; `portMac` is what lets an LLDP portId name a specific far PORT
+    # rather than just the far chassis. (`authDefaultVlan` was probed alongside
+    # them and is 0% populated, so it is deliberately absent.)
+    "portMac", "switchModel",
     "status", "adminStatus", "portSpeed", "portSpeedCapacity", "mediaType",
     "broadcastIn", "broadcastOut", "multicastIn", "multicastOut", "rx", "tx",
     "crcErr", "inErr", "outErr", "inDiscard", "signalIn", "signalOut",

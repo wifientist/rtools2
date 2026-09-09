@@ -9,7 +9,7 @@ apart). Checks that only need current state work off a single snapshot.
 import re
 from collections import Counter, defaultdict
 
-from .framework import Finding, check, _as_int, _is_up, _norm_mac
+from .framework import Finding, check, is_stack_link, mac_display, _as_int, _is_up, _norm_mac
 
 CAT_LOOP = "loop-evidence"
 CAT_PHY = "physical-layer"
@@ -164,7 +164,7 @@ def mac_flapping(ctx):
         if not dup_in and moves < 2:
             continue
         yield Finding(
-            "mac-flapping", f"MAC {mac} learned on multiple ports",
+            "mac-flapping", f"MAC {mac_display(mac)} learned on multiple ports",
             "critical" if dup_in else "warning", CAT_LOOP, mac,
             (f"Seen on more than one non-uplink port in {dup_in} of {len(hist)} snapshots"
              if dup_in else f"Changed port {moves} times across {len(hist)} snapshots") +
@@ -558,19 +558,30 @@ def unblocked_redundant_path(ctx):
     """
     known = set(ctx.switch_by_mac) - {""}
     pairs = defaultdict(list)
+    # Ports each switch has facing the other, kept PER SIDE. Both ends of one
+    # cable appear here -- A:1/3/1 and B:1/2/3 -- so counting distinct port
+    # identifiers across the pair called every ordinary link with mismatched
+    # port numbers a parallel path, and raised a loop warning about it. A real
+    # parallel path means ONE switch has TWO ports facing the same neighbour.
+    per_side = defaultdict(lambda: defaultdict(set))
     for p in ctx.up_ports:
         nb, me = _norm_mac(p.get("neighborMacAddress")), _norm_mac(p.get("switchMac"))
         if nb and me and nb in known and nb != me:
-            pairs[tuple(sorted((me, nb)))].append(p)
+            key = tuple(sorted((me, nb)))
+            pairs[key].append(p)
+            per_side[key][me].add(p.get("portIdentifier"))
 
     unconfirmed, confirmed, stp_reported, total_ports = [], [], 0, 0
     for (a, b), ports in pairs.items():
-        idents = {p.get("portIdentifier") for p in ports}
-        if len(idents) < 2:
+        idents = {ident for side in per_side[(a, b)].values() for ident in side}
+        if max((len(side) for side in per_side[(a, b)].values()), default=0) < 2:
             continue
         if any(_as_int(p.get("lagId")) for p in ports):
             continue
-        if any(str(p.get("usedInFormingStack")).lower() == "true" for p in ports):
+        # `usedInFormingStack` is a capability flag, not a state -- gating on it
+        # skipped 178 live switch-to-switch links on a 195-switch estate,
+        # including a distribution uplink to the core. See analyze.is_stack_link.
+        if any(is_stack_link(p) for p in ports):
             continue
         blocking = any(str(p.get("spanningTreeStatus") or "").lower()
                        in ("blocking", "discarding") for p in ports)

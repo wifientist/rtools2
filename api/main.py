@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 from database import engine, SessionLocal
 import models
 from scheduler.service import init_scheduler
-from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, diagrams, per_unit_ssid, ap_port_config, ap_rename, bulk_wlan
+from routers import status, users, auth, protected, company, controllers, opt43, admin_companies, token_management, migrate, per_unit_ssid, ap_port_config, ap_rename, bulk_wlan
 from routers.sz.sz_router import router as sz_router
 from routers.sz.audit_router import router as sz_audit_router
 from routers.cloudpath.cloudpath_router import router as cloudpath_router
@@ -39,6 +39,7 @@ from routers.data_studio_export import router as data_studio_export_router
 from routers.dfs_blacklist import router as dfs_blacklist_router
 from routers.maps import router as maps_router
 from routers.pisr import router as pisr_router
+from routers.topology import router as topology_router
 from middleware.rate_limiter import RateLimitMiddleware
 # Updated imports for R1 routers
 from routers.r1.r1_router import dynamic_router  #, router_a, router_b, # Legacy routers commented out for backward compatibility
@@ -181,7 +182,6 @@ app.include_router(sz_audit_router, tags=["SmartZone Audit"])
 app.include_router(migrate.router, tags=["Migration"])
 
 # Diagrams Router - for network diagram generation
-app.include_router(diagrams.router, tags=["Diagrams"])
 
 # Per-Unit SSID Router - for automating per-unit SSID configuration
 app.include_router(per_unit_ssid.router, tags=["Per-Unit SSID"])
@@ -242,6 +242,7 @@ app.include_router(wiredwiz_router, tags=["WiredWiz"])
 
 # PISR — read-only Property Install Status Report, one venue at a time
 app.include_router(pisr_router, tags=["PISR"])
+app.include_router(topology_router, tags=["Topology"])
 
 # Data Studio Export — automated R1 Data Studio CSV exports
 app.include_router(data_studio_export_router, tags=["Data Studio Export"])

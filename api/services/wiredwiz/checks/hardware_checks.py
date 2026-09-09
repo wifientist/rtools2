@@ -16,7 +16,7 @@ import json
 import re
 from collections import defaultdict
 
-from .framework import Finding, check, _as_int, _is_up, _norm_mac
+from .framework import Finding, check, is_stack_link, _as_int, _is_up, _norm_mac
 
 CAT_HW = "hardware"
 CAT_POE = "poe"
@@ -425,8 +425,10 @@ def no_free_ports(ctx):
         ports = ctx.ports_by_switch.get(_norm_mac(s.get("switchMac") or s.get("id")), [])
         if not ports:
             continue
-        free = [p for p in ports if not _is_up(p)
-                and not str(p.get("usedInFormingStack")).lower() == "true"]
+        # A stacking-CAPABLE port that is not actually stacking is a spare port
+        # you can plug something into. Excluding every flagged port understated
+        # the count and made this warn on switches that had room.
+        free = [p for p in ports if not _is_up(p) and not is_stack_link(p)]
         if len(free) > 2:
             continue
         yield Finding(

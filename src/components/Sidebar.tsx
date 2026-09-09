@@ -61,7 +61,6 @@ const Sidebar = () => {
         { to: "/pisr", icon: <ClipboardCheck size={20} />, label: "PISR", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/sz-audit", icon: <ClipboardList size={20} />, label: "SZ Audit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/firmware-matrix", icon: <Table2 size={20} />, label: "Firmware Matrix", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/diagrams", icon: <Network size={20} />, label: "Network Diagrams", requiresAuth: true, requiresAlpha: true, isExternal: true },
       ],
     },
     {
@@ -93,6 +92,7 @@ const Sidebar = () => {
         { to: "/dfs-blacklist", icon: <Radio size={20} />, label: "DFS Blacklist", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/data-studio-export", icon: <Download size={20} />, label: "Data Studio Export", requiresAuth: true, rolesAllowed: ["super"], requiresAlpha: true },
         { to: "/wiredwiz", icon: <Cable size={20} />, label: "WiredWiz", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
+        { to: "/topology", icon: <Network size={20} />, label: "Topology", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/option43", icon: <Camera size={20} />, label: "Option 43 Calc", requiresAuth: false },
       ],
     },
