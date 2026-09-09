@@ -7,6 +7,9 @@ import VenuePicker from "../components/VenuePicker";
 import type { VenueRow } from "../components/VenuePicker";
 import TopologyShell from "../components/topology/TopologyShell";
 import SnapshotManager from "../components/topology/panels/SnapshotManager";
+import CoveragePanel, {
+  CoverageBanner,
+} from "../components/topology/panels/CoveragePanel";
 import type { StoredLayout } from "../components/topology/state/store";
 import type {
   Device,
@@ -76,6 +79,7 @@ export default function Topology() {
   // Which stored snapshot is on screen. null = the newest.
   const [activeSnapshot, setActiveSnapshot] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
+  const [coverageOpen, setCoverageOpen] = useState(false);
   // How long runs are kept. Stated in the UI rather than left to assumption:
   // these snapshots are the only change history this tool has.
   const [retention, setRetention] = useState<{
@@ -579,6 +583,11 @@ export default function Topology() {
           {meta && (
             <span className="text-xs text-gray-500">{meta.elapsedSeconds}s</span>
           )}
+          <CoveragePanel
+            meta={meta}
+            open={coverageOpen}
+            setOpen={setCoverageOpen}
+          />
           <SnapshotManager
             snapshots={snapshots}
             ttlDays={retention.ttlDays}
@@ -619,14 +628,22 @@ export default function Topology() {
           onSetVerdict={setVerdict}
           onClearVerdict={clearVerdict}
           banner={
-            correlation?.unattachedAps ? (
-              <div className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
-                {correlation.unattachedAps} online access point
-                {correlation.unattachedAps === 1 ? " is" : "s are"} up but
-                nothing reports what feeds them — they are almost certainly
-                cabled to switches RUCKUS ONE does not manage.
-              </div>
-            ) : null
+            <>
+              {/* Degraded input is stated before anything about the network
+                  itself: whether to trust the map comes first. */}
+              <CoverageBanner
+                meta={meta}
+                onOpen={() => setCoverageOpen(true)}
+              />
+              {correlation?.unattachedAps ? (
+                <div className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+                  {correlation.unattachedAps} online access point
+                  {correlation.unattachedAps === 1 ? " is" : "s are"} up but
+                  nothing reports what feeds them — they are almost certainly
+                  cabled to switches RUCKUS ONE does not manage.
+                </div>
+              ) : null}
+            </>
           }
         />
       ) : (

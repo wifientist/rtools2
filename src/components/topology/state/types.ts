@@ -177,7 +177,13 @@ export type SnapshotMeta = {
     error?: string;
     note?: string;
   }[];
-  completeness: Record<string, unknown>;
+  completeness: {
+    queries?: number;
+    incomplete?: number;
+    expected?: number;
+    collected?: number;
+    shortfalls?: unknown[];
+  };
   warnings: string[];
   elapsedSeconds: number;
   deep: boolean;
@@ -193,6 +199,9 @@ export type SnapshotMeta = {
     elapsedSeconds: number;
     sourcesRun: { id: string; claims: number }[];
     sourcesFailed: { id: string; error: string }[];
+    sourcesSkipped?: { id: string; reason?: string }[];
+    /** A name that resolved to more than one device, so it resolved to none. */
+    aliasCollisions?: { kind: string; key: string; held: string; rejected: string }[];
   };
 };
 
