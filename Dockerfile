@@ -30,8 +30,14 @@ COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 
 # Health check
+#
+# 127.0.0.1, not localhost. In this image localhost resolves to ::1 first and
+# nginx.conf says `listen 80;` -- IPv4 only -- so every check got a connection
+# refused and the container reported unhealthy for its entire life while serving
+# the site perfectly well. Measured before the fix: FailingStreak 22 on a
+# five-minute-old container, and never a single pass on any deploy.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
 
