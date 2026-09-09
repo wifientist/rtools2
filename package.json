@@ -8,7 +8,7 @@
     "preview": "vite preview",
     "fetch-r1-spec": "./scripts/fetch-r1-openapi.sh",
     "type-check": "tsc --noEmit",
-    "test:topology": "tsx src/components/topology/state/overlays.test.ts && tsx src/components/topology/state/strips.test.ts"
+    "test:topology": "tsx src/components/topology/state/overlays.test.ts && tsx src/components/topology/state/strips.test.ts && tsx src/components/topology/state/coverage.test.ts"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
