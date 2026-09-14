@@ -6,6 +6,7 @@ import { DEVICE_ACCENT, STATUS_COLOR } from "../colors";
 import { useTopology } from "../state/store";
 import type { CanvasNode } from "../state/collapse";
 import PortStrip, { stripSize } from "./PortStrip";
+import { identsOf } from "./portLayout";
 import { ANCHORS_PER_SIDE } from "../state/anchors";
 import type { Port } from "../state/types";
 
@@ -27,11 +28,16 @@ export const GROUP_HEIGHT = 60;
  * How much room an open port strip needs.
  *
  * The layout has to know this BEFORE the ports arrive, or an expanded switch
- * lays out at collapsed size and overlaps its neighbours. `device.counts.ports`
- * is already in the snapshot, so the size is known without the fetch.
+ * lays out at collapsed size and overlaps its neighbours. `device.portIds` is
+ * already in the snapshot, and it carries every port ident — enough to lay out
+ * the faceplate exactly without the fetch. The count is only a fallback for a
+ * device that somehow has one without the other.
  */
-export function expandedSize(portCount: number) {
-  const strip = stripSize(portCount);
+export function expandedSize(idents: string[], fallbackCount = 0) {
+  const known = idents.length
+    ? idents
+    : Array.from({ length: fallbackCount }, (_, i) => `1/1/${i + 1}`);
+  const strip = stripSize(known);
   return {
     w: Math.max(NODE_WIDTH, strip.width),
     h: NODE_HEIGHT + strip.height,
@@ -132,7 +138,7 @@ function DeviceNodeInner({ id, data }: NodeProps) {
       }`}
       style={{
         width: portsOpen
-          ? expandedSize(device.counts?.ports ?? 0).w
+          ? expandedSize(identsOf(device.portIds), device.counts?.ports ?? 0).w
           : NODE_WIDTH,
         minHeight: NODE_HEIGHT,
       }}

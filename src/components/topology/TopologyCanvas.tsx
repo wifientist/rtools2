@@ -28,6 +28,7 @@ import { DEVICE_ACCENT } from "./colors";
 import { buildCanvasGraph } from "./state/collapse";
 import { findCycles } from "./state/overlays";
 import { stripOffsets, withStripOffsets } from "./state/strips";
+import { identsOf } from "./nodes/portLayout";
 import type { Box } from "./state/strips";
 import { OVERLAY_COLOR } from "./colors";
 import { assignAnchors } from "./state/anchors";
@@ -39,15 +40,22 @@ import { filterLinks, useTopology } from "./state/store";
  *
  * An open port strip makes a switch several times wider and taller, and the
  * layout must know that BEFORE it runs or the expanded node lands on top of its
- * neighbours. Port COUNT is already in the snapshot, so the size is knowable
- * without waiting for the port fetch.
+ * neighbours. Every port ident is already in the snapshot (`device.portIds`), so
+ * the size is knowable without waiting for the port fetch.
  */
 const sizeOf = (
-  node: { kind: string; device?: { counts?: Record<string, number> } },
+  node: {
+    kind: string;
+    device?: { counts?: Record<string, number>; portIds?: string[] };
+  },
   portsOpen: boolean,
 ) => {
   if (node.kind !== "device") return { w: GROUP_WIDTH, h: GROUP_HEIGHT };
-  if (portsOpen) return expandedSize(node.device?.counts?.ports ?? 0);
+  if (portsOpen)
+    return expandedSize(
+      identsOf(node.device?.portIds),
+      node.device?.counts?.ports ?? 0,
+    );
   return { w: NODE_WIDTH, h: NODE_HEIGHT };
 };
 
