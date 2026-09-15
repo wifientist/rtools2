@@ -29,6 +29,7 @@ from dependencies import get_db, get_current_user
 from decorators import require_role
 from services.s3_service import get_s3_service, S3Service
 from utils.email import send_report_notification
+from utils.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +344,7 @@ def log_fileshare_action(
         subfolder_slug=subfolder_slug,
         file_size_bytes=file_size_bytes,
         bulk_file_ids=bulk_file_ids,
-        ip_address=request.client.host if request and request.client else None,
+        ip_address=client_ip(request) if request else None,
         user_agent=request.headers.get("user-agent", "")[:500] if request else None
     )
     db.add(log_entry)
@@ -1432,7 +1433,7 @@ def accept_terms(
         action='terms_accepted',
         filename='FILESHARE_TERMS_OF_SERVICE',
         folder_slug='_system',
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
         user_agent=request.headers.get('user-agent', '')[:500]
     )
     db.add(log)
@@ -1485,7 +1486,7 @@ def report_file(
         folder_slug=folder.slug,
         subfolder_slug=shared_file.subfolder.subfolder_path if shared_file.subfolder else None,
         file_size_bytes=shared_file.size_bytes,
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
         user_agent=request.headers.get('user-agent', '')[:500]
     )
     db.add(log)

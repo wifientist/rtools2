@@ -5,7 +5,7 @@ import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 import type { JobResult } from "@/components/JobMonitorModal";
-import { apiFetch } from "@/utils/api";
+import { apiFetch, responseErrorMessage } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -881,10 +881,7 @@ function CloudpathImport() {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        const errorMsg = error.error || error.detail ||
-          (error.details ? `Validation error: ${JSON.stringify(error.details)}` : "Plan creation failed");
-        throw new Error(errorMsg);
+        throw new Error(await responseErrorMessage(response, "Plan creation failed"));
       }
 
       const result = await response.json();

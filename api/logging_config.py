@@ -26,7 +26,10 @@ def get_logging_config(log_level: str = "INFO") -> Dict[str, Any]:
         "disable_existing_loggers": False,
         "formatters": {
             "default": {
-                "format": "%(levelname)s:     %(name)s - %(message)s",
+                # The datefmt was always here; the format just never used it.
+                # Without a timestamp, lining a backend log up against nginx's
+                # (which has one) meant counting reaper ticks.
+                "format": "%(asctime)s %(levelname)s:     %(name)s - %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "detailed": {

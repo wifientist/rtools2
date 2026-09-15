@@ -1,6 +1,9 @@
 import logging
-from fastapi import Request, HTTPException
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from utils.client_ip import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return self._redis
 
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host
+        # Not request.client.host: behind nginx that is nginx, for everyone,
+        # which made every limit here global. See utils/client_ip.py.
+        ip = client_ip(request)
         endpoint = request.url.path
 
         # Skip rate limiting for long-lived / high-frequency endpoints
@@ -64,7 +69,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             window_seconds = 60
 
         # Build a Redis key: ratelimit:{ip}:{endpoint}
-        key = f"ratelimit:{client_ip}:{endpoint}"
+        key = f"ratelimit:{ip}:{endpoint}"
 
         try:
             r = await self._get_redis()
@@ -78,14 +83,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if current_count > max_requests:
                 # Read remaining TTL for the Retry-After header
                 ttl = await r.ttl(key)
-                logger.warning(f"Rate limit exceeded for {client_ip} on {endpoint} ({current_count}/{max_requests})")
-                raise HTTPException(
+                if ttl is None or ttl < 0:
+                    # INCR landed but the EXPIRE after it did not, so this
+                    # key would never expire and the client would stay
+                    # locked out for good. Re-arm it.
+                    await r.expire(key, window_seconds)
+                    ttl = window_seconds
+                logger.warning(f"Rate limit exceeded for {ip} on {endpoint} ({current_count}/{max_requests})")
+                # RETURNED, not raised. This is middleware, which runs
+                # outside the app's HTTPException handler, so a raised 429
+                # fell through to the catch-all Exception handler and reached
+                # the user as a 500 "Internal server error" -- no mention of
+                # a limit, and no Retry-After.
+                return JSONResponse(
                     status_code=429,
-                    detail=f"Rate limit exceeded. Try again in {ttl} seconds.",
+                    content={"error": f"Rate limit exceeded. Try again in {ttl} seconds."},
                     headers={"Retry-After": str(ttl)},
                 )
-        except HTTPException:
-            raise
         except Exception as e:
             # If Redis is down, fail open — don't block requests
             logger.error(f"Rate limiter Redis error (failing open): {e}")
