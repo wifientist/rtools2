@@ -4,6 +4,7 @@ from models.user import User
 from fastapi import Request
 from datetime import datetime
 from typing import Optional, Dict, Any
+from utils.client_ip import client_ip
 
 
 def log_audit_event(
@@ -29,7 +30,8 @@ def log_audit_event(
     user_agent = None
 
     if request:
-        ip_address = request.client.host if request.client else None
+        # The originating client, not the proxy -- see utils/client_ip.py.
+        ip_address = client_ip(request)
         user_agent = request.headers.get("user-agent")
 
     audit_log = AuditLog(
