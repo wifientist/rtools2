@@ -467,14 +467,12 @@ async def get_venue_inventory(
 
     groups = []
     try:
-        groups_response = await r1_client.venues.query_ap_groups(
-            tenant_id=effective_tenant_id,
-            venue_id=venue_id,
-            fields=["id", "name", "venueId"],
+        raw_groups = await r1_client.venues.list_ap_groups_in_venue(
+            effective_tenant_id, venue_id
         )
         groups = [
             {"id": g.get("id"), "name": g.get("name")}
-            for g in (groups_response.get("data", []) or [])
+            for g in raw_groups
             if g.get("name")
         ]
     except Exception as e:

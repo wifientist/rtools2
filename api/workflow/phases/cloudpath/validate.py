@@ -809,13 +809,15 @@ class ValidateCloudpathPhase(PhaseExecutor):
         if per_unit_ssid:
             await self.emit("Checking existing AP Groups...")
             try:
-                ap_groups_response = await self.r1_client.venues.query_ap_groups(
-                    tenant_id=self.tenant_id,
-                    venue_id=self.venue_id,
-                    fields=['id', 'name', 'venueId'],
+                # Paged: an unpaged query returns R1's default page, so a
+                # venue with more groups than that silently looked like it
+                # had none of the later ones -- and we created duplicates.
+                ap_groups = await self.r1_client.venues.list_ap_groups_in_venue(
+                    self.tenant_id, self.venue_id
                 )
-                for ap_group in ap_groups_response.get('data', []):
-                    existing_ap_groups[ap_group.get('name', '')] = ap_group.get('id', '')
+                existing_ap_groups.update(
+                    self.r1_client.venues.index_ap_groups_by_name(ap_groups)
+                )
                 await self.emit(f"Found {len(existing_ap_groups)} existing AP Groups")
             except Exception as e:
                 logger.warning(f"Error checking AP groups: {e}")
