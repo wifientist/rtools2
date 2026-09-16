@@ -2,9 +2,10 @@ import logging
 import os
 import json
 import requests
+import threading
 import time
 import asyncio
-from r1api.token_cache import get_cached_token, store_token
+from r1api.token_cache import get_cached_token, store_token, invalidate_token
 from r1api.services.msp import MspService
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,12 @@ class R1Client:
         )
         self.session.mount("https://", _adapter)
         self.session.mount("http://", _adapter)
+
+        # Serialises token refresh. The hot paths now run in threads, so a
+        # burst of 401s would otherwise re-authenticate once per thread.
+        self._auth_lock = threading.Lock()
+        self.auth_failed = False
+        self.auth_error = None
 
         if region == 'EU':
             self.host = 'api.eu.ruckus.cloud'
@@ -125,8 +132,34 @@ class R1Client:
         self.token = data.get('access_token') or data.get('token')
         expires_in = data.get('expires_in', 3600)  # default to 1hr if not specified
         store_token(self.tenant_id, self.token, expires_in)
+        # Previously never cleared: a client that failed once stayed flagged
+        # as failed even after a successful re-auth.
+        self.auth_failed = False
+        self.auth_error = None
 
         logger.debug(f"Authentication successful, token expires in {expires_in}s")
+
+    def _refresh_token(self, stale_token) -> bool:
+        """
+        Get a working token after R1 rejected the one we hold.
+
+        Returns True if a token different from the rejected one is now in
+        place. Callers retry once on True.
+
+        Three ways to land here at once -- many threads on one client, or
+        several clients sharing the cached token -- so the lock plus the two
+        early exits mean one re-authentication serves all of them.
+        """
+        with self._auth_lock:
+            if self.token and self.token != stale_token:
+                return True                      # another thread refreshed
+            cached = get_cached_token(self.tenant_id)
+            if cached and cached != stale_token:
+                self.token = cached              # another client refreshed
+                return True
+            invalidate_token(self.tenant_id)     # stop handing out the dead one
+            self._authenticate()
+            return bool(self.token) and self.token != stale_token
 
     def _request(self, method, path, payload=None, params=None, override_tenant_id=None):
         """General request wrapper."""
@@ -147,25 +180,45 @@ class R1Client:
             if params:
                 logger.info(f">>> PARAMS: {params}")
 
-        response = self.session.request(
-            method,
-            url,
-            headers=headers,
-            json=payload,
-            params=params,
-            verify=True
-        )
+        # R1 sessions expire mid-job (RCG-10003 "Please re-login"). Nothing
+        # renewed them: the client took a token at construction and held it,
+        # so an import outliving its token turned every call into a 401 --
+        # which the activity tracker then read as "the work failed" and
+        # failed 17 units for AP assignments R1 had already accepted.
+        for attempt in (1, 2):
+            token_used = self.token
+            headers["Authorization"] = f"Bearer {token_used}"
 
-        if verbose:
-            body = response.text[:3000] if response.text else '(empty)'
-            logger.info(f"<<< {response.status_code} {path}\n{body}")
-        else:
-            logger.debug(f"{method.upper()} {url} --> {response.status_code}")
+            response = self.session.request(
+                method,
+                url,
+                headers=headers,
+                json=payload,
+                params=params,
+                verify=True
+            )
 
-        if not response.ok:
-            logger.warning(f"Request error: {response.status_code} - {response.text[:500]}")
+            if verbose:
+                body = response.text[:3000] if response.text else '(empty)'
+                logger.info(f"<<< {response.status_code} {path}\n{body}")
+            else:
+                logger.debug(f"{method.upper()} {url} --> {response.status_code}")
 
-        return response
+            if (
+                response.status_code == 401
+                and attempt == 1
+                and self._refresh_token(token_used)
+            ):
+                logger.info(
+                    f"R1 session expired on {method.upper()} {path}; "
+                    f"re-authenticated, retrying once"
+                )
+                continue
+
+            if not response.ok:
+                logger.warning(f"Request error: {response.status_code} - {response.text[:500]}")
+
+            return response
 
     # Basic HTTP verbs
     def get(self, path, params=None, override_tenant_id=None):
