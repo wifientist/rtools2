@@ -14,6 +14,8 @@ For PER_UNIT mode (few passphrases per unit):
 """
 
 import logging
+import asyncio
+import time
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
@@ -115,6 +117,45 @@ class CreatePassphrasesPhase(PhaseExecutor):
             f"Creating {len(passphrases)} passphrases in pool {pool_id} "
             f"(max {max_concurrent} concurrent)"
         )
+
+        # Identity lookups, cached for this run.
+        #
+        # Every GENERAL-010 ("identity already exists") used to re-page the
+        # entire identity group. On a property whose identities all exist
+        # that is one ~24-request sweep PER passphrase: ~1,400 requests
+        # re-reading a list that is not changing. And because the R1 client is
+        # synchronous, each of those blocks the event loop -- long enough that
+        # Redis connects for /jobs/{id}/status hit their 10s timeout and the
+        # progress UI started 500ing while the import itself was fine.
+        #
+        # One sweep now serves every recovery. The lock collapses the ten
+        # concurrent failures a wave produces into a single read, and the age
+        # check still lets an identity created mid-run be picked up.
+        identity_cache: Dict[str, str] = {}
+        identity_cache_at: float = 0.0
+        identity_lock = asyncio.Lock()
+
+        async def identities_by_name(max_age: Optional[float] = None) -> Dict[str, str]:
+            """
+            name -> identity id for the group.
+
+            Cached. Re-read only if never loaded, or older than max_age
+            seconds when the caller says it needs current data.
+            """
+            nonlocal identity_cache, identity_cache_at
+            if not inputs.identity_group_id:
+                return {}
+            async with identity_lock:
+                stale = identity_cache_at == 0.0 or (
+                    max_age is not None
+                    and time.monotonic() - identity_cache_at > max_age
+                )
+                if stale:
+                    identity_cache = await self._identities_by_name(
+                        inputs.identity_group_id
+                    )
+                    identity_cache_at = time.monotonic()
+                return identity_cache
 
         # Define the creation function for parallel_map
         async def create_one(pp: Dict[str, Any]) -> PassphraseResult:
@@ -257,10 +298,14 @@ class CreatePassphrasesPhase(PhaseExecutor):
                     or 'identity with this name already exists' in error_msg.lower()
                 ) and not pp.get('existing_identity_id') and inputs.identity_group_id:
                     try:
-                        by_name = await self._identities_by_name(
-                            inputs.identity_group_id
-                        )
+                        by_name = await identities_by_name()
                         found = by_name.get(username)
+                        if not found:
+                            # Not in the cached view: it may have been created
+                            # after we read it. One refresh, shared by everyone
+                            # queued on the lock rather than one sweep each.
+                            by_name = await identities_by_name(max_age=15.0)
+                            found = by_name.get(username)
                         if found:
                             result = await self.r1_client.dpsk.create_passphrase(
                                 pool_id=pool_id,
@@ -346,7 +391,8 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 f"Resolving {len(missing)} identities R1 did not report at "
                 f"creation time"
             )
-            by_name = await self._identities_by_name(inputs.identity_group_id)
+            # Runs after creation, so it must see the group as it is now.
+            by_name = await identities_by_name(max_age=0.0)
             recovered = 0
             already_correct = 0
             for r in missing:
