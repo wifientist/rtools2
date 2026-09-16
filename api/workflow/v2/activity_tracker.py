@@ -46,6 +46,10 @@ def _ts() -> str:
 # R1 activities are slow (typically 30-90s), so polling faster just wastes API calls.
 POLL_INTERVAL = 10.0
 
+class TransientActivityError(Exception):
+    """Could not read an activity's status -- says nothing about the work."""
+
+
 # Max time to track a single activity before timeout
 # Must be less than PHASE_EXECUTION_TIMEOUT (600s) to allow the phase
 # to handle the timeout result before the phase itself times out.
@@ -202,6 +206,7 @@ class ActivityTracker:
             result = ActivityResult(
                 activity_id=activity_id,
                 success=False,
+                unverified=True,
                 error=f"Activity timed out after {timeout} seconds"
             )
             self._results[activity_id] = result
@@ -227,6 +232,7 @@ class ActivityTracker:
                 results[aid] = ActivityResult(
                     activity_id=aid,
                     success=False,
+                    unverified=True,
                     error=str(result)
                 )
             else:
@@ -345,6 +351,7 @@ class ActivityTracker:
                         await self._handle_completion(
                             aid,
                             success=False,
+                            unverified=True,
                             error=f"Activity expired after {int(age)}s "
                                   f"(R1 never returned a terminal status)"
                         )
@@ -408,7 +415,10 @@ class ActivityTracker:
                         await self._handle_completion(
                             activity_id,
                             success=False,
-                            error=f"Activity polling failed after {MAX_CONSECUTIVE_ERRORS} attempts"
+                            unverified=True,
+                            error=f"Could not read activity status "
+                                  f"({MAX_CONSECUTIVE_ERRORS} consecutive poll "
+                                  f"failures) -- outcome unknown"
                         )
                     return
             else:
@@ -456,58 +466,74 @@ class ActivityTracker:
         to_time = (now + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         from_time = self._from_time or (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        payload = {
-            "fields": ACTIVITY_QUERY_FIELDS,
-            "page": 1,
-            "pageSize": 500,
-            "sortField": "startDatetime",
-            "sortOrder": "DESC",
-            "filters": {
-                "fromTime": from_time,
-                "toTime": to_time,
-            },
-        }
+        # Paged. One page of 500 covers a short run, but the window starts at
+        # job start and never shrinks, so a long one outgrows it -- a run with
+        # totalCount=1500 could only ever see the newest 500, and anything
+        # older was invisible to matching for the rest of the job.
+        page_size = 500
+        max_pages = 20          # 10k activities; far past any real run
+        pending_set = set(activity_ids)
+        result: dict[str, dict] = {}
+        total_count = '?'
+        seen = 0
 
-        loop = asyncio.get_event_loop()
+        for page in range(1, max_pages + 1):
+            payload = {
+                "fields": ACTIVITY_QUERY_FIELDS,
+                "page": page,
+                "pageSize": page_size,
+                "sortField": "startDatetime",
+                "sortOrder": "DESC",
+                "filters": {
+                    "fromTime": from_time,
+                    "toTime": to_time,
+                },
+            }
 
-        def _do_query():
-            if self.r1_client.ec_type == "MSP":
-                return self.r1_client.post(
-                    "/activities/query",
-                    payload=payload,
-                    override_tenant_id=self.tenant_id
+            loop = asyncio.get_event_loop()
+
+            def _do_query(payload=payload):
+                if self.r1_client.ec_type == "MSP":
+                    return self.r1_client.post(
+                        "/activities/query",
+                        payload=payload,
+                        override_tenant_id=self.tenant_id
+                    )
+                else:
+                    return self.r1_client.post(
+                        "/activities/query",
+                        payload=payload
+                    )
+
+            response = await loop.run_in_executor(None, _do_query)
+
+            if not response.ok:
+                raise RuntimeError(
+                    f"POST /activities/query failed: {response.status_code} - "
+                    f"{response.text[:200]}"
                 )
-            else:
-                return self.r1_client.post(
-                    "/activities/query",
-                    payload=payload
-                )
 
-        response = await loop.run_in_executor(None, _do_query)
+            data = response.json()
+            activities = data.get('data', [])
+            total_count = data.get('totalCount', '?')
+            seen += len(activities)
 
-        if not response.ok:
-            raise RuntimeError(
-                f"POST /activities/query failed: {response.status_code} - "
-                f"{response.text[:200]}"
-            )
+            for activity in activities:
+                req_id = activity.get('requestId')
+                if req_id and req_id in pending_set:
+                    result[req_id] = activity
 
-        data = response.json()
-        activities = data.get('data', [])
-        total_count = data.get('totalCount', '?')
+            # Stop as soon as every pending activity is accounted for, or the
+            # window is exhausted.
+            if len(result) >= len(pending_set) or len(activities) < page_size:
+                break
+            if isinstance(total_count, int) and seen >= total_count:
+                break
 
         logger.debug(
-            f"[{_ts()}] Cycle #{cycle_id}: Bulk query returned "
-            f"{len(activities)} activities (totalCount={total_count}, "
-            f"fromTime={from_time})"
+            f"[{_ts()}] Cycle #{cycle_id}: Bulk query read {seen} activities "
+            f"(totalCount={total_count}, fromTime={from_time})"
         )
-
-        # Build lookup dict by requestId, only for activities we're tracking
-        pending_set = set(activity_ids)
-        result = {}
-        for activity in activities:
-            req_id = activity.get('requestId')
-            if req_id and req_id in pending_set:
-                result[req_id] = activity
 
         if result:
             logger.debug(
@@ -547,9 +573,12 @@ class ActivityTracker:
                         self._fetch_activity_sync,
                         activity_id
                     )
+                except TransientActivityError as e:
+                    logger.debug(f"[{_ts()}] Could not read {activity_id[:8]}: {e}")
+                    return activity_id, e
                 except Exception as e:
                     logger.debug(f"[{_ts()}] Failed to fetch {activity_id[:8]}: {e}")
-                    return activity_id, None
+                    return activity_id, e
 
         tasks = [fetch_one(aid) for aid in activity_ids]
         fetch_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -561,10 +590,15 @@ class ActivityTracker:
                 errors += 1
                 continue
             activity_id, data = item
-            if data:
-                results[activity_id] = data
-            else:
+            if isinstance(data, Exception):
+                # Could not read it -- counts toward the breaker.
                 errors += 1
+            elif data:
+                results[activity_id] = data
+            # else: a 404, i.e. "not created yet". Neither a result nor an
+            # error; it simply stays pending for the next cycle. Counting
+            # these as errors meant a burst of freshly-created activities
+            # could trip the breaker on its own.
 
         return results, errors
 
@@ -581,15 +615,25 @@ class ActivityTracker:
             if response.ok:
                 return response.json()
             elif response.status_code == 404:
+                # R1 writes the activity a moment after it answers the 202,
+                # so a 404 here is routine and simply means "not yet". It is
+                # NOT a transport failure and must not count toward the
+                # circuit breaker.
                 return None
             else:
-                logger.debug(
-                    f"Activity {activity_id[:8]} fetch failed: {response.status_code}"
+                # 401/429/5xx: we failed to ask, not "there is no answer".
+                # Flattening these to None made an expired session look
+                # identical to a missing activity.
+                raise TransientActivityError(
+                    f"HTTP {response.status_code} reading activity "
+                    f"{activity_id[:8]}: {response.text[:120]}"
                 )
-                return None
+        except TransientActivityError:
+            raise
         except Exception as e:
-            logger.debug(f"Activity {activity_id[:8]} fetch error: {e}")
-            return None
+            raise TransientActivityError(
+                f"Error reading activity {activity_id[:8]}: {e}"
+            ) from e
 
     # =========================================================================
     # Result Processing
@@ -644,9 +688,15 @@ class ActivityTracker:
         success: bool,
         resource_id: str = None,
         error: str = None,
-        raw_response: Dict = None
+        raw_response: Dict = None,
+        unverified: bool = False,
     ) -> None:
-        """Handle an activity completing."""
+        """
+        Handle an activity completing.
+
+        unverified=True means we stopped waiting without ever learning the
+        outcome -- not that the work failed. See ActivityResult.unverified.
+        """
         ref = self._pending.get(activity_id)
         if not ref:
             return
@@ -654,6 +704,7 @@ class ActivityTracker:
         result = ActivityResult(
             activity_id=activity_id,
             success=success,
+            unverified=unverified,
             resource_id=resource_id,
             error=error,
             raw_response=raw_response or {},

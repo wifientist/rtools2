@@ -148,6 +148,7 @@ REGRESSION_TESTS=(
     test_rate_limiter.py
     test_r1_nonblocking.py
     test_rerun_skips.py
+    test_r1_auth_and_polling.py
 )
 
 echo "🧪 Running regression gates..."

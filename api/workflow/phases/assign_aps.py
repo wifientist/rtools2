@@ -51,6 +51,9 @@ class AssignAPsPhase(PhaseExecutor):
         aps_matched: int = 0
         aps_assigned: int = 0
         aps_already_in_group: int = 0
+        # R1 took the request but never confirmed it, or we lost the session
+        # before we could read the answer. Reported, never counted as failed.
+        aps_unverified: int = 0
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Assign APs to this unit's AP Group."""
@@ -76,6 +79,7 @@ class AssignAPsPhase(PhaseExecutor):
 
         aps_assigned = 0
         aps_already_in_group = 0
+        aps_unverified = 0
 
         # Step 2: Assign APs to AP Group
         if matched_aps:
@@ -83,7 +87,7 @@ class AssignAPsPhase(PhaseExecutor):
                 f"[{inputs.unit_number}] Matched {len(matched_aps)} APs, "
                 f"assigning to group..."
             )
-            aps_assigned, aps_already_in_group = await self._assign_aps_to_group(
+            aps_assigned, aps_already_in_group, aps_unverified = await self._assign_aps_to_group(
                 inputs.unit_number,
                 matched_aps,
                 inputs.ap_group_id,
@@ -113,6 +117,8 @@ class AssignAPsPhase(PhaseExecutor):
             skip_info = ""
             if aps_already_in_group > 0:
                 skip_info = f", {aps_already_in_group} already in group"
+            if aps_unverified > 0:
+                skip_info += f", {aps_unverified} unconfirmed"
             message = (
                 f"Assigned {aps_assigned} APs to "
                 f"'{inputs.ap_group_name}'{skip_info}"
@@ -128,6 +134,7 @@ class AssignAPsPhase(PhaseExecutor):
             aps_matched=len(matched_aps),
             aps_assigned=aps_assigned,
             aps_already_in_group=aps_already_in_group,
+            aps_unverified=aps_unverified,
         )
 
     # =========================================================================
@@ -179,16 +186,17 @@ class AssignAPsPhase(PhaseExecutor):
         matched_aps: List[Dict],
         ap_group_id: str,
         ap_group_name: str,
-    ) -> Tuple[int, int]:
+    ) -> Tuple[int, int, int]:
         """
         Assign APs to the AP Group.
 
         Returns:
-            (assigned_count, already_in_group_count)
+            (assigned_count, already_in_group_count, unverified_count)
         """
         assigned = 0
         skipped = 0
         failures: List[str] = []
+        unverified: List[str] = []
 
         for ap in matched_aps:
             current_group_id = ap.get('apGroupId')
@@ -231,6 +239,20 @@ class AssignAPsPhase(PhaseExecutor):
                     request_id = result.get('requestId') if isinstance(result, dict) else None
                     if request_id:
                         activity_result = await self.fire_and_wait(request_id)
+                        if getattr(activity_result, 'unverified', False):
+                            # R1 accepted the PUT (202) and we never learned
+                            # the outcome. That is not a failure: treating it
+                            # as one failed 17 units on 2026-09-16 for
+                            # assignments R1 had already taken.
+                            unverified.append(
+                                f"{ap_name}: {activity_result.error}"
+                            )
+                            logger.warning(
+                                f"[{unit_number}] {ap_name} -> "
+                                f"'{ap_group_name}' submitted but unconfirmed: "
+                                f"{activity_result.error}"
+                            )
+                            continue
                         if not activity_result.success:
                             raise RuntimeError(f"AP assignment failed: {activity_result.error}")
 
@@ -245,11 +267,21 @@ class AssignAPsPhase(PhaseExecutor):
                     f"[{unit_number}] Failed to assign AP {serial}: {e}"
                 )
 
+        if unverified:
+            detail = "; ".join(unverified[:5])
+            await self.emit(
+                f"[{unit_number}] {len(unverified)} AP(s) submitted to "
+                f"'{ap_group_name}' but not confirmed by R1 -- verify, or "
+                f"re-run to confirm: {detail}",
+                "warning",
+            )
+
         # Do not report success for work that did not happen. A phase that
-        # moved no APs while having APs to move is a failure, not a no-op.
+        # moved no APs while having APs to move is a failure, not a no-op --
+        # but "unconfirmed" is not "did not happen", so it does not count.
         if failures:
             detail = "; ".join(failures[:5])
-            if not assigned:
+            if not assigned and not unverified:
                 raise RuntimeError(
                     f"No APs could be assigned to '{ap_group_name}' "
                     f"({len(failures)} failed): {detail}"
@@ -260,7 +292,7 @@ class AssignAPsPhase(PhaseExecutor):
                 "error",
             )
 
-        return assigned, skipped
+        return assigned, skipped, len(unverified)
 
     async def validate(self, inputs: 'Inputs') -> PhaseValidation:
         """Estimate API calls for AP assignment."""
