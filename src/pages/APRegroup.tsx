@@ -156,6 +156,7 @@ function APRegroup() {
   }, [activeControllerId]);
 
   const { rows, errors } = useMemo(() => parseCsv(csvText), [csvText]);
+  const existingGroupSet = useMemo(() => new Set(existingGroups), [existingGroups]);
 
   // Group preview — the same shape the backend plans: one unit per AP Group.
   const groups = useMemo(() => {
@@ -446,13 +447,13 @@ function APRegroup() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {generated.matched.slice(0, 100).map((m) => (
+                        {generated.matched.map((m) => (
                           <tr key={m.ap}>
                             <td className="px-2 py-1 font-mono text-gray-900">{m.ap}</td>
                             <td className="px-2 py-1 font-mono text-gray-600">{m.unit}</td>
                             <td className="px-2 py-1 font-mono text-blue-700">{m.group}</td>
                             <td className="px-2 py-1">
-                              {existingGroups.includes(m.group) ? (
+                              {existingGroupSet.has(m.group) ? (
                                 <span className="text-gray-500">existing</span>
                               ) : (
                                 <span className="text-green-700">will create</span>
