@@ -835,6 +835,24 @@ class WorkflowBrain:
                 unit.resolved.already_active = True
                 phases_added.append("activate_network")
 
+            # activate_ap_group: the Cloudpath import's activation phase.
+            #
+            # Same rule as activate_network above, under the name the
+            # cloudpath_import workflow actually uses. Everything here matched
+            # on PSK-era phase ids, so a Cloudpath re-run pre-completed
+            # create_ap_group and assign_aps but re-ran the activation for
+            # every unit -- the most expensive phase there is, three R1 calls
+            # and an AP config apply each.
+            if (
+                unit.input_config.get("already_activated")
+                and not unit.input_config.get("is_venue_wide")
+                and "activate_ap_group" not in unit.completed_phases
+            ):
+                unit.completed_phases.append("activate_ap_group")
+                unit.resolved.activated = True
+                unit.resolved.already_active = True
+                phases_added.append("activate_ap_group")
+
             # configure_lan_ports: skipped when LAN port config is disabled
             # (matches skip_if="not options.get('configure_lan_ports', False)")
             if (
