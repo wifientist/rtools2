@@ -162,6 +162,39 @@ class CreateDPSKNetworkPhase(PhaseExecutor):
         This operation is idempotent - calling it on an already-linked network
         will succeed without issues.
         """
+        # Already linked? On a re-run this is true for every unit. The PUT is
+        # idempotent, but "idempotent" is not "free": each one takes an
+        # activity slot, waits on a poll cycle, and triggers a config apply on
+        # the APs. One GET answers it instead.
+        #
+        # Best effort -- if the read fails we link exactly as before, because
+        # a missed link is far worse than a redundant one.
+        try:
+            linked = await self.r1_client.networks.get_dpsk_services_on_network(
+                network_id=network_id,
+                tenant_id=self.tenant_id,
+            )
+            services = (
+                linked.get('data', []) if isinstance(linked, dict) else (linked or [])
+            )
+            if any(
+                isinstance(svc, dict) and svc.get('id') == inputs.dpsk_pool_id
+                for svc in services
+            ):
+                logger.info(
+                    f"[{inputs.unit_number}] DPSK service {inputs.dpsk_pool_id} "
+                    f"already linked to network {network_id}; not re-linking"
+                )
+                await self.emit(
+                    f"[{inputs.unit_number}] DPSK service already linked"
+                )
+                return
+        except Exception as e:
+            logger.debug(
+                f"[{inputs.unit_number}] Could not read linked DPSK services "
+                f"({e}); linking anyway"
+            )
+
         use_activity_tracker = self.context.activity_tracker is not None
 
         await self.emit(
