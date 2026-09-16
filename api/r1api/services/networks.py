@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from r1api.constants import (
@@ -918,6 +919,38 @@ class NetworksService:
             error_data = response.json() if response.content else {}
             logger.error(f"Failed to create DPSK network: {response.status_code} - {error_data}")
             raise Exception(f"Failed to create DPSK network: {response.status_code} - {error_data.get('message', response.text)}")
+
+    async def get_dpsk_services_on_network(
+        self,
+        network_id: str,
+        tenant_id: str = None,
+    ):
+        """
+        The DPSK services currently linked to a network.
+
+        GET /wifiNetworks/{networkId}/dpskServices -- the read counterpart of
+        activate_dpsk_service_on_network's PUT. A re-run can use this to see
+        the link already exists instead of re-issuing it: the PUT is
+        idempotent, but it still costs an activity slot and a config apply on
+        the APs.
+
+        Returns the raw query response: {'data': [{'id', 'name', ...}], ...}
+
+        Note: offloaded, because this runs per unit in the import loop and the
+        R1 client is synchronous.
+        """
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = await asyncio.to_thread(
+                self.client.get,
+                f"/wifiNetworks/{network_id}/dpskServices",
+                override_tenant_id=tenant_id,
+            )
+        else:
+            response = await asyncio.to_thread(
+                self.client.get,
+                f"/wifiNetworks/{network_id}/dpskServices",
+            )
+        return self.client.safe_json(response)
 
     async def activate_dpsk_service_on_network(
         self,

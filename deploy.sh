@@ -147,6 +147,7 @@ REGRESSION_TESTS=(
     test_access_policy_idempotency.py
     test_rate_limiter.py
     test_r1_nonblocking.py
+    test_rerun_skips.py
 )
 
 echo "🧪 Running regression gates..."
