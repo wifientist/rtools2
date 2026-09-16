@@ -316,6 +316,14 @@ class ActivityResult(BaseModel):
     """Result of a completed R1 activity."""
     activity_id: str
     success: bool
+    # "We never learned the outcome", as distinct from "it failed".
+    #
+    # Set when R1 accepted the request (202) but never returned a terminal
+    # status, or when we could not read one -- an expired session, a polling
+    # outage. Callers that treat this as failure fabricate errors for work
+    # R1 may well have done: on 2026-09-16 an expired token turned into 17
+    # units failed for AP assignments R1 had already accepted.
+    unverified: bool = False
     resource_id: Optional[str] = None
     error: Optional[str] = None
     raw_response: Dict[str, Any] = Field(default_factory=dict)

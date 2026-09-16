@@ -145,6 +145,11 @@ REGRESSION_TESTS=(
     test_job_failsafe.py
     test_workflow_stall.py
     test_access_policy_idempotency.py
+    test_rate_limiter.py
+    test_r1_nonblocking.py
+    test_rerun_skips.py
+    test_r1_auth_and_polling.py
+    test_ap_group_lookup.py
 )
 
 echo "🧪 Running regression gates..."

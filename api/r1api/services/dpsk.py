@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from r1api.constants import DpskPassphraseFormat
@@ -341,16 +342,21 @@ class DpskService:
 
         logger.debug(f"query_passphrases request body: {body}")
 
+        # to_thread: the R1 client is synchronous, and this runs in the
+        # passphrase creation loop. Blocking here freezes every other
+        # coroutine in the process -- Redis, SSE, the job heartbeat.
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/query",
                 payload=body,
-                override_tenant_id=tenant_id
+                override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/query",
-                payload=body
+                payload=body,
             )
         return self.client.safe_json(response)
 
@@ -454,16 +460,21 @@ class DpskService:
 
         logger.debug(f"create_passphrase payload: {payload}")
 
+        # to_thread: the R1 client is synchronous, and this runs in the
+        # passphrase creation loop. Blocking here freezes every other
+        # coroutine in the process -- Redis, SSE, the job heartbeat.
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases",
                 payload=payload,
-                override_tenant_id=tenant_id
+                override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases",
-                payload=payload
+                payload=payload,
             )
 
         # Raise exception on HTTP errors so callers can handle failures properly

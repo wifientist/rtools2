@@ -104,6 +104,47 @@ export async function apiFetch(
 }
 
 /**
+ * Why a response failed, in words -- and never a dead end.
+ *
+ * The app's own errors are always JSON with an `error` field, but not every
+ * failure comes from the app. nginx's 413/502/504 pages, or a proxy or WAF in
+ * front of it, answer with HTML. Those used to collapse into a bare fallback
+ * such as "Plan creation failed" with the status code thrown away -- and the
+ * status is the one fact that says which layer refused the request.
+ */
+const STATUS_HINTS: Record<number, string> = {
+  403: "blocked before it reached the app",
+  413: "the upload is larger than the server accepts",
+  429: "too many requests, try again shortly",
+  502: "the backend did not answer",
+  503: "the service is unavailable",
+  504: "the request timed out upstream",
+};
+
+export async function responseErrorMessage(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  const text = await response.text().catch(() => "");
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null; // HTML error page, or empty
+  }
+
+  if (body && typeof body === "object") {
+    const b = body as Record<string, unknown>;
+    const msg = b.error ?? b.detail;
+    if (msg) return typeof msg === "string" ? msg : JSON.stringify(msg);
+    if (b.details) return `Validation error: ${JSON.stringify(b.details)}`;
+  }
+
+  const hint = STATUS_HINTS[response.status];
+  return `${fallback} (HTTP ${response.status}${hint ? ` \u2014 ${hint}` : ""})`;
+}
+
+/**
  * Convenience wrapper for JSON API calls
  * Automatically sets Content-Type and parses JSON response
  *

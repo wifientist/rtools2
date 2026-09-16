@@ -92,14 +92,14 @@ class ValidateApRegroupPhase(PhaseExecutor):
         # ---- existing AP groups ----------------------------------------
         existing_groups: Dict[str, str] = {}
         try:
-            resp = await self.r1_client.venues.query_ap_groups(
-                tenant_id=self.tenant_id,
-                venue_id=self.venue_id,
-                fields=['id', 'name', 'venueId'],
+            # Paged -- see list_ap_groups_in_venue. A partial list here made
+            # this tool create groups that already existed.
+            groups = await self.r1_client.venues.list_ap_groups_in_venue(
+                self.tenant_id, self.venue_id
             )
-            for g in resp.get('data', []) or []:
-                if g.get('name'):
-                    existing_groups[g['name']] = g.get('id', '')
+            existing_groups.update(
+                self.r1_client.venues.index_ap_groups_by_name(groups)
+            )
         except Exception as e:
             logger.warning(f"Could not list AP groups: {e}")
         await self.emit(f"Found {len(existing_groups)} existing AP Groups")

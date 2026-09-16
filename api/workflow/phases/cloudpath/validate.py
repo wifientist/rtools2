@@ -809,13 +809,15 @@ class ValidateCloudpathPhase(PhaseExecutor):
         if per_unit_ssid:
             await self.emit("Checking existing AP Groups...")
             try:
-                ap_groups_response = await self.r1_client.venues.query_ap_groups(
-                    tenant_id=self.tenant_id,
-                    venue_id=self.venue_id,
-                    fields=['id', 'name', 'venueId'],
+                # Paged: an unpaged query returns R1's default page, so a
+                # venue with more groups than that silently looked like it
+                # had none of the later ones -- and we created duplicates.
+                ap_groups = await self.r1_client.venues.list_ap_groups_in_venue(
+                    self.tenant_id, self.venue_id
                 )
-                for ap_group in ap_groups_response.get('data', []):
-                    existing_ap_groups[ap_group.get('name', '')] = ap_group.get('id', '')
+                existing_ap_groups.update(
+                    self.r1_client.venues.index_ap_groups_by_name(ap_groups)
+                )
                 await self.emit(f"Found {len(existing_ap_groups)} existing AP Groups")
             except Exception as e:
                 logger.warning(f"Error checking AP groups: {e}")
@@ -833,6 +835,20 @@ class ValidateCloudpathPhase(PhaseExecutor):
         SSID_LIMIT_PER_AP_GROUP = 15
         SSID_SAFETY_BUFFER = 3
         venue_wide_ssid_count = 0
+
+        # What is already activated, so a re-run does not redo it.
+        #
+        # The same venueApGroups payload that tells us about venue-wide SSIDs
+        # also says which AP Groups each SSID is bound to. Recording it here
+        # lets each unit carry already_activated, which activate_ap_group and
+        # the Brain's pre-completion both honour -- turning a re-run's most
+        # expensive phase (a 3-step config per unit, each an AP config apply)
+        # into nothing at all.
+        #
+        # Initialised outside the try below: if the lookup fails we simply
+        # activate everything as before, which is the safe direction.
+        activated_ap_groups_by_ssid: Dict[str, Set[str]] = {}
+        venue_wide_ssids: Set[str] = set()
         calculated_max_activation_slots = SSID_LIMIT_PER_AP_GROUP - SSID_SAFETY_BUFFER
 
         if per_unit_ssid:
@@ -844,6 +860,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 all_networks = networks_response.get('data', []) if isinstance(networks_response, dict) else networks_response
 
                 for network in all_networks:
+                    net_ssid = network.get('ssid') or network.get('name')
                     venue_ap_groups = network.get('venueApGroups', [])
                     for vag in venue_ap_groups:
                         if vag.get('venueId') != self.venue_id:
@@ -851,7 +868,13 @@ class ValidateCloudpathPhase(PhaseExecutor):
                         # Check if this SSID broadcasts to all AP Groups
                         if vag.get('isAllApGroups', False):
                             venue_wide_ssid_count += 1
+                            if net_ssid:
+                                venue_wide_ssids.add(net_ssid)
                             break  # Only count once per network
+                        if net_ssid:
+                            activated_ap_groups_by_ssid.setdefault(
+                                net_ssid, set()
+                            ).update(vag.get('apGroupIds') or [])
 
                 # Calculate safe activation slot limit
                 calculated_max_activation_slots = max(
@@ -1350,6 +1373,11 @@ class ValidateCloudpathPhase(PhaseExecutor):
                             'network_name': network_name,
                             'ssid_name': ssid_name,
                             'is_first_unit': is_first_unit,
+                            # Already bound to this unit's AP Group in R1, so
+                            # activate_ap_group has nothing to do.
+                            'already_activated': bool(ap_group_id) and ap_group_id in (
+                                activated_ap_groups_by_ssid.get(ssid_name, set())
+                            ),
                             # AP Group info (for per_unit SSID mode)
                             'ap_group_name': ap_group_name,
                             'ap_serial_numbers': ap_serial_numbers,
@@ -1431,6 +1459,7 @@ class ValidateCloudpathPhase(PhaseExecutor):
                             # Tells activate_ap_group to go venue-wide instead
                             # of binding to an AP Group.
                             'is_venue_wide': True,
+                            'already_activated': site_wide_ssid in venue_wide_ssids,
                             'ap_group_name': None,
                             'ap_serial_numbers': [],
                             'default_vlan': str(options.get('default_vlan', 1)),

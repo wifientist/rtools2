@@ -5,7 +5,7 @@ import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 import type { JobResult } from "@/components/JobMonitorModal";
-import { apiFetch } from "@/utils/api";
+import { apiFetch, responseErrorMessage } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -180,6 +180,17 @@ function CloudpathImport() {
   const [createPropertySsid, setCreatePropertySsid] = useState(true);
   const [apGroupPrefix, setApGroupPrefix] = useState("");
   const [apGroupPostfix, setApGroupPostfix] = useState("");
+
+  // A field the user has edited belongs to the user.
+  //
+  // Loading a file seeds the postfix boxes from the detected property. That
+  // is wanted on a fresh import, but it used to fire unconditionally -- so a
+  // postfix you had deliberately cleared came back on the next load, and the
+  // re-run then asked R1 for a DIFFERENT AP Group name than the first run.
+  // R1 correctly created a second group per unit. These flags keep the
+  // seeding to fields nobody has touched.
+  const apNamePostfixTouchedRef = useRef(false);
+  const apGroupPostfixTouchedRef = useRef(false);
   // AP NAMES are a separate namespace from AP GROUP names. The CSV's second
   // column matches an AP by serial or name, not by an AP Group, and the two
   // conventions do not have to agree — one property may name APs
@@ -697,6 +708,10 @@ function CloudpathImport() {
     setApGroupPostfix("");
     setApNamePrefix("");
     setApNamePostfix("");
+    // New file, new property: the boxes are cleared, so the seeding below
+    // should treat them as untouched again.
+    apNamePostfixTouchedRef.current = false;
+    apGroupPostfixTouchedRef.current = false;
     setSkipIdentityDescriptions(false);
     setEnableAccessPolicies(true);
 
@@ -776,20 +791,24 @@ function CloudpathImport() {
           // name postfix to the detected property. Populating the box rather
           // than leaving it blank-but-implicit is what makes the Update
           // button reproduce the seed instead of silently diverging from it.
-          const detectedPostfix = detection.property_name
+          const seedApName =
+            !!detection.property_name && !apNamePostfixTouchedRef.current;
+          const detectedPostfix = seedApName
             ? `@${detection.property_name}`
             : apNamePostfix;
-          if (detection.property_name) setApNamePostfix(detectedPostfix);
+          if (seedApName) setApNamePostfix(detectedPostfix);
 
           // Same for the AP GROUP postfix. Its default is the unit's SSID
           // ("1-101@Fieldhouse"), which is exactly unit + "@Property" -- so
           // populate the box instead of leaving it blank and implicit.
           // Otherwise the field shows nothing while column 3 shows
           // "@Property", and pressing Update appears to do nothing.
-          const detectedGroupPostfix = detection.property_name
+          const seedGroup =
+            !!detection.property_name && !apGroupPostfixTouchedRef.current;
+          const detectedGroupPostfix = seedGroup
             ? `@${detection.property_name}`
             : apGroupPostfix;
-          if (detection.property_name) setApGroupPostfix(detectedGroupPostfix);
+          if (seedGroup) setApGroupPostfix(detectedGroupPostfix);
 
           const seeded = buildApAssignmentCsv(
             detection, apNamePrefix, detectedPostfix,
@@ -881,10 +900,7 @@ function CloudpathImport() {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        const errorMsg = error.error || error.detail ||
-          (error.details ? `Validation error: ${JSON.stringify(error.details)}` : "Plan creation failed");
-        throw new Error(errorMsg);
+        throw new Error(await responseErrorMessage(response, "Plan creation failed"));
       }
 
       const result = await response.json();
@@ -1635,7 +1651,10 @@ function CloudpathImport() {
                       <input
                         type="text"
                         value={apNamePostfix}
-                        onChange={(e) => setApNamePostfix(e.target.value)}
+                        onChange={(e) => {
+                          apNamePostfixTouchedRef.current = true;
+                          setApNamePostfix(e.target.value);
+                        }}
                         placeholder="Postfix (e.g. @Property)"
                         disabled={processing}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
@@ -1679,7 +1698,10 @@ function CloudpathImport() {
                       <input
                         type="text"
                         value={apGroupPostfix}
-                        onChange={(e) => setApGroupPostfix(e.target.value)}
+                        onChange={(e) => {
+                          apGroupPostfixTouchedRef.current = true;
+                          setApGroupPostfix(e.target.value);
+                        }}
                         placeholder="Postfix (e.g., -APs)"
                         disabled={processing}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
