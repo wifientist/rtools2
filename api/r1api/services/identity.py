@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -385,16 +386,22 @@ class IdentityService:
             "size": size
         }
 
+        # to_thread: the R1 client is synchronous (requests), so calling it
+        # directly from an async caller blocks the whole event loop for the
+        # round trip. Paging a large group is ~24 of these back to back, which
+        # was starving Redis into connect timeouts elsewhere in the process.
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/identityGroups/{group_id}/identities",
                 params=params,
-                override_tenant_id=tenant_id
+                override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/identityGroups/{group_id}/identities",
-                params=params
+                params=params,
             )
         return self.client.safe_json(response)
 

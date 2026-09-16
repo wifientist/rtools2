@@ -29,6 +29,17 @@ class R1Client:
         # self.token = None
         # self.token_expiry = None  # optional if you want expiry management
         self.session = requests.Session()
+        # Size the underlying urllib3 pool for the concurrency we actually
+        # use. Now that the hot paths run via asyncio.to_thread, several
+        # requests are genuinely in flight at once; urllib3's default of 10
+        # would discard and reopen connections past that ("Connection pool is
+        # full"). Headers are built per request in _request(), and the pool
+        # itself is thread-safe, so sharing one Session across threads is fine.
+        _adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10, pool_maxsize=32
+        )
+        self.session.mount("https://", _adapter)
+        self.session.mount("http://", _adapter)
 
         if region == 'EU':
             self.host = 'api.eu.ruckus.cloud'
