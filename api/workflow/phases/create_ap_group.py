@@ -89,11 +89,21 @@ class CreateAPGroupPhase(PhaseExecutor):
             )
             return self.Outputs(ap_group_id=ap_group_id, reused=True)
 
-        # Log partial match warning
+        # find_ap_group_by_name now matches client-side against the full
+        # paged venue list, so reaching here means the group genuinely is not
+        # there. Say what else is close before adding another one: a postfix
+        # changed between runs is a legitimate new name, and this is where
+        # that shows up as "why do I suddenly have two".
         if existing:
-            logger.info(
-                f"[{inputs.unit_number}] Found '{existing.get('name')}' "
-                f"but need exact '{inputs.ap_group_name}' - creating new"
+            logger.warning(
+                f"[{inputs.unit_number}] Closest existing AP Group is "
+                f"'{existing.get('name')}', but '{inputs.ap_group_name}' is "
+                f"what this run asks for -- creating it as a NEW group"
+            )
+            await self.emit(
+                f"[{inputs.unit_number}] Creating '{inputs.ap_group_name}'; "
+                f"nearest existing group is '{existing.get('name')}'",
+                "warning",
             )
 
         # Create AP Group

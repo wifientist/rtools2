@@ -149,6 +149,7 @@ REGRESSION_TESTS=(
     test_r1_nonblocking.py
     test_rerun_skips.py
     test_r1_auth_and_polling.py
+    test_ap_group_lookup.py
 )
 
 echo "🧪 Running regression gates..."

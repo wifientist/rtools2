@@ -725,6 +725,48 @@ class VenueService:
 
     # ========== AP Group Methods ==========
 
+    async def list_ap_groups_in_venue(self, tenant_id: str, venue_id: str) -> list:
+        """
+        EVERY AP Group in a venue, paged to completion.
+
+        query_ap_groups() sends whatever page R1 defaults to unless a caller
+        passes one, and almost no caller did. A venue with more groups than
+        that default silently returned a partial list, so a group that exists
+        looked absent -- and the tools created a second one.
+
+        Returns a list of group dicts (id, name, venueId).
+        """
+        groups: list = []
+        page, page_size, max_pages = 1, 100, 100
+
+        while page <= max_pages:
+            resp = await self.query_ap_groups(
+                tenant_id=tenant_id,
+                venue_id=venue_id,
+                fields=['id', 'name', 'venueId'],
+                page=page,
+                limit=page_size,
+            )
+            items = resp.get('data', []) or []
+            groups.extend(items)
+            total = resp.get('totalCount')
+            if not items or len(items) < page_size:
+                break
+            if isinstance(total, int) and len(groups) >= total:
+                break
+            page += 1
+
+        return groups
+
+    @staticmethod
+    def index_ap_groups_by_name(groups: list) -> dict:
+        """name -> id, skipping unnamed groups."""
+        return {
+            g.get('name'): g.get('id', '')
+            for g in groups
+            if g and g.get('name')
+        }
+
     async def find_ap_group_by_name(self, tenant_id: str, venue_id: str, group_name: str):
         """
         Search for an AP Group by name (IDEMPOTENT check)
@@ -737,26 +779,42 @@ class VenueService:
         Returns:
             AP Group object if found, None otherwise
         """
-        body = {
-            'fields': ['id', 'name', 'venueId', 'description'],
-            'filters': {
-                'name': [group_name],
-                'venueId': [venue_id]
-            },
-            'sortField': 'name',
-            'sortOrder': 'ASC',
-        }
+        # Matched HERE, not by R1.
+        #
+        # This used to send filters:{name:[...]} and take data[0], trusting
+        # the server to filter. If that filter is loose or ignored -- and on
+        # this API that happens; searchString on /identityGroups/query is
+        # silently ignored entirely -- data[0] is simply the alphabetically
+        # first group in the venue. The caller then compared it to the wanted
+        # name, found it different, and CREATED A DUPLICATE. That is the
+        # "Found X but need exact Y - creating new" path, and it is how both
+        # the Cloudpath import and AP Regroup produced second copies of
+        # groups that already existed.
+        #
+        # Now: page the venue in full and compare here, so the answer does
+        # not depend on server-side filter semantics.
+        wanted = (group_name or '').strip()
+        if not wanted:
+            return None
 
-        if self.client.ec_type == "MSP":
-            response = self.client.post("/venues/apGroups/query", payload=body, override_tenant_id=tenant_id).json()
-        else:
-            response = self.client.post("/venues/apGroups/query", payload=body).json()
+        groups = await self.list_ap_groups_in_venue(tenant_id, venue_id)
 
-        # Response format: {"data": [...], "totalCount": N}
-        groups = response.get('data', [])
+        for group in groups:
+            if (group.get('name') or '') == wanted:
+                return group
 
-        if groups and len(groups) > 0:
-            return groups[0]
+        # Exact match failed. Before letting a caller create a duplicate, look
+        # for a group that differs only in case or surrounding whitespace and
+        # reuse it: a case variant is recoverable, a duplicate group is not.
+        folded = wanted.casefold()
+        for group in groups:
+            if (group.get('name') or '').strip().casefold() == folded:
+                logger.warning(
+                    f"AP Group '{group.get('name')}' matches '{wanted}' only "
+                    f"by case/whitespace -- reusing it rather than creating a "
+                    f"near-duplicate"
+                )
+                return group
 
         return None
 
