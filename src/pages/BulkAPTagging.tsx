@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import MspEcPicker from "@/components/MspEcPicker";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
 import {
@@ -100,8 +101,11 @@ export default function BulkAPTagging() {
   // Controller info
   const activeController = controllers.find((c) => c.id === activeControllerId);
   const needsEcSelection = activeControllerSubtype === "MSP";
+  // An MSP has no venues of its own -- pick the EC first, and its venues follow.
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
   const effectiveTenantId = needsEcSelection
-    ? null
+    ? ecId
     : activeController?.r1_tenant_id || null;
 
   // ---- Venue selection ----
@@ -114,6 +118,18 @@ export default function BulkAPTagging() {
     setResult(null);
     setError("");
   };
+
+  // A venue belongs to one tenant, so changing the EC (or controller) drops it.
+  useEffect(() => {
+    handleVenueSelect(null, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeControllerId, ecId]);
+
+  // Switching controllers leaves the old controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
 
   // ---- Fetch APs when venue changes ----
   useEffect(() => {
@@ -414,12 +430,29 @@ export default function BulkAPTagging() {
       <div className="bg-white rounded-lg shadow p-5 mb-5">
         <h2 className="text-lg font-semibold mb-3">1. Select Venue</h2>
 
+        {isR1 && needsEcSelection && activeControllerId && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">MSP-EC</label>
+            <MspEcPicker
+              controllerId={activeControllerId}
+              ecId={ecId}
+              ecName={ecName}
+              onChange={(id, name) => {
+                setEcId(id);
+                setEcName(name);
+              }}
+            />
+          </div>
+        )}
+
         {!isR1 ? (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <p className="text-sm text-yellow-800">
               Please select a RuckusONE controller to use this tool.
             </p>
           </div>
+        ) : needsEcSelection && !ecId ? (
+          <p className="text-sm text-amber-700">Select an MSP-EC first.</p>
         ) : (
           <SingleVenueSelector
             controllerId={activeControllerId}

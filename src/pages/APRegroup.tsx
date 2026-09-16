@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import MspEcPicker from "@/components/MspEcPicker";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
 import type { JobResult } from "@/components/JobMonitorModal";
@@ -137,7 +138,22 @@ function APRegroup() {
 
   const activeController = controllers.find((c: any) => c.id === activeControllerId);
   const needsEcSelection = activeControllerSubtype === "MSP";
-  const effectiveTenantId = needsEcSelection ? null : activeController?.r1_tenant_id || null;
+  // An MSP has no venues of its own -- pick the EC first, and its venues follow.
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
+  const effectiveTenantId = needsEcSelection ? ecId : activeController?.r1_tenant_id || null;
+
+  // A venue belongs to one tenant, so changing the EC (or controller) drops it.
+  useEffect(() => {
+    setVenueId(null);
+    setVenueName(null);
+  }, [activeControllerId, ecId]);
+
+  // Switching controllers leaves the old controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
 
   const { rows, errors } = useMemo(() => parseCsv(csvText), [csvText]);
 
@@ -247,6 +263,7 @@ function APRegroup() {
   const handlePlan = async () => {
     setError("");
     if (!activeControllerId) return setError("Select a controller first");
+    if (needsEcSelection && !ecId) return setError("Select an MSP-EC first");
     if (!venueId) return setError("Select a venue first");
     if (rows.length === 0) return setError("Add at least one ap_identifier,ap_group_name row");
 
@@ -284,11 +301,29 @@ function APRegroup() {
         is created. APs are matched by <strong>serial number or name</strong>.
       </p>
 
+      {/* MSP-EC */}
+      {activeControllerId && needsEcSelection && (
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">MSP-EC</label>
+          <MspEcPicker
+            controllerId={activeControllerId}
+            ecId={ecId}
+            ecName={ecName}
+            onChange={(id, name) => {
+              setEcId(id);
+              setEcName(name);
+            }}
+          />
+        </div>
+      )}
+
       {/* Venue */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 mb-2">Venue</label>
         {!activeControllerId ? (
           <p className="text-sm text-amber-700">Select a controller first.</p>
+        ) : needsEcSelection && !ecId ? (
+          <p className="text-sm text-amber-700">Select an MSP-EC first.</p>
         ) : (
           <SingleVenueSelector
             controllerId={activeControllerId}
