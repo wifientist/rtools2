@@ -2511,18 +2511,30 @@ function CloudpathImport() {
                 </button>
               </div>
 
-              <div className="overflow-x-auto border rounded">
+              {/*
+                The wrapper scrolls, not the modal body: `sticky` resolves
+                against the nearest scrolling ancestor, so a header inside an
+                auto-overflow div with no height of its own never sticks to
+                anything. Capping the height here is what makes the column
+                names stay put over a 600-row roster.
+              */}
+              <div className="overflow-auto border rounded max-h-[55vh]">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-gray-50 sticky top-0">
+                  <thead>
                     <tr className="text-left text-xs uppercase text-gray-500">
-                      <th className="px-3 py-2">Username</th>
-                      <th className="px-3 py-2">File</th>
-                      <th className="px-3 py-2">Identity Group</th>
-                      <th className="px-3 py-2">DPSK Service</th>
-                      <th className="px-3 py-2">Adaptive Policy</th>
-                      <th className="px-3 py-2">RADIUS Group</th>
-                      <th className="px-3 py-2">Desc</th>
-                      <th className="px-3 py-2">Notes</th>
+                      {[
+                        "Username", "File", "Identity Group", "DPSK Service",
+                        "Adaptive Policy", "RADIUS Group", "Desc", "Notes",
+                      ].map((heading) => (
+                        // Sticky goes on the cells, not the row or thead:
+                        // Safari ignores it on <thead>/<tr>.
+                        <th
+                          key={heading}
+                          className="px-3 py-2 sticky top-0 z-10 bg-gray-50 border-b"
+                        >
+                          {heading}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
