@@ -130,6 +130,15 @@ class IdentityAuditRequest(BaseModel):
         DEFAULT_SUFFIX,
         description="Speed tier assumed for usernames with no trailing _suffix",
     )
+    evaluate_policies: bool = Field(
+        False,
+        description="Ask R1 which policy each identity actually lands on, via "
+                    "POST /policySets/{id}/evaluationReports. The only check "
+                    "that accounts for priority order, so it catches a "
+                    "different policy winning ahead of the right one. One "
+                    "extra API call per identity, and it needs a policy set "
+                    "named in policy_set_name.",
+    )
     verify_conditions: bool = Field(
         False,
         description="Read each matched policy's conditions to check what it "
@@ -180,6 +189,15 @@ class IdentityAuditRow(BaseModel):
     policy_ssid_regex: Optional[str] = None
     policy_username_matches: Optional[bool] = None
     policy_ssid_in_file: Optional[bool] = None
+
+    # What R1 says actually happens, priority order included. None means the
+    # evaluation was not run for this row, which is not the same as no match.
+    evaluated: bool = False
+    evaluated_matched: Optional[bool] = None
+    evaluated_policy_name: Optional[str] = None
+    evaluated_radius_group: Optional[str] = None
+    evaluated_ssid: Optional[str] = None
+    evaluated_wrong_policy: Optional[bool] = None
 
     # Column 5
     radius_group_name: Optional[str] = None
@@ -431,6 +449,84 @@ async def _conditions_for_policies(
     return results
 
 
+# VERIFIED against a live tenant 2026-09-20. matchName is the attribute TEXT,
+# not the numeric id, and GET /policyTemplates/100/attributes does not even
+# return 1013 -- these come from the templateAttribute embedded in real policy
+# conditions. The `type` discriminator has no mapping in the spec; the literal
+# R1 accepts is "StringEvaluation" (the CONDITIONS side spells its own
+# discriminator "StringCriteria", which is a different thing).
+EVAL_MATCH_USERNAME = "Dpsk_Username"
+EVAL_MATCH_SSID = "SSID"
+EVAL_STRING_TYPE = "StringEvaluation"
+
+
+async def _evaluate_identities(
+    r1_client, tenant_id: str, policy_set_id: str,
+    cases: List[Tuple[str, str]],
+) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """
+    Ask R1 which policy each (username, ssid) actually lands on.
+
+    THE ONLY AUTHORITATIVE CHECK IN THIS MODULE. Everything else infers: a
+    policy with the right name exists, its regex looks right. None of that
+    accounts for PRIORITY -- policies in a set are evaluated in order and the
+    first match wins, so a higher-priority policy with a looser regex can
+    swallow a resident whose own policy is perfectly correct. This asks R1 to
+    run the evaluation and report what it actually returns.
+
+    A non-match comes back as HTTP 200 with wasMatched false, not an error, so
+    the flag is what matters rather than the status.
+
+    One call per case, same as the conditions read, hence opt-in.
+    """
+    semaphore = asyncio.Semaphore(CONDITION_FETCH_CONCURRENCY)
+    results: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    async def run(case: Tuple[str, str]) -> None:
+        username, ssid = case
+        payload = {
+            "policySetId": policy_set_id,
+            "evaluationCriteria": [
+                {"matchName": EVAL_MATCH_USERNAME,
+                 "value": {"type": EVAL_STRING_TYPE, "stringValue": username}},
+                {"matchName": EVAL_MATCH_SSID,
+                 "value": {"type": EVAL_STRING_TYPE, "stringValue": ssid}},
+            ],
+        }
+        kwargs = {"override_tenant_id": tenant_id} if tenant_id else {}
+        async with semaphore:
+            try:
+                response = await asyncio.to_thread(
+                    r1_client.policy_sets.client.post,
+                    f"/policySets/{policy_set_id}/evaluationReports",
+                    payload=payload, **kwargs,
+                )
+                status = getattr(response, "status_code", 0)
+                body = r1_client.policy_sets.client.safe_json(response)
+            except Exception as e:
+                logger.warning(f"Policy evaluation failed for {username}: {e}")
+                results[case] = {"error": str(e)}
+                return
+
+            if not (isinstance(status, int) and 200 <= status < 300):
+                message = body.get("message") if isinstance(body, dict) else None
+                results[case] = {"error": message or f"HTTP {status}"}
+                return
+
+            body = body if isinstance(body, dict) else {}
+            results[case] = {
+                "matched": bool(body.get("wasMatched")),
+                "policy_name": body.get("policyName"),
+                "policy_id": body.get("policyId"),
+                "radius_id": body.get("onMatchResponse"),
+                "error": None,
+            }
+
+    await asyncio.gather(*(run(c) for c in cases))
+    logger.info(f"Evaluated {len(results)} identity/SSID pairs against R1")
+    return results
+
+
 async def _policy_set_membership(
     r1_client, tenant_id: str, policy_set_name: Optional[str]
 ) -> Tuple[Dict[str, str], List[str], List[str]]:
@@ -469,6 +565,8 @@ async def _policy_set_membership(
 
     membership: Dict[str, str] = {}
     checked: List[str] = []
+    # name -> id, so the evaluation pass can address the set directly.
+    checked_ids: Dict[str, str] = {}
 
     for pset in all_sets:
         set_id = pset.get('id')
@@ -476,6 +574,7 @@ async def _policy_set_membership(
         if not set_id:
             continue
         checked.append(set_name)
+        checked_ids[set_name] = set_id
         try:
             prioritized = await r1_client.policy_sets.get_prioritized_policies(
                 policy_set_id=set_id, tenant_id=tenant_id
@@ -497,7 +596,7 @@ async def _policy_set_membership(
                 f"policy-set membership is unknown for this run"
             )
 
-    return membership, checked, warnings
+    return membership, checked, checked_ids, warnings
 
 
 async def _radius_group_names(r1_client, tenant_id: str) -> Dict[str, str]:
@@ -534,6 +633,8 @@ def _build_row(
     scoped_set_name: Optional[str],
     conditions: Optional[Dict[str, Dict[str, Any]]] = None,
     file_ssids: Optional[Set[str]] = None,
+    evaluation: Optional[Dict[str, Any]] = None,
+    evaluated_ssid: Optional[str] = None,
 ) -> IdentityAuditRow:
     """Join one identity against everything collected, and name what is wrong."""
     row = IdentityAuditRow(
@@ -610,6 +711,20 @@ def _build_row(
     # fabricated one. Unknown is the honest answer, and it leaves the cell
     # showing the group's name with no verdict attached.
     # ---------------------------------------------------------------------
+    # ---- what R1 says actually happens ----
+    if evaluation and not evaluation.get("error"):
+        row.evaluated = True
+        row.evaluated_ssid = evaluated_ssid
+        row.evaluated_matched = evaluation.get("matched")
+        row.evaluated_policy_name = evaluation.get("policy_name")
+        radius_id = evaluation.get("radius_id")
+        if radius_id:
+            row.evaluated_radius_group = radius_names.get(radius_id, radius_id)
+        if row.evaluated_matched and row.evaluated_policy_name:
+            row.evaluated_wrong_policy = (
+                row.evaluated_policy_name != policy_name
+            )
+
     row.radius_group_expected = expected_suffix
     if row.radius_group_name and expected_suffix:
         row.radius_group_matches = (
@@ -664,6 +779,24 @@ def _build_row(
             f"RADIUS group is '{row.radius_group_name}', expected "
             f"'{expected_suffix}' from the username in the file"
         )
+    if row.evaluated and row.evaluated_matched is False:
+        row.issues.append(
+            f"R1 evaluates this identity on {row.evaluated_ssid!r} and NO "
+            f"policy matches — it gets no adaptive policy at all"
+        )
+    if row.evaluated_wrong_policy:
+        row.issues.append(
+            f"R1 matches policy '{row.evaluated_policy_name}', not "
+            f"'{policy_name}' — a higher-priority policy wins"
+        )
+    if (
+        row.evaluated_radius_group and expected_suffix
+        and row.evaluated_radius_group.lower() != expected_suffix.lower()
+    ):
+        row.issues.append(
+            f"R1 actually applies RADIUS group "
+            f"'{row.evaluated_radius_group}', not '{expected_suffix}'"
+        )
     if row.in_identity_group and not row.has_description:
         row.issues.append("No description set")
 
@@ -692,7 +825,7 @@ async def run_identity_audit(
         r1_client, tenant_id, pool_ids
     )
     policies = await _policies_by_name(r1_client, tenant_id)
-    membership, sets_checked, set_warnings = await _policy_set_membership(
+    membership, sets_checked, set_ids, set_warnings = await _policy_set_membership(
         r1_client, tenant_id, request.policy_set_name
     )
     warnings.extend(set_warnings)
@@ -733,6 +866,56 @@ async def run_identity_audit(
                     f"those rows show no regex rather than a wrong one"
                 )
 
+    # ---- Tier 2: ask R1 what actually happens ----
+    evaluations: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    eval_ssid_for: Dict[str, str] = {}
+    if request.evaluate_policies:
+        target_set = None
+        if request.policy_set_name:
+            target_set = set_ids.get(request.policy_set_name) or next(
+                (sid for name, sid in set_ids.items()
+                 if name.lower() == request.policy_set_name.lower()), None
+            )
+        if not target_set:
+            warnings.append(
+                "Policy evaluation needs one policy set to evaluate against; "
+                "set the policy set name on the import form and re-run the "
+                "audit. Skipped."
+            )
+        else:
+            cases: Set[Tuple[str, str]] = set()
+            for entry in request.identities:
+                name = (entry.name or "").strip()
+                if not name:
+                    continue
+                account, _sfx = split_account_suffix(name, request.default_suffix)
+                # The username R1 will see at auth time is the identity's
+                # name, which the import strips -- so evaluate the account
+                # when an identity exists under it, and the raw name when the
+                # rename never happened.
+                identity = identities.get(name) or identities.get(account)
+                auth_name = (identity or {}).get("name") or account
+                # A policy's SSID condition names a UNIT network, so evaluate
+                # against one of those rather than a property-wide SSID.
+                unit = next(
+                    (x for x in (entry.ssids or []) if "@" in x and not x.startswith("@")),
+                    None,
+                )
+                if not unit:
+                    continue
+                eval_ssid_for[name] = unit
+                cases.add((auth_name, unit))
+            if cases:
+                evaluations = await _evaluate_identities(
+                    r1_client, tenant_id, target_set, sorted(cases)
+                )
+                failed = sum(1 for v in evaluations.values() if v.get("error"))
+                if failed:
+                    warnings.append(
+                        f"R1 could not evaluate {failed} identity(s); those "
+                        f"rows show no verdict rather than a wrong one"
+                    )
+
     rows: List[IdentityAuditRow] = []
     consumed: Set[str] = set()
 
@@ -771,6 +954,10 @@ async def run_identity_audit(
             scoped_set_name=request.policy_set_name,
             conditions=conditions,
             file_ssids=file_ssids,
+            evaluation=evaluations.get(
+                ((identity or {}).get("name") or account, eval_ssid_for.get(username, "")),
+            ),
+            evaluated_ssid=eval_ssid_for.get(username),
         ))
 
     # ---- identities R1 holds that the file does not mention ----
@@ -824,6 +1011,9 @@ async def run_identity_audit(
         "with_description": sum(1 for r in in_file_rows if r.has_description),
         "clean": sum(1 for r in in_file_rows if not r.issues),
         "conditions_checked": sum(1 for r in rows if r.conditions_checked),
+        "evaluated": sum(1 for r in rows if r.evaluated),
+        "evaluated_no_match": sum(1 for r in rows if r.evaluated_matched is False),
+        "evaluated_wrong_policy": sum(1 for r in rows if r.evaluated_wrong_policy),
         "wrong_condition_count": sum(
             1 for r in rows
             if r.conditions_count is not None

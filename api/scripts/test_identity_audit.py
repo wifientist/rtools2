@@ -135,6 +135,29 @@ class FakeRadius:
         return {"content": [{"id": gid, "name": n} for n, gid in self.w["radius_groups"].items()]}
 
 
+class FakeRawClient:
+    """The low-level client, for the one endpoint with no service wrapper."""
+    def __init__(self, w):
+        self.w = w
+
+    def post(self, path, payload=None, **kw):
+        self.w.setdefault("evals", []).append(payload)
+        username = payload["evaluationCriteria"][0]["value"]["stringValue"]
+        ssid = payload["evaluationCriteria"][1]["value"]["stringValue"]
+        verdict = self.w["eval_results"].get((username, ssid))
+
+        # The body rides on the response object. A shared "last result" slot
+        # races under the concurrent gather these calls run in -- which is
+        # exactly the bug this fake existed to avoid faking away.
+        class R:
+            status_code = 200
+            body = verdict or {"wasMatched": False}
+        return R
+
+    def safe_json(self, response):
+        return response.body
+
+
 class FakeClient:
     def __init__(self, w):
         self.venues = FakeVenues(w)
@@ -142,6 +165,7 @@ class FakeClient:
         self.identity = FakeIdentity(w)
         self.dpsk = FakeDpsk(w)
         self.policy_sets = FakePolicySets(w)
+        self.policy_sets.client = FakeRawClient(w)
         self.radius_attributes = FakeRadius(w)
 
 
@@ -211,6 +235,17 @@ def new_world():
             ],
         },
         "policy_sets": [{"id": "set-1", "name": "CedarPoint"}],
+        # What R1 says REALLY happens. 4021's own policy is perfect, but a
+        # higher-priority "catchall" wins and hands it the wrong group --
+        # invisible to every other check in this module.
+        "eval_results": {
+            ("4021", "403@The_durant"): {
+                "wasMatched": True, "policyName": "catchall",
+                "policyId": "pol-x", "onMatchResponse": "rg-gig"},
+            ("4022_fast", "403@The_durant"): {
+                "wasMatched": True, "policyName": "4022",
+                "policyId": "pol-2", "onMatchResponse": "rg-fast"},
+        },
         # pol-3 deliberately absent: created, never assigned.
         "set_members": {"set-1": ["pol-1", "pol-2", "pol-4", "pol-6", "pol-9"]},
     }
@@ -222,7 +257,8 @@ ROSTER = [
 ]
 
 
-async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False):
+async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False,
+                evaluate=False):
     request = IdentityAuditRequest(
         controller_id=1,
         tenant_id="t-1",
@@ -232,6 +268,7 @@ async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False):
         ],
         policy_set_name=policy_set_name,
         verify_conditions=verify,
+        evaluate_policies=evaluate,
     )
     result = await run_identity_audit(FakeClient(world), request)
     return result, {(r.username_json or r.username_r1): r for r in result.rows}
@@ -428,6 +465,59 @@ async def main() -> int:
         and not any("never fire" in i for i in r.issues)
         and any("Could not read the conditions" in w for w in bad.warnings),
         f"issues={r.issues}, warnings={bad.warnings}",
+    )
+
+    # ---- Tier 2: what R1 says actually happens ----
+    w3 = new_world()
+    ev, ev_rows = await audit(w3, evaluate=True)
+    r = ev_rows["4021_ultrafast"]
+    failures += check(
+        "a higher-priority policy stealing the match is caught",
+        r.evaluated and r.evaluated_matched is True
+        and r.evaluated_policy_name == "catchall"
+        and r.evaluated_wrong_policy is True
+        and any("higher-priority policy wins" in i for i in r.issues)
+        and ev.totals["evaluated_wrong_policy"] == 1,
+        f"policy={r.evaluated_policy_name}, issues={r.issues}",
+    )
+    failures += check(
+        "and the RADIUS group R1 really applies is reported",
+        r.evaluated_radius_group == "gigabit"
+        and any("actually applies RADIUS group" in i for i in r.issues),
+        f"radius={r.evaluated_radius_group}",
+    )
+    failures += check(
+        "the evaluation uses the R1 identity name and the unit SSID",
+        any(
+            e["evaluationCriteria"][0]["value"]["stringValue"] == "4021"
+            and e["evaluationCriteria"][1]["value"]["stringValue"] == "403@The_durant"
+            and e["evaluationCriteria"][0]["matchName"] == "Dpsk_Username"
+            and e["evaluationCriteria"][1]["matchName"] == "SSID"
+            and e["evaluationCriteria"][0]["value"]["type"] == "StringEvaluation"
+            for e in w3["evals"]
+        ),
+        f"sent={w3['evals'][:1]}",
+    )
+    r = ev_rows["4025_gigabit"]
+    failures += check(
+        "an identity no policy matches is reported as getting none",
+        r.evaluated_matched is False
+        and any("NO policy matches" in i for i in r.issues),
+        f"issues={r.issues}",
+    )
+    failures += check(
+        "without evaluate_policies nothing is evaluated",
+        not any(r.evaluated for r in result.rows),
+        "rows were evaluated despite evaluate_policies=False",
+    )
+
+    # no policy set named -> skipped with a warning, not a wrong verdict
+    skipped, _ = await audit(new_world(), policy_set_name=None, evaluate=True)
+    failures += check(
+        "with no policy set named, evaluation is skipped and says so",
+        not any(r.evaluated for r in skipped.rows)
+        and any("needs one policy set" in w for w in skipped.warnings),
+        f"warnings={skipped.warnings}",
     )
 
     # 10. inform only -- no write path exists in the module

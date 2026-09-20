@@ -62,6 +62,12 @@ interface IdentityAuditRow {
   policy_in_set: boolean;
   policy_set_name: string | null;
   conditions_count: number | null;
+  evaluated: boolean;
+  evaluated_matched: boolean | null;
+  evaluated_policy_name: string | null;
+  evaluated_radius_group: string | null;
+  evaluated_ssid: string | null;
+  evaluated_wrong_policy: boolean | null;
   conditions_checked: boolean;
   policy_username_regex: string | null;
   policy_ssid_regex: string | null;
@@ -211,7 +217,8 @@ type AuditCellState = "ok" | "warn" | "bad" | "none";
 
 type AuditSortKey =
   | "username_json" | "username_r1" | "identity_group" | "dpsk_service"
-  | "policy" | "policy_username" | "policy_ssid" | "radius" | "desc" | "issues";
+  | "policy" | "policy_username" | "policy_ssid" | "evaluated"
+  | "radius" | "desc" | "issues";
 
 /**
  * The mark a status column shows for this row.
@@ -241,6 +248,10 @@ function auditCellState(row: IdentityAuditRow, key: AuditSortKey): AuditCellStat
     case "policy_ssid":
       if (!row.conditions_checked) return "none";
       return row.policy_ssid_in_file === false ? "warn" : "ok";
+    case "evaluated":
+      if (!row.evaluated) return "none";
+      if (row.evaluated_matched === false) return "bad";
+      return row.evaluated_wrong_policy ? "bad" : "ok";
     case "radius":
       if (!row.radius_group_name) return row.in_adaptive_policy ? "bad" : "none";
       return row.radius_group_matches === false ? "warn" : "ok";
@@ -317,6 +328,16 @@ const AUDIT_FINDINGS: {
     key: "policy_ssid_unknown", group: "Adaptive policy", severity: "wrong",
     label: "Policy matches an SSID the uploaded file never mentions",
     test: (r) => r.policy_ssid_in_file === false,
+  },
+  {
+    key: "eval_no_match", group: "What R1 actually does", severity: "blocks",
+    label: "R1 evaluates this identity and NO policy matches — it gets none",
+    test: (r) => r.evaluated_matched === false,
+  },
+  {
+    key: "eval_wrong_policy", group: "What R1 actually does", severity: "blocks",
+    label: "A higher-priority policy wins ahead of this resident's own",
+    test: (r) => r.evaluated_wrong_policy === true,
   },
   {
     key: "radius_missing", group: "RADIUS attribute group", severity: "wrong",
@@ -497,6 +518,9 @@ function CloudpathImport() {
   // per resident. ~5-10s on a 215-resident property, nothing without it.
   const [identityAuditVerifyConditions, setIdentityAuditVerifyConditions] =
     useState(false);
+  // The authoritative check: asks R1 to run the evaluation, so it accounts
+  // for priority order. Also one call per identity, also opt-in.
+  const [identityAuditEvaluate, setIdentityAuditEvaluate] = useState(false);
   // Most findings first by default: the table is opened to decide what needs
   // doing, so the rows with the most wrong with them belong at the top.
   const [identityAuditSort, setIdentityAuditSort] =
@@ -1290,6 +1314,7 @@ function CloudpathImport() {
           identities: fileIdentities,
           policy_set_name: policySetName || null,
           verify_conditions: identityAuditVerifyConditions,
+          evaluate_policies: identityAuditEvaluate,
         }),
       });
 
@@ -1383,12 +1408,18 @@ function CloudpathImport() {
     [identityAuditData],
   );
 
+  const identityAuditEvaluated = useMemo(
+    () => !!identityAuditData?.rows.some((r) => r.evaluated),
+    [identityAuditData],
+  );
+
   const handleExportIdentityAuditCsv = () => {
     if (!identityAuditData) return;
     const header = [
       "username_json", "username_r1", "matched_as", "identity_group",
       "dpsk_service", "adaptive_policy", "policy_in_set", "conditions_count",
-      "policy_username_regex", "policy_ssid_regex", "radius_group",
+      "policy_username_regex", "policy_ssid_regex",
+      "r1_matched_policy", "r1_radius_group", "radius_group",
       "radius_expected", "description_set", "issues",
     ];
     const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -1400,6 +1431,8 @@ function CloudpathImport() {
         row.policy_name || "", row.policy_in_set,
         row.conditions_count ?? "",
         row.policy_username_regex || "", row.policy_ssid_regex || "",
+        row.evaluated ? (row.evaluated_matched ? (row.evaluated_policy_name || "") : "NO MATCH") : "",
+        row.evaluated_radius_group || "",
         row.radius_group_name || "", row.radius_group_expected || "",
         row.has_description, row.issues.join("; "),
       ].map(escape).join(","));
@@ -2614,6 +2647,25 @@ function CloudpathImport() {
           </span>
         </label>
 
+        <label className="flex items-start gap-2 mt-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={identityAuditEvaluate}
+            onChange={(e) => setIdentityAuditEvaluate(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium">Ask R1 which policy actually wins</span>
+            <span className="text-gray-500">
+              {" "}— the authoritative check. R1 runs the evaluation itself, in
+              priority order, and reports the policy that matches and the RADIUS
+              group it really applies. The only check that catches a
+              higher-priority policy winning ahead of a resident's own. Needs the
+              policy set name set above; one extra API call per identity.
+            </span>
+          </span>
+        </label>
+
         <p className="text-xs text-gray-500 mt-2">
           View Identities lets you pick specific DPSK pools before fetching (optionally filtered by venue if selected)
         </p>
@@ -2853,6 +2905,9 @@ function CloudpathImport() {
                               ["policy_ssid", "Policy SSID Regex"],
                             ] as [AuditSortKey, string][])
                           : []),
+                        ...(identityAuditEvaluated
+                          ? ([["evaluated", "R1 Says (actual)"]] as [AuditSortKey, string][])
+                          : []),
                         ["radius", "RADIUS Group"],
                         ["desc", "Desc"],
                         ["issues", "Notes"],
@@ -2986,6 +3041,29 @@ function CloudpathImport() {
                             </td>
                           </>
                         )}
+                        {identityAuditEvaluated && (
+                          <td className="px-3 py-2">
+                            <AuditCell
+                              state={auditCellState(row, "evaluated")}
+                              label={
+                                !row.evaluated
+                                  ? null
+                                  : row.evaluated_matched === false
+                                  ? "no match"
+                                  : `${row.evaluated_policy_name ?? "?"} → ${
+                                      row.evaluated_radius_group ?? "?"
+                                    }`
+                              }
+                              title={
+                                !row.evaluated
+                                  ? "Not evaluated"
+                                  : row.evaluated_matched === false
+                                  ? `R1 matched no policy for ${row.evaluated_ssid}`
+                                  : `R1 matches '${row.evaluated_policy_name}' on ${row.evaluated_ssid} and applies '${row.evaluated_radius_group}'`
+                              }
+                            />
+                          </td>
+                        )}
                         <td className="px-3 py-2">
                           <AuditCell
                             state={auditCellState(row, "radius")}
@@ -3012,7 +3090,7 @@ function CloudpathImport() {
                     ))}
                     {visibleIdentityAuditRows.length === 0 && (
                       <tr>
-                        <td colSpan={identityAuditDeepChecked ? 10 : 8} className="px-3 py-6 text-center text-gray-500">
+                        <td colSpan={8 + (identityAuditDeepChecked ? 2 : 0) + (identityAuditEvaluated ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">
                           Nothing matches this filter.
                         </td>
                       </tr>
