@@ -150,6 +150,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         renames_already_done: int = 0
         skipped_no_ssid: int = 0
         skipped_no_unit_ssid: int = 0
+        # Passphrases that never got created, so could never get a policy.
+        failed_upstream: int = 0
         policy_set_id: Optional[str] = None
         policy_results: List[PolicyResult] = Field(default_factory=list)
         rename_results: List[IdentityRenameResult] = Field(default_factory=list)
@@ -209,6 +211,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         unique_suffixes: Set[str] = set()
         skipped_no_ssid = 0
         skipped_no_unit_ssid = 0
+        failed_upstream = 0
+        upstream_errors: List[str] = []
 
         for pp in created_passphrases:
             # Handle both dict and Pydantic model (PassphraseResult)
@@ -238,6 +242,20 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             # Skip only failed passphrases (not skipped ones - they exist and need policies too)
             if not success:
+                # Counted, not swallowed. When create_passphrase broke, all
+                # 215 arrived here with success=False and the phase reported
+                # "No policies to create - skipped 0 (no SSID mapping), 0 (no
+                # unit SSIDs)" -- three zeros that described the situation
+                # perfectly and explained nothing. The upstream failure is the
+                # only fact worth printing in that case.
+                failed_upstream += 1
+                if len(upstream_errors) < 3:
+                    err = (
+                        getattr(pp, 'error', None) if hasattr(pp, 'error')
+                        else pp.get('error')
+                    )
+                    if err:
+                        upstream_errors.append(f"{username or '?'}: {err}")
                 continue
 
             if not username:
@@ -291,12 +309,26 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 })
 
         if not parsed_entries:
-            await self.emit(
-                f"No policies to create - skipped {skipped_no_ssid} (no SSID mapping), "
-                f"{skipped_no_unit_ssid} (no unit SSIDs)",
-                "warning"
-            )
-            return self.Outputs()
+            if failed_upstream:
+                # Name the real cause first. Nothing downstream can build a
+                # policy for a passphrase that was never created, so this is
+                # not a policy problem to investigate -- it is the passphrase
+                # phase's failure arriving one phase late.
+                await self.emit(
+                    f"No policies to create: all {failed_upstream} passphrase(s) "
+                    f"failed upstream in create_passphrases, so there is nothing "
+                    f"to attach a policy to. Fix that phase first."
+                    + (f" First errors: {'; '.join(upstream_errors)}"
+                       if upstream_errors else ""),
+                    "error",
+                )
+            else:
+                await self.emit(
+                    f"No policies to create - skipped {skipped_no_ssid} (no SSID mapping), "
+                    f"{skipped_no_unit_ssid} (no unit SSIDs)",
+                    "warning"
+                )
+            return self.Outputs(failed_upstream=failed_upstream)
 
         await self.emit(
             f"Found {len(parsed_entries)} policy entries, "
@@ -304,11 +336,13 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         )
         # These were previously reported only when NOTHING was built, so a
         # partial run looked clean while dozens of passphrases got no policy.
-        if skipped_no_ssid or skipped_no_unit_ssid:
+        if skipped_no_ssid or skipped_no_unit_ssid or failed_upstream:
             await self.emit(
-                f"No policy for {skipped_no_ssid + skipped_no_unit_ssid} "
+                f"No policy for "
+                f"{skipped_no_ssid + skipped_no_unit_ssid + failed_upstream} "
                 f"passphrases: {skipped_no_ssid} had no SSID mapping, "
-                f"{skipped_no_unit_ssid} had no unit SSID (property-wide only)",
+                f"{skipped_no_unit_ssid} had no unit SSID (property-wide only), "
+                f"{failed_upstream} failed to be created upstream",
                 "warning",
             )
 
@@ -927,6 +961,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             renames_already_done=renames_already_done,
             skipped_no_ssid=skipped_no_ssid,
             skipped_no_unit_ssid=skipped_no_unit_ssid,
+            failed_upstream=failed_upstream,
             policy_set_id=policy_set_id,
             policy_results=policy_results,
             rename_results=rename_results,
