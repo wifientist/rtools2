@@ -201,12 +201,57 @@ const buildApAssignmentCsv = (
  * not connect at all -- but it is not the same finding as "missing", and
  * collapsing the two hides which one you are looking at.
  */
+type AuditCellState = "ok" | "warn" | "bad" | "none";
+
+type AuditSortKey =
+  | "username_json" | "username_r1" | "identity_group" | "dpsk_service"
+  | "policy" | "radius" | "desc" | "issues";
+
+/**
+ * The mark a status column shows for this row.
+ *
+ * Shared by the cells and the sort on purpose. Sorting a status column has
+ * to mean "worst first" rather than "alphabetical by whatever text happens
+ * to be in it" — that is the whole point of sorting when you are looking for
+ * work to do — and a sort computed separately from the render would
+ * eventually disagree with the ticks on screen.
+ */
+function auditCellState(row: IdentityAuditRow, key: AuditSortKey): AuditCellState {
+  switch (key) {
+    case "identity_group":
+      if (!row.in_identity_group) return "bad";
+      return row.matched_as === "exact" && (row.username_json || "").includes("_")
+        ? "warn"
+        : "ok";
+    case "dpsk_service":
+      if (row.in_dpsk_service) return "ok";
+      return row.in_identity_group ? "bad" : "none";
+    case "policy":
+      if (!row.in_adaptive_policy) return "bad";
+      return row.policy_in_set ? "ok" : "warn";
+    case "radius":
+      if (!row.radius_group_name) return row.in_adaptive_policy ? "bad" : "none";
+      return row.radius_group_matches === false ? "warn" : "ok";
+    case "desc":
+      if (row.has_description) return "ok";
+      return row.in_identity_group ? "bad" : "none";
+    default:
+      return "none";
+  }
+}
+
+// Worst first. "none" sorts last: it means the question does not apply to
+// this row, which is not a finding and should not crowd the top.
+const AUDIT_SEVERITY: Record<AuditCellState, number> = {
+  bad: 0, warn: 1, ok: 2, none: 3,
+};
+
 function AuditCell({
   state,
   label,
   title,
 }: {
-  state: "ok" | "warn" | "bad" | "none";
+  state: AuditCellState;
   label?: string | null;
   title?: string;
 }) {
@@ -347,6 +392,21 @@ function CloudpathImport() {
   const [identityAuditFilter, setIdentityAuditFilter] =
     useState<"all" | "issues" | "clean" | "extra">("issues");
   const [identityAuditSearch, setIdentityAuditSearch] = useState("");
+  // Most findings first by default: the table is opened to decide what needs
+  // doing, so the rows with the most wrong with them belong at the top.
+  const [identityAuditSort, setIdentityAuditSort] =
+    useState<{ key: AuditSortKey; dir: "asc" | "desc" }>({ key: "issues", dir: "desc" });
+
+  const toggleIdentityAuditSort = (key: AuditSortKey) => {
+    setIdentityAuditSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        // First click on a new column shows the end that needs attention:
+        // worst-first for status columns and most-issues-first for notes,
+        // A-Z for the two name columns.
+        : { key, dir: key === "issues" ? "desc" : "asc" },
+    );
+  };
 
   // Identity export modal — two-step: "pick-pools" then "view-data"
   const [showIdentityExportModal, setShowIdentityExportModal] = useState(false);
@@ -1148,7 +1208,7 @@ function CloudpathImport() {
   const visibleIdentityAuditRows = useMemo(() => {
     if (!identityAuditData) return [];
     const search = identityAuditSearch.trim().toLowerCase();
-    return identityAuditData.rows.filter((row) => {
+    const rows = identityAuditData.rows.filter((row) => {
       if (identityAuditFilter === "issues" && row.issues.length === 0) return false;
       if (identityAuditFilter === "clean" && row.issues.length > 0) return false;
       if (identityAuditFilter === "extra" && row.in_file) return false;
@@ -1159,7 +1219,37 @@ function CloudpathImport() {
         (row.identity_group_name || "").toLowerCase().includes(search)
       );
     });
-  }, [identityAuditData, identityAuditFilter, identityAuditSearch]);
+
+    const { key, dir } = identityAuditSort;
+    const flip = dir === "asc" ? 1 : -1;
+
+    const compare = (a: IdentityAuditRow, b: IdentityAuditRow) => {
+      if (key === "issues") return (a.issues.length - b.issues.length) * flip;
+
+      if (key === "username_json" || key === "username_r1") {
+        const av = (key === "username_json" ? a.username_json : a.username_r1) || "";
+        const bv = (key === "username_json" ? b.username_json : b.username_r1) || "";
+        // A blank name is the absence of a record, not a name that sorts
+        // before "4021". Keep blanks at the bottom whichever way we sort, so
+        // flipping direction never buries the rows you are reading.
+        if (!av !== !bv) return av ? -1 : 1;
+        return av.localeCompare(bv, undefined, { numeric: true }) * flip;
+      }
+
+      const sev =
+        AUDIT_SEVERITY[auditCellState(a, key)] - AUDIT_SEVERITY[auditCellState(b, key)];
+      if (sev !== 0) return sev * flip;
+      // Same status: fall back to the name so the order is stable and
+      // readable rather than whatever the filter happened to emit.
+      return (a.username_json || a.username_r1 || "").localeCompare(
+        b.username_json || b.username_r1 || "", undefined, { numeric: true },
+      );
+    };
+
+    // Sort a copy: rows is the fetched response, and sorting it in place
+    // would quietly reorder what every other reader of it sees.
+    return [...rows].sort(compare);
+  }, [identityAuditData, identityAuditFilter, identityAuditSearch, identityAuditSort]);
 
   const handleExportIdentityAuditCsv = () => {
     if (!identityAuditData) return;
@@ -2526,18 +2616,44 @@ function CloudpathImport() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase text-gray-500">
-                      {[
-                        "Username (JSON)", "Username (R1)", "Identity Group",
-                        "DPSK Service", "Adaptive Policy", "RADIUS Group",
-                        "Desc", "Notes",
-                      ].map((heading) => (
+                      {([
+                        ["username_json", "Username (JSON)"],
+                        ["username_r1", "Username (R1)"],
+                        ["identity_group", "Identity Group"],
+                        ["dpsk_service", "DPSK Service"],
+                        ["policy", "Adaptive Policy"],
+                        ["radius", "RADIUS Group"],
+                        ["desc", "Desc"],
+                        ["issues", "Notes"],
+                      ] as [AuditSortKey, string][]).map(([key, heading]) => (
                         // Sticky goes on the cells, not the row or thead:
                         // Safari ignores it on <thead>/<tr>.
                         <th
-                          key={heading}
+                          key={key}
                           className="px-3 py-2 sticky top-0 z-10 bg-gray-50 border-b"
                         >
-                          {heading}
+                          <button
+                            onClick={() => toggleIdentityAuditSort(key)}
+                            className={`flex items-center gap-1 uppercase hover:text-gray-900 ${
+                              identityAuditSort.key === key
+                                ? "text-gray-900 font-semibold"
+                                : "text-gray-500"
+                            }`}
+                            title={
+                              key === "username_json" || key === "username_r1"
+                                ? "Sort by name (blanks last)"
+                                : key === "issues"
+                                ? "Sort by number of findings"
+                                : "Sort worst first"
+                            }
+                          >
+                            {heading}
+                            <span className="text-[10px]">
+                              {identityAuditSort.key === key
+                                ? identityAuditSort.dir === "asc" ? "▲" : "▼"
+                                : "↕"}
+                            </span>
+                          </button>
                         </th>
                       ))}
                     </tr>
@@ -2584,29 +2700,21 @@ function CloudpathImport() {
                         </td>
                         <td className="px-3 py-2">
                           <AuditCell
-                            state={
-                              !row.in_identity_group ? "bad"
-                              : row.matched_as === "exact" && (row.username_json || "").includes("_") ? "warn"
-                              : "ok"
-                            }
+                            state={auditCellState(row, "identity_group")}
                             label={row.identity_group_name}
                             title={row.identity_group_name || "No identity found"}
                           />
                         </td>
                         <td className="px-3 py-2">
                           <AuditCell
-                            state={row.in_dpsk_service ? "ok" : row.in_identity_group ? "bad" : "none"}
+                            state={auditCellState(row, "dpsk_service")}
                             label={row.dpsk_service_name}
                             title={row.dpsk_service_name || "No DPSK service"}
                           />
                         </td>
                         <td className="px-3 py-2">
                           <AuditCell
-                            state={
-                              !row.in_adaptive_policy ? "bad"
-                              : !row.policy_in_set ? "warn"
-                              : "ok"
-                            }
+                            state={auditCellState(row, "policy")}
                             label={row.policy_name}
                             title={
                               !row.in_adaptive_policy
@@ -2619,11 +2727,7 @@ function CloudpathImport() {
                         </td>
                         <td className="px-3 py-2">
                           <AuditCell
-                            state={
-                              !row.radius_group_name ? (row.in_adaptive_policy ? "bad" : "none")
-                              : row.radius_group_matches === false ? "warn"
-                              : "ok"
-                            }
+                            state={auditCellState(row, "radius")}
                             label={row.radius_group_name}
                             title={
                               row.radius_group_matches === false
@@ -2634,7 +2738,7 @@ function CloudpathImport() {
                         </td>
                         <td className="px-3 py-2">
                           <AuditCell
-                            state={row.has_description ? "ok" : row.in_identity_group ? "bad" : "none"}
+                            state={auditCellState(row, "desc")}
                             title={row.has_description ? "Description set" : "Description blank"}
                           />
                         </td>
