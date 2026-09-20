@@ -56,6 +56,7 @@ from workflow.v2.models import (
 logger = logging.getLogger(__name__)
 
 # Pattern to detect unit-specific SSIDs like "108@Property_Name"
+from workflow.phases.dpsk_usernames import split_account_suffix
 from workflow.phases.cloudpath.unit_ssid import (  # noqa: F401
     UNIT_SSID_PATTERN, unit_from_ssid, is_unit_ssid,
     is_property_ssid, is_junk_unit_ssid,
@@ -683,6 +684,11 @@ class ValidateCloudpathPhase(PhaseExecutor):
         passphrases_with_exists: List[Dict[str, Any]] = []
 
         identities_matched_by_guid = 0
+        # Matched only because we looked for the name a PREVIOUS run left
+        # behind. A non-zero count here is the signature of a re-run whose
+        # identities carry no Cloudpath GUID to match on.
+        identities_matched_by_stripped_name = 0
+        default_suffix = options.get('default_suffix', 'gigabit')
 
         for pp in passphrases:
             pp_dict = pp.model_dump()
@@ -710,6 +716,27 @@ class ValidateCloudpathPhase(PhaseExecutor):
                     identities_matched_by_guid += 1
             if not identity_info:
                 identity_info = existing_identities.get(pp.name)
+            if not identity_info:
+                # ---------------------------------------------------------
+                # The name this import LEAVES BEHIND, not the one it was
+                # given. create_access_policies renames "4021_ultrafast" to
+                # "4021", so on every run after the first the raw lookup
+                # above cannot match and only the GUID saves us -- and the
+                # GUID is in the description, which is blank for any
+                # identity whose run died before update_identity_descriptions
+                # (or which was never given one). Both misses and the import
+                # mints a SECOND identity for the resident, then fails to
+                # rename it onto the first: GENERAL-010, duplicate name.
+                #
+                # Matching the stripped form closes that. It is the same
+                # split the rename uses, so what we look for is exactly what
+                # a previous run wrote.
+                # ---------------------------------------------------------
+                stripped, _suffix = split_account_suffix(pp.name, default_suffix)
+                if stripped != pp.name:
+                    identity_info = existing_identities.get(stripped)
+                    if identity_info:
+                        identities_matched_by_stripped_name += 1
 
             if identity_info:
                 pp_dict['existing_identity_id'] = identity_info['id']
@@ -768,6 +795,17 @@ class ValidateCloudpathPhase(PhaseExecutor):
                 f"{identities_matched_by_guid} identities matched by Cloudpath "
                 f"GUID rather than username — they were renamed by a previous "
                 f"run and will be reused, not duplicated"
+            )
+
+        if identities_matched_by_stripped_name:
+            await self.emit(
+                f"{identities_matched_by_stripped_name} identities matched only "
+                f"by their stripped name (e.g. file '4021_gigabit' -> R1 '4021'). "
+                f"These were renamed by a previous run and carry no Cloudpath "
+                f"GUID to match on, so without this they would have been "
+                f"duplicated and their rename would have failed as a duplicate "
+                f"name. Setting identity descriptions makes the match exact.",
+                "warning",
             )
 
         if description_updates_needed > 0:

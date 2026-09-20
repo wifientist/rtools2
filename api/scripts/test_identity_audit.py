@@ -207,7 +207,7 @@ async def audit(world, roster=None, policy_set_name="CedarPoint"):
         policy_set_name=policy_set_name,
     )
     result = await run_identity_audit(FakeClient(world), request)
-    return result, {r.username: r for r in result.rows}
+    return result, {(r.username_json or r.username_r1): r for r in result.rows}
 
 
 def check(label, ok, detail=""):
@@ -234,7 +234,7 @@ async def main() -> int:
     r = rows["4021_ultrafast"]
     failures += check(
         "a renamed identity matches its file row and reports no issues",
-        r.in_identity_group and r.matched_as == "processed" and r.r1_name == "4021"
+        r.in_identity_group and r.matched_as == "processed" and r.username_r1 == "4021"
         and r.in_dpsk_service and r.dpsk_service_name == "CedarPoint DPSK"
         and r.in_adaptive_policy and r.policy_in_set
         and r.radius_group_name == "ultrafast" and r.radius_group_matches
@@ -293,10 +293,11 @@ async def main() -> int:
     extras = [r for r in result.rows if not r.in_file]
     failures += check(
         "an identity in R1 but not in the file appears as a row",
-        len(extras) == 1 and extras[0].username == "4099"
+        len(extras) == 1 and extras[0].username_r1 == "4099"
+        and extras[0].username_json is None
         and extras[0].in_identity_group
         and "Present in R1 but not in the uploaded file" in extras[0].issues,
-        f"extras={[e.username for e in extras]}",
+        f"extras={[e.username_r1 for e in extras]}",
     )
 
     # 9. the other property's pool is not scanned
@@ -304,7 +305,7 @@ async def main() -> int:
         "only pools serving this venue are scanned",
         result.dpsk_services_scanned == ["CedarPoint DPSK"]
         and result.identity_groups_scanned == ["CedarPoint Residents"]
-        and not any(r.username == "9001" for r in result.rows),
+        and not any(r.username_r1 == "9001" for r in result.rows),
         f"pools={result.dpsk_services_scanned}",
     )
 
