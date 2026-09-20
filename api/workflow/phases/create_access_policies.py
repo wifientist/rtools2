@@ -22,6 +22,9 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Set, Tuple
 
 from workflow.phases.registry import register_phase
+# One split rule for the whole import; see dpsk_usernames for why it is
+# a leaf module rather than a function here.
+from workflow.phases.dpsk_usernames import split_account_suffix
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
 
 logger = logging.getLogger(__name__)
@@ -152,6 +155,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         skipped_no_unit_ssid: int = 0
         # Passphrases that never got created, so could never get a policy.
         failed_upstream: int = 0
+        # Renames skipped because the target name is already another identity.
+        renames_would_collide: int = 0
         policy_set_id: Optional[str] = None
         policy_results: List[PolicyResult] = Field(default_factory=list)
         rename_results: List[IdentityRenameResult] = Field(default_factory=list)
@@ -263,19 +268,14 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             # Parse username: "12345_fast" → ("12345", "fast")
             #                 "67890"      → ("67890", "gigabit")
-            if "_" in username:
-                parts = username.rsplit("_", 1)
-                account = parts[0]
-                suffix = parts[1]
-                # Track for identity rename
+            account, suffix = split_account_suffix(username, default_suffix)
+
+            if account != username:
                 identities_to_rename.append({
                     "identity_id": identity_id,
                     "old_name": username,
                     "new_name": account,
                 })
-            else:
-                account = username
-                suffix = default_suffix
 
             unique_suffixes.add(suffix)
 
@@ -857,6 +857,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         renames_no_identity = 0
         renames_failed = 0
         renames_already_done = 0
+        renames_would_collide = 0
+        collision_examples: List[str] = []
 
         if identities_to_rename:
             await self.emit(f"Checking {len(identities_to_rename)} identities for suffix removal")
@@ -869,6 +871,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 # every identity it already renamed on the last one. One
                 # paged read replaces N writes.
                 current_names = await self._identity_names_by_id(identity_group_id)
+                # name -> id, to see a collision BEFORE asking R1 to make one.
+                names_taken = {n: i for i, n in current_names.items()}
 
                 for identity in identities_to_rename:
                     identity_id = identity["identity_id"]
@@ -877,6 +881,31 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
                     if identity_id and current_names.get(identity_id) == new_name:
                         renames_already_done += 1
+                        continue
+
+                    # =====================================================
+                    # Look before renaming onto a name someone else holds.
+                    #
+                    # Usually that someone else is THIS resident, imported
+                    # on an earlier run and already stripped: the import
+                    # failed to recognise its own output upstream, minted a
+                    # second identity from the file name, and is now trying
+                    # to rename the copy onto the original. R1 answers
+                    # GENERAL-010 and the resident is left with a duplicate
+                    # identity still carrying its tier suffix.
+                    #
+                    # Checking here turns that from a failed write into a
+                    # named finding. The real repair is upstream -- validate
+                    # now matches the stripped name -- so anything still
+                    # reaching this point is a genuine duplicate worth
+                    # reporting rather than retrying.
+                    # =====================================================
+                    holder = names_taken.get(new_name)
+                    if holder and holder != identity_id:
+                        renames_would_collide += 1
+                        collision_examples.append(
+                            f"{old_name} -> {new_name} (held by {holder})"
+                        )
                         continue
 
                     if not identity_id:
@@ -920,6 +949,20 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                             error=str(e)
                         ))
 
+                if renames_would_collide:
+                    await self.emit(
+                        f"{renames_would_collide} identity(s) NOT renamed: the "
+                        f"target name is already another identity in this group "
+                        f"— {'; '.join(collision_examples[:5])}"
+                        f"{'...' if len(collision_examples) > 5 else ''}. That "
+                        f"means this resident exists TWICE in R1: once from an "
+                        f"earlier run (already stripped) and once minted by this "
+                        f"one. The duplicate is left in place for you to review; "
+                        f"setting identity descriptions lets future runs match by "
+                        f"Cloudpath GUID and stop it recurring.",
+                        "warning",
+                    )
+
                 if renames_no_identity or renames_failed:
                     detail = []
                     if renames_no_identity:
@@ -962,6 +1005,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             skipped_no_ssid=skipped_no_ssid,
             skipped_no_unit_ssid=skipped_no_unit_ssid,
             failed_upstream=failed_upstream,
+            renames_would_collide=renames_would_collide,
             policy_set_id=policy_set_id,
             policy_results=policy_results,
             rename_results=rename_results,

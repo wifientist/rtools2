@@ -70,6 +70,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
+from workflow.phases.dpsk_usernames import split_account_suffix
 from workflow.phases.create_access_policies import (
     DPSK_POLICY_TEMPLATE_ID,
     DEFAULT_SUFFIX,
@@ -170,18 +171,11 @@ class IdentityAuditResponse(BaseModel):
 # ==================== Name handling ====================
 
 
-def split_account_suffix(username: str, default_suffix: str) -> Tuple[str, str]:
-    """
-    "4021_ultrafast" -> ("4021", "ultrafast");  "4021" -> ("4021", default).
-
-    Deliberately identical to create_access_policies: rsplit on the LAST
-    underscore, no suffix allowlist. Auditing by a different rule than the
-    import follows would report failures that are really just disagreement.
-    """
-    if "_" in username:
-        account, suffix = username.rsplit("_", 1)
-        return account, suffix
-    return username, default_suffix
+# split_account_suffix comes from workflow.phases.dpsk_usernames -- the same
+# function the import itself splits with. The audit exists to say whether the
+# import did its job, so it has to relate file names to R1 names by the
+# import's own rule. A private copy that drifted would report disagreement
+# between two of our own functions as a resident being broken.
 
 
 # ==================== R1 collection ====================
