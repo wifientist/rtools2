@@ -433,6 +433,7 @@ def _build_row(
     username_json: Optional[str],
     account: str,
     suffix: Optional[str],
+    expected_suffix: Optional[str],
     in_file: bool,
     identity: Optional[Dict[str, Any]],
     matched_as: Optional[str],
@@ -474,10 +475,23 @@ def _build_row(
         if radius_id:
             row.radius_group_name = radius_names.get(radius_id, radius_id)
 
-    row.radius_group_expected = suffix
-    if row.radius_group_name and suffix:
+    # ---------------------------------------------------------------------
+    # Only the FILE can say which RADIUS group a resident should be on, and
+    # only for a resident the file actually lists.
+    #
+    # This used to compare against `suffix`, which for an identity absent
+    # from the file falls through to the default tier -- so an R1-only
+    # identity named "4099" was reported as "RADIUS group is 'superfast',
+    # expected 'gigabit'". Nothing expected gigabit. The default tier is what
+    # the import assigns to a FILE username carrying no suffix; read against
+    # an identity that was never in the file it is not a weak signal, it is a
+    # fabricated one. Unknown is the honest answer, and it leaves the cell
+    # showing the group's name with no verdict attached.
+    # ---------------------------------------------------------------------
+    row.radius_group_expected = expected_suffix
+    if row.radius_group_name and expected_suffix:
         row.radius_group_matches = (
-            row.radius_group_name.lower() == suffix.lower()
+            row.radius_group_name.lower() == expected_suffix.lower()
         )
 
     # ---- findings, in the order they break a resident's connection ----
@@ -506,7 +520,7 @@ def _build_row(
     elif row.radius_group_matches is False:
         row.issues.append(
             f"RADIUS group is '{row.radius_group_name}', expected "
-            f"'{suffix}' from the username"
+            f"'{expected_suffix}' from the username in the file"
         )
     if row.in_identity_group and not row.has_description:
         row.issues.append("No description set")
@@ -568,6 +582,9 @@ async def run_identity_audit(
             username_json=username,
             account=account,
             suffix=suffix,
+            # The file lists this resident, so its username -- explicit tier
+            # or the default for one without -- is a real expectation.
+            expected_suffix=suffix,
             in_file=True,
             identity=identity,
             matched_as=matched_as,
@@ -585,12 +602,20 @@ async def run_identity_audit(
         if name in consumed:
             continue
         extras += 1
-        # Already processed by definition -- it is what R1 stores.
+        # What R1 stores, read by the same rule -- but note this name may
+        # have no tier in it at all (a processed "4099"), in which case the
+        # split hands back the DEFAULT, which describes nothing about this
+        # identity. Hence expected_suffix=None below: the file is the only
+        # thing entitled to say what a resident should have been given, and
+        # it does not mention this one.
         account, suffix = split_account_suffix(name, request.default_suffix)
+        if "_" not in name:
+            suffix = None
         row = _build_row(
             username_json=None,
             account=account,
             suffix=suffix,
+            expected_suffix=None,
             in_file=False,
             identity=identity,
             matched_as="exact",

@@ -289,6 +289,20 @@ async def main() -> int:
         f"4026 issues={rows['4026_fast'].issues}",
     )
 
+    # 7a. an R1-only identity must NOT be judged against a tier nobody set.
+    #     "4099" is already processed, so splitting it yields the DEFAULT
+    #     tier -- which describes the import's fallback, not this identity.
+    #     Reporting "expected gigabit" for a resident the file never listed
+    #     invents a requirement out of a default.
+    r = rows["4099"]
+    failures += check(
+        "an R1-only identity gets NO expected RADIUS group",
+        r.radius_group_expected is None and r.radius_group_matches is None
+        and not any("expected" in i for i in r.issues),
+        f"expected={r.radius_group_expected}, matches={r.radius_group_matches}, "
+        f"issues={r.issues}",
+    )
+
     # 7. identities present only in R1
     extras = [r for r in result.rows if not r.in_file]
     failures += check(
