@@ -65,6 +65,7 @@ groups are each fetched in bulk and joined in memory. A 600-resident property
 costs the same as a 20-resident one.
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -72,8 +73,11 @@ from pydantic import BaseModel, Field
 
 from workflow.phases.dpsk_usernames import split_account_suffix
 from workflow.phases.create_access_policies import (
+    ATTR_DPSK_USERNAME,
+    ATTR_WIRELESS_SSID,
     DPSK_POLICY_TEMPLATE_ID,
     DEFAULT_SUFFIX,
+    regex_pattern_for_value,
     sanitize_policy_name,
 )
 
@@ -88,6 +92,16 @@ POLICY_PAGE_SIZE = 500
 # How many policy sets to inspect when the caller does not name one. Each
 # costs a membership read, and a tenant has a handful, not hundreds.
 MAX_POLICY_SETS = 50
+
+# A DPSK policy carries exactly two conditions: the username and the SSID.
+# conditionsCount comes back in the policy LIST for free, so a policy missing
+# one -- or carrying a stale third -- is detectable without reading anything.
+DPSK_EXPECTED_CONDITIONS = 2
+
+# Conditions are per-policy with no bulk read, so the deep check costs one
+# call per resident. Capped so a 600-resident property opens a sane number of
+# sockets rather than all of them at once.
+CONDITION_FETCH_CONCURRENCY = 8
 
 
 # ==================== Request / response models ====================
@@ -115,6 +129,13 @@ class IdentityAuditRequest(BaseModel):
     default_suffix: str = Field(
         DEFAULT_SUFFIX,
         description="Speed tier assumed for usernames with no trailing _suffix",
+    )
+    verify_conditions: bool = Field(
+        False,
+        description="Read each matched policy's conditions to check what it "
+                    "actually matches on. One extra API call per resident, so "
+                    "it is opt-in; without it the policy column only says a "
+                    "policy with the right name exists.",
     )
 
 
@@ -149,6 +170,16 @@ class IdentityAuditRow(BaseModel):
     policy_id: Optional[str] = None
     policy_in_set: bool = False
     policy_set_name: Optional[str] = None
+
+    # What the policy actually matches on. Populated only when the caller
+    # asked to verify conditions; None everywhere means "not checked", which
+    # is not the same as "checked and empty".
+    conditions_count: Optional[int] = None
+    conditions_checked: bool = False
+    policy_username_regex: Optional[str] = None
+    policy_ssid_regex: Optional[str] = None
+    policy_username_matches: Optional[bool] = None
+    policy_ssid_in_file: Optional[bool] = None
 
     # Column 5
     radius_group_name: Optional[str] = None
@@ -340,6 +371,66 @@ async def _policies_by_name(r1_client, tenant_id: str) -> Dict[str, Dict[str, An
     return by_name
 
 
+async def _conditions_for_policies(
+    r1_client, tenant_id: str, policy_ids: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    policy id -> {username_regex, ssid_regex, other, error}.
+
+    THE DEEP CHECK. Everything else in this audit asks whether a policy with
+    the right NAME exists and what RADIUS group it points at. Neither says
+    what the policy actually MATCHES ON, and a policy named "8081081081"
+    whose username condition still reads "^8081081080$" from a mistyped
+    earlier run looks perfectly healthy by name.
+
+    There is no bulk read -- the policy list carries only conditionsCount --
+    so this is one call per resident, which is why it is opt-in. Bounded
+    concurrency, and one policy's failure is recorded on that policy rather
+    than sinking the audit.
+    """
+    semaphore = asyncio.Semaphore(CONDITION_FETCH_CONCURRENCY)
+    results: Dict[str, Dict[str, Any]] = {}
+
+    async def fetch(policy_id: str) -> None:
+        async with semaphore:
+            try:
+                response = await r1_client.policy_sets.get_policy_conditions(
+                    template_id=DPSK_POLICY_TEMPLATE_ID,
+                    policy_id=policy_id,
+                    tenant_id=tenant_id,
+                )
+            except Exception as e:
+                logger.warning(f"Could not read conditions for policy {policy_id}: {e}")
+                results[policy_id] = {"error": str(e)}
+                return
+
+            items = (
+                response.get('content', response.get('data', []))
+                if isinstance(response, dict) else (response or [])
+            )
+            record: Dict[str, Any] = {
+                "username_regex": None, "ssid_regex": None,
+                "other": [], "error": None,
+            }
+            for cond in items:
+                if not isinstance(cond, dict):
+                    continue
+                rule = cond.get('evaluationRule') or {}
+                pattern = rule.get('regexStringCriteria')
+                attr = cond.get('templateAttributeId')
+                if attr == ATTR_DPSK_USERNAME:
+                    record["username_regex"] = pattern
+                elif attr == ATTR_WIRELESS_SSID:
+                    record["ssid_regex"] = pattern
+                else:
+                    record["other"].append(str(attr))
+            results[policy_id] = record
+
+    await asyncio.gather(*(fetch(pid) for pid in policy_ids))
+    logger.info(f"Read conditions for {len(results)} policies")
+    return results
+
+
 async def _policy_set_membership(
     r1_client, tenant_id: str, policy_set_name: Optional[str]
 ) -> Tuple[Dict[str, str], List[str], List[str]]:
@@ -441,6 +532,8 @@ def _build_row(
     membership: Dict[str, str],
     radius_names: Dict[str, str],
     scoped_set_name: Optional[str],
+    conditions: Optional[Dict[str, Dict[str, Any]]] = None,
+    file_ssids: Optional[Set[str]] = None,
 ) -> IdentityAuditRow:
     """Join one identity against everything collected, and name what is wrong."""
     row = IdentityAuditRow(
@@ -474,6 +567,35 @@ def _build_row(
         radius_id = policy.get('onMatchResponse')
         if radius_id:
             row.radius_group_name = radius_names.get(radius_id, radius_id)
+
+        # Free: the policy LIST carries conditionsCount, so a policy missing
+        # its SSID condition (or carrying a stale extra) shows up without
+        # reading anything. It cannot tell us the regexes are RIGHT, only
+        # that the right number of them exist.
+        count = policy.get('conditionsCount')
+        if isinstance(count, int):
+            row.conditions_count = count
+
+        # Opt-in: what the policy actually matches on.
+        detail = (conditions or {}).get(policy.get('id'))
+        if detail and not detail.get('error'):
+            row.conditions_checked = True
+            row.policy_username_regex = detail.get('username_regex')
+            row.policy_ssid_regex = detail.get('ssid_regex')
+            if row.policy_username_regex is not None:
+                # The import anchors the ACCOUNT, not the file username.
+                row.policy_username_matches = (
+                    row.policy_username_regex == regex_pattern_for_value(account)
+                )
+            if row.policy_ssid_regex is not None and file_ssids is not None:
+                # An anchored "^101@Prop$" unwrapped back to the SSID, then
+                # checked against the SSIDs this file actually mentions. A
+                # policy pointing at a network the roster never names is
+                # matching nothing a resident will ever associate to.
+                bare = row.policy_ssid_regex
+                if bare.startswith('^') and bare.endswith('$'):
+                    bare = bare[1:-1].replace('\\', '')
+                row.policy_ssid_in_file = bare in file_ssids
 
     # ---------------------------------------------------------------------
     # Only the FILE can say which RADIUS group a resident should be on, and
@@ -514,6 +636,26 @@ def _build_row(
             f"Policy '{policy_name}' exists but is in no policy set"
             + (f" (expected '{scoped_set_name}')" if scoped_set_name else "")
             + ", so it has no effect"
+        )
+    if (
+        row.in_adaptive_policy
+        and row.conditions_count is not None
+        and row.conditions_count != DPSK_EXPECTED_CONDITIONS
+    ):
+        row.issues.append(
+            f"Policy has {row.conditions_count} condition(s), expected "
+            f"{DPSK_EXPECTED_CONDITIONS} (a DPSK username and an SSID)"
+        )
+    if row.conditions_checked and row.policy_username_matches is False:
+        row.issues.append(
+            f"Policy matches username {row.policy_username_regex}, not "
+            f"{regex_pattern_for_value(account)} — it will never fire for "
+            f"this resident"
+        )
+    if row.conditions_checked and row.policy_ssid_in_file is False:
+        row.issues.append(
+            f"Policy matches SSID {row.policy_ssid_regex}, which is not an "
+            f"SSID this file mentions"
         )
     if row.in_adaptive_policy and not row.radius_group_name:
         row.issues.append("Policy has no RADIUS attribute group")
@@ -556,6 +698,41 @@ async def run_identity_audit(
     warnings.extend(set_warnings)
     radius_names = await _radius_group_names(r1_client, tenant_id)
 
+    # Every SSID the roster mentions, so a policy's SSID condition can be
+    # checked against networks that actually exist in this import.
+    file_ssids: Set[str] = {
+        ssid for entry in request.identities for ssid in (entry.ssids or [])
+    }
+
+    # The deep check, if asked for: only policies we will actually report on,
+    # so an unrelated tenant-wide policy costs nothing.
+    conditions: Dict[str, Dict[str, Any]] = {}
+    if request.verify_conditions:
+        wanted: Set[str] = set()
+        for entry in request.identities:
+            name = (entry.name or '').strip()
+            if not name:
+                continue
+            account, _suffix = split_account_suffix(name, request.default_suffix)
+            policy = policies.get(sanitize_policy_name(account))
+            if policy and policy.get('id'):
+                wanted.add(policy['id'])
+        for r1_name in identities:
+            account, _suffix = split_account_suffix(r1_name, request.default_suffix)
+            policy = policies.get(sanitize_policy_name(account))
+            if policy and policy.get('id'):
+                wanted.add(policy['id'])
+        if wanted:
+            conditions = await _conditions_for_policies(
+                r1_client, tenant_id, sorted(wanted)
+            )
+            unreadable = sum(1 for v in conditions.values() if v.get('error'))
+            if unreadable:
+                warnings.append(
+                    f"Could not read the conditions of {unreadable} policy(s); "
+                    f"those rows show no regex rather than a wrong one"
+                )
+
     rows: List[IdentityAuditRow] = []
     consumed: Set[str] = set()
 
@@ -592,6 +769,8 @@ async def run_identity_audit(
             membership=membership,
             radius_names=radius_names,
             scoped_set_name=request.policy_set_name,
+            conditions=conditions,
+            file_ssids=file_ssids,
         ))
 
     # ---- identities R1 holds that the file does not mention ----
@@ -623,6 +802,8 @@ async def run_identity_audit(
             membership=membership,
             radius_names=radius_names,
             scoped_set_name=request.policy_set_name,
+            conditions=conditions,
+            file_ssids=file_ssids,
         )
         row.issues.insert(0, "Present in R1 but not in the uploaded file")
         rows.append(row)
@@ -642,6 +823,19 @@ async def run_identity_audit(
         "radius_mismatch": sum(1 for r in in_file_rows if r.radius_group_matches is False),
         "with_description": sum(1 for r in in_file_rows if r.has_description),
         "clean": sum(1 for r in in_file_rows if not r.issues),
+        "conditions_checked": sum(1 for r in rows if r.conditions_checked),
+        "wrong_condition_count": sum(
+            1 for r in rows
+            if r.conditions_count is not None
+            and r.in_adaptive_policy
+            and r.conditions_count != DPSK_EXPECTED_CONDITIONS
+        ),
+        "policy_username_mismatch": sum(
+            1 for r in rows if r.policy_username_matches is False
+        ),
+        "policy_ssid_unknown": sum(
+            1 for r in rows if r.policy_ssid_in_file is False
+        ),
     }
 
     return IdentityAuditResponse(

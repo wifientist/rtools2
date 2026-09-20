@@ -114,6 +114,12 @@ class FakePolicySets:
             return {"content": []}
         return {"content": self.w["policies"]}
 
+    async def get_policy_conditions(self, template_id, policy_id, tenant_id=None):
+        self.w.setdefault("condition_reads", []).append(policy_id)
+        if policy_id in self.w.get("conditions_fail", ()):
+            raise RuntimeError("500 boom")
+        return {"content": self.w["conditions"].get(policy_id, [])}
+
     async def query_policy_sets(self, tenant_id=None, page=0, limit=100, **kw):
         return {"content": self.w["policy_sets"]}
 
@@ -179,13 +185,31 @@ def new_world():
         },
         "radius_groups": {"gigabit": "rg-gig", "fast": "rg-fast", "ultrafast": "rg-ultra"},
         "policies": [
-            {"id": "pol-1", "name": "4021", "onMatchResponse": "rg-ultra"},
-            {"id": "pol-2", "name": "4022", "onMatchResponse": "rg-fast"},
-            {"id": "pol-3", "name": "4023", "onMatchResponse": "rg-gig"},
-            {"id": "pol-4", "name": "4024", "onMatchResponse": "rg-gig"},  # wrong tier
-            {"id": "pol-6", "name": "4026", "onMatchResponse": "rg-fast"},
-            {"id": "pol-9", "name": "4099", "onMatchResponse": "rg-gig"},
+            {"id": "pol-1", "name": "4021", "onMatchResponse": "rg-ultra", "conditionsCount": 2},
+            {"id": "pol-2", "name": "4022", "onMatchResponse": "rg-fast", "conditionsCount": 2},
+            # only one condition: no SSID. Free to detect from the list.
+            {"id": "pol-3", "name": "4023", "onMatchResponse": "rg-gig", "conditionsCount": 1},
+            {"id": "pol-4", "name": "4024", "onMatchResponse": "rg-gig", "conditionsCount": 2},
+            {"id": "pol-6", "name": "4026", "onMatchResponse": "rg-fast", "conditionsCount": 2},
+            {"id": "pol-9", "name": "4099", "onMatchResponse": "rg-gig", "conditionsCount": 2},
         ],
+        # What each policy ACTUALLY matches on. pol-2 carries a stale username
+        # from a mistyped earlier run: right name, wrong regex, invisible
+        # without the deep check.
+        "conditions": {
+            "pol-1": [
+                {"templateAttributeId": 1012,
+                 "evaluationRule": {"regexStringCriteria": "^4021$"}},
+                {"templateAttributeId": 1013,
+                 "evaluationRule": {"regexStringCriteria": "^403@The_durant$"}},
+            ],
+            "pol-2": [
+                {"templateAttributeId": 1012,
+                 "evaluationRule": {"regexStringCriteria": "^4020$"}},
+                {"templateAttributeId": 1013,
+                 "evaluationRule": {"regexStringCriteria": "^999@Elsewhere$"}},
+            ],
+        },
         "policy_sets": [{"id": "set-1", "name": "CedarPoint"}],
         # pol-3 deliberately absent: created, never assigned.
         "set_members": {"set-1": ["pol-1", "pol-2", "pol-4", "pol-6", "pol-9"]},
@@ -198,13 +222,16 @@ ROSTER = [
 ]
 
 
-async def audit(world, roster=None, policy_set_name="CedarPoint"):
+async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False):
     request = IdentityAuditRequest(
         controller_id=1,
         tenant_id="t-1",
         venue_id="v-1",
-        identities=[FileIdentity(name=n) for n in (roster or ROSTER)],
+        identities=[
+            FileIdentity(name=n, ssids=["403@The_durant"]) for n in (roster or ROSTER)
+        ],
         policy_set_name=policy_set_name,
+        verify_conditions=verify,
     )
     result = await run_identity_audit(FakeClient(world), request)
     return result, {(r.username_json or r.username_r1): r for r in result.rows}
@@ -342,6 +369,65 @@ async def main() -> int:
         any("No policy set named" in w for w in result_nosuch.warnings)
         and result_nosuch.totals["policy_in_set"] == 0,
         f"warnings={result_nosuch.warnings}",
+    )
+
+    # ---- Tier 0: conditionsCount, free from the policy list ----
+    failures += check(
+        "a policy with the wrong number of conditions is flagged for free",
+        any("expected 2" in i for i in rows["4023_gigabit"].issues)
+        and rows["4023_gigabit"].conditions_count == 1
+        and result.totals["wrong_condition_count"] == 1,
+        f"issues={rows['4023_gigabit'].issues}",
+    )
+    failures += check(
+        "without verify_conditions nothing reads conditions",
+        "condition_reads" not in new_world()
+        and not any(r.conditions_checked for r in result.rows),
+        "conditions were read despite verify_conditions=False",
+    )
+
+    # ---- Tier 1: the opt-in deep check ----
+    w = new_world()
+    deep, deep_rows = await audit(w, verify=True)
+    r = deep_rows["4021_ultrafast"]
+    failures += check(
+        "a correct policy's regexes are read back and confirmed",
+        r.conditions_checked and r.policy_username_regex == "^4021$"
+        and r.policy_username_matches is True
+        and r.policy_ssid_in_file is True and not r.issues,
+        f"regex={r.policy_username_regex}, issues={r.issues}",
+    )
+    r = deep_rows["4022_fast"]
+    failures += check(
+        "a policy with the right NAME but a stale username regex is caught",
+        r.policy_username_matches is False
+        and any("will never fire" in i for i in r.issues)
+        and deep.totals["policy_username_mismatch"] == 1,
+        f"regex={r.policy_username_regex}, issues={r.issues}",
+    )
+    failures += check(
+        "a policy pointing at an SSID the file never mentions is caught",
+        r.policy_ssid_in_file is False
+        and any("not an SSID this file mentions" in i for i in r.issues),
+        f"ssid={r.policy_ssid_regex}, issues={r.issues}",
+    )
+    failures += check(
+        "conditions are read once per policy, not once per row",
+        len(w["condition_reads"]) == len(set(w["condition_reads"])),
+        f"reads={w['condition_reads']}",
+    )
+
+    # a policy whose conditions cannot be read must not become a false finding
+    w2 = new_world()
+    w2["conditions_fail"] = {"pol-1"}
+    bad, bad_rows = await audit(w2, verify=True)
+    r = bad_rows["4021_ultrafast"]
+    failures += check(
+        "an unreadable policy reports no regex rather than a wrong one",
+        r.conditions_checked is False and r.policy_username_matches is None
+        and not any("never fire" in i for i in r.issues)
+        and any("Could not read the conditions" in w for w in bad.warnings),
+        f"issues={r.issues}, warnings={bad.warnings}",
     )
 
     # 10. inform only -- no write path exists in the module
