@@ -1,0 +1,632 @@
+"""
+Per-identity audit of a Cloudpath import, row by row.
+
+WHAT THIS ANSWERS
+
+The existing /cloudpath-import/audit counts things: how many SSIDs, how many
+DPSK pools, how many identity groups. That tells you the scaffolding got
+built. It cannot tell you whether resident 4021 can actually get on the
+network, which needs five separate objects to line up:
+
+    the identity exists in an identity group
+    that group is attached to a DPSK service (pool)
+    an adaptive policy is named for the account
+    that policy is a member of the property's policy set
+    the policy's onMatchResponse points at the right RADIUS attribute group
+
+Any one of those missing and the resident is silently broken -- the import
+reports success, the SSID is up, and the phone does not connect. This walks
+the file the import was given and reports, per identity, which of those five
+are in place.
+
+THE NAME PROBLEM
+
+The import renames identities on the way in. A Cloudpath username carries the
+speed tier as a trailing segment:
+
+    file:   4021_ultrafast
+    R1:     4021              (create_access_policies strips it)
+    policy: 4021              (sanitize_policy_name of the stripped account)
+    RADIUS: "ultrafast"       (the stripped segment names the group)
+
+So a file name never matches an imported identity directly. This tries the raw
+name first, then the stripped one, and reports which form matched -- because
+"matched raw" on a finished import means the rename never ran, which is itself
+a finding. Stripping mirrors create_access_policies exactly (rsplit on the last
+underscore, unconditionally); anything cleverer would audit a rule the import
+does not follow.
+
+WHICH IDENTITIES BELONG TO THIS VENUE
+
+Identity groups are tenant-scoped -- there is no venueId to filter on that can
+be trusted. So this follows the serving path instead, which is the same path
+traffic takes:
+
+    venue -> its wifi networks (venueApGroups[].venueId)
+          -> GET /wifiNetworks/{id}/dpskServices  (the pool link readback)
+          -> identity groups whose dpskPoolId is one of those pools
+          -> the identities in those groups
+
+That finds what the import actually wired up, whether or not the groups
+happen to carry a venueId.
+
+INFORM ONLY
+
+Identities present in R1 but absent from the file are reported as rows with
+in_file=False. They are usually left over from a previous roster. This module
+deletes nothing and offers no way to; deciding what to remove is a separate
+job with a separate blast radius.
+
+COST
+
+Roughly a dozen API calls plus paging, regardless of roster size. Nothing here
+is per-identity -- identities, policies, policy-set membership and RADIUS
+groups are each fetched in bulk and joined in memory. A 600-resident property
+costs the same as a 20-resident one.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from pydantic import BaseModel, Field
+
+from workflow.phases.create_access_policies import (
+    DPSK_POLICY_TEMPLATE_ID,
+    DEFAULT_SUFFIX,
+    sanitize_policy_name,
+)
+
+logger = logging.getLogger(__name__)
+
+# Paging guards. R1 caps page size well below these; the limits exist so a
+# misbehaving endpoint cannot spin this endpoint forever.
+MAX_PAGES = 200
+IDENTITY_PAGE_SIZE = 500
+POLICY_PAGE_SIZE = 500
+
+# How many policy sets to inspect when the caller does not name one. Each
+# costs a membership read, and a tenant has a handful, not hundreds.
+MAX_POLICY_SETS = 50
+
+
+# ==================== Request / response models ====================
+
+
+class FileIdentity(BaseModel):
+    """One DPSK entry as it appears in the uploaded Cloudpath export."""
+    name: str
+    ssids: List[str] = Field(default_factory=list)
+
+
+class IdentityAuditRequest(BaseModel):
+    controller_id: int = Field(..., description="RuckusONE controller ID")
+    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
+    venue_id: str = Field(..., description="Venue to audit")
+    identities: List[FileIdentity] = Field(
+        ..., description="Identities parsed from the uploaded file"
+    )
+    policy_set_name: Optional[str] = Field(
+        None,
+        description="Policy set to check membership against. When omitted, "
+                    "every policy set in the tenant is consulted and the row "
+                    "reports which one holds the policy.",
+    )
+    default_suffix: str = Field(
+        DEFAULT_SUFFIX,
+        description="Speed tier assumed for usernames with no trailing _suffix",
+    )
+
+
+class IdentityAuditRow(BaseModel):
+    """One identity, and which of the five links are in place."""
+    username: str                       # as displayed: file name, or R1 name for extras
+    account: str                        # the processed/stripped form
+    suffix: Optional[str] = None        # the trailing segment, or the default
+
+    # Column 1
+    in_file: bool
+
+    # Column 2
+    in_identity_group: bool = False
+    identity_group_name: Optional[str] = None
+    identity_id: Optional[str] = None
+    r1_name: Optional[str] = None       # what R1 actually calls it
+    matched_as: Optional[str] = None    # "exact" | "processed" | None
+
+    # Column 3
+    in_dpsk_service: bool = False
+    dpsk_service_name: Optional[str] = None
+
+    # Column 4
+    in_adaptive_policy: bool = False
+    policy_name: Optional[str] = None
+    policy_id: Optional[str] = None
+    policy_in_set: bool = False
+    policy_set_name: Optional[str] = None
+
+    # Column 5
+    radius_group_name: Optional[str] = None
+    radius_group_expected: Optional[str] = None
+    radius_group_matches: Optional[bool] = None
+
+    # Column 6
+    has_description: bool = False
+
+    # Anything worth the reader's attention on this row.
+    issues: List[str] = Field(default_factory=list)
+
+
+class IdentityAuditResponse(BaseModel):
+    venue_id: str
+    venue_name: str
+    policy_sets_checked: List[str] = Field(default_factory=list)
+    identity_groups_scanned: List[str] = Field(default_factory=list)
+    dpsk_services_scanned: List[str] = Field(default_factory=list)
+    totals: Dict[str, int] = Field(default_factory=dict)
+    rows: List[IdentityAuditRow] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+# ==================== Name handling ====================
+
+
+def split_account_suffix(username: str, default_suffix: str) -> Tuple[str, str]:
+    """
+    "4021_ultrafast" -> ("4021", "ultrafast");  "4021" -> ("4021", default).
+
+    Deliberately identical to create_access_policies: rsplit on the LAST
+    underscore, no suffix allowlist. Auditing by a different rule than the
+    import follows would report failures that are really just disagreement.
+    """
+    if "_" in username:
+        account, suffix = username.rsplit("_", 1)
+        return account, suffix
+    return username, default_suffix
+
+
+# ==================== R1 collection ====================
+
+
+async def _dpsk_pool_ids_for_venue(r1_client, tenant_id: str, venue_id: str) -> Tuple[Set[str], List[str]]:
+    """
+    The DPSK pools actually serving this venue, via its networks.
+
+    The link is write-only from the network side -- a wifiNetworks/query row
+    never carries a dpskService field however many you ask for -- so each
+    candidate network has to be asked directly.
+
+    Returns (pool ids, warnings).
+    """
+    warnings: List[str] = []
+
+    networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+    all_networks = networks_response.get('data', []) if isinstance(networks_response, dict) else []
+
+    venue_network_ids: List[str] = []
+    for network in all_networks:
+        for vag in network.get('venueApGroups') or []:
+            if vag.get('venueId') == venue_id:
+                if network.get('id'):
+                    venue_network_ids.append(network['id'])
+                break
+
+    pool_ids: Set[str] = set()
+    for network_id in venue_network_ids:
+        try:
+            linked = await r1_client.networks.get_dpsk_services_on_network(
+                network_id=network_id, tenant_id=tenant_id
+            )
+            rows = linked.get('data', linked.get('content', [])) if isinstance(linked, dict) else (linked or [])
+            for row in rows:
+                if isinstance(row, dict) and row.get('id'):
+                    pool_ids.add(row['id'])
+        except Exception as e:
+            # One unreadable network should not blank the whole audit; say so
+            # rather than reporting its residents as missing.
+            logger.warning(f"Could not read DPSK services on network {network_id}: {e}")
+            warnings.append(
+                f"Could not read the DPSK link on one network ({network_id}); "
+                f"identities served only by it may show as missing"
+            )
+
+    logger.info(
+        f"Venue {venue_id}: {len(venue_network_ids)} networks, "
+        f"{len(pool_ids)} DPSK pools serving it"
+    )
+    return pool_ids, warnings
+
+
+async def _identities_for_pools(
+    r1_client, tenant_id: str, pool_ids: Set[str]
+) -> Tuple[Dict[str, Dict[str, Any]], List[str], List[str]]:
+    """
+    Every identity in every group attached to one of these pools.
+
+    Returns (name -> record, group names scanned, pool names scanned).
+    """
+    ig_response = await r1_client.identity.query_identity_groups(
+        tenant_id=tenant_id, page=0, size=1000
+    )
+    groups = (
+        ig_response.get('content', ig_response.get('data', []))
+        if isinstance(ig_response, dict) else (ig_response or [])
+    )
+    groups = [g for g in groups if g.get('dpskPoolId') in pool_ids]
+
+    pool_names: Dict[str, str] = {}
+    for pool_id in {g.get('dpskPoolId') for g in groups if g.get('dpskPoolId')}:
+        try:
+            pool = await r1_client.dpsk.get_dpsk_pool(pool_id, tenant_id)
+            pool_names[pool_id] = pool.get('name') or pool_id
+        except Exception as e:
+            logger.warning(f"Could not read DPSK pool {pool_id}: {e}")
+            pool_names[pool_id] = pool_id
+
+    by_name: Dict[str, Dict[str, Any]] = {}
+    group_names: List[str] = []
+
+    for group in groups:
+        group_id = group.get('id')
+        group_name = group.get('name') or group_id
+        pool_id = group.get('dpskPoolId')
+        if not group_id:
+            continue
+        group_names.append(group_name)
+
+        page = 0
+        while page < MAX_PAGES:
+            response = await r1_client.identity.get_identities_in_group(
+                group_id=group_id, tenant_id=tenant_id,
+                page=page, size=IDENTITY_PAGE_SIZE,
+            )
+            items = (
+                response.get('content', response.get('data', []))
+                if isinstance(response, dict) else (response or [])
+            )
+            for identity in items:
+                name = identity.get('name')
+                if not name:
+                    continue
+                by_name[name] = {
+                    'identity_id': identity.get('id'),
+                    'name': name,
+                    'description': identity.get('description') or '',
+                    'identity_group_name': group_name,
+                    'dpsk_pool_id': pool_id,
+                    'dpsk_service_name': pool_names.get(pool_id),
+                }
+
+            is_last = response.get('last') if isinstance(response, dict) else None
+            if is_last is True or not items:
+                break
+            if is_last is None and len(items) < IDENTITY_PAGE_SIZE:
+                break
+            page += 1
+
+    logger.info(
+        f"Scanned {len(group_names)} identity groups, {len(by_name)} identities"
+    )
+    return by_name, group_names, sorted(set(pool_names.values()))
+
+
+async def _policies_by_name(r1_client, tenant_id: str) -> Dict[str, Dict[str, Any]]:
+    """
+    Every DPSK-template policy, keyed by name.
+
+    Policies are tenant-scoped and named for the account alone, so this is the
+    whole tenant -- there is nothing to scope it to the venue by.
+    """
+    by_name: Dict[str, Dict[str, Any]] = {}
+    page = 0
+    while page < MAX_PAGES:
+        response = await r1_client.policy_sets.query_template_policies(
+            template_id=DPSK_POLICY_TEMPLATE_ID,
+            tenant_id=tenant_id,
+            page=page,
+            limit=POLICY_PAGE_SIZE,
+        )
+        items = (
+            response.get('content', response.get('data', []))
+            if isinstance(response, dict) else (response or [])
+        )
+        for policy in items:
+            name = policy.get('name')
+            if name:
+                by_name[name] = policy
+        if len(items) < POLICY_PAGE_SIZE:
+            break
+        page += 1
+
+    logger.info(f"Found {len(by_name)} policies in template {DPSK_POLICY_TEMPLATE_ID}")
+    return by_name
+
+
+async def _policy_set_membership(
+    r1_client, tenant_id: str, policy_set_name: Optional[str]
+) -> Tuple[Dict[str, str], List[str], List[str]]:
+    """
+    policy id -> the name of the set holding it.
+
+    When the caller names a set, only that one is consulted, and a policy
+    outside it reads as not in the set -- which is the honest answer, since a
+    policy that is not in the property's set does nothing at the property.
+    When no set is named, every set is consulted so the row can say where the
+    policy actually lives.
+
+    Returns (policy id -> set name, set names checked, warnings).
+    """
+    warnings: List[str] = []
+
+    sets_response = await r1_client.policy_sets.query_policy_sets(
+        tenant_id=tenant_id, page=0, limit=MAX_POLICY_SETS
+    )
+    all_sets = (
+        sets_response.get('content', sets_response.get('data', []))
+        if isinstance(sets_response, dict) else (sets_response or [])
+    )
+
+    if policy_set_name:
+        wanted = [
+            s for s in all_sets
+            if (s.get('name') or '').lower() == policy_set_name.lower()
+        ]
+        if not wanted:
+            warnings.append(
+                f"No policy set named '{policy_set_name}' exists in this "
+                f"tenant, so no policy can be a member of it yet"
+            )
+        all_sets = wanted
+
+    membership: Dict[str, str] = {}
+    checked: List[str] = []
+
+    for pset in all_sets:
+        set_id = pset.get('id')
+        set_name = pset.get('name') or set_id
+        if not set_id:
+            continue
+        checked.append(set_name)
+        try:
+            prioritized = await r1_client.policy_sets.get_prioritized_policies(
+                policy_set_id=set_id, tenant_id=tenant_id
+            )
+            rows = (
+                prioritized.get('content', prioritized.get('data', []))
+                if isinstance(prioritized, dict) else (prioritized or [])
+            )
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                policy_id = row.get('policyId') or row.get('id')
+                if policy_id:
+                    membership.setdefault(policy_id, set_name)
+        except Exception as e:
+            logger.warning(f"Could not read members of policy set {set_name}: {e}")
+            warnings.append(
+                f"Could not read the members of policy set '{set_name}'; "
+                f"policy-set membership is unknown for this run"
+            )
+
+    return membership, checked, warnings
+
+
+async def _radius_group_names(r1_client, tenant_id: str) -> Dict[str, str]:
+    """RADIUS attribute group id -> name, for resolving onMatchResponse."""
+    try:
+        response = await r1_client.radius_attributes.get_radius_attribute_groups(
+            tenant_id=tenant_id
+        )
+        groups = (
+            response.get('content', response.get('data', []))
+            if isinstance(response, dict) else (response or [])
+        )
+        return {g['id']: g.get('name') or g['id'] for g in groups if g.get('id')}
+    except Exception as e:
+        logger.warning(f"Could not list RADIUS attribute groups: {e}")
+        return {}
+
+
+# ==================== The audit ====================
+
+
+def _build_row(
+    *,
+    display_name: str,
+    account: str,
+    suffix: Optional[str],
+    in_file: bool,
+    identity: Optional[Dict[str, Any]],
+    matched_as: Optional[str],
+    policies: Dict[str, Dict[str, Any]],
+    membership: Dict[str, str],
+    radius_names: Dict[str, str],
+    scoped_set_name: Optional[str],
+) -> IdentityAuditRow:
+    """Join one identity against everything collected, and name what is wrong."""
+    row = IdentityAuditRow(
+        username=display_name,
+        account=account,
+        suffix=suffix,
+        in_file=in_file,
+    )
+
+    if identity:
+        row.in_identity_group = True
+        row.identity_group_name = identity.get('identity_group_name')
+        row.identity_id = identity.get('identity_id')
+        row.r1_name = identity.get('name')
+        row.matched_as = matched_as
+        row.has_description = bool(identity.get('description'))
+        # The group was reached BY its pool, so a group implies a service.
+        row.in_dpsk_service = bool(identity.get('dpsk_service_name'))
+        row.dpsk_service_name = identity.get('dpsk_service_name')
+
+    policy_name = sanitize_policy_name(account)
+    policy = policies.get(policy_name)
+    if policy:
+        row.in_adaptive_policy = True
+        row.policy_name = policy_name
+        row.policy_id = policy.get('id')
+        holder = membership.get(policy.get('id')) if policy.get('id') else None
+        row.policy_in_set = bool(holder)
+        row.policy_set_name = holder
+
+        radius_id = policy.get('onMatchResponse')
+        if radius_id:
+            row.radius_group_name = radius_names.get(radius_id, radius_id)
+
+    row.radius_group_expected = suffix
+    if row.radius_group_name and suffix:
+        row.radius_group_matches = (
+            row.radius_group_name.lower() == suffix.lower()
+        )
+
+    # ---- findings, in the order they break a resident's connection ----
+    if in_file and not row.in_identity_group:
+        row.issues.append("No identity in any identity group serving this venue")
+    if row.in_identity_group and not row.in_dpsk_service:
+        row.issues.append("Identity group is not attached to a DPSK service")
+    if matched_as == "exact" and suffix and "_" in display_name:
+        # The identity still carries its speed tier, so the rename step never
+        # completed -- and the policy is named for the stripped account, so it
+        # will not match this username at RADIUS time.
+        row.issues.append(
+            f"Identity still named '{display_name}'; the import should have "
+            f"renamed it to '{account}'"
+        )
+    if in_file and not row.in_adaptive_policy:
+        row.issues.append(f"No adaptive policy named '{policy_name}'")
+    if row.in_adaptive_policy and not row.policy_in_set:
+        row.issues.append(
+            f"Policy '{policy_name}' exists but is in no policy set"
+            + (f" (expected '{scoped_set_name}')" if scoped_set_name else "")
+            + ", so it has no effect"
+        )
+    if row.in_adaptive_policy and not row.radius_group_name:
+        row.issues.append("Policy has no RADIUS attribute group")
+    elif row.radius_group_matches is False:
+        row.issues.append(
+            f"RADIUS group is '{row.radius_group_name}', expected "
+            f"'{suffix}' from the username"
+        )
+    if row.in_identity_group and not row.has_description:
+        row.issues.append("No description set")
+
+    return row
+
+
+async def run_identity_audit(
+    r1_client, request: IdentityAuditRequest
+) -> IdentityAuditResponse:
+    """Walk the uploaded roster against what R1 actually holds."""
+    tenant_id = request.tenant_id
+    venue_id = request.venue_id
+
+    venue = await r1_client.venues.get_venue(tenant_id, venue_id)
+    venue_name = venue.get('name', 'Unknown') if isinstance(venue, dict) else 'Unknown'
+
+    pool_ids, warnings = await _dpsk_pool_ids_for_venue(r1_client, tenant_id, venue_id)
+
+    if not pool_ids:
+        warnings.append(
+            "No DPSK service is linked to any network at this venue, so no "
+            "identity can be serving it yet"
+        )
+
+    identities, group_names, pool_names = await _identities_for_pools(
+        r1_client, tenant_id, pool_ids
+    )
+    policies = await _policies_by_name(r1_client, tenant_id)
+    membership, sets_checked, set_warnings = await _policy_set_membership(
+        r1_client, tenant_id, request.policy_set_name
+    )
+    warnings.extend(set_warnings)
+    radius_names = await _radius_group_names(r1_client, tenant_id)
+
+    rows: List[IdentityAuditRow] = []
+    consumed: Set[str] = set()
+
+    # ---- rows from the file, in file order ----
+    for entry in request.identities:
+        username = (entry.name or '').strip()
+        if not username:
+            continue
+
+        account, suffix = split_account_suffix(username, request.default_suffix)
+
+        # Raw first: an identity still carrying its suffix means the rename
+        # never ran, which the row should say rather than hide.
+        identity = identities.get(username)
+        matched_as = "exact" if identity else None
+        if not identity:
+            identity = identities.get(account)
+            matched_as = "processed" if identity else None
+
+        if identity and identity.get('name'):
+            consumed.add(identity['name'])
+
+        rows.append(_build_row(
+            display_name=username,
+            account=account,
+            suffix=suffix,
+            in_file=True,
+            identity=identity,
+            matched_as=matched_as,
+            policies=policies,
+            membership=membership,
+            radius_names=radius_names,
+            scoped_set_name=request.policy_set_name,
+        ))
+
+    # ---- identities R1 holds that the file does not mention ----
+    # Reported, never acted on. Usually a previous roster; sometimes a
+    # hand-added resident that belongs there.
+    extras = 0
+    for name, identity in identities.items():
+        if name in consumed:
+            continue
+        extras += 1
+        # Already processed by definition -- it is what R1 stores.
+        account, suffix = split_account_suffix(name, request.default_suffix)
+        row = _build_row(
+            display_name=name,
+            account=account,
+            suffix=suffix,
+            in_file=False,
+            identity=identity,
+            matched_as="exact",
+            policies=policies,
+            membership=membership,
+            radius_names=radius_names,
+            scoped_set_name=request.policy_set_name,
+        )
+        row.issues.insert(0, "Present in R1 but not in the uploaded file")
+        rows.append(row)
+
+    in_file_rows = [r for r in rows if r.in_file]
+    totals = {
+        "rows": len(rows),
+        "in_file": len(in_file_rows),
+        "in_r1_only": extras,
+        "matched": sum(1 for r in in_file_rows if r.in_identity_group),
+        "matched_processed": sum(1 for r in in_file_rows if r.matched_as == "processed"),
+        "matched_exact": sum(1 for r in in_file_rows if r.matched_as == "exact"),
+        "missing_identity": sum(1 for r in in_file_rows if not r.in_identity_group),
+        "in_dpsk_service": sum(1 for r in in_file_rows if r.in_dpsk_service),
+        "with_policy": sum(1 for r in in_file_rows if r.in_adaptive_policy),
+        "policy_in_set": sum(1 for r in in_file_rows if r.policy_in_set),
+        "radius_mismatch": sum(1 for r in in_file_rows if r.radius_group_matches is False),
+        "with_description": sum(1 for r in in_file_rows if r.has_description),
+        "clean": sum(1 for r in in_file_rows if not r.issues),
+    }
+
+    return IdentityAuditResponse(
+        venue_id=venue_id,
+        venue_name=venue_name,
+        policy_sets_checked=sets_checked,
+        identity_groups_scanned=sorted(set(group_names)),
+        dpsk_services_scanned=pool_names,
+        totals=totals,
+        rows=rows,
+        warnings=warnings,
+    )

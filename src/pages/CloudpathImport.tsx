@@ -32,6 +32,49 @@ interface AuditData {
   dpsk_pools: any[];
 }
 
+/**
+ * One resident in the per-identity audit.
+ *
+ * The username is what the FILE calls them; r1_name is what R1 calls them,
+ * which differs whenever the import stripped the trailing "_tier". matched_as
+ * says which form matched -- "exact" on a processed roster means the rename
+ * never ran, which is a finding, not a success.
+ */
+interface IdentityAuditRow {
+  username: string;
+  account: string;
+  suffix: string | null;
+  in_file: boolean;
+  in_identity_group: boolean;
+  identity_group_name: string | null;
+  identity_id: string | null;
+  r1_name: string | null;
+  matched_as: "exact" | "processed" | null;
+  in_dpsk_service: boolean;
+  dpsk_service_name: string | null;
+  in_adaptive_policy: boolean;
+  policy_name: string | null;
+  policy_id: string | null;
+  policy_in_set: boolean;
+  policy_set_name: string | null;
+  radius_group_name: string | null;
+  radius_group_expected: string | null;
+  radius_group_matches: boolean | null;
+  has_description: boolean;
+  issues: string[];
+}
+
+interface IdentityAuditData {
+  venue_id: string;
+  venue_name: string;
+  policy_sets_checked: string[];
+  identity_groups_scanned: string[];
+  dpsk_services_scanned: string[];
+  totals: Record<string, number>;
+  rows: IdentityAuditRow[];
+  warnings: string[];
+}
+
 
 interface CloudpathPoolMetadata {
   guid?: string;
@@ -145,6 +188,63 @@ const buildApAssignmentCsv = (
   return ["unit_number,ap_identifier,ap_group_name", ...rows].join("\n");
 };
 
+/**
+ * One audit cell: pass, fail, or "present but not doing anything".
+ *
+ * The amber state matters more than it looks. A policy that exists but is in
+ * no policy set, or an identity whose RADIUS group disagrees with its tier,
+ * is not a pass -- the resident connects and gets the wrong service, or does
+ * not connect at all -- but it is not the same finding as "missing", and
+ * collapsing the two hides which one you are looking at.
+ */
+function AuditCell({
+  state,
+  label,
+  title,
+}: {
+  state: "ok" | "warn" | "bad" | "none";
+  label?: string | null;
+  title?: string;
+}) {
+  const mark = state === "ok" ? "✓" : state === "warn" ? "⚠" : state === "bad" ? "✗" : "–";
+  const color =
+    state === "ok" ? "text-green-600"
+    : state === "warn" ? "text-amber-600"
+    : state === "bad" ? "text-red-500"
+    : "text-gray-300";
+  return (
+    <div className="flex items-baseline gap-1.5" title={title}>
+      <span className={`font-bold ${color}`}>{mark}</span>
+      {label && (
+        <span className="text-xs text-gray-600 truncate max-w-[9rem]">{label}</span>
+      )}
+    </div>
+  );
+}
+
+function AuditStat({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone: "good" | "bad" | "warn" | "neutral";
+}) {
+  const styles = {
+    good: "bg-green-50 border-green-200 text-green-700",
+    bad: "bg-red-50 border-red-200 text-red-600",
+    warn: "bg-amber-50 border-amber-200 text-amber-700",
+    neutral: "bg-gray-50 border-gray-200 text-gray-700",
+  }[tone];
+  return (
+    <div className={`border rounded-lg p-3 text-center ${styles}`}>
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-xs text-gray-600 mt-0.5">{label}</div>
+    </div>
+  );
+}
+
 function CloudpathImport() {
   const {
     activeControllerId,
@@ -235,6 +335,14 @@ function CloudpathImport() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [auditError, setAuditError] = useState("");
+
+  // Per-identity audit (file -> identity -> DPSK service -> policy -> RADIUS)
+  const [showIdentityAuditModal, setShowIdentityAuditModal] = useState(false);
+  const [identityAuditLoading, setIdentityAuditLoading] = useState(false);
+  const [identityAuditData, setIdentityAuditData] = useState<IdentityAuditData | null>(null);
+  const [identityAuditFilter, setIdentityAuditFilter] =
+    useState<"all" | "issues" | "clean" | "extra">("issues");
+  const [identityAuditSearch, setIdentityAuditSearch] = useState("");
 
   // Identity export modal — two-step: "pick-pools" then "view-data"
   const [showIdentityExportModal, setShowIdentityExportModal] = useState(false);
@@ -960,6 +1068,120 @@ function CloudpathImport() {
     } finally {
       setAuditLoading(false);
     }
+  };
+
+  /**
+   * The roster the audit compares against, from whichever shape was uploaded.
+   *
+   * Only names and SSIDs go to the server. The export itself is ~1.7MB and
+   * the audit needs none of the passphrases, so sending the parsed roster
+   * keeps the request small -- and keeps plaintext passphrases off a request
+   * that has no use for them.
+   */
+  const fileIdentities = useMemo(() => {
+    if (!jsonData) return [];
+    const entries: any[] = Array.isArray(jsonData)
+      ? jsonData
+      : (jsonData as any).dpsks || [];
+    return entries
+      .map((d: any) => ({
+        name: String(d?.name || "").trim(),
+        ssids: Array.isArray(d?.ssidList) ? d.ssidList : [],
+      }))
+      .filter((d) => d.name);
+  }, [jsonData]);
+
+  const handleAuditIdentities = async () => {
+    // Both pre-checks are load-bearing: the roster is the row list, and the
+    // venue is what scopes which DPSK services get scanned.
+    if (!activeControllerId) {
+      setAuditError("Please select an active controller first");
+      return;
+    }
+    if (!venueId) {
+      setAuditError("Please select a venue first");
+      return;
+    }
+    if (fileIdentities.length === 0) {
+      setAuditError("Upload and parse a Cloudpath export first — its identities are the rows");
+      return;
+    }
+
+    setIdentityAuditLoading(true);
+    setAuditError("");
+    setIdentityAuditData(null);
+
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/cloudpath-import/audit-identities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          controller_id: activeControllerId,
+          venue_id: venueId,
+          identities: fileIdentities,
+          policy_set_name: policySetName || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `Identity audit failed (HTTP ${response.status})`);
+      }
+
+      const data = await response.json();
+      setIdentityAuditData(data);
+      setIdentityAuditFilter("issues");
+      setIdentityAuditSearch("");
+      setShowIdentityAuditModal(true);
+    } catch (err: any) {
+      console.error("Identity audit error:", err);
+      setAuditError(err.message || "An error occurred during the identity audit");
+    } finally {
+      setIdentityAuditLoading(false);
+    }
+  };
+
+  const visibleIdentityAuditRows = useMemo(() => {
+    if (!identityAuditData) return [];
+    const search = identityAuditSearch.trim().toLowerCase();
+    return identityAuditData.rows.filter((row) => {
+      if (identityAuditFilter === "issues" && row.issues.length === 0) return false;
+      if (identityAuditFilter === "clean" && row.issues.length > 0) return false;
+      if (identityAuditFilter === "extra" && row.in_file) return false;
+      if (!search) return true;
+      return (
+        row.username.toLowerCase().includes(search) ||
+        (row.r1_name || "").toLowerCase().includes(search) ||
+        (row.identity_group_name || "").toLowerCase().includes(search)
+      );
+    });
+  }, [identityAuditData, identityAuditFilter, identityAuditSearch]);
+
+  const handleExportIdentityAuditCsv = () => {
+    if (!identityAuditData) return;
+    const header = [
+      "username", "r1_name", "matched_as", "in_file", "identity_group",
+      "dpsk_service", "adaptive_policy", "policy_in_set", "radius_group",
+      "radius_expected", "description_set", "issues",
+    ];
+    const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [header.join(",")];
+    for (const row of visibleIdentityAuditRows) {
+      lines.push([
+        row.username, row.r1_name || "", row.matched_as || "", row.in_file,
+        row.identity_group_name || "", row.dpsk_service_name || "",
+        row.policy_name || "", row.policy_in_set,
+        row.radius_group_name || "", row.radius_group_expected || "",
+        row.has_description, row.issues.join("; "),
+      ].map(escape).join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `identity-audit-${identityAuditData.venue_name || "venue"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleViewIdentities = () => {
@@ -2119,9 +2341,42 @@ function CloudpathImport() {
           >
             {identityExportLoading ? "Loading..." : "View Identities"}
           </button>
+
+          <button
+            onClick={handleAuditIdentities}
+            disabled={
+              identityAuditLoading || !activeControllerId || !venueId ||
+              fileIdentities.length === 0
+            }
+            className={`px-6 py-2 rounded font-semibold ${
+              identityAuditLoading || !activeControllerId || !venueId ||
+              fileIdentities.length === 0
+                ? "bg-gray-400 cursor-not-allowed text-white"
+                : "bg-purple-600 hover:bg-purple-700 text-white"
+            }`}
+            title={
+              fileIdentities.length === 0
+                ? "Upload and parse a Cloudpath export first"
+                : !venueId
+                ? "Select a venue first"
+                : `Audit ${fileIdentities.length} identities from the file`
+            }
+          >
+            {identityAuditLoading ? "Auditing..." : "Audit Identities"}
+          </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
           View Identities lets you pick specific DPSK pools before fetching (optionally filtered by venue if selected)
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          Audit Identities walks every identity in the uploaded file and checks it reached
+          an identity group, a DPSK service, an adaptive policy in the policy set, and the
+          right RADIUS attribute group. Needs both a parsed file and a venue.
+          {fileIdentities.length > 0 && (
+            <span className="text-gray-700 font-medium">
+              {" "}({fileIdentities.length} identities parsed)
+            </span>
+          )}
         </p>
       </div>
 
@@ -2146,6 +2401,249 @@ function CloudpathImport() {
           onCleanup={handleCleanup}
           onJobComplete={handleJobComplete}
         />
+      )}
+
+      {/* Per-Identity Audit Modal */}
+      {showIdentityAuditModal && identityAuditData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[92vh] overflow-hidden flex flex-col">
+            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-bold">Identity Audit</h3>
+                <p className="text-purple-100 text-sm">
+                  {identityAuditData.venue_name} — {identityAuditData.totals.in_file || 0} from file
+                  {identityAuditData.totals.in_r1_only
+                    ? `, ${identityAuditData.totals.in_r1_only} extra in R1`
+                    : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowIdentityAuditModal(false)}
+                className="text-white hover:text-gray-200 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6">
+              {/* This reports; it changes nothing. Say so where it is read. */}
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                <strong>Read-only.</strong> Nothing here modifies RuckusONE — including the
+                identities listed as present in R1 but missing from the file.
+              </div>
+
+              {identityAuditData.warnings.length > 0 && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                  {identityAuditData.warnings.map((w, i) => (
+                    <div key={i}>⚠ {w}</div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+                <AuditStat value={identityAuditData.totals.clean || 0} label="Fully wired" tone="good" />
+                <AuditStat value={identityAuditData.totals.missing_identity || 0} label="No identity" tone="bad" />
+                <AuditStat
+                  value={(identityAuditData.totals.in_file || 0) - (identityAuditData.totals.with_policy || 0)}
+                  label="No policy"
+                  tone="bad"
+                />
+                <AuditStat
+                  value={(identityAuditData.totals.with_policy || 0) - (identityAuditData.totals.policy_in_set || 0)}
+                  label="Policy not in set"
+                  tone="warn"
+                />
+                <AuditStat value={identityAuditData.totals.radius_mismatch || 0} label="RADIUS mismatch" tone="warn" />
+                <AuditStat
+                  value={(identityAuditData.totals.matched || 0) - (identityAuditData.totals.with_description || 0)}
+                  label="No description"
+                  tone="neutral"
+                />
+                <AuditStat value={identityAuditData.totals.in_r1_only || 0} label="In R1 only" tone="neutral" />
+              </div>
+
+              <div className="text-xs text-gray-500 mb-4 space-y-0.5">
+                <div>
+                  Identity groups scanned: {identityAuditData.identity_groups_scanned.join(", ") || "none"}
+                  {" · "}DPSK services: {identityAuditData.dpsk_services_scanned.join(", ") || "none"}
+                  {" · "}Policy sets: {identityAuditData.policy_sets_checked.join(", ") || "none"}
+                </div>
+                {(identityAuditData.totals.matched_exact || 0) > 0 && (
+                  <div className="text-amber-700">
+                    {identityAuditData.totals.matched_exact} identity(s) still carry their
+                    speed suffix — the import's rename step did not finish for them, and the
+                    adaptive policy is named for the stripped account, so it will not match.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-center mb-3">
+                {([
+                  ["issues", `Needs attention (${identityAuditData.rows.filter((r) => r.issues.length > 0).length})`],
+                  ["clean", `Clean (${identityAuditData.rows.filter((r) => r.issues.length === 0).length})`],
+                  ["extra", `In R1 only (${identityAuditData.totals.in_r1_only || 0})`],
+                  ["all", `All (${identityAuditData.rows.length})`],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setIdentityAuditFilter(key)}
+                    className={`px-3 py-1 rounded text-sm font-medium ${
+                      identityAuditFilter === key
+                        ? "bg-purple-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <input
+                  type="text"
+                  value={identityAuditSearch}
+                  onChange={(e) => setIdentityAuditSearch(e.target.value)}
+                  placeholder="Search username or group…"
+                  className="border rounded px-3 py-1 text-sm flex-1 min-w-[12rem]"
+                />
+                <button
+                  onClick={handleExportIdentityAuditCsv}
+                  className="px-3 py-1 rounded text-sm font-medium bg-green-600 hover:bg-green-700 text-white"
+                >
+                  Export CSV
+                </button>
+              </div>
+
+              {/*
+                The wrapper scrolls, not the modal body: `sticky` resolves
+                against the nearest scrolling ancestor, so a header inside an
+                auto-overflow div with no height of its own never sticks to
+                anything. Capping the height here is what makes the column
+                names stay put over a 600-row roster.
+              */}
+              <div className="overflow-auto border rounded max-h-[55vh]">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase text-gray-500">
+                      {[
+                        "Username", "File", "Identity Group", "DPSK Service",
+                        "Adaptive Policy", "RADIUS Group", "Desc", "Notes",
+                      ].map((heading) => (
+                        // Sticky goes on the cells, not the row or thead:
+                        // Safari ignores it on <thead>/<tr>.
+                        <th
+                          key={heading}
+                          className="px-3 py-2 sticky top-0 z-10 bg-gray-50 border-b"
+                        >
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {visibleIdentityAuditRows.map((row, i) => (
+                      <tr
+                        key={`${row.username}-${i}`}
+                        className={row.in_file ? "" : "bg-gray-50"}
+                      >
+                        <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                          {row.username}
+                          {row.r1_name && row.r1_name !== row.username && (
+                            <span className="text-gray-400"> → {row.r1_name}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <AuditCell
+                            state={row.in_file ? "ok" : "none"}
+                            title={row.in_file ? "In the uploaded file" : "Not in the uploaded file"}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <AuditCell
+                            state={
+                              !row.in_identity_group ? "bad"
+                              : row.matched_as === "exact" && row.username.includes("_") ? "warn"
+                              : "ok"
+                            }
+                            label={row.identity_group_name}
+                            title={row.identity_group_name || "No identity found"}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <AuditCell
+                            state={row.in_dpsk_service ? "ok" : row.in_identity_group ? "bad" : "none"}
+                            label={row.dpsk_service_name}
+                            title={row.dpsk_service_name || "No DPSK service"}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <AuditCell
+                            state={
+                              !row.in_adaptive_policy ? "bad"
+                              : !row.policy_in_set ? "warn"
+                              : "ok"
+                            }
+                            label={row.policy_name}
+                            title={
+                              !row.in_adaptive_policy
+                                ? "No adaptive policy for this account"
+                                : row.policy_in_set
+                                ? `In policy set ${row.policy_set_name}`
+                                : "Exists but belongs to no policy set"
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <AuditCell
+                            state={
+                              !row.radius_group_name ? (row.in_adaptive_policy ? "bad" : "none")
+                              : row.radius_group_matches === false ? "warn"
+                              : "ok"
+                            }
+                            label={row.radius_group_name}
+                            title={
+                              row.radius_group_matches === false
+                                ? `Expected ${row.radius_group_expected}`
+                                : row.radius_group_name || "No RADIUS attribute group"
+                            }
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <AuditCell
+                            state={row.has_description ? "ok" : row.in_identity_group ? "bad" : "none"}
+                            title={row.has_description ? "Description set" : "Description blank"}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-600">
+                          {row.issues.map((issue, j) => (
+                            <div key={j}>{issue}</div>
+                          ))}
+                        </td>
+                      </tr>
+                    ))}
+                    {visibleIdentityAuditRows.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                          Nothing matches this filter.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="text-xs text-gray-500 mt-2">
+                Showing {visibleIdentityAuditRows.length} of {identityAuditData.rows.length} rows
+              </div>
+            </div>
+
+            <div className="border-t px-6 py-3 flex justify-end">
+              <button
+                onClick={() => setShowIdentityAuditModal(false)}
+                className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Audit Modal */}

@@ -6,6 +6,7 @@ For generic job management, see /jobs router.
 
 Endpoints:
 - POST /audit - Audit existing DPSK configuration at a venue
+- POST /audit-identities - Per-identity audit against the uploaded file
 - POST /import - Start import workflow (redirects to V2)
 - POST /cleanup - Start cleanup workflow (uses V2)
 """
@@ -31,6 +32,11 @@ from workflow.v2.brain import WorkflowBrain
 from workflow.events import WorkflowEventPublisher
 from workflow.workflows.cleanup import VenueCleanupWorkflow
 from workflow.workflows.cloudpath_import import CloudpathImportWorkflow
+from routers.cloudpath.identity_audit import (
+    IdentityAuditRequest,
+    IdentityAuditResponse,
+    run_identity_audit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +393,55 @@ async def audit_venue_dpsk(
     except Exception as e:
         logger.exception(f"DPSK audit failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to audit DPSK configuration: {e}")
+
+
+@router.post("/audit-identities", response_model=IdentityAuditResponse)
+async def audit_venue_identities(
+    request: IdentityAuditRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Per-identity audit of an import: file -> identity group -> DPSK service ->
+    adaptive policy -> RADIUS attribute group.
+
+    Takes the roster from the uploaded file rather than the file itself: only
+    the names and SSIDs are needed, and sending the whole export back for an
+    audit puts a 1.7MB body through the proxy for no reason.
+
+    Reports only. Nothing here writes to R1.
+    """
+    logger.info(
+        f"Identity audit - controller: {request.controller_id}, "
+        f"venue: {request.venue_id}, {len(request.identities)} identities from file"
+    )
+
+    if not request.identities:
+        raise HTTPException(
+            status_code=400,
+            detail="No identities supplied; upload and parse a file first",
+        )
+
+    controller = validate_controller_access(request.controller_id, current_user, db)
+
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
+
+    r1_client = create_r1_client_from_controller(controller.id, db)
+    tenant_id = request.tenant_id or controller.r1_tenant_id
+
+    if controller.controller_subtype == "MSP" and not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+
+    request.tenant_id = tenant_id
+
+    try:
+        return await run_identity_audit(r1_client, request)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Identity audit failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Identity audit failed: {e}")
 
 
 async def _fetch_identity_passphrase_data(
