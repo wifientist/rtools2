@@ -55,6 +55,20 @@ interface VenueAuditApGroup {
   is_default: boolean;
   aps: VenueAuditAp[];
   ssids: VenueAuditSsid[];
+  venue_wide_ssids: VenueAuditSsid[];
+  issues: string[];
+}
+
+interface VenueAuditDpskService {
+  id: string;
+  name: string;
+  identity_groups: VenueAuditIdentityGroup[];
+  identity_count: number;
+  ssids: VenueAuditSsid[];
+  venue_wide_ssid_count: number;
+  ap_group_bound_ssid_count: number;
+  ap_group_names: string[];
+  ap_count: number;
   issues: string[];
 }
 
@@ -65,6 +79,7 @@ interface AuditData {
   ap_groups: VenueAuditApGroup[];
   venue_wide_ssids: VenueAuditSsid[];
   ssids: VenueAuditSsid[];
+  dpsk_services: VenueAuditDpskService[];
   unassigned_aps: VenueAuditAp[];
   warnings: string[];
 }
@@ -594,7 +609,8 @@ function CloudpathImport() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [auditError, setAuditError] = useState("");
-  const [venueAuditView, setVenueAuditView] = useState<"groups" | "ssids">("groups");
+  const [venueAuditView, setVenueAuditView] =
+    useState<"groups" | "ssids" | "services">("groups");
   // A property can carry 249 AP groups, most of them empty scaffolding. On by
   // default so the ones that actually serve something are visible at all.
   const [venueAuditHideEmpty, setVenueAuditHideEmpty] = useState(true);
@@ -1544,6 +1560,9 @@ function CloudpathImport() {
     if (!auditData) return [];
     const q = venueAuditSearch.trim().toLowerCase();
     return auditData.ap_groups.filter((g) => {
+      // "Empty" means nothing explicitly bound and no APs. Venue-wide SSIDs
+      // reach every group, so counting them here would make every group look
+      // occupied and the filter would hide nothing.
       if (venueAuditHideEmpty && g.aps.length === 0 && g.ssids.length === 0) return false;
       if (!q) return true;
       return (
@@ -3274,7 +3293,11 @@ function CloudpathImport() {
               </div>
 
               <div className="flex flex-wrap gap-2 items-center mb-3">
-                {([["groups", "By AP group"], ["ssids", "By SSID"]] as const).map(
+                {([
+                  ["groups", "By AP group"],
+                  ["ssids", "By SSID"],
+                  ["services", "By DPSK service"],
+                ] as const).map(
                   ([key, label]) => (
                     <button
                       key={key}
@@ -3361,6 +3384,18 @@ function CloudpathImport() {
                               </div>
                             ))
                           )}
+                          {g.venue_wide_ssids.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-dashed">
+                              <div className="text-xs uppercase text-gray-400 mb-1">
+                                also here, because venue-wide
+                              </div>
+                              {g.venue_wide_ssids.map((s) => (
+                                <div key={s.id} className="mb-1 opacity-75">
+                                  <VenueAuditSsidLine ssid={s} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div>
                           <div className="text-xs uppercase text-gray-400 mb-1">APs</div>
@@ -3388,6 +3423,75 @@ function CloudpathImport() {
                   {visibleVenueAuditGroups.length === 0 && (
                     <div className="text-center text-gray-500 py-6">
                       No AP groups match this filter.
+                    </div>
+                  )}
+                </div>
+              ) : venueAuditView === "services" ? (
+                <div className="space-y-2">
+                  {auditData.dpsk_services.map((sv) => (
+                    <div key={sv.id} className="border rounded-lg overflow-hidden">
+                      <div className="px-4 py-2 bg-green-50 border-b flex items-baseline justify-between gap-3">
+                        <span className="font-semibold text-sm">{sv.name}</span>
+                        <span className="text-xs text-gray-600 shrink-0">
+                          {sv.ssids.length} SSID{sv.ssids.length === 1 ? "" : "s"}
+                          {" · "}
+                          {sv.identity_count} identit{sv.identity_count === 1 ? "y" : "ies"}
+                          {" · "}
+                          {sv.ap_group_names.length} AP group
+                          {sv.ap_group_names.length === 1 ? "" : "s"}
+                          {" · "}
+                          {sv.ap_count} AP{sv.ap_count === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {sv.issues.length > 0 && (
+                        <div className="px-4 py-1.5 bg-amber-50 text-xs text-amber-800 border-b">
+                          {sv.issues.map((i, n) => <div key={n}>⚠ {i}</div>)}
+                        </div>
+                      )}
+                      <div className="px-4 py-2">
+                        <div className="text-xs uppercase text-gray-400 mb-1">
+                          Identity groups
+                        </div>
+                        <div className="text-sm mb-2">
+                          {sv.identity_groups.length === 0 ? (
+                            <span className="text-red-500">none</span>
+                          ) : (
+                            sv.identity_groups
+                              .map((g) => `${g.name}${g.identity_count != null ? ` (${g.identity_count})` : ""}`)
+                              .join(", ")
+                          )}
+                        </div>
+                        <div className="text-xs uppercase text-gray-400 mb-1">
+                          SSIDs ({sv.venue_wide_ssid_count} venue-wide,{" "}
+                          {sv.ap_group_bound_ssid_count} bound to AP groups)
+                        </div>
+                        {sv.ssids.map((x) => (
+                          <div key={x.id} className="mb-1">
+                            <span
+                              className={`inline-block w-24 shrink-0 text-xs ${
+                                x.venue_wide ? "text-blue-700" : "text-gray-400"
+                              }`}
+                            >
+                              {x.venue_wide ? "venue-wide" : "AP group"}
+                            </span>
+                            <span className="font-mono text-xs">{x.name || x.ssid}</span>
+                            {!x.venue_wide && x.ap_group_names.length > 0 && (
+                              <span
+                                className="ml-2 text-xs text-gray-500"
+                                title={x.ap_group_names.join(", ")}
+                              >
+                                on {x.ap_group_names.slice(0, 2).join(", ")}
+                                {x.ap_group_names.length > 2 && ` +${x.ap_group_names.length - 2}`}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {auditData.dpsk_services.length === 0 && (
+                    <div className="text-center text-gray-500 py-6">
+                      No DPSK service is linked to any network at this venue.
                     </div>
                   )}
                 </div>

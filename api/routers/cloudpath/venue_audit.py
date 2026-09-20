@@ -36,13 +36,26 @@ and "where is this SSID live?" -- and once the data is joined, emitting both
 costs nothing. `ap_groups` is group-first, `ssids` is SSID-first, and they
 are built from the same maps so they cannot disagree.
 
-VENUE-WIDE IS NOT AN AP GROUP
+VENUE-WIDE AND PER-GROUP ARE BOTH SHOWN
 
 A network with isAllApGroups=true broadcasts on every AP group at the venue,
-including ones created later. It is reported separately rather than copied
-into all of them: listing it under 249 groups would bury the per-group
-activations that were configured deliberately, and would misrepresent one
-binding as many.
+including ones created later -- and R1 populates apGroupIds alongside it, so
+one blanket binding can look like 249 deliberate ones.
+
+Both facts are reported, never merged and never dropped. Each AP group
+carries `ssids` (bound to it explicitly) and `venue_wide_ssids` (reaching it
+because they are venue-wide), so which one put an SSID on a group is always
+visible. Suppressing the venue-wide ones read tidier but hid that the group
+really is carrying that SSID, which on an audit is the worse failure.
+
+THE DPSK SERVICE VIEW
+
+One DPSK service legitimately backs both venue-wide networks AND networks
+locked to particular AP groups, at the same venue, with the same identities
+authenticating on all of them. Neither the group-first nor the SSID-first
+view puts that in one place, so `dpsk_services` does: every network the
+service serves, split by how it is bound, with the identity groups feeding
+it and the AP groups and APs it ends up covering.
 
 INFORM ONLY. Nothing here writes to R1.
 """
@@ -107,7 +120,33 @@ class AuditApGroup(BaseModel):
     name: str
     is_default: bool = False
     aps: List[AuditAp] = Field(default_factory=list)
+    # Bound to THIS group explicitly (apGroupIds contains it).
     ssids: List[AuditSsid] = Field(default_factory=list)
+    # Also reaching this group because they are venue-wide. Kept separate
+    # rather than merged or hidden: both facts matter, and which one put an
+    # SSID on this group is the difference between a deliberate activation
+    # and a blanket one.
+    venue_wide_ssids: List[AuditSsid] = Field(default_factory=list)
+    issues: List[str] = Field(default_factory=list)
+
+
+class AuditDpskService(BaseModel):
+    """
+    One DPSK service and every network it serves at this venue.
+
+    A single service legitimately backs both venue-wide networks AND networks
+    locked to particular AP groups, so this is the only view where that whole
+    picture is in one place.
+    """
+    id: str
+    name: str = ""
+    identity_groups: List[AuditIdentityGroup] = Field(default_factory=list)
+    identity_count: int = 0
+    ssids: List[AuditSsid] = Field(default_factory=list)
+    venue_wide_ssid_count: int = 0
+    ap_group_bound_ssid_count: int = 0
+    ap_group_names: List[str] = Field(default_factory=list)
+    ap_count: int = 0
     issues: List[str] = Field(default_factory=list)
 
 
@@ -118,6 +157,7 @@ class VenueAuditResponse(BaseModel):
     ap_groups: List[AuditApGroup] = Field(default_factory=list)
     venue_wide_ssids: List[AuditSsid] = Field(default_factory=list)
     ssids: List[AuditSsid] = Field(default_factory=list)
+    dpsk_services: List[AuditDpskService] = Field(default_factory=list)
     unassigned_aps: List[AuditAp] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
@@ -352,6 +392,14 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
                     "authenticate to it"
                 )
 
+        if venue_wide and gids:
+            # Not an error -- R1 populates apGroupIds alongside isAllApGroups
+            # -- but it is exactly the kind of thing an audit should say out
+            # loud rather than quietly normalise.
+            record.issues.append(
+                f"Broadcast on ALL AP groups and also explicitly bound to "
+                f"{len(gids)} of them; the venue-wide setting is what governs"
+            )
         if not venue_wide and not gids:
             record.issues.append(
                 "Activated at this venue but bound to no AP group, so it is "
@@ -361,20 +409,21 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
         ssids.append(record)
 
     # ---- group-first view, from the same records ----
+    # Explicit bindings and venue-wide coverage are tracked separately, not
+    # merged and not hidden. A venue-wide network can ALSO carry every
+    # apGroupId, so folding them together would make one blanket binding look
+    # like 249 deliberate ones -- but dropping it from the group entirely
+    # would hide that the group IS carrying that SSID, which on an audit is
+    # the worse failure. Both, labelled.
     by_group_id: Dict[str, List[AuditSsid]] = {}
     for record in ssids:
-        # A venue-wide network can ALSO carry every apGroupId (R1 populates
-        # both), so listing it per group would repeat one binding across all
-        # 249 of them and bury the per-group activations that were configured
-        # deliberately. It is reported once, in venue_wide_ssids.
         if record.venue_wide:
             continue
         for gid in record.ap_group_ids:
             by_group_id.setdefault(gid, []).append(record)
 
-    # A group with no per-group SSID is still serving the venue-wide ones, so
-    # "no SSID activated" is only true when there are none of those either.
-    venue_wide_count = sum(1 for s in ssids if s.venue_wide)
+    venue_wide = [s for s in ssids if s.venue_wide]
+    venue_wide_count = len(venue_wide)
 
     ap_groups: List[AuditApGroup] = []
     for gid, name in sorted(group_names.items(), key=lambda kv: kv[1].lower()):
@@ -384,6 +433,8 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
             is_default=(name == DEFAULT_AP_GROUP_LABEL),
             aps=sorted(aps_by_group.get(gid, []), key=lambda a: a.name.lower()),
             ssids=by_group_id.get(gid, []),
+            # Every venue-wide SSID reaches every group, by definition.
+            venue_wide_ssids=venue_wide,
         )
         if not group.aps and group.ssids:
             group.issues.append(
@@ -396,7 +447,60 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
             )
         ap_groups.append(group)
 
-    venue_wide = [s for s in ssids if s.venue_wide]
+    # ---- DPSK-service view: the whole picture for one service ----
+    services: List[AuditDpskService] = []
+    ssids_by_pool: Dict[str, List[AuditSsid]] = {}
+    for record in ssids:
+        if record.dpsk_service_id:
+            ssids_by_pool.setdefault(record.dpsk_service_id, []).append(record)
+
+    for pool_id, pool_ssids in ssids_by_pool.items():
+        igs = [
+            AuditIdentityGroup(
+                id=ig.get("id") or "", name=ig.get("name") or "",
+                identity_count=counts.get(ig.get("id")),
+            )
+            for ig in groups_by_pool.get(pool_id, [])
+        ]
+        covered: Set[str] = set()
+        for record in pool_ssids:
+            if record.venue_wide:
+                covered.update(group_names.keys())
+            else:
+                covered.update(record.ap_group_ids)
+
+        service = AuditDpskService(
+            id=pool_id,
+            name=next(
+                (s.dpsk_service_name for s in pool_ssids if s.dpsk_service_name), ""
+            ) or pool_id,
+            identity_groups=igs,
+            identity_count=sum(g.identity_count or 0 for g in igs),
+            ssids=sorted(pool_ssids, key=lambda s: (s.name or s.ssid).lower()),
+            venue_wide_ssid_count=sum(1 for s in pool_ssids if s.venue_wide),
+            ap_group_bound_ssid_count=sum(1 for s in pool_ssids if not s.venue_wide),
+            ap_group_names=sorted(
+                (group_names.get(g, f"(unknown {g[:8]})") for g in covered),
+                key=str.lower,
+            ),
+            ap_count=sum(len(aps_by_group.get(g, [])) for g in covered),
+        )
+        if service.venue_wide_ssid_count and service.ap_group_bound_ssid_count:
+            # Legitimate, and worth stating: the same passphrases authenticate
+            # on a blanket network and on per-unit ones at the same venue.
+            service.issues.append(
+                f"Serves {service.venue_wide_ssid_count} venue-wide SSID(s) AND "
+                f"{service.ap_group_bound_ssid_count} bound to specific AP "
+                f"groups — the same identities authenticate on both"
+            )
+        if not igs:
+            service.issues.append(
+                "No identity group feeds this service, so it has no "
+                "passphrases to authenticate"
+            )
+        services.append(service)
+
+    services.sort(key=lambda x: x.name.lower())
 
     totals = {
         "ap_groups": len(ap_groups),
@@ -410,6 +514,10 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
         "identities": sum(c for c in counts.values() if isinstance(c, int)),
         "empty_ap_groups": sum(1 for g in ap_groups if not g.aps),
         "ssids_with_issues": sum(1 for s in ssids if s.issues),
+        "services_spanning_both": sum(
+            1 for x in services
+            if x.venue_wide_ssid_count and x.ap_group_bound_ssid_count
+        ),
     }
 
     logger.info(
@@ -424,6 +532,7 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
         totals=totals,
         ap_groups=ap_groups,
         venue_wide_ssids=venue_wide,
+        dpsk_services=services,
         ssids=sorted(ssids, key=lambda s: (s.name or s.ssid).lower()),
         unassigned_aps=sorted(unassigned, key=lambda a: a.name.lower()),
         warnings=warnings,
