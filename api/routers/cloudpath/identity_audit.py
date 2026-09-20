@@ -120,18 +120,23 @@ class IdentityAuditRequest(BaseModel):
 
 class IdentityAuditRow(BaseModel):
     """One identity, and which of the five links are in place."""
-    username: str                       # as displayed: file name, or R1 name for extras
-    account: str                        # the processed/stripped form
-    suffix: Optional[str] = None        # the trailing segment, or the default
+    # Columns 1 and 2. The two names ARE the existence check: a name in
+    # username_json means the file has this resident, a name in username_r1
+    # means R1 does. A separate "in file" tick would only restate the first
+    # one, and neither tick tells you the thing that actually matters here --
+    # that the two names differ, and how.
+    username_json: Optional[str] = None   # as the Cloudpath export spells it
+    username_r1: Optional[str] = None     # as RuckusONE spells it
+    account: str                          # the processed/stripped form
+    suffix: Optional[str] = None          # the trailing segment, or the default
 
-    # Column 1
+    # Kept for filtering and totals, not for a column of its own.
     in_file: bool
 
-    # Column 2
+    # Column 3
     in_identity_group: bool = False
     identity_group_name: Optional[str] = None
     identity_id: Optional[str] = None
-    r1_name: Optional[str] = None       # what R1 actually calls it
     matched_as: Optional[str] = None    # "exact" | "processed" | None
 
     # Column 3
@@ -425,7 +430,7 @@ async def _radius_group_names(r1_client, tenant_id: str) -> Dict[str, str]:
 
 def _build_row(
     *,
-    display_name: str,
+    username_json: Optional[str],
     account: str,
     suffix: Optional[str],
     in_file: bool,
@@ -438,7 +443,7 @@ def _build_row(
 ) -> IdentityAuditRow:
     """Join one identity against everything collected, and name what is wrong."""
     row = IdentityAuditRow(
-        username=display_name,
+        username_json=username_json,
         account=account,
         suffix=suffix,
         in_file=in_file,
@@ -448,7 +453,7 @@ def _build_row(
         row.in_identity_group = True
         row.identity_group_name = identity.get('identity_group_name')
         row.identity_id = identity.get('identity_id')
-        row.r1_name = identity.get('name')
+        row.username_r1 = identity.get('name')
         row.matched_as = matched_as
         row.has_description = bool(identity.get('description'))
         # The group was reached BY its pool, so a group implies a service.
@@ -480,12 +485,12 @@ def _build_row(
         row.issues.append("No identity in any identity group serving this venue")
     if row.in_identity_group and not row.in_dpsk_service:
         row.issues.append("Identity group is not attached to a DPSK service")
-    if matched_as == "exact" and suffix and "_" in display_name:
+    if matched_as == "exact" and suffix and "_" in (username_json or ""):
         # The identity still carries its speed tier, so the rename step never
         # completed -- and the policy is named for the stripped account, so it
         # will not match this username at RADIUS time.
         row.issues.append(
-            f"Identity still named '{display_name}'; the import should have "
+            f"Identity still named '{username_json}'; the import should have "
             f"renamed it to '{account}'"
         )
     if in_file and not row.in_adaptive_policy:
@@ -560,7 +565,7 @@ async def run_identity_audit(
             consumed.add(identity['name'])
 
         rows.append(_build_row(
-            display_name=username,
+            username_json=username,
             account=account,
             suffix=suffix,
             in_file=True,
@@ -583,7 +588,7 @@ async def run_identity_audit(
         # Already processed by definition -- it is what R1 stores.
         account, suffix = split_account_suffix(name, request.default_suffix)
         row = _build_row(
-            display_name=name,
+            username_json=None,
             account=account,
             suffix=suffix,
             in_file=False,

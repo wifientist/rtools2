@@ -41,14 +41,18 @@ interface AuditData {
  * never ran, which is a finding, not a success.
  */
 interface IdentityAuditRow {
-  username: string;
+  // The two names ARE the existence check: a name under username_json means
+  // the file has this resident, a name under username_r1 means R1 does. A
+  // separate boolean column would only restate the first, and would not show
+  // the thing that matters — that the two differ, and how.
+  username_json: string | null;
+  username_r1: string | null;
   account: string;
   suffix: string | null;
   in_file: boolean;
   in_identity_group: boolean;
   identity_group_name: string | null;
   identity_id: string | null;
-  r1_name: string | null;
   matched_as: "exact" | "processed" | null;
   in_dpsk_service: boolean;
   dpsk_service_name: string | null;
@@ -1150,8 +1154,8 @@ function CloudpathImport() {
       if (identityAuditFilter === "extra" && row.in_file) return false;
       if (!search) return true;
       return (
-        row.username.toLowerCase().includes(search) ||
-        (row.r1_name || "").toLowerCase().includes(search) ||
+        (row.username_json || "").toLowerCase().includes(search) ||
+        (row.username_r1 || "").toLowerCase().includes(search) ||
         (row.identity_group_name || "").toLowerCase().includes(search)
       );
     });
@@ -1160,7 +1164,7 @@ function CloudpathImport() {
   const handleExportIdentityAuditCsv = () => {
     if (!identityAuditData) return;
     const header = [
-      "username", "r1_name", "matched_as", "in_file", "identity_group",
+      "username_json", "username_r1", "matched_as", "identity_group",
       "dpsk_service", "adaptive_policy", "policy_in_set", "radius_group",
       "radius_expected", "description_set", "issues",
     ];
@@ -1168,7 +1172,7 @@ function CloudpathImport() {
     const lines = [header.join(",")];
     for (const row of visibleIdentityAuditRows) {
       lines.push([
-        row.username, row.r1_name || "", row.matched_as || "", row.in_file,
+        row.username_json || "", row.username_r1 || "", row.matched_as || "",
         row.identity_group_name || "", row.dpsk_service_name || "",
         row.policy_name || "", row.policy_in_set,
         row.radius_group_name || "", row.radius_group_expected || "",
@@ -2523,8 +2527,9 @@ function CloudpathImport() {
                   <thead>
                     <tr className="text-left text-xs uppercase text-gray-500">
                       {[
-                        "Username", "File", "Identity Group", "DPSK Service",
-                        "Adaptive Policy", "RADIUS Group", "Desc", "Notes",
+                        "Username (JSON)", "Username (R1)", "Identity Group",
+                        "DPSK Service", "Adaptive Policy", "RADIUS Group",
+                        "Desc", "Notes",
                       ].map((heading) => (
                         // Sticky goes on the cells, not the row or thead:
                         // Safari ignores it on <thead>/<tr>.
@@ -2540,26 +2545,48 @@ function CloudpathImport() {
                   <tbody className="divide-y">
                     {visibleIdentityAuditRows.map((row, i) => (
                       <tr
-                        key={`${row.username}-${i}`}
+                        key={`${row.username_json || row.username_r1}-${i}`}
                         className={row.in_file ? "" : "bg-gray-50"}
                       >
+                        {/*
+                          An empty cell is the finding. Blank on the left means
+                          R1 holds someone the file does not; blank on the right
+                          means the file lists someone R1 never got. An em dash
+                          rather than nothing, so an empty cell reads as
+                          deliberate instead of a rendering slip.
+                        */}
                         <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
-                          {row.username}
-                          {row.r1_name && row.r1_name !== row.username && (
-                            <span className="text-gray-400"> → {row.r1_name}</span>
+                          {row.username_json || (
+                            <span className="text-gray-300 font-sans">—</span>
                           )}
                         </td>
-                        <td className="px-3 py-2">
-                          <AuditCell
-                            state={row.in_file ? "ok" : "none"}
-                            title={row.in_file ? "In the uploaded file" : "Not in the uploaded file"}
-                          />
+                        <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                          {row.username_r1 ? (
+                            <span
+                              className={
+                                row.username_json && row.username_r1 !== row.username_json
+                                  ? "text-gray-600"
+                                  : ""
+                              }
+                              title={
+                                row.matched_as === "processed"
+                                  ? "Matched after stripping the speed tier"
+                                  : row.matched_as === "exact"
+                                  ? "Matched the file name exactly"
+                                  : undefined
+                              }
+                            >
+                              {row.username_r1}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 font-sans">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <AuditCell
                             state={
                               !row.in_identity_group ? "bad"
-                              : row.matched_as === "exact" && row.username.includes("_") ? "warn"
+                              : row.matched_as === "exact" && (row.username_json || "").includes("_") ? "warn"
                               : "ok"
                             }
                             label={row.identity_group_name}
