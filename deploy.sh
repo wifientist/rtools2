@@ -151,6 +151,7 @@ REGRESSION_TESTS=(
     test_r1_auth_and_polling.py
     test_ap_group_lookup.py
     test_identity_audit.py
+    test_import_shadowing.py
 )
 
 echo "🧪 Running regression gates..."

@@ -510,7 +510,16 @@ class DpskService:
                 # which showed up as roughly half of identities missing GUIDs.
                 # Retry with backoff so a slow write does not lose the linkage.
                 if passphrase:
-                    import asyncio
+                    # No `import asyncio` here. asyncio is imported at module
+                    # scope, and re-importing it inside this function made the
+                    # name local to the WHOLE function -- so the
+                    # `await asyncio.to_thread(...)` that posts the passphrase,
+                    # hundreds of lines earlier, raised UnboundLocalError
+                    # before this line ever ran. Every create_passphrase call
+                    # failed with "cannot access local variable 'asyncio'",
+                    # which the caller recorded as a per-passphrase failure:
+                    # 215 of 215 failed, so create_access_policies dropped all
+                    # of them on `if not success` and built zero policies.
 
                     # Kept deliberately short. Every retry is a full
                     # 500-record pool query, and this runs per passphrase at
