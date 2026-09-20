@@ -246,6 +246,78 @@ const AUDIT_SEVERITY: Record<AuditCellState, number> = {
   bad: 0, warn: 1, ok: 2, none: 3,
 };
 
+/**
+ * The findings, grouped by the piece of config they are about.
+ *
+ * Derived from the rows rather than from the server's totals, so the summary
+ * cannot drift from the table underneath it — one row failing two checks is
+ * counted once under each, and every count is exactly the set of rows you
+ * get by clicking it.
+ *
+ * Ordered by what stops a resident connecting. "blocks" means the resident
+ * does not get on the network at all; "wrong" means they get on and get the
+ * wrong service; "info" is worth knowing and breaks nothing.
+ */
+const AUDIT_FINDINGS: {
+  key: string;
+  group: string;
+  severity: "blocks" | "wrong" | "info";
+  label: string;
+  test: (row: IdentityAuditRow) => boolean;
+}[] = [
+  {
+    key: "identity_missing", group: "Identity", severity: "blocks",
+    label: "No identity in any group serving this venue",
+    test: (r) => r.in_file && !r.in_identity_group,
+  },
+  {
+    key: "identity_not_renamed", group: "Identity", severity: "wrong",
+    label: "Still carries its speed tier — the rename never ran, so the policy will not match",
+    test: (r) => r.matched_as === "exact" && (r.username_json || "").includes("_"),
+  },
+  {
+    key: "dpsk_missing", group: "DPSK service", severity: "blocks",
+    label: "Identity group is not attached to a DPSK service",
+    test: (r) => r.in_identity_group && !r.in_dpsk_service,
+  },
+  {
+    key: "policy_missing", group: "Adaptive policy", severity: "blocks",
+    label: "No adaptive policy for this account",
+    test: (r) => r.in_file && !r.in_adaptive_policy,
+  },
+  {
+    key: "policy_not_in_set", group: "Adaptive policy", severity: "blocks",
+    label: "Policy exists but belongs to no policy set, so it has no effect",
+    test: (r) => r.in_adaptive_policy && !r.policy_in_set,
+  },
+  {
+    key: "radius_missing", group: "RADIUS attribute group", severity: "wrong",
+    label: "Policy has no RADIUS attribute group",
+    test: (r) => r.in_adaptive_policy && !r.radius_group_name,
+  },
+  {
+    key: "radius_mismatch", group: "RADIUS attribute group", severity: "wrong",
+    label: "RADIUS group disagrees with the tier in the username",
+    test: (r) => r.radius_group_matches === false,
+  },
+  {
+    key: "description_blank", group: "Description", severity: "info",
+    label: "No description set (no Cloudpath GUID to match on next re-run)",
+    test: (r) => r.in_identity_group && !r.has_description,
+  },
+  {
+    key: "r1_only", group: "Roster", severity: "info",
+    label: "Present in RuckusONE but not in the uploaded file",
+    test: (r) => !r.in_file,
+  },
+];
+
+const AUDIT_SEVERITY_STYLE = {
+  blocks: { dot: "bg-red-500", text: "text-red-700", chip: "bg-red-50 border-red-200" },
+  wrong: { dot: "bg-amber-500", text: "text-amber-700", chip: "bg-amber-50 border-amber-200" },
+  info: { dot: "bg-gray-400", text: "text-gray-600", chip: "bg-gray-50 border-gray-200" },
+} as const;
+
 function AuditCell({
   state,
   label,
@@ -389,8 +461,9 @@ function CloudpathImport() {
   const [showIdentityAuditModal, setShowIdentityAuditModal] = useState(false);
   const [identityAuditLoading, setIdentityAuditLoading] = useState(false);
   const [identityAuditData, setIdentityAuditData] = useState<IdentityAuditData | null>(null);
-  const [identityAuditFilter, setIdentityAuditFilter] =
-    useState<"all" | "issues" | "clean" | "extra">("issues");
+  // "all" | "issues" | "clean" | "extra", or one of AUDIT_FINDINGS' keys
+  // when a summary line is clicked.
+  const [identityAuditFilter, setIdentityAuditFilter] = useState<string>("issues");
   const [identityAuditSearch, setIdentityAuditSearch] = useState("");
   // Most findings first by default: the table is opened to decide what needs
   // doing, so the rows with the most wrong with them belong at the top.
@@ -1212,6 +1285,9 @@ function CloudpathImport() {
       if (identityAuditFilter === "issues" && row.issues.length === 0) return false;
       if (identityAuditFilter === "clean" && row.issues.length > 0) return false;
       if (identityAuditFilter === "extra" && row.in_file) return false;
+      // A finding key from the summary: show exactly the rows it counted.
+      const finding = AUDIT_FINDINGS.find((f) => f.key === identityAuditFilter);
+      if (finding && !finding.test(row)) return false;
       if (!search) return true;
       return (
         (row.username_json || "").toLowerCase().includes(search) ||
@@ -1250,6 +1326,21 @@ function CloudpathImport() {
     // would quietly reorder what every other reader of it sees.
     return [...rows].sort(compare);
   }, [identityAuditData, identityAuditFilter, identityAuditSearch, identityAuditSort]);
+
+  /**
+   * Findings with a count > 0, grouped, worst first.
+   *
+   * Counted off the rows rather than the server's totals so that clicking a
+   * line and reading the table can never disagree with the number on it.
+   */
+  const identityAuditFindings = useMemo(() => {
+    if (!identityAuditData) return [];
+    const order = { blocks: 0, wrong: 1, info: 2 };
+    return AUDIT_FINDINGS
+      .map((f) => ({ ...f, count: identityAuditData.rows.filter(f.test).length }))
+      .filter((f) => f.count > 0)
+      .sort((a, b) => order[a.severity] - order[b.severity] || b.count - a.count);
+  }, [identityAuditData]);
 
   const handleExportIdentityAuditCsv = () => {
     if (!identityAuditData) return;
@@ -2534,26 +2625,96 @@ function CloudpathImport() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <AuditStat value={identityAuditData.totals.in_file || 0} label="In the file" tone="neutral" />
                 <AuditStat value={identityAuditData.totals.clean || 0} label="Fully wired" tone="good" />
-                <AuditStat value={identityAuditData.totals.missing_identity || 0} label="No identity" tone="bad" />
                 <AuditStat
-                  value={(identityAuditData.totals.in_file || 0) - (identityAuditData.totals.with_policy || 0)}
-                  label="No policy"
+                  value={(identityAuditData.totals.in_file || 0) - (identityAuditData.totals.clean || 0)}
+                  label="Need attention"
                   tone="bad"
                 />
-                <AuditStat
-                  value={(identityAuditData.totals.with_policy || 0) - (identityAuditData.totals.policy_in_set || 0)}
-                  label="Policy not in set"
-                  tone="warn"
-                />
-                <AuditStat value={identityAuditData.totals.radius_mismatch || 0} label="RADIUS mismatch" tone="warn" />
-                <AuditStat
-                  value={(identityAuditData.totals.matched || 0) - (identityAuditData.totals.with_description || 0)}
-                  label="No description"
-                  tone="neutral"
-                />
                 <AuditStat value={identityAuditData.totals.in_r1_only || 0} label="In R1 only" tone="neutral" />
+              </div>
+
+              {/*
+                What is actually wrong, grouped by the piece of config it is
+                about. Counted off the rows rather than the response totals,
+                so a line and the table it filters to can never disagree —
+                and every line is clickable, because a count you cannot open
+                is a number you have to go hunting for.
+              */}
+              <div className="border rounded-lg mb-4 overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b flex items-baseline justify-between">
+                  <span className="font-semibold text-sm text-gray-700">Findings</span>
+                  <span className="text-xs text-gray-500">
+                    {identityAuditFindings.length === 0
+                      ? "nothing to report"
+                      : "click a finding to see those rows"}
+                  </span>
+                </div>
+
+                {identityAuditFindings.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-green-700">
+                    ✓ Every identity in the file reached an identity group, a DPSK
+                    service, an adaptive policy in the policy set, and a matching
+                    RADIUS attribute group.
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {Array.from(
+                      identityAuditFindings.reduce((groups, f) => {
+                        (groups.get(f.group) ?? groups.set(f.group, []).get(f.group)!).push(f);
+                        return groups;
+                      }, new Map<string, typeof identityAuditFindings>()),
+                    ).map(([group, findings]) => (
+                      <div key={group} className="px-4 py-2">
+                        <div className="text-xs uppercase text-gray-400 mb-1">{group}</div>
+                        {findings.map((f) => {
+                          const style = AUDIT_SEVERITY_STYLE[f.severity];
+                          const active = identityAuditFilter === f.key;
+                          return (
+                            <button
+                              key={f.key}
+                              onClick={() =>
+                                setIdentityAuditFilter(active ? "issues" : f.key)
+                              }
+                              className={`w-full flex items-baseline gap-2 text-left py-1 px-2 -mx-2 rounded hover:bg-gray-50 ${
+                                active ? "bg-gray-100" : ""
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 translate-y-1 ${style.dot}`}
+                              />
+                              <span className={`font-semibold tabular-nums ${style.text}`}>
+                                {f.count}
+                              </span>
+                              <span className="text-sm text-gray-700">{f.label}</span>
+                              {active && (
+                                <span className="ml-auto text-xs text-gray-500 shrink-0">
+                                  showing — click to clear
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="px-4 py-2 bg-gray-50 border-t text-xs text-gray-500">
+                  <span className="inline-flex items-center gap-1 mr-3">
+                    <span className="w-2 h-2 rounded-full bg-red-500" /> blocks the
+                    resident from connecting
+                  </span>
+                  <span className="inline-flex items-center gap-1 mr-3">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" /> connects,
+                    but with the wrong service
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-gray-400" /> informational
+                  </span>
+                </div>
               </div>
 
               <div className="text-xs text-gray-500 mb-4 space-y-0.5">
