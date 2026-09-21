@@ -173,10 +173,18 @@ for t in "${REGRESSION_TESTS[@]}"; do
     fi
 done
 
-# Frontend gate. Runs in the frontend container because the backend image
-# mounts only ./api and cannot see src/.
+# Frontend gate.
+#
+# NOT via `docker compose exec frontend`: in production the frontend service
+# builds to the `production` target, which is nginx:alpine holding nothing but
+# /usr/share/nginx/html. No node, no src/, no scripts/ -- the check would fail
+# on every prod deploy while passing in dev, where the frontend IS a node
+# container. The backend cannot run it either; it mounts only ./api.
+#
+# So run it against the checked-out source in a throwaway node container.
+# node:20-alpine is already local: it is the Dockerfile's build stage.
 echo "🧪 Running frontend gates..."
-if docker compose --env-file .env.production exec -T frontend \
+if docker run --rm -v "${DEPLOY_DIR}:/w" -w /w node:20-alpine \
         node scripts/check-msp-ec-pickers.mjs > /tmp/deploy_ec_pickers.log 2>&1; then
     echo "  ✅ check-msp-ec-pickers.mjs"
 else
