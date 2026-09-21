@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from r1api.constants import (
     WifiNetworkType,
@@ -9,6 +10,11 @@ from r1api.constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+# R1 returns these mid-pagination under load; they are blips, not answers.
+TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
+PAGE_RETRIES = 3
+PAGE_RETRY_BACKOFF = 1.0
 
 
 def _merge_advanced_settings(wlan_settings: dict, advanced: dict) -> None:
@@ -36,7 +42,7 @@ class NetworksService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
 
-    async def get_wifi_networks(self, tenant_id): #, r1_client: R1Client = None):
+    async def get_wifi_networks(self, tenant_id, venue_id: str = None):
         """
         Get all WiFi networks for a tenant, handling pagination automatically.
 
@@ -66,6 +72,23 @@ class NetworksService:
             "securityProtocol",
             ]
 
+        # =================================================================
+        # Ask R1 for one venue's networks rather than the tenant's.
+        #
+        # VERIFIED on a live MSP-EC: 3705 networks tenant-wide, 8 pages, all
+        # so the caller could keep the 7 bound to one venue. The filter key is
+        # the nested path -- `venueApGroups.venueId`. The obvious spellings are
+        # worse than useless: `venues` and `venueIds` return 200 with
+        # totalCount 0 (silently ignored, the usual R1 trap) and `venueId`
+        # alone is a 400. The nested form returns exactly the same 7 ids the
+        # client-side filter produces, from a single page.
+        #
+        # That is not only cheaper, it is the fix for the reported failure: a
+        # single transient 503 anywhere in those 8 pages killed the whole
+        # audit. One page is one chance to fail instead of eight.
+        # =================================================================
+        filters = {"venueApGroups.venueId": [venue_id]} if venue_id else None
+
         # Fetch first page to get totalCount
         body = {
             'fields': fields,
@@ -74,12 +97,51 @@ class NetworksService:
             'page': 1,
             'pageSize': 500
         }
+        if filters:
+            body['filters'] = filters
 
-        # Use override_tenant_id only for MSP accounts
-        if self.client.ec_type == "MSP" and tenant_id:
-            first_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
-        else:
-            first_response = self.client.post("/wifiNetworks/query", payload=body).json()
+        def fetch_page(page_body):
+            """
+            One page, with the transient failures R1 actually produces.
+
+            The reported crash was a bare `.json()` on a 503: R1 answered
+            "upstream connect error or disconnect/reset before headers" with
+            an HTML/text body, json() raised JSONDecodeError, and the audit
+            died with a stack trace about column 1 char 0 -- which says
+            nothing about what went wrong. A 503 mid-pagination is a blip, not
+            a reason to lose 3700 rows already fetched.
+            """
+            last_error = None
+            for attempt in range(1, PAGE_RETRIES + 1):
+                if self.client.ec_type == "MSP" and tenant_id:
+                    response = self.client.post(
+                        "/wifiNetworks/query", payload=page_body,
+                        override_tenant_id=tenant_id,
+                    )
+                else:
+                    response = self.client.post("/wifiNetworks/query", payload=page_body)
+
+                status = getattr(response, "status_code", 0)
+                if 200 <= status < 300:
+                    return self.client.safe_json(response)
+
+                last_error = f"HTTP {status}"
+                if status in TRANSIENT_STATUSES and attempt < PAGE_RETRIES:
+                    logger.warning(
+                        f"wifiNetworks/query page {page_body.get('page')} got "
+                        f"{status}; retrying ({attempt}/{PAGE_RETRIES - 1})"
+                    )
+                    time.sleep(PAGE_RETRY_BACKOFF * attempt)
+                    continue
+                break
+
+            raise RuntimeError(
+                f"RuckusONE could not return page {page_body.get('page')} of "
+                f"wifiNetworks/query ({last_error}). This is usually transient; "
+                f"retry the request."
+            )
+
+        first_response = fetch_page(body)
 
         all_networks = first_response.get('data', [])
         total_count = first_response.get('totalCount', len(all_networks))
@@ -95,11 +157,7 @@ class NetworksService:
 
             for page_num in range(2, pages_needed + 1):
                 body['page'] = page_num
-                if self.client.ec_type == "MSP" and tenant_id:
-                    page_response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
-                else:
-                    page_response = self.client.post("/wifiNetworks/query", payload=body).json()
-                page_data = page_response.get('data', [])
+                page_data = fetch_page(body).get('data', [])
 
                 logger.debug(f"WiFi Networks page {page_num} returned: {len(page_data)} networks")
 

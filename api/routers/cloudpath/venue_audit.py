@@ -296,7 +296,12 @@ async def run_venue_audit(r1_client, request: VenueAuditRequest) -> VenueAuditRe
             unassigned.append(record)
 
     # ---- networks bound to this venue ----
-    networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+    # Scoped to the venue server-side: a large MSP-EC holds thousands of
+    # networks and this needs the handful bound here. See get_wifi_networks
+    # for why the filter key is the nested venueApGroups.venueId.
+    networks_response = await r1_client.networks.get_wifi_networks(
+        tenant_id, venue_id=venue_id
+    )
     all_networks = (
         networks_response.get("data", []) if isinstance(networks_response, dict) else []
     )

@@ -666,7 +666,11 @@ async def get_dpsk_ssids(
 
 
     try:
-        wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+        # This endpoint already answers "DPSK SSIDs at THIS venue", so scope
+        # the query to it rather than pulling the tenant's thousands.
+        wifi_networks_response = await r1_client.networks.get_wifi_networks(
+            tenant_id, venue_id=request.venue_id
+        )
         all_networks = wifi_networks_response.get('data', [])
 
         dpsk_ssids = []

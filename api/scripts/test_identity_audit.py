@@ -77,8 +77,17 @@ class FakeNetworks:
     def __init__(self, w):
         self.w = w
 
-    async def get_wifi_networks(self, tenant_id):
-        return {"data": self.w["networks"]}
+    async def get_wifi_networks(self, tenant_id, venue_id=None):
+        # Recorded so the audit is held to asking R1 for ONE venue's
+        # networks. A large MSP-EC holds thousands; pulling all of them to
+        # keep a handful is what made this fail on a 503 mid-pagination.
+        self.w.setdefault("network_queries", []).append(venue_id)
+        rows = self.w["networks"]
+        if venue_id:
+            rows = [n for n in rows
+                    if any(v.get("venueId") == venue_id
+                           for v in (n.get("venueApGroups") or []))]
+        return {"data": rows}
 
     async def get_dpsk_services_on_network(self, network_id, tenant_id=None):
         return {"data": [{"id": p} for p in self.w["network_pools"].get(network_id, [])]}
@@ -518,6 +527,17 @@ async def main() -> int:
         not any(r.evaluated for r in skipped.rows)
         and any("needs one policy set" in w for w in skipped.warnings),
         f"warnings={skipped.warnings}",
+    )
+
+    # The audit must SCOPE the network query. A large MSP-EC holds thousands
+    # of networks and this needs the handful bound to one venue; pulling all
+    # of them is what died on a transient 503 mid-pagination in production.
+    w_scope = new_world()
+    await audit(w_scope)
+    failures += check(
+        "the audit asks R1 for this venue's networks, not the whole tenant's",
+        w_scope.get("network_queries") == ["v-1"],
+        f"venue_id passed: {w_scope.get('network_queries')}",
     )
 
     # 10. inform only -- no write path exists in the module
