@@ -35,10 +35,11 @@ WHAT THIS GUARDS
   2. On MSP with an EC, that EC is used verbatim.
   3. On a direct EC controller, r1_tenant_id is still the default, and an
      explicit tenant still wins.
-  4. The cloudpath routers contain no `or controller.r1_tenant_id` fallback.
-  5. The rest of the suite is inventoried, so the count can only go down --
-     this shape exists in other routers and every one is a tool that
-     silently reports on the wrong company.
+  4. NO router contains the `or controller.r1_tenant_id` fallback. All
+     fourteen that did are fixed; the sweep fails if any reintroduces it,
+     because this shape spread by copy-paste in the first place.
+  5. Each router named in MUST_BE_CLEAN still exists, so deleting a file
+     cannot quietly turn its check into a pass.
 
 Usage:
     docker compose exec backend python scripts/test_msp_tenant_scope.py
@@ -61,25 +62,28 @@ FALLBACK = re.compile(r"tenant_id\s+or\s+\w*controller\.r1_tenant_id")
 
 # Routers still carrying the silent fallback. Fixing one means deleting it
 # from here; the test fails if the list grows, so this can only shrink.
-KNOWN_UNFIXED = {
-    "routers/bulk_ap_tagging/bulk_ap_tagging_router.py",
-    "routers/cleanup_v2_router.py",
-    "routers/migrate.py",
-    "routers/ap_port_config/ap_port_config_router.py",
-    "routers/ap_port_config/v2_endpoints.py",
-    "routers/per_unit_ssid/v2_endpoints.py",
-    "routers/per_unit_ssid/per_unit_ssid_router.py",
-    "routers/bulk_wlan/bulk_wlan_router.py",
-    "routers/ap_regroup/v2_endpoints.py",
-    "routers/ap_rename/ap_rename_router.py",
-    "routers/maps/maps_router.py",
-    "routers/sz_migration/router.py",
-}
+# Every router has been fixed. This stays as an empty set on purpose: the
+# sweep below fails if ANY router reintroduces the fallback, so the shape
+# cannot come back by copy-paste the way it originally spread.
+KNOWN_UNFIXED: set = set()
 
-# These must stay clean: they are the tool this was found in.
+# Every router must stay clean. Named explicitly as well, so deleting one
+# from the tree cannot quietly turn its check into a pass.
 MUST_BE_CLEAN = {
     "routers/cloudpath/cloudpath_router.py",
     "routers/cloudpath/v2_endpoints.py",
+    "routers/ap_regroup/v2_endpoints.py",
+    "routers/ap_rename/ap_rename_router.py",
+    "routers/bulk_ap_tagging/bulk_ap_tagging_router.py",
+    "routers/bulk_wlan/bulk_wlan_router.py",
+    "routers/per_unit_ssid/per_unit_ssid_router.py",
+    "routers/per_unit_ssid/v2_endpoints.py",
+    "routers/ap_port_config/ap_port_config_router.py",
+    "routers/ap_port_config/v2_endpoints.py",
+    "routers/maps/maps_router.py",
+    "routers/cleanup_v2_router.py",
+    "routers/migrate.py",
+    "routers/sz_migration/router.py",
 }
 
 
@@ -139,8 +143,13 @@ def sweep() -> int:
         if FALLBACK.search(path.read_text()):
             offenders.add(str(path.relative_to(API_ROOT)))
 
+    missing = {f for f in MUST_BE_CLEAN if not (API_ROOT / f).exists()}
     failures = check(
-        "the cloudpath routers carry no silent MSP fallback",
+        "every router named in MUST_BE_CLEAN still exists",
+        not missing, ", ".join(sorted(missing)),
+    )
+    failures += check(
+        "no router carries the silent MSP fallback",
         not (offenders & MUST_BE_CLEAN),
         ", ".join(sorted(offenders & MUST_BE_CLEAN)),
     )
