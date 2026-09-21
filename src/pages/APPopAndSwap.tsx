@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import MspEcPicker from "@/components/MspEcPicker";
 import { apiFetch } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -94,7 +95,26 @@ function APPopAndSwap() {
 
   const activeController = controllers.find((c) => c.id === activeControllerId);
   const needsEcSelection = activeControllerSubtype === "MSP";
-  const effectiveTenantId = needsEcSelection ? null : activeController?.r1_tenant_id || null;
+  // An MSP holds no venues of its own: its key delegates down to one MSP-EC
+  // via a tenant header, so the EC is a STEP before anything below it can be
+  // listed. A direct EC controller skips it — its key already belongs to the
+  // tenant. Either way effectiveTenantId is what every request sends.
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
+  const effectiveTenantId = needsEcSelection
+    ? ecId
+    : (activeController?.r1_tenant_id || null);
+
+  // Switching controllers leaves the previous controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
+
+  // A venue belongs to exactly one tenant, so changing the EC drops it.
+  useEffect(() => {
+    setVenueId(null);
+  }, [ecId]);
 
   // Wizard state
   const [step, setStep] = useState<WizardStep>("venue");
@@ -480,12 +500,44 @@ function APPopAndSwap() {
         <div>
           {/* Step: Venue Selection */}
           {step === "venue" && (
-            <SingleVenueSelector
+            <>
+              {/*
+                On an MSP the key delegates down to one EC, so the venue list cannot
+                load until that EC is chosen — it is a step, not a filter. A direct
+                EC controller skips this entirely.
+              */}
+              {needsEcSelection && activeControllerId && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    MSP-EC (tenant)
+                  </label>
+                  <MspEcPicker
+                    controllerId={activeControllerId}
+                    ecId={ecId}
+                    ecName={ecName}
+                    onChange={(id, name) => {
+                      setEcId(id);
+                      setEcName(name);
+                    }}
+                  />
+                </div>
+              )}
+
+              {needsEcSelection && !ecId ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800">
+                    Select an MSP-EC above — venues belong to a tenant, not to the MSP.
+                  </p>
+                </div>
+              ) : (
+                <SingleVenueSelector
               controllerId={activeControllerId}
               tenantId={effectiveTenantId}
               onVenueSelect={handleVenueSelect}
               selectedVenueId={venueId}
-            />
+                />
+              )}
+            </>
           )}
 
           {/* Step: Select Old APs */}

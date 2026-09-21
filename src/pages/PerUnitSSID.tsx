@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import MspEcPicker from "@/components/MspEcPicker";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import type { JobResult } from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
@@ -339,9 +340,26 @@ function PerUnitSSID() {
   // Determine tenant ID (for MSP, it's null until explicitly set; for EC, use r1_tenant_id)
   const activeController = controllers.find(c => c.id === activeControllerId);
   const needsEcSelection = activeControllerSubtype === "MSP";
+  // An MSP holds no venues of its own: its key delegates down to one MSP-EC
+  // via a tenant header, so the EC is a STEP before anything below it can be
+  // listed. A direct EC controller skips it — its key already belongs to the
+  // tenant. Either way effectiveTenantId is what every request sends.
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
   const effectiveTenantId = needsEcSelection
-    ? null  // For MSP, we'd need EC selector - for now just use controller's default
+    ? ecId
     : (activeController?.r1_tenant_id || null);
+
+  // Switching controllers leaves the previous controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
+
+  // A venue belongs to exactly one tenant, so changing the EC drops it.
+  useEffect(() => {
+    setVenueId(null);
+  }, [ecId]);
 
   const handleCsvInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCsvInput(e.target.value);
@@ -792,12 +810,44 @@ function PerUnitSSID() {
             </p>
           </div>
         ) : (
-          <SingleVenueSelector
+          <>
+            {/*
+              On an MSP the key delegates down to one EC, so the venue list cannot
+              load until that EC is chosen — it is a step, not a filter. A direct
+              EC controller skips this entirely.
+            */}
+            {needsEcSelection && activeControllerId && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  MSP-EC (tenant)
+                </label>
+                <MspEcPicker
+                  controllerId={activeControllerId}
+                  ecId={ecId}
+                  ecName={ecName}
+                  onChange={(id, name) => {
+                    setEcId(id);
+                    setEcName(name);
+                  }}
+                />
+              </div>
+            )}
+
+            {needsEcSelection && !ecId ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  Select an MSP-EC above — venues belong to a tenant, not to the MSP.
+                </p>
+              </div>
+            ) : (
+              <SingleVenueSelector
             controllerId={activeControllerId}
             tenantId={effectiveTenantId}
             onVenueSelect={handleVenueSelect}
             selectedVenueId={venueId}
-          />
+              />
+            )}
+          </>
         )}
       </div>
 

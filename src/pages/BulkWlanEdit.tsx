@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
 import JobMonitorModal from "@/components/JobMonitorModal";
+import MspEcPicker from "@/components/MspEcPicker";
 import type { JobResult } from "@/components/JobMonitorModal";
 import {
   useReactTable,
@@ -400,8 +401,23 @@ const columnHelper = createColumnHelper<Network>();
 export default function BulkWlanEdit() {
   const { activeControllerId, activeControllerSubtype, controllers } = useAuth();
   const activeController = controllers.find((c: any) => c.id === activeControllerId);
-  const effectiveTenantId =
-    activeControllerSubtype === "MSP" ? null : activeController?.r1_tenant_id || null;
+  // An MSP holds no venues of its own: its key delegates down to one MSP-EC
+  // via a tenant header, so the EC is a STEP before anything below it can be
+  // listed. A direct EC controller skips it — its key already belongs to the
+  // tenant. Either way effectiveTenantId is what every request sends.
+  const needsEcSelection = activeControllerSubtype === "MSP";
+
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
+  const effectiveTenantId = needsEcSelection
+    ? ecId
+    : (activeController?.r1_tenant_id || null);
+
+  // Switching controllers leaves the previous controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
 
   // Network list
   const [networks, setNetworks] = useState<Network[]>([]);
@@ -450,6 +466,14 @@ export default function BulkWlanEdit() {
   // ---- Fetch networks ----
   useEffect(() => {
     if (!activeControllerId) return;
+    // On an MSP with no EC chosen there is no tenant to list networks for.
+    // Fetching anyway used to return the MSP's own networks, which look like
+    // a real (tiny) result rather than a missing selection.
+    if (needsEcSelection && !ecId) {
+      setNetworks([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     setNetworks([]);
@@ -469,7 +493,7 @@ export default function BulkWlanEdit() {
       .then((data) => setNetworks(data.networks || []))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [activeControllerId, effectiveTenantId]);
+  }, [activeControllerId, effectiveTenantId, needsEcSelection, ecId]);
 
   // ---- Fetch settings for selected networks (batched) ----
   const FETCH_BATCH_SIZE = 50;
@@ -1017,6 +1041,31 @@ export default function BulkWlanEdit() {
       <p className="text-gray-500 mb-6 text-sm">
         Select WiFi networks and modify advanced settings in bulk.
       </p>
+
+      {needsEcSelection && activeControllerId && (
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            MSP-EC (tenant)
+          </label>
+          <MspEcPicker
+            controllerId={activeControllerId}
+            ecId={ecId}
+            ecName={ecName}
+            onChange={(id, name) => {
+              setEcId(id);
+              setEcName(name);
+            }}
+          />
+        </div>
+      )}
+
+      {needsEcSelection && !ecId && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <p className="text-sm text-blue-800">
+            Select an MSP-EC above — WiFi networks belong to a tenant, not to the MSP.
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-red-800 text-sm">

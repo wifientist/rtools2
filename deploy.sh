@@ -157,6 +157,7 @@ REGRESSION_TESTS=(
     test_shared_resource_linking.py
     test_no_autonamed_identities.py
     test_passphrase_never_leaves.py
+    test_client_factory_arity.py
 )
 
 echo "🧪 Running regression gates..."
@@ -171,6 +172,18 @@ for t in "${REGRESSION_TESTS[@]}"; do
         FAILED_TESTS+=("$t")
     fi
 done
+
+# Frontend gate. Runs in the frontend container because the backend image
+# mounts only ./api and cannot see src/.
+echo "🧪 Running frontend gates..."
+if docker compose --env-file .env.production exec -T frontend \
+        node scripts/check-msp-ec-pickers.mjs > /tmp/deploy_ec_pickers.log 2>&1; then
+    echo "  ✅ check-msp-ec-pickers.mjs"
+else
+    echo "  ❌ check-msp-ec-pickers.mjs"
+    sed 's/^/       /' /tmp/deploy_ec_pickers.log | tail -20
+    FAILED_TESTS+=("check-msp-ec-pickers.mjs")
+fi
 
 if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
     echo "🚨 ${#FAILED_TESTS[@]} regression gate(s) failed: ${FAILED_TESTS[*]}"
