@@ -153,6 +153,7 @@ REGRESSION_TESTS=(
     test_identity_audit.py
     test_import_shadowing.py
     test_rerun_identity_matching.py
+    test_msp_tenant_scope.py
 )
 
 echo "🧪 Running regression gates..."

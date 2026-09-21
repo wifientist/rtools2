@@ -23,6 +23,7 @@ from models.user import User, RoleEnum
 from models.controller import Controller
 from clients.r1_client import create_r1_client_from_controller
 from redis_client import get_redis_client
+from routers.tenant_scope import resolve_tenant_id
 
 from workflow.v2.models import JobStatus
 from workflow.v2.state_manager import RedisStateManagerV2
@@ -177,6 +178,7 @@ def validate_controller_access(controller_id: int, user: User, db: Session) -> C
     return controller
 
 
+
 # ==================== V2 Background Tasks ====================
 
 async def run_v2_import_background(job_id: str, controller_id: int):
@@ -309,10 +311,8 @@ async def audit_venue_dpsk(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     request.tenant_id = tenant_id
 
@@ -358,10 +358,8 @@ async def audit_venue_identities(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     request.tenant_id = tenant_id
 
@@ -565,10 +563,8 @@ async def export_identities(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     # Support both legacy dpsk_pool_id (single) and new dpsk_pool_ids (list)
     pool_ids = request.dpsk_pool_ids
@@ -601,10 +597,8 @@ async def export_identities_csv(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     pool_ids = request.dpsk_pool_ids
     if not pool_ids and request.dpsk_pool_id:
@@ -656,10 +650,8 @@ async def get_dpsk_ssids(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
         wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
@@ -733,9 +725,7 @@ async def start_migration(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Validate cloudpath data
     if not isinstance(request.dpsk_data, dict):
@@ -790,9 +780,7 @@ async def preview_cleanup(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     try:
         r1_client = create_r1_client_from_controller(request.controller_id, db)
@@ -850,9 +838,7 @@ async def start_cleanup(
     elif not request.nuclear:
         raise HTTPException(status_code=400, detail="Must provide either job_id or set nuclear=true")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Create V2 cleanup job
     activity_tracker = ActivityTracker(None, state_manager, tenant_id=tenant_id)
