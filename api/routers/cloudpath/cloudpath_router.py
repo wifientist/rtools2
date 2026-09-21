@@ -23,6 +23,7 @@ from models.user import User, RoleEnum
 from models.controller import Controller
 from clients.r1_client import create_r1_client_from_controller
 from redis_client import get_redis_client
+from routers.tenant_scope import resolve_tenant_id
 
 from workflow.v2.models import JobStatus
 from workflow.v2.state_manager import RedisStateManagerV2
@@ -32,6 +33,11 @@ from workflow.v2.brain import WorkflowBrain
 from workflow.events import WorkflowEventPublisher
 from workflow.workflows.cleanup import VenueCleanupWorkflow
 from workflow.workflows.cloudpath_import import CloudpathImportWorkflow
+from routers.cloudpath.venue_audit import (
+    VenueAuditRequest,
+    VenueAuditResponse,
+    run_venue_audit,
+)
 from routers.cloudpath.identity_audit import (
     IdentityAuditRequest,
     IdentityAuditResponse,
@@ -70,26 +76,6 @@ class ImportResponse(BaseModel):
     job_id: str
     status: str
     message: str = ""
-
-
-class DPSKAuditRequest(BaseModel):
-    """Request to audit DPSK configuration at a venue"""
-    controller_id: int = Field(..., description="RuckusONE controller ID")
-    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
-    venue_id: str = Field(..., description="Venue ID to audit")
-
-
-class DPSKAuditResponse(BaseModel):
-    """Response from DPSK audit"""
-    venue_id: str
-    venue_name: str
-    total_ssids: int
-    total_dpsk_ssids: int
-    total_dpsk_pools: int
-    total_identity_groups: int
-    ssids: List[Dict[str, Any]]
-    identity_groups: List[Dict[str, Any]]
-    dpsk_pools: List[Dict[str, Any]]
 
 
 class CleanupRequest(BaseModel):
@@ -155,12 +141,21 @@ class ExportIdentitiesRequest(BaseModel):
 
 
 class IdentityExportRow(BaseModel):
-    """Single row in identity export"""
+    """
+    Single row in identity export.
+
+    NO PASSPHRASE VALUE. The backend reads passphrases to join identities to
+    pools and to confirm one exists, and that is where they stop: the row
+    carries has_passphrase, a boolean, and passphrase_id for addressing the
+    record. A value the UI never renders is still a value in the response
+    body, in browser memory, in devtools, and in anything logging traffic in
+    between -- so it is not sent at all rather than sent and ignored.
+    """
     cloudpath_guid: str = ""
     identity_id: str = ""
     passphrase_id: str = ""
     username: str = ""
-    passphrase: str = ""
+    has_passphrase: bool = False
     identity_group_name: str = ""
     dpsk_pool_id: str = ""
     dpsk_pool_name: str = ""
@@ -190,6 +185,7 @@ def validate_controller_access(controller_id: int, user: User, db: Session) -> C
             raise HTTPException(status_code=403, detail=f"Access denied to controller {controller_id}")
 
     return controller
+
 
 
 # ==================== V2 Background Tasks ====================
@@ -297,102 +293,45 @@ async def run_v2_cleanup_background(job_id: str, controller_id: int):
 
 # ==================== API Endpoints ====================
 
-@router.post("/audit", response_model=DPSKAuditResponse)
+@router.post("/audit", response_model=VenueAuditResponse)
 async def audit_venue_dpsk(
-    request: DPSKAuditRequest = Body(...),
+    request: VenueAuditRequest = Body(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Audit DPSK configuration at a venue
+    What is actually deployed at a venue: AP groups, their APs, and the SSIDs
+    activated on them -- plus, for DPSK SSIDs, the DPSK service behind them
+    and the identity groups feeding it.
 
-    Returns comprehensive view of:
-    - All SSIDs at the venue
-    - Which SSIDs have DPSK enabled
-    - DPSK pools and their associations
-    - Identity groups
+    This used to return four counts and the raw R1 payloads. The data was all
+    there; none of it was joined, so it answered neither "which SSIDs are on
+    which AP groups" nor "which APs are in those groups".
+
+    Reports only. Nothing here writes to R1.
     """
-    logger.info(f"DPSK audit request - controller: {request.controller_id}, venue: {request.venue_id}")
+    logger.info(
+        f"Venue audit - controller: {request.controller_id}, venue: {request.venue_id}"
+    )
 
     controller = validate_controller_access(request.controller_id, current_user, db)
 
     if controller.controller_type != "RuckusONE":
-        raise HTTPException(status_code=400, detail=f"Controller must be RuckusONE")
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+
+    request.tenant_id = tenant_id
 
     try:
-        # Get venue details
-        venue = await r1_client.venues.get_venue(tenant_id, request.venue_id)
-        venue_name = venue.get('name', 'Unknown')
-
-        # Get SSIDs at venue
-        wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
-        all_networks = wifi_networks_response.get('data', [])
-
-        venue_ssids = []
-        for network in all_networks:
-            venue_ap_groups = network.get('venueApGroups', [])
-            for vag in venue_ap_groups:
-                if vag.get('venueId') == request.venue_id:
-                    venue_ssids.append({'name': network.get('name'), 'id': network.get('id')})
-                    break
-
-        # Get DPSK pools
-        # /dpskServices/query is 1-indexed; page=0 returns HTTP 500
-        dpsk_pools_response = await r1_client.dpsk.query_dpsk_pools(
-            tenant_id=tenant_id, search_string="", page=1, limit=1000
-        )
-        all_dpsk_pools = dpsk_pools_response.get('data', [])
-
-        # Get identity groups
-        ig_response = await r1_client.identity.query_identity_groups(
-            tenant_id=tenant_id, search_string="", page=0, size=1000
-        )
-        all_identity_groups = ig_response.get('content', ig_response.get('data', []))
-
-        # Get detailed SSID info to identify DPSK networks
-        dpsk_ssids = []
-        all_ssids_detailed = []
-
-        for ssid in venue_ssids:
-            try:
-                ssid_details = await r1_client.networks.get_wifi_network_by_id(ssid['id'], tenant_id)
-                all_ssids_detailed.append(ssid_details)
-
-                has_dpsk = (
-                    ssid_details.get('type') == 'dpsk' or
-                    ssid_details.get('useDpskService') == True or
-                    ssid_details.get('nwSubType') == 'DPSK' or
-                    'dpskPool' in ssid_details or
-                    'dpskService' in ssid_details
-                )
-
-                if has_dpsk:
-                    dpsk_ssids.append(ssid_details)
-            except Exception as e:
-                logger.warning(f"Error fetching details for {ssid['name']}: {e}")
-                all_ssids_detailed.append(ssid)
-
-        return DPSKAuditResponse(
-            venue_id=request.venue_id,
-            venue_name=venue_name,
-            total_ssids=len(all_ssids_detailed),
-            total_dpsk_ssids=len(dpsk_ssids),
-            total_dpsk_pools=len(all_dpsk_pools),
-            total_identity_groups=len(all_identity_groups),
-            ssids=all_ssids_detailed,
-            identity_groups=all_identity_groups,
-            dpsk_pools=all_dpsk_pools
-        )
-
+        return await run_venue_audit(r1_client, request)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"DPSK audit failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to audit DPSK configuration: {e}")
+        logger.exception(f"Venue audit failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Venue audit failed: {e}")
 
 
 @router.post("/audit-identities", response_model=IdentityAuditResponse)
@@ -428,10 +367,8 @@ async def audit_venue_identities(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     request.tenant_id = tenant_id
 
@@ -576,7 +513,10 @@ async def _fetch_identity_passphrase_data(
                 if username:
                     passphrase_map[(username, pool_id)] = {
                         'passphrase_id': pp.get('id') or '',
-                        'passphrase': pp.get('passphrase') or '',
+                        # The value is read from R1 and immediately reduced
+                        # to "one exists". Not kept, so it cannot later be
+                        # returned by a caller that did not mean to.
+                        'has_passphrase': bool(pp.get('passphrase')),
                         'dpsk_pool_id': pool_id or '',
                         'dpsk_pool_name': pool_name
                     }
@@ -613,7 +553,7 @@ async def _fetch_identity_passphrase_data(
             'identity_id': identity_data.get('identity_id') or '',
             'passphrase_id': passphrase_data.get('passphrase_id') or '',
             'username': username or '',
-            'passphrase': passphrase_data.get('passphrase') or '',
+            'has_passphrase': bool(passphrase_data.get('has_passphrase')),
             'identity_group_name': identity_data.get('identity_group_name') or '',
             'dpsk_pool_id': final_pool_id,
             'dpsk_pool_name': pool_name
@@ -635,10 +575,8 @@ async def export_identities(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     # Support both legacy dpsk_pool_id (single) and new dpsk_pool_ids (list)
     pool_ids = request.dpsk_pool_ids
@@ -671,10 +609,8 @@ async def export_identities_csv(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     pool_ids = request.dpsk_pool_ids
     if not pool_ids and request.dpsk_pool_id:
@@ -689,13 +625,13 @@ async def export_identities_csv(
         writer = csv.writer(output)
         writer.writerow([
             'cloudpath_guid', 'identity_id', 'passphrase_id', 'username',
-            'passphrase', 'identity_group_name', 'dpsk_pool_id', 'dpsk_pool_name'
+            'has_passphrase', 'identity_group_name', 'dpsk_pool_id', 'dpsk_pool_name'
         ])
 
         for row in data:
             writer.writerow([
                 row['cloudpath_guid'], row['identity_id'], row['passphrase_id'],
-                row['username'], row['passphrase'], row['identity_group_name'],
+                row['username'], row['has_passphrase'], row['identity_group_name'],
                 row['dpsk_pool_id'], row['dpsk_pool_name']
             ])
 
@@ -726,10 +662,8 @@ async def get_dpsk_ssids(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     r1_client = create_r1_client_from_controller(controller.id, db)
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
 
     try:
         wifi_networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
@@ -803,9 +737,7 @@ async def start_migration(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Validate cloudpath data
     if not isinstance(request.dpsk_data, dict):
@@ -860,9 +792,7 @@ async def preview_cleanup(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     try:
         r1_client = create_r1_client_from_controller(request.controller_id, db)
@@ -920,9 +850,7 @@ async def start_cleanup(
     elif not request.nuclear:
         raise HTTPException(status_code=400, detail="Must provide either job_id or set nuclear=true")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Create V2 cleanup job
     activity_tracker = ActivityTracker(None, state_manager, tenant_id=tenant_id)

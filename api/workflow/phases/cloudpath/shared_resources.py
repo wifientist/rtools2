@@ -87,7 +87,10 @@ class CreateSharedResourcesPhase(PhaseExecutor):
             return self.Outputs()
 
         # ---- Identity group -------------------------------------------------
-        ig_id = await self._find_group(ig_name)
+        existing_group = await self._find_group(ig_name)
+        ig_id = existing_group.get('id') if existing_group else None
+        # The pool R1 will actually validate this group's identities against.
+        attached_pool_id = existing_group.get('dpskPoolId') if existing_group else None
         if ig_id:
             await self.emit(f"Reusing identity group: {ig_name}", "success")
         else:
@@ -113,7 +116,44 @@ class CreateSharedResourcesPhase(PhaseExecutor):
                 name="Cloudpath Import"
             )
             pool_id = await self._find_pool(pool_name)
+
+            # =============================================================
+            # The identity group's OWN pool wins over one found by name.
+            #
+            # An identity group belongs to exactly one DPSK pool, and R1
+            # validates a new passphrase against THAT pool -- not against
+            # whatever pool happens to share the import's name. Matching the
+            # two independently by name and assuming they are linked is how
+            # a run reported "Reusing identity group: X" and "Reusing DPSK
+            # pool: X" and then failed every single passphrase with
+            # GENERAL-010, "Invalid Identity: The group it belongs to has no
+            # pool associated with it".
+            #
+            # So: believe the group. If it names a different pool, that pool
+            # is the one that works, and the mismatch is worth saying out
+            # loud rather than silently overriding.
+            # =============================================================
+            if attached_pool_id and pool_id and attached_pool_id != pool_id:
+                await self.emit(
+                    f"Identity group '{ig_name}' is attached to a different "
+                    f"DPSK pool than '{pool_name}'. Using the group's own "
+                    f"pool — passphrases are validated against that one.",
+                    "warning",
+                )
+                pool_id = attached_pool_id
+            elif attached_pool_id and not pool_id:
+                pool_id = attached_pool_id
+                await self.emit(
+                    f"Using the DPSK pool already attached to identity group "
+                    f"'{ig_name}'",
+                    "success",
+                )
+
             if pool_id:
+                if pool_id != attached_pool_id:
+                    # The group has no pool at all. Every passphrase would
+                    # fail validation, so attach before anyone tries.
+                    await self._attach_pool(ig_id, pool_id, ig_name, pool_name)
                 await self.emit(f"Reusing DPSK pool: {pool_name}", "success")
                 # Widen the pool's minimum passphrase length if this import
                 # carries shorter passphrases than the pool currently allows.
@@ -148,9 +188,49 @@ class CreateSharedResourcesPhase(PhaseExecutor):
     # Identity group
     # =========================================================================
 
-    async def _find_group(self, name: str) -> Optional[str]:
+    async def _attach_pool(
+        self, ig_id: str, pool_id: str, ig_name: str, pool_name: str
+    ) -> None:
         """
-        Look up an identity group by exact name.
+        Attach a pool to an identity group that has none.
+
+        Reached when the group was reused from an earlier run whose pool was
+        deleted, or whose pool creation never completed. Without this the
+        group is a trap: it exists, it is found by name, and every passphrase
+        created against it is rejected.
+        """
+        try:
+            await self.r1_client.identity.attach_dpsk_pool_to_identity_group(
+                group_id=ig_id,
+                dpsk_pool_id=pool_id,
+                tenant_id=self.tenant_id,
+            )
+            await self.emit(
+                f"Attached DPSK pool '{pool_name}' to identity group "
+                f"'{ig_name}' — it had none, so every passphrase would have "
+                f"been rejected",
+                "warning",
+            )
+        except Exception as e:
+            # DPSK-10032 means the group already belongs to another pool, so
+            # the attach was never going to work; anything else is a real
+            # failure. Either way say so rather than proceeding into a run
+            # that cannot create a single passphrase.
+            raise RuntimeError(
+                f"Identity group '{ig_name}' has no DPSK pool and pool "
+                f"'{pool_name}' could not be attached to it ({e}). Every "
+                f"passphrase would fail validation, so stopping here."
+            )
+
+    async def _find_group(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Look up an identity group by exact name, returning the whole record.
+
+        The record, not just the id, because dpskPoolId on it is the only
+        thing that says which pool R1 will validate this group's identities
+        against -- and reusing a group without reading it is what produced
+        "Invalid Identity: The group it belongs to has no pool associated
+        with it" on every passphrase.
 
         Note: /identityGroups/query ignores searchString (verified against a
         live tenant — every search term returns the full set), so the filter
@@ -163,7 +243,7 @@ class CreateSharedResourcesPhase(PhaseExecutor):
             groups = response.get('content', response.get('data', []))
             for g in groups:
                 if g.get('name') == name:
-                    return g.get('id')
+                    return g
         except Exception as e:
             logger.warning(f"Error looking up identity group '{name}': {e}")
         return None

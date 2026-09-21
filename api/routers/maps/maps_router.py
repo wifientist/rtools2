@@ -17,6 +17,7 @@ APs are placed exactly, from the coordinates the venue admin set in R1.
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional
+from routers.tenant_scope import resolve_tenant_id
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -73,7 +74,7 @@ def _resolve_controller(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    effective_tenant_id = tenant_id or controller.r1_tenant_id
+    effective_tenant_id = resolve_tenant_id(controller, tenant_id)
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(
             status_code=400, detail="tenant_id required for MSP controllers"

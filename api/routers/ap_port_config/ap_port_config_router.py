@@ -19,6 +19,7 @@ import asyncio
 import logging
 import uuid
 from typing import List, Optional
+from routers.tenant_scope import resolve_tenant_id
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
@@ -532,13 +533,7 @@ async def configure_ports_batch(
         )
 
     # Determine tenant_id
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Build APPortRequest list (same as configure_ports)
     ap_requests: List[APPortRequest] = []

@@ -15,6 +15,7 @@ import asyncio
 import logging
 import uuid
 from typing import List, Optional, Dict, Any
+from routers.tenant_scope import resolve_tenant_id
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
@@ -269,7 +270,7 @@ def compute_diff(current_settings: dict, changes: dict) -> List[FieldDiff]:
 
 def _get_effective_tenant(controller, tenant_id):
     """Resolve effective tenant ID, raising for MSP without tenant."""
-    effective = tenant_id or controller.r1_tenant_id
+    effective = resolve_tenant_id(controller, tenant_id)
     if controller.controller_subtype == "MSP" and not effective:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
     return effective

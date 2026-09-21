@@ -19,6 +19,7 @@ import re
 import logging
 import uuid
 from typing import List, Optional, Dict, Any
+from routers.tenant_scope import resolve_tenant_id
 from datetime import datetime
 from enum import Enum
 
@@ -348,7 +349,7 @@ async def download_csv(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     # Get effective tenant ID
-    effective_tenant_id = tenant_id or controller.r1_tenant_id
+    effective_tenant_id = resolve_tenant_id(controller, tenant_id)
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 
@@ -412,7 +413,7 @@ async def get_venue_aps(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    effective_tenant_id = tenant_id or controller.r1_tenant_id
+    effective_tenant_id = resolve_tenant_id(controller, tenant_id)
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 
@@ -470,7 +471,7 @@ async def preview_renames(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    effective_tenant_id = request.tenant_id or controller.r1_tenant_id
+    effective_tenant_id = resolve_tenant_id(controller, request.tenant_id)
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 
@@ -553,7 +554,7 @@ async def apply_renames(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-    effective_tenant_id = request.tenant_id or controller.r1_tenant_id
+    effective_tenant_id = resolve_tenant_id(controller, request.tenant_id)
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 

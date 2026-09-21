@@ -16,6 +16,7 @@ Flow:
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
+from routers.tenant_scope import resolve_tenant_id
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -276,7 +277,7 @@ async def create_plan(
             detail=f"Controller must be RuckusONE, got {controller.controller_type}",
         )
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
     if controller.controller_subtype == "MSP" and not tenant_id:
         raise HTTPException(
             status_code=400,

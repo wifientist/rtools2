@@ -114,6 +114,12 @@ class FakePolicySets:
             return {"content": []}
         return {"content": self.w["policies"]}
 
+    async def get_policy_conditions(self, template_id, policy_id, tenant_id=None):
+        self.w.setdefault("condition_reads", []).append(policy_id)
+        if policy_id in self.w.get("conditions_fail", ()):
+            raise RuntimeError("500 boom")
+        return {"content": self.w["conditions"].get(policy_id, [])}
+
     async def query_policy_sets(self, tenant_id=None, page=0, limit=100, **kw):
         return {"content": self.w["policy_sets"]}
 
@@ -129,6 +135,29 @@ class FakeRadius:
         return {"content": [{"id": gid, "name": n} for n, gid in self.w["radius_groups"].items()]}
 
 
+class FakeRawClient:
+    """The low-level client, for the one endpoint with no service wrapper."""
+    def __init__(self, w):
+        self.w = w
+
+    def post(self, path, payload=None, **kw):
+        self.w.setdefault("evals", []).append(payload)
+        username = payload["evaluationCriteria"][0]["value"]["stringValue"]
+        ssid = payload["evaluationCriteria"][1]["value"]["stringValue"]
+        verdict = self.w["eval_results"].get((username, ssid))
+
+        # The body rides on the response object. A shared "last result" slot
+        # races under the concurrent gather these calls run in -- which is
+        # exactly the bug this fake existed to avoid faking away.
+        class R:
+            status_code = 200
+            body = verdict or {"wasMatched": False}
+        return R
+
+    def safe_json(self, response):
+        return response.body
+
+
 class FakeClient:
     def __init__(self, w):
         self.venues = FakeVenues(w)
@@ -136,6 +165,7 @@ class FakeClient:
         self.identity = FakeIdentity(w)
         self.dpsk = FakeDpsk(w)
         self.policy_sets = FakePolicySets(w)
+        self.policy_sets.client = FakeRawClient(w)
         self.radius_attributes = FakeRadius(w)
 
 
@@ -179,14 +209,43 @@ def new_world():
         },
         "radius_groups": {"gigabit": "rg-gig", "fast": "rg-fast", "ultrafast": "rg-ultra"},
         "policies": [
-            {"id": "pol-1", "name": "4021", "onMatchResponse": "rg-ultra"},
-            {"id": "pol-2", "name": "4022", "onMatchResponse": "rg-fast"},
-            {"id": "pol-3", "name": "4023", "onMatchResponse": "rg-gig"},
-            {"id": "pol-4", "name": "4024", "onMatchResponse": "rg-gig"},  # wrong tier
-            {"id": "pol-6", "name": "4026", "onMatchResponse": "rg-fast"},
-            {"id": "pol-9", "name": "4099", "onMatchResponse": "rg-gig"},
+            {"id": "pol-1", "name": "4021", "onMatchResponse": "rg-ultra", "conditionsCount": 2},
+            {"id": "pol-2", "name": "4022", "onMatchResponse": "rg-fast", "conditionsCount": 2},
+            # only one condition: no SSID. Free to detect from the list.
+            {"id": "pol-3", "name": "4023", "onMatchResponse": "rg-gig", "conditionsCount": 1},
+            {"id": "pol-4", "name": "4024", "onMatchResponse": "rg-gig", "conditionsCount": 2},
+            {"id": "pol-6", "name": "4026", "onMatchResponse": "rg-fast", "conditionsCount": 2},
+            {"id": "pol-9", "name": "4099", "onMatchResponse": "rg-gig", "conditionsCount": 2},
         ],
+        # What each policy ACTUALLY matches on. pol-2 carries a stale username
+        # from a mistyped earlier run: right name, wrong regex, invisible
+        # without the deep check.
+        "conditions": {
+            "pol-1": [
+                {"templateAttributeId": 1012,
+                 "evaluationRule": {"regexStringCriteria": "^4021$"}},
+                {"templateAttributeId": 1013,
+                 "evaluationRule": {"regexStringCriteria": "^403@The_durant$"}},
+            ],
+            "pol-2": [
+                {"templateAttributeId": 1012,
+                 "evaluationRule": {"regexStringCriteria": "^4020$"}},
+                {"templateAttributeId": 1013,
+                 "evaluationRule": {"regexStringCriteria": "^999@Elsewhere$"}},
+            ],
+        },
         "policy_sets": [{"id": "set-1", "name": "CedarPoint"}],
+        # What R1 says REALLY happens. 4021's own policy is perfect, but a
+        # higher-priority "catchall" wins and hands it the wrong group --
+        # invisible to every other check in this module.
+        "eval_results": {
+            ("4021", "403@The_durant"): {
+                "wasMatched": True, "policyName": "catchall",
+                "policyId": "pol-x", "onMatchResponse": "rg-gig"},
+            ("4022_fast", "403@The_durant"): {
+                "wasMatched": True, "policyName": "4022",
+                "policyId": "pol-2", "onMatchResponse": "rg-fast"},
+        },
         # pol-3 deliberately absent: created, never assigned.
         "set_members": {"set-1": ["pol-1", "pol-2", "pol-4", "pol-6", "pol-9"]},
     }
@@ -198,13 +257,18 @@ ROSTER = [
 ]
 
 
-async def audit(world, roster=None, policy_set_name="CedarPoint"):
+async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False,
+                evaluate=False):
     request = IdentityAuditRequest(
         controller_id=1,
         tenant_id="t-1",
         venue_id="v-1",
-        identities=[FileIdentity(name=n) for n in (roster or ROSTER)],
+        identities=[
+            FileIdentity(name=n, ssids=["403@The_durant"]) for n in (roster or ROSTER)
+        ],
         policy_set_name=policy_set_name,
+        verify_conditions=verify,
+        evaluate_policies=evaluate,
     )
     result = await run_identity_audit(FakeClient(world), request)
     return result, {(r.username_json or r.username_r1): r for r in result.rows}
@@ -289,6 +353,20 @@ async def main() -> int:
         f"4026 issues={rows['4026_fast'].issues}",
     )
 
+    # 7a. an R1-only identity must NOT be judged against a tier nobody set.
+    #     "4099" is already processed, so splitting it yields the DEFAULT
+    #     tier -- which describes the import's fallback, not this identity.
+    #     Reporting "expected gigabit" for a resident the file never listed
+    #     invents a requirement out of a default.
+    r = rows["4099"]
+    failures += check(
+        "an R1-only identity gets NO expected RADIUS group",
+        r.radius_group_expected is None and r.radius_group_matches is None
+        and not any("expected" in i for i in r.issues),
+        f"expected={r.radius_group_expected}, matches={r.radius_group_matches}, "
+        f"issues={r.issues}",
+    )
+
     # 7. identities present only in R1
     extras = [r for r in result.rows if not r.in_file]
     failures += check(
@@ -328,6 +406,118 @@ async def main() -> int:
         any("No policy set named" in w for w in result_nosuch.warnings)
         and result_nosuch.totals["policy_in_set"] == 0,
         f"warnings={result_nosuch.warnings}",
+    )
+
+    # ---- Tier 0: conditionsCount, free from the policy list ----
+    failures += check(
+        "a policy with the wrong number of conditions is flagged for free",
+        any("expected 2" in i for i in rows["4023_gigabit"].issues)
+        and rows["4023_gigabit"].conditions_count == 1
+        and result.totals["wrong_condition_count"] == 1,
+        f"issues={rows['4023_gigabit'].issues}",
+    )
+    failures += check(
+        "without verify_conditions nothing reads conditions",
+        "condition_reads" not in new_world()
+        and not any(r.conditions_checked for r in result.rows),
+        "conditions were read despite verify_conditions=False",
+    )
+
+    # ---- Tier 1: the opt-in deep check ----
+    w = new_world()
+    deep, deep_rows = await audit(w, verify=True)
+    r = deep_rows["4021_ultrafast"]
+    failures += check(
+        "a correct policy's regexes are read back and confirmed",
+        r.conditions_checked and r.policy_username_regex == "^4021$"
+        and r.policy_username_matches is True
+        and r.policy_ssid_in_file is True and not r.issues,
+        f"regex={r.policy_username_regex}, issues={r.issues}",
+    )
+    r = deep_rows["4022_fast"]
+    failures += check(
+        "a policy with the right NAME but a stale username regex is caught",
+        r.policy_username_matches is False
+        and any("will never fire" in i for i in r.issues)
+        and deep.totals["policy_username_mismatch"] == 1,
+        f"regex={r.policy_username_regex}, issues={r.issues}",
+    )
+    failures += check(
+        "a policy pointing at an SSID the file never mentions is caught",
+        r.policy_ssid_in_file is False
+        and any("not an SSID this file mentions" in i for i in r.issues),
+        f"ssid={r.policy_ssid_regex}, issues={r.issues}",
+    )
+    failures += check(
+        "conditions are read once per policy, not once per row",
+        len(w["condition_reads"]) == len(set(w["condition_reads"])),
+        f"reads={w['condition_reads']}",
+    )
+
+    # a policy whose conditions cannot be read must not become a false finding
+    w2 = new_world()
+    w2["conditions_fail"] = {"pol-1"}
+    bad, bad_rows = await audit(w2, verify=True)
+    r = bad_rows["4021_ultrafast"]
+    failures += check(
+        "an unreadable policy reports no regex rather than a wrong one",
+        r.conditions_checked is False and r.policy_username_matches is None
+        and not any("never fire" in i for i in r.issues)
+        and any("Could not read the conditions" in w for w in bad.warnings),
+        f"issues={r.issues}, warnings={bad.warnings}",
+    )
+
+    # ---- Tier 2: what R1 says actually happens ----
+    w3 = new_world()
+    ev, ev_rows = await audit(w3, evaluate=True)
+    r = ev_rows["4021_ultrafast"]
+    failures += check(
+        "a higher-priority policy stealing the match is caught",
+        r.evaluated and r.evaluated_matched is True
+        and r.evaluated_policy_name == "catchall"
+        and r.evaluated_wrong_policy is True
+        and any("higher-priority policy wins" in i for i in r.issues)
+        and ev.totals["evaluated_wrong_policy"] == 1,
+        f"policy={r.evaluated_policy_name}, issues={r.issues}",
+    )
+    failures += check(
+        "and the RADIUS group R1 really applies is reported",
+        r.evaluated_radius_group == "gigabit"
+        and any("actually applies RADIUS group" in i for i in r.issues),
+        f"radius={r.evaluated_radius_group}",
+    )
+    failures += check(
+        "the evaluation uses the R1 identity name and the unit SSID",
+        any(
+            e["evaluationCriteria"][0]["value"]["stringValue"] == "4021"
+            and e["evaluationCriteria"][1]["value"]["stringValue"] == "403@The_durant"
+            and e["evaluationCriteria"][0]["matchName"] == "Dpsk_Username"
+            and e["evaluationCriteria"][1]["matchName"] == "SSID"
+            and e["evaluationCriteria"][0]["value"]["type"] == "StringEvaluation"
+            for e in w3["evals"]
+        ),
+        f"sent={w3['evals'][:1]}",
+    )
+    r = ev_rows["4025_gigabit"]
+    failures += check(
+        "an identity no policy matches is reported as getting none",
+        r.evaluated_matched is False
+        and any("NO policy matches" in i for i in r.issues),
+        f"issues={r.issues}",
+    )
+    failures += check(
+        "without evaluate_policies nothing is evaluated",
+        not any(r.evaluated for r in result.rows),
+        "rows were evaluated despite evaluate_policies=False",
+    )
+
+    # no policy set named -> skipped with a warning, not a wrong verdict
+    skipped, _ = await audit(new_world(), policy_set_name=None, evaluate=True)
+    failures += check(
+        "with no policy set named, evaluation is skipped and says so",
+        not any(r.evaluated for r in skipped.rows)
+        and any("needs one policy set" in w for w in skipped.warnings),
+        f"warnings={skipped.warnings}",
     )
 
     # 10. inform only -- no write path exists in the module

@@ -932,15 +932,23 @@ class PolicySetService:
 
         Returns:
             List of policy conditions
+
+        Note: offloaded. Conditions are per-policy -- there is no bulk read and
+        the list response carries only conditionsCount -- so an audit that wants
+        the actual regexes issues one of these per resident. Left synchronous,
+        gathering a few hundred would not overlap at all AND would block the
+        event loop for the whole run, starving Redis, SSE and the job heartbeat.
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
-                override_tenant_id=tenant_id
+                override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.get(
-                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions"
+            response = await asyncio.to_thread(
+                self.client.get,
+                f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
             )
         result = self.client.safe_json(response)
         logger.debug(f"get_policy_conditions response type={type(result)}, value={result}")

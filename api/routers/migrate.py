@@ -8,6 +8,7 @@ Handles migrations between controllers:
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Body
+from routers.tenant_scope import resolve_tenant_id
 
 logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
@@ -83,15 +84,10 @@ async def check_license_availability(
         logger.info(f"✅ R1 client created - ec_type: {r1_client.ec_type}, tenant_id: {r1_client.tenant_id}")
 
         # Determine tenant_id
-        tenant_id = request.tenant_id or controller.r1_tenant_id
+        tenant_id = resolve_tenant_id(controller, request.tenant_id)
         logger.info(f"🎯 Effective tenant_id: {tenant_id}")
 
         # Validate tenant_id for MSP controllers
-        if controller.controller_subtype == "MSP" and not tenant_id:
-            raise HTTPException(
-                status_code=400,
-                detail="tenant_id is required for MSP controllers"
-            )
 
         # Check license availability
         logger.info(f"📊 Checking license availability via entitlements service...")
@@ -265,8 +261,7 @@ async def migrate_sz_to_r1(
 
         # Determine tenant_id for destination
         # Use provided tenant_id from request, or fall back to controller's tenant_id
-        dest_tenant_id = request.dest_tenant_id or dest_controller.r1_tenant_id
-
+        dest_tenant_id = resolve_tenant_id(dest_controller, request.dest_tenant_id)
         # Validate tenant_id for MSP controllers
         if dest_controller.controller_subtype == "MSP" and not dest_tenant_id:
             raise HTTPException(

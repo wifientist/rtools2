@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import MspEcPicker from "@/components/MspEcPicker";
 import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
@@ -20,16 +21,120 @@ interface DPSKData {
   deviceCountLimit?: number;
 }
 
+interface VenueAuditAp {
+  name: string;
+  serial: string;
+  model: string | null;
+  status: string | null;
+}
+
+interface VenueAuditIdentityGroup {
+  id: string;
+  name: string;
+  identity_count: number | null;
+}
+
+interface VenueAuditSsid {
+  id: string;
+  name: string;
+  ssid: string;
+  security: string | null;
+  vlan: number | null;
+  is_dpsk: boolean;
+  venue_wide: boolean;
+  ap_group_ids: string[];
+  ap_group_names: string[];
+  dpsk_service_id: string | null;
+  dpsk_service_name: string | null;
+  identity_groups: VenueAuditIdentityGroup[];
+  issues: string[];
+}
+
+interface VenueAuditApGroup {
+  id: string;
+  name: string;
+  is_default: boolean;
+  aps: VenueAuditAp[];
+  ssids: VenueAuditSsid[];
+  venue_wide_ssids: VenueAuditSsid[];
+  issues: string[];
+}
+
+interface VenueAuditDpskService {
+  id: string;
+  name: string;
+  identity_groups: VenueAuditIdentityGroup[];
+  identity_count: number;
+  ssids: VenueAuditSsid[];
+  venue_wide_ssid_count: number;
+  ap_group_bound_ssid_count: number;
+  ap_group_names: string[];
+  ap_count: number;
+  issues: string[];
+}
+
 interface AuditData {
   venue_id: string;
   venue_name: string;
-  total_ssids: number;
-  total_dpsk_ssids: number;
-  total_dpsk_pools: number;
-  total_identity_groups: number;
-  ssids: any[];
-  identity_groups: any[];
-  dpsk_pools: any[];
+  totals: Record<string, number>;
+  ap_groups: VenueAuditApGroup[];
+  venue_wide_ssids: VenueAuditSsid[];
+  ssids: VenueAuditSsid[];
+  dpsk_services: VenueAuditDpskService[];
+  unassigned_aps: VenueAuditAp[];
+  warnings: string[];
+}
+
+/**
+ * One SSID as a single readable line.
+ *
+ * Shared by the venue-wide block and the per-group lists so the same SSID
+ * reads identically wherever it appears — a DPSK SSID's service and identity
+ * groups are the part that makes it work, and they belong next to its name
+ * rather than in a separate table you have to cross-reference.
+ */
+function VenueAuditSsidLine({ ssid }: { ssid: VenueAuditSsid }) {
+  return (
+    <div className="text-sm">
+      <span className="font-mono text-xs">{ssid.name || ssid.ssid}</span>
+      {ssid.is_dpsk ? (
+        <span className="ml-2 text-xs bg-green-100 text-green-800 rounded px-1.5 py-0.5">
+          DPSK
+        </span>
+      ) : (
+        ssid.security && (
+          <span className="ml-2 text-xs text-gray-400">{ssid.security}</span>
+        )
+      )}
+      {ssid.vlan != null && (
+        <span className="ml-2 text-xs text-gray-400">VLAN {ssid.vlan}</span>
+      )}
+      {ssid.is_dpsk && (
+        <span className="ml-2 text-xs text-gray-600">
+          →{" "}
+          {ssid.dpsk_service_name || (
+            <span className="text-red-500">no DPSK service</span>
+          )}
+          {ssid.identity_groups.length > 0 && (
+            <>
+              {" · "}
+              {ssid.identity_groups
+                .map(
+                  (g) =>
+                    `${g.name}${g.identity_count != null ? ` (${g.identity_count})` : ""}`,
+                )
+                .join(", ")}
+            </>
+          )}
+        </span>
+      )}
+      {ssid.issues.map((i, n) => (
+        <div key={n} className="text-xs text-amber-700">
+          ⚠ {i}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -61,6 +166,18 @@ interface IdentityAuditRow {
   policy_id: string | null;
   policy_in_set: boolean;
   policy_set_name: string | null;
+  conditions_count: number | null;
+  evaluated: boolean;
+  evaluated_matched: boolean | null;
+  evaluated_policy_name: string | null;
+  evaluated_radius_group: string | null;
+  evaluated_ssid: string | null;
+  evaluated_wrong_policy: boolean | null;
+  conditions_checked: boolean;
+  policy_username_regex: string | null;
+  policy_ssid_regex: string | null;
+  policy_username_matches: boolean | null;
+  policy_ssid_in_file: boolean | null;
   radius_group_name: string | null;
   radius_group_expected: string | null;
   radius_group_matches: boolean | null;
@@ -205,7 +322,8 @@ type AuditCellState = "ok" | "warn" | "bad" | "none";
 
 type AuditSortKey =
   | "username_json" | "username_r1" | "identity_group" | "dpsk_service"
-  | "policy" | "radius" | "desc" | "issues";
+  | "policy" | "policy_username" | "policy_ssid" | "evaluated"
+  | "radius" | "desc" | "issues";
 
 /**
  * The mark a status column shows for this row.
@@ -229,6 +347,16 @@ function auditCellState(row: IdentityAuditRow, key: AuditSortKey): AuditCellStat
     case "policy":
       if (!row.in_adaptive_policy) return "bad";
       return row.policy_in_set ? "ok" : "warn";
+    case "policy_username":
+      if (!row.conditions_checked) return "none";
+      return row.policy_username_matches === false ? "bad" : "ok";
+    case "policy_ssid":
+      if (!row.conditions_checked) return "none";
+      return row.policy_ssid_in_file === false ? "warn" : "ok";
+    case "evaluated":
+      if (!row.evaluated) return "none";
+      if (row.evaluated_matched === false) return "bad";
+      return row.evaluated_wrong_policy ? "bad" : "ok";
     case "radius":
       if (!row.radius_group_name) return row.in_adaptive_policy ? "bad" : "none";
       return row.radius_group_matches === false ? "warn" : "ok";
@@ -245,6 +373,104 @@ function auditCellState(row: IdentityAuditRow, key: AuditSortKey): AuditCellStat
 const AUDIT_SEVERITY: Record<AuditCellState, number> = {
   bad: 0, warn: 1, ok: 2, none: 3,
 };
+
+/**
+ * The findings, grouped by the piece of config they are about.
+ *
+ * Derived from the rows rather than from the server's totals, so the summary
+ * cannot drift from the table underneath it — one row failing two checks is
+ * counted once under each, and every count is exactly the set of rows you
+ * get by clicking it.
+ *
+ * Ordered by what stops a resident connecting. "blocks" means the resident
+ * does not get on the network at all; "wrong" means they get on and get the
+ * wrong service; "info" is worth knowing and breaks nothing.
+ */
+const AUDIT_FINDINGS: {
+  key: string;
+  group: string;
+  severity: "blocks" | "wrong" | "info";
+  label: string;
+  test: (row: IdentityAuditRow) => boolean;
+}[] = [
+  {
+    key: "identity_missing", group: "Identity", severity: "blocks",
+    label: "No identity in any group serving this venue",
+    test: (r) => r.in_file && !r.in_identity_group,
+  },
+  {
+    key: "identity_not_renamed", group: "Identity", severity: "wrong",
+    label: "Still carries its speed tier — the rename never ran, so the policy will not match",
+    test: (r) => r.matched_as === "exact" && (r.username_json || "").includes("_"),
+  },
+  {
+    key: "dpsk_missing", group: "DPSK service", severity: "blocks",
+    label: "Identity group is not attached to a DPSK service",
+    test: (r) => r.in_identity_group && !r.in_dpsk_service,
+  },
+  {
+    key: "policy_missing", group: "Adaptive policy", severity: "blocks",
+    label: "No adaptive policy for this account",
+    test: (r) => r.in_file && !r.in_adaptive_policy,
+  },
+  {
+    key: "policy_not_in_set", group: "Adaptive policy", severity: "blocks",
+    label: "Policy exists but belongs to no policy set, so it has no effect",
+    test: (r) => r.in_adaptive_policy && !r.policy_in_set,
+  },
+  {
+    key: "policy_wrong_conditions", group: "Adaptive policy", severity: "blocks",
+    label: "Policy does not have exactly 2 conditions (a DPSK username and an SSID)",
+    test: (r) =>
+      r.in_adaptive_policy && r.conditions_count !== null && r.conditions_count !== 2,
+  },
+  {
+    key: "policy_username_mismatch", group: "Adaptive policy", severity: "blocks",
+    label: "Policy matches a different username — it will never fire for this resident",
+    test: (r) => r.policy_username_matches === false,
+  },
+  {
+    key: "policy_ssid_unknown", group: "Adaptive policy", severity: "wrong",
+    label: "Policy matches an SSID the uploaded file never mentions",
+    test: (r) => r.policy_ssid_in_file === false,
+  },
+  {
+    key: "eval_no_match", group: "What R1 actually does", severity: "blocks",
+    label: "R1 evaluates this identity and NO policy matches — it gets none",
+    test: (r) => r.evaluated_matched === false,
+  },
+  {
+    key: "eval_wrong_policy", group: "What R1 actually does", severity: "blocks",
+    label: "A higher-priority policy wins ahead of this resident's own",
+    test: (r) => r.evaluated_wrong_policy === true,
+  },
+  {
+    key: "radius_missing", group: "RADIUS attribute group", severity: "wrong",
+    label: "Policy has no RADIUS attribute group",
+    test: (r) => r.in_adaptive_policy && !r.radius_group_name,
+  },
+  {
+    key: "radius_mismatch", group: "RADIUS attribute group", severity: "wrong",
+    label: "RADIUS group disagrees with the tier in the username",
+    test: (r) => r.radius_group_matches === false,
+  },
+  {
+    key: "description_blank", group: "Description", severity: "info",
+    label: "No description set (no Cloudpath GUID to match on next re-run)",
+    test: (r) => r.in_identity_group && !r.has_description,
+  },
+  {
+    key: "r1_only", group: "Roster", severity: "info",
+    label: "Present in RuckusONE but not in the uploaded file",
+    test: (r) => !r.in_file,
+  },
+];
+
+const AUDIT_SEVERITY_STYLE = {
+  blocks: { dot: "bg-red-500", text: "text-red-700", chip: "bg-red-50 border-red-200" },
+  wrong: { dot: "bg-amber-500", text: "text-amber-700", chip: "bg-amber-50 border-amber-200" },
+  info: { dot: "bg-gray-400", text: "text-gray-600", chip: "bg-gray-50 border-gray-200" },
+} as const;
 
 function AuditCell({
   state,
@@ -384,14 +610,28 @@ function CloudpathImport() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditData, setAuditData] = useState<AuditData | null>(null);
   const [auditError, setAuditError] = useState("");
+  const [venueAuditView, setVenueAuditView] =
+    useState<"groups" | "ssids" | "services">("groups");
+  // A property can carry 249 AP groups, most of them empty scaffolding. On by
+  // default so the ones that actually serve something are visible at all.
+  const [venueAuditHideEmpty, setVenueAuditHideEmpty] = useState(true);
+  const [venueAuditSearch, setVenueAuditSearch] = useState("");
 
   // Per-identity audit (file -> identity -> DPSK service -> policy -> RADIUS)
   const [showIdentityAuditModal, setShowIdentityAuditModal] = useState(false);
   const [identityAuditLoading, setIdentityAuditLoading] = useState(false);
   const [identityAuditData, setIdentityAuditData] = useState<IdentityAuditData | null>(null);
-  const [identityAuditFilter, setIdentityAuditFilter] =
-    useState<"all" | "issues" | "clean" | "extra">("issues");
+  // "all" | "issues" | "clean" | "extra", or one of AUDIT_FINDINGS' keys
+  // when a summary line is clicked.
+  const [identityAuditFilter, setIdentityAuditFilter] = useState<string>("issues");
   const [identityAuditSearch, setIdentityAuditSearch] = useState("");
+  // Off by default: conditions have no bulk read, so this costs one API call
+  // per resident. ~5-10s on a 215-resident property, nothing without it.
+  const [identityAuditVerifyConditions, setIdentityAuditVerifyConditions] =
+    useState(false);
+  // The authoritative check: asks R1 to run the evaluation, so it accounts
+  // for priority order. Also one call per identity, also opt-in.
+  const [identityAuditEvaluate, setIdentityAuditEvaluate] = useState(false);
   // Most findings first by default: the table is opened to decide what needs
   // doing, so the rows with the most wrong with them belong at the top.
   const [identityAuditSort, setIdentityAuditSort] =
@@ -420,12 +660,35 @@ function CloudpathImport() {
   // Pool picker state for step 1
   const [pickerSelectedPoolIds, setPickerSelectedPoolIds] = useState<string[]>([]);
 
-  // Determine tenant ID (for MSP, it's null until explicitly set; for EC, use r1_tenant_id)
   const activeController = controllers.find(c => c.id === activeControllerId);
   const needsEcSelection = activeControllerSubtype === "MSP";
+
+  // An MSP holds no venues of its own. Its API key delegates down to one
+  // MSP-EC via a tenant header, so the EC has to be chosen before anything
+  // below it -- venues, SSIDs, DPSK pools -- can be listed at all. On a
+  // direct EC controller the key already belongs to the tenant and
+  // r1_tenant_id is it. Either way effectiveTenantId is what every request
+  // sends, and the backend turns it into the delegation header.
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
   const effectiveTenantId = needsEcSelection
-    ? null
+    ? ecId
     : (activeController?.r1_tenant_id || null);
+
+  // A venue belongs to exactly one tenant, so changing the EC (or the
+  // controller) invalidates the venue and everything loaded from it.
+  useEffect(() => {
+    setVenueId(null);
+    setVenueName(null);
+    setAuditData(null);
+    setIdentityAuditData(null);
+  }, [activeControllerId, ecId]);
+
+  // Switching controllers leaves the previous controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
 
   // Compute unique DPSK pools from identity export data for filtering
   const uniqueIdentityPools = useMemo(() => {
@@ -1020,6 +1283,10 @@ function CloudpathImport() {
       setError("Please upload a JSON file first");
       return;
     }
+    if (needsEcSelection && !ecId) {
+      setError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
+      return;
+    }
 
     if (!venueId) {
       setError("Please select a venue");
@@ -1094,6 +1361,10 @@ function CloudpathImport() {
   };
 
   const handleAuditVenue = async () => {
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
+      return;
+    }
     if (!venueId) {
       setAuditError("Please select a venue");
       return;
@@ -1115,6 +1386,7 @@ function CloudpathImport() {
         body: JSON.stringify({
           controller_id: activeControllerId,
           venue_id: venueId,
+          tenant_id: effectiveTenantId,
         }),
       });
 
@@ -1162,6 +1434,10 @@ function CloudpathImport() {
       setAuditError("Please select an active controller first");
       return;
     }
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
+      return;
+    }
     if (!venueId) {
       setAuditError("Please select a venue first");
       return;
@@ -1182,8 +1458,11 @@ function CloudpathImport() {
         body: JSON.stringify({
           controller_id: activeControllerId,
           venue_id: venueId,
+          tenant_id: effectiveTenantId,
           identities: fileIdentities,
           policy_set_name: policySetName || null,
+          verify_conditions: identityAuditVerifyConditions,
+          evaluate_policies: identityAuditEvaluate,
         }),
       });
 
@@ -1212,6 +1491,9 @@ function CloudpathImport() {
       if (identityAuditFilter === "issues" && row.issues.length === 0) return false;
       if (identityAuditFilter === "clean" && row.issues.length > 0) return false;
       if (identityAuditFilter === "extra" && row.in_file) return false;
+      // A finding key from the summary: show exactly the rows it counted.
+      const finding = AUDIT_FINDINGS.find((f) => f.key === identityAuditFilter);
+      if (finding && !finding.test(row)) return false;
       if (!search) return true;
       return (
         (row.username_json || "").toLowerCase().includes(search) ||
@@ -1251,11 +1533,41 @@ function CloudpathImport() {
     return [...rows].sort(compare);
   }, [identityAuditData, identityAuditFilter, identityAuditSearch, identityAuditSort]);
 
+  /**
+   * Findings with a count > 0, grouped, worst first.
+   *
+   * Counted off the rows rather than the server's totals so that clicking a
+   * line and reading the table can never disagree with the number on it.
+   */
+  const identityAuditFindings = useMemo(() => {
+    if (!identityAuditData) return [];
+    const order = { blocks: 0, wrong: 1, info: 2 };
+    return AUDIT_FINDINGS
+      .map((f) => ({ ...f, count: identityAuditData.rows.filter(f.test).length }))
+      .filter((f) => f.count > 0)
+      .sort((a, b) => order[a.severity] - order[b.severity] || b.count - a.count);
+  }, [identityAuditData]);
+
+  // Whether the RESULT in hand had its conditions verified — not whether the
+  // checkbox is ticked now. Toggling it after a run must not make the table
+  // claim columns the data does not have.
+  const identityAuditDeepChecked = useMemo(
+    () => !!identityAuditData?.rows.some((r) => r.conditions_checked),
+    [identityAuditData],
+  );
+
+  const identityAuditEvaluated = useMemo(
+    () => !!identityAuditData?.rows.some((r) => r.evaluated),
+    [identityAuditData],
+  );
+
   const handleExportIdentityAuditCsv = () => {
     if (!identityAuditData) return;
     const header = [
       "username_json", "username_r1", "matched_as", "identity_group",
-      "dpsk_service", "adaptive_policy", "policy_in_set", "radius_group",
+      "dpsk_service", "adaptive_policy", "policy_in_set", "conditions_count",
+      "policy_username_regex", "policy_ssid_regex",
+      "r1_matched_policy", "r1_radius_group", "radius_group",
       "radius_expected", "description_set", "issues",
     ];
     const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -1265,6 +1577,10 @@ function CloudpathImport() {
         row.username_json || "", row.username_r1 || "", row.matched_as || "",
         row.identity_group_name || "", row.dpsk_service_name || "",
         row.policy_name || "", row.policy_in_set,
+        row.conditions_count ?? "",
+        row.policy_username_regex || "", row.policy_ssid_regex || "",
+        row.evaluated ? (row.evaluated_matched ? (row.evaluated_policy_name || "") : "NO MATCH") : "",
+        row.evaluated_radius_group || "",
         row.radius_group_name || "", row.radius_group_expected || "",
         row.has_description, row.issues.join("; "),
       ].map(escape).join(","));
@@ -1278,9 +1594,42 @@ function CloudpathImport() {
     URL.revokeObjectURL(url);
   };
 
+  const visibleVenueAuditGroups = useMemo(() => {
+    if (!auditData) return [];
+    const q = venueAuditSearch.trim().toLowerCase();
+    return auditData.ap_groups.filter((g) => {
+      // "Empty" means nothing explicitly bound and no APs. Venue-wide SSIDs
+      // reach every group, so counting them here would make every group look
+      // occupied and the filter would hide nothing.
+      if (venueAuditHideEmpty && g.aps.length === 0 && g.ssids.length === 0) return false;
+      if (!q) return true;
+      return (
+        g.name.toLowerCase().includes(q) ||
+        g.ssids.some((s) => (s.name || s.ssid).toLowerCase().includes(q)) ||
+        g.aps.some((a) => a.name.toLowerCase().includes(q) || a.serial.toLowerCase().includes(q))
+      );
+    });
+  }, [auditData, venueAuditHideEmpty, venueAuditSearch]);
+
+  const visibleVenueAuditSsids = useMemo(() => {
+    if (!auditData) return [];
+    const q = venueAuditSearch.trim().toLowerCase();
+    if (!q) return auditData.ssids;
+    return auditData.ssids.filter(
+      (s) =>
+        (s.name || s.ssid).toLowerCase().includes(q) ||
+        (s.dpsk_service_name || "").toLowerCase().includes(q) ||
+        s.ap_group_names.some((n) => n.toLowerCase().includes(q)),
+    );
+  }, [auditData, venueAuditSearch]);
+
   const handleViewIdentities = () => {
     if (!activeControllerId) {
       setAuditError("Please select an active controller first");
+      return;
+    }
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
       return;
     }
     setAuditError("");
@@ -1548,12 +1897,44 @@ function CloudpathImport() {
             </p>
           </div>
         ) : (
-          <SingleVenueSelector
-            controllerId={activeControllerId}
-            tenantId={effectiveTenantId}
-            onVenueSelect={handleVenueSelect}
-            selectedVenueId={venueId}
-          />
+          <>
+            {/*
+              On an MSP the key delegates down to one EC, so the venue list
+              cannot load until that EC is chosen -- picking it is a step, not
+              a filter. A direct EC controller skips this entirely.
+            */}
+            {needsEcSelection && activeControllerId && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  MSP-EC (tenant)
+                </label>
+                <MspEcPicker
+                  controllerId={activeControllerId}
+                  ecId={ecId}
+                  ecName={ecName}
+                  onChange={(id, name) => {
+                    setEcId(id);
+                    setEcName(name);
+                  }}
+                />
+              </div>
+            )}
+
+            {needsEcSelection && !ecId ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  Select an MSP-EC above — venues belong to a tenant, not to the MSP.
+                </p>
+              </div>
+            ) : (
+              <SingleVenueSelector
+                controllerId={activeControllerId}
+                tenantId={effectiveTenantId}
+                onVenueSelect={handleVenueSelect}
+                selectedVenueId={venueId}
+              />
+            )}
+          </>
         )}
 
         {venueId && venueName && (
@@ -2459,6 +2840,45 @@ function CloudpathImport() {
             {identityAuditLoading ? "Auditing..." : "Audit Identities"}
           </button>
         </div>
+        <label className="flex items-start gap-2 mt-3 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={identityAuditVerifyConditions}
+            onChange={(e) => setIdentityAuditVerifyConditions(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium">Verify policy conditions (deeper dive)</span>
+            <span className="text-gray-500">
+              {" "}— read what each policy actually matches on, not just that one
+              with the right name exists. Catches a policy whose DPSK username
+              regex is stale, or whose SSID points at the wrong network. Costs
+              one extra API call per identity
+              {fileIdentities.length > 0 ? ` (~${fileIdentities.length})` : ""},
+              so expect it to take several seconds longer.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2 mt-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={identityAuditEvaluate}
+            onChange={(e) => setIdentityAuditEvaluate(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            <span className="font-medium">Ask R1 which policy actually wins</span>
+            <span className="text-gray-500">
+              {" "}— the authoritative check. R1 runs the evaluation itself, in
+              priority order, and reports the policy that matches and the RADIUS
+              group it really applies. The only check that catches a
+              higher-priority policy winning ahead of a resident's own. Needs the
+              policy set name set above; one extra API call per identity.
+            </span>
+          </span>
+        </label>
+
         <p className="text-xs text-gray-500 mt-2">
           View Identities lets you pick specific DPSK pools before fetching (optionally filtered by venue if selected)
         </p>
@@ -2500,7 +2920,7 @@ function CloudpathImport() {
       {/* Per-Identity Audit Modal */}
       {showIdentityAuditModal && identityAuditData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-[92vh] overflow-hidden flex flex-col">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-[96vw] max-h-[94vh] overflow-hidden flex flex-col">
             <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-4 flex justify-between items-center">
               <div>
                 <h3 className="text-2xl font-bold">Identity Audit</h3>
@@ -2534,26 +2954,96 @@ function CloudpathImport() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <AuditStat value={identityAuditData.totals.in_file || 0} label="In the file" tone="neutral" />
                 <AuditStat value={identityAuditData.totals.clean || 0} label="Fully wired" tone="good" />
-                <AuditStat value={identityAuditData.totals.missing_identity || 0} label="No identity" tone="bad" />
                 <AuditStat
-                  value={(identityAuditData.totals.in_file || 0) - (identityAuditData.totals.with_policy || 0)}
-                  label="No policy"
+                  value={(identityAuditData.totals.in_file || 0) - (identityAuditData.totals.clean || 0)}
+                  label="Need attention"
                   tone="bad"
                 />
-                <AuditStat
-                  value={(identityAuditData.totals.with_policy || 0) - (identityAuditData.totals.policy_in_set || 0)}
-                  label="Policy not in set"
-                  tone="warn"
-                />
-                <AuditStat value={identityAuditData.totals.radius_mismatch || 0} label="RADIUS mismatch" tone="warn" />
-                <AuditStat
-                  value={(identityAuditData.totals.matched || 0) - (identityAuditData.totals.with_description || 0)}
-                  label="No description"
-                  tone="neutral"
-                />
                 <AuditStat value={identityAuditData.totals.in_r1_only || 0} label="In R1 only" tone="neutral" />
+              </div>
+
+              {/*
+                What is actually wrong, grouped by the piece of config it is
+                about. Counted off the rows rather than the response totals,
+                so a line and the table it filters to can never disagree —
+                and every line is clickable, because a count you cannot open
+                is a number you have to go hunting for.
+              */}
+              <div className="border rounded-lg mb-4 overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b flex items-baseline justify-between">
+                  <span className="font-semibold text-sm text-gray-700">Findings</span>
+                  <span className="text-xs text-gray-500">
+                    {identityAuditFindings.length === 0
+                      ? "nothing to report"
+                      : "click a finding to see those rows"}
+                  </span>
+                </div>
+
+                {identityAuditFindings.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-green-700">
+                    ✓ Every identity in the file reached an identity group, a DPSK
+                    service, an adaptive policy in the policy set, and a matching
+                    RADIUS attribute group.
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {Array.from(
+                      identityAuditFindings.reduce((groups, f) => {
+                        (groups.get(f.group) ?? groups.set(f.group, []).get(f.group)!).push(f);
+                        return groups;
+                      }, new Map<string, typeof identityAuditFindings>()),
+                    ).map(([group, findings]) => (
+                      <div key={group} className="px-4 py-2">
+                        <div className="text-xs uppercase text-gray-400 mb-1">{group}</div>
+                        {findings.map((f) => {
+                          const style = AUDIT_SEVERITY_STYLE[f.severity];
+                          const active = identityAuditFilter === f.key;
+                          return (
+                            <button
+                              key={f.key}
+                              onClick={() =>
+                                setIdentityAuditFilter(active ? "issues" : f.key)
+                              }
+                              className={`w-full flex items-baseline gap-2 text-left py-1 px-2 -mx-2 rounded hover:bg-gray-50 ${
+                                active ? "bg-gray-100" : ""
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 translate-y-1 ${style.dot}`}
+                              />
+                              <span className={`font-semibold tabular-nums ${style.text}`}>
+                                {f.count}
+                              </span>
+                              <span className="text-sm text-gray-700">{f.label}</span>
+                              {active && (
+                                <span className="ml-auto text-xs text-gray-500 shrink-0">
+                                  showing — click to clear
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="px-4 py-2 bg-gray-50 border-t text-xs text-gray-500">
+                  <span className="inline-flex items-center gap-1 mr-3">
+                    <span className="w-2 h-2 rounded-full bg-red-500" /> blocks the
+                    resident from connecting
+                  </span>
+                  <span className="inline-flex items-center gap-1 mr-3">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" /> connects,
+                    but with the wrong service
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-gray-400" /> informational
+                  </span>
+                </div>
               </div>
 
               <div className="text-xs text-gray-500 mb-4 space-y-0.5">
@@ -2622,6 +3112,15 @@ function CloudpathImport() {
                         ["identity_group", "Identity Group"],
                         ["dpsk_service", "DPSK Service"],
                         ["policy", "Adaptive Policy"],
+                        ...(identityAuditDeepChecked
+                          ? ([
+                              ["policy_username", "Policy Username Regex"],
+                              ["policy_ssid", "Policy SSID Regex"],
+                            ] as [AuditSortKey, string][])
+                          : []),
+                        ...(identityAuditEvaluated
+                          ? ([["evaluated", "R1 Says (actual)"]] as [AuditSortKey, string][])
+                          : []),
                         ["radius", "RADIUS Group"],
                         ["desc", "Desc"],
                         ["issues", "Notes"],
@@ -2725,6 +3224,59 @@ function CloudpathImport() {
                             }
                           />
                         </td>
+                        {identityAuditDeepChecked && (
+                          <>
+                            <td className="px-3 py-2">
+                              <AuditCell
+                                state={auditCellState(row, "policy_username")}
+                                label={row.policy_username_regex}
+                                title={
+                                  !row.conditions_checked
+                                    ? "Conditions were not read for this policy"
+                                    : row.policy_username_matches === false
+                                    ? `Should be ^${row.account}$`
+                                    : row.policy_username_regex || "No username condition"
+                                }
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <AuditCell
+                                state={auditCellState(row, "policy_ssid")}
+                                label={row.policy_ssid_regex}
+                                title={
+                                  !row.conditions_checked
+                                    ? "Conditions were not read for this policy"
+                                    : row.policy_ssid_in_file === false
+                                    ? "This SSID is not mentioned anywhere in the uploaded file"
+                                    : row.policy_ssid_regex || "No SSID condition"
+                                }
+                              />
+                            </td>
+                          </>
+                        )}
+                        {identityAuditEvaluated && (
+                          <td className="px-3 py-2">
+                            <AuditCell
+                              state={auditCellState(row, "evaluated")}
+                              label={
+                                !row.evaluated
+                                  ? null
+                                  : row.evaluated_matched === false
+                                  ? "no match"
+                                  : `${row.evaluated_policy_name ?? "?"} → ${
+                                      row.evaluated_radius_group ?? "?"
+                                    }`
+                              }
+                              title={
+                                !row.evaluated
+                                  ? "Not evaluated"
+                                  : row.evaluated_matched === false
+                                  ? `R1 matched no policy for ${row.evaluated_ssid}`
+                                  : `R1 matches '${row.evaluated_policy_name}' on ${row.evaluated_ssid} and applies '${row.evaluated_radius_group}'`
+                              }
+                            />
+                          </td>
+                        )}
                         <td className="px-3 py-2">
                           <AuditCell
                             state={auditCellState(row, "radius")}
@@ -2751,7 +3303,7 @@ function CloudpathImport() {
                     ))}
                     {visibleIdentityAuditRows.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                        <td colSpan={8 + (identityAuditDeepChecked ? 2 : 0) + (identityAuditEvaluated ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">
                           Nothing matches this filter.
                         </td>
                       </tr>
@@ -2777,16 +3329,16 @@ function CloudpathImport() {
         </div>
       )}
 
-      {/* Audit Modal */}
+      {/* Venue Audit Modal */}
       {showAuditModal && auditData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Modal Header */}
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-[96vw] max-h-[94vh] overflow-hidden flex flex-col">
             <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-4 flex justify-between items-center">
               <div>
-                <h3 className="text-2xl font-bold">DPSK Audit Results</h3>
+                <h3 className="text-2xl font-bold">Venue Audit</h3>
                 <p className="text-indigo-100 text-sm">
-                  {auditData.venue_name} ({auditData.venue_id})
+                  {auditData.venue_name} — {auditData.totals.ap_groups} AP groups,{" "}
+                  {auditData.totals.aps} APs, {auditData.totals.ssids} SSIDs
                 </p>
               </div>
               <button
@@ -2797,72 +3349,311 @@ function CloudpathImport() {
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="overflow-y-auto flex-1 p-6">
-              {/* Summary Stats */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold text-blue-600">
-                    {auditData.total_ssids || 0}
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">Total SSIDs</div>
+              {auditData.warnings.length > 0 && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                  {auditData.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
                 </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold text-green-600">
-                    {auditData.total_dpsk_ssids || 0}
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">DPSK SSIDs</div>
-                </div>
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold text-purple-600">
-                    {auditData.total_dpsk_pools || 0}
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">DPSK Pools</div>
-                </div>
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
-                  <div className="text-3xl font-bold text-orange-600">
-                    {auditData.total_identity_groups || 0}
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">Identity Groups</div>
-                </div>
+              )}
+
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+                <AuditStat value={auditData.totals.ap_groups || 0} label="AP groups" tone="neutral" />
+                <AuditStat value={auditData.totals.aps || 0} label="APs" tone="neutral" />
+                <AuditStat value={auditData.totals.ssids || 0} label="SSIDs" tone="neutral" />
+                <AuditStat value={auditData.totals.dpsk_ssids || 0} label="DPSK SSIDs" tone="good" />
+                <AuditStat value={auditData.totals.identities || 0} label="Identities" tone="good" />
+                <AuditStat value={auditData.totals.empty_ap_groups || 0} label="Empty AP groups" tone="warn" />
+                <AuditStat value={auditData.totals.ssids_with_issues || 0} label="SSIDs w/ issues" tone="bad" />
               </div>
 
-              {/* Raw Data Display */}
-              <div className="space-y-4">
-                <details className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <summary className="font-semibold text-gray-700 cursor-pointer">
-                    SSIDs ({auditData.ssids.length})
-                  </summary>
-                  <pre className="mt-3 text-xs text-gray-700 overflow-auto max-h-64 bg-white p-3 rounded border">
-                    {JSON.stringify(auditData.ssids, null, 2)}
-                  </pre>
-                </details>
-
-                <details className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <summary className="font-semibold text-gray-700 cursor-pointer">
-                    DPSK Pools ({auditData.dpsk_pools.length})
-                  </summary>
-                  <pre className="mt-3 text-xs text-gray-700 overflow-auto max-h-64 bg-white p-3 rounded border">
-                    {JSON.stringify(auditData.dpsk_pools, null, 2)}
-                  </pre>
-                </details>
-
-                <details className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <summary className="font-semibold text-gray-700 cursor-pointer">
-                    Identity Groups ({auditData.identity_groups.length})
-                  </summary>
-                  <pre className="mt-3 text-xs text-gray-700 overflow-auto max-h-64 bg-white p-3 rounded border">
-                    {JSON.stringify(auditData.identity_groups, null, 2)}
-                  </pre>
-                </details>
+              <div className="flex flex-wrap gap-2 items-center mb-3">
+                {([
+                  ["groups", "By AP group"],
+                  ["ssids", "By SSID"],
+                  ["services", "By DPSK service"],
+                ] as const).map(
+                  ([key, label]) => (
+                    <button
+                      key={key}
+                      onClick={() => setVenueAuditView(key)}
+                      className={`px-3 py-1 rounded text-sm font-medium ${
+                        venueAuditView === key
+                          ? "bg-indigo-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+                <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer ml-2">
+                  <input
+                    type="checkbox"
+                    checked={venueAuditHideEmpty}
+                    onChange={(e) => setVenueAuditHideEmpty(e.target.checked)}
+                  />
+                  Hide AP groups with no APs and no SSIDs
+                </label>
+                <input
+                  type="text"
+                  value={venueAuditSearch}
+                  onChange={(e) => setVenueAuditSearch(e.target.value)}
+                  placeholder="Search AP group, SSID or AP…"
+                  className="border rounded px-3 py-1 text-sm flex-1 min-w-[12rem]"
+                />
               </div>
+
+              {/*
+                Venue-wide first: it is one binding that covers every group,
+                so reading it once up here is what stops it being repeated
+                into all of them below.
+              */}
+              {auditData.venue_wide_ssids.length > 0 && (
+                <div className="border rounded-lg mb-4 overflow-hidden">
+                  <div className="px-4 py-2 bg-blue-50 border-b text-sm font-semibold text-blue-900">
+                    Venue-wide SSIDs — broadcast on every AP group, including ones added later
+                  </div>
+                  <div className="divide-y">
+                    {auditData.venue_wide_ssids.map((s) => (
+                      <div key={s.id} className="px-4 py-2">
+                        <VenueAuditSsidLine ssid={s} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {venueAuditView === "groups" ? (
+                <div className="space-y-2">
+                  {visibleVenueAuditGroups.map((g) => (
+                    <div key={g.id} className="border rounded-lg overflow-hidden">
+                      <div className="px-4 py-2 bg-gray-50 border-b flex items-baseline justify-between gap-3">
+                        <span className="font-semibold text-sm">
+                          {g.name}
+                          {g.is_default && (
+                            <span className="ml-2 text-xs font-normal text-gray-500">
+                              default — APs land here when not grouped
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs text-gray-500 shrink-0">
+                          {g.aps.length} AP{g.aps.length === 1 ? "" : "s"} ·{" "}
+                          {g.ssids.length} SSID{g.ssids.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {g.issues.length > 0 && (
+                        <div className="px-4 py-1.5 bg-amber-50 text-xs text-amber-800 border-b">
+                          {g.issues.map((i, n) => <div key={n}>⚠ {i}</div>)}
+                        </div>
+                      )}
+                      <div className="px-4 py-2 grid md:grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-xs uppercase text-gray-400 mb-1">SSIDs</div>
+                          {g.ssids.length === 0 ? (
+                            <div className="text-sm text-gray-400">none</div>
+                          ) : (
+                            g.ssids.map((s) => (
+                              <div key={s.id} className="mb-1">
+                                <VenueAuditSsidLine ssid={s} />
+                              </div>
+                            ))
+                          )}
+                          {g.venue_wide_ssids.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-dashed">
+                              <div className="text-xs uppercase text-gray-400 mb-1">
+                                also here, because venue-wide
+                              </div>
+                              {g.venue_wide_ssids.map((s) => (
+                                <div key={s.id} className="mb-1 opacity-75">
+                                  <VenueAuditSsidLine ssid={s} />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase text-gray-400 mb-1">APs</div>
+                          {g.aps.length === 0 ? (
+                            <div className="text-sm text-gray-400">none</div>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {g.aps.map((a) => (
+                                <span
+                                  key={a.serial || a.name}
+                                  className="text-xs bg-gray-100 rounded px-2 py-0.5 font-mono"
+                                  title={`${a.serial}${a.model ? " · " + a.model : ""}${
+                                    a.status ? " · " + a.status : ""
+                                  }`}
+                                >
+                                  {a.name || a.serial}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {visibleVenueAuditGroups.length === 0 && (
+                    <div className="text-center text-gray-500 py-6">
+                      No AP groups match this filter.
+                    </div>
+                  )}
+                </div>
+              ) : venueAuditView === "services" ? (
+                <div className="space-y-2">
+                  {auditData.dpsk_services.map((sv) => (
+                    <div key={sv.id} className="border rounded-lg overflow-hidden">
+                      <div className="px-4 py-2 bg-green-50 border-b flex items-baseline justify-between gap-3">
+                        <span className="font-semibold text-sm">{sv.name}</span>
+                        <span className="text-xs text-gray-600 shrink-0">
+                          {sv.ssids.length} SSID{sv.ssids.length === 1 ? "" : "s"}
+                          {" · "}
+                          {sv.identity_count} identit{sv.identity_count === 1 ? "y" : "ies"}
+                          {" · "}
+                          {sv.ap_group_names.length} AP group
+                          {sv.ap_group_names.length === 1 ? "" : "s"}
+                          {" · "}
+                          {sv.ap_count} AP{sv.ap_count === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      {sv.issues.length > 0 && (
+                        <div className="px-4 py-1.5 bg-amber-50 text-xs text-amber-800 border-b">
+                          {sv.issues.map((i, n) => <div key={n}>⚠ {i}</div>)}
+                        </div>
+                      )}
+                      <div className="px-4 py-2">
+                        <div className="text-xs uppercase text-gray-400 mb-1">
+                          Identity groups
+                        </div>
+                        <div className="text-sm mb-2">
+                          {sv.identity_groups.length === 0 ? (
+                            <span className="text-red-500">none</span>
+                          ) : (
+                            sv.identity_groups
+                              .map((g) => `${g.name}${g.identity_count != null ? ` (${g.identity_count})` : ""}`)
+                              .join(", ")
+                          )}
+                        </div>
+                        <div className="text-xs uppercase text-gray-400 mb-1">
+                          SSIDs ({sv.venue_wide_ssid_count} venue-wide,{" "}
+                          {sv.ap_group_bound_ssid_count} bound to AP groups)
+                        </div>
+                        {sv.ssids.map((x) => (
+                          <div key={x.id} className="mb-1">
+                            <span
+                              className={`inline-block w-24 shrink-0 text-xs ${
+                                x.venue_wide ? "text-blue-700" : "text-gray-400"
+                              }`}
+                            >
+                              {x.venue_wide ? "venue-wide" : "AP group"}
+                            </span>
+                            <span className="font-mono text-xs">{x.name || x.ssid}</span>
+                            {!x.venue_wide && x.ap_group_names.length > 0 && (
+                              <span
+                                className="ml-2 text-xs text-gray-500"
+                                title={x.ap_group_names.join(", ")}
+                              >
+                                on {x.ap_group_names.slice(0, 2).join(", ")}
+                                {x.ap_group_names.length > 2 && ` +${x.ap_group_names.length - 2}`}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {auditData.dpsk_services.length === 0 && (
+                    <div className="text-center text-gray-500 py-6">
+                      No DPSK service is linked to any network at this venue.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-auto border rounded max-h-[55vh]">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-gray-500">
+                        {["SSID", "Type", "VLAN", "AP groups", "DPSK service", "Identity groups", "Notes"].map((h) => (
+                          <th key={h} className="px-3 py-2 sticky top-0 z-10 bg-gray-50 border-b">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {visibleVenueAuditSsids.map((s) => (
+                        <tr key={s.id}>
+                          <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                            {s.name || s.ssid}
+                          </td>
+                          <td className="px-3 py-2">
+                            {s.is_dpsk ? (
+                              <span className="text-xs bg-green-100 text-green-800 rounded px-1.5 py-0.5">DPSK</span>
+                            ) : (
+                              <span className="text-xs text-gray-500">{s.security || "—"}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">{s.vlan ?? "—"}</td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            {s.venue_wide ? (
+                              <span className="text-blue-700">all AP groups</span>
+                            ) : s.ap_group_names.length === 0 ? (
+                              <span className="text-red-500">none</span>
+                            ) : (
+                              <span title={s.ap_group_names.join(", ")}>
+                                {s.ap_group_names.slice(0, 3).join(", ")}
+                                {s.ap_group_names.length > 3 && ` +${s.ap_group_names.length - 3}`}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            {s.is_dpsk ? s.dpsk_service_name || <span className="text-red-500">none</span> : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            {s.identity_groups.length === 0
+                              ? s.is_dpsk ? <span className="text-red-500">none</span> : "—"
+                              : s.identity_groups
+                                  .map((g) => `${g.name}${g.identity_count != null ? ` (${g.identity_count})` : ""}`)
+                                  .join(", ")}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-amber-700">
+                            {s.issues.map((i, n) => <div key={n}>{i}</div>)}
+                          </td>
+                        </tr>
+                      ))}
+                      {visibleVenueAuditSsids.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-6 text-center text-gray-500">
+                            No SSIDs match this filter.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {auditData.unassigned_aps.length > 0 && (
+                <div className="border rounded-lg mt-4 overflow-hidden">
+                  <div className="px-4 py-2 bg-amber-50 border-b text-sm font-semibold text-amber-900">
+                    {auditData.unassigned_aps.length} AP(s) in no AP group
+                  </div>
+                  <div className="px-4 py-2 flex flex-wrap gap-1.5">
+                    {auditData.unassigned_aps.map((a) => (
+                      <span key={a.serial || a.name} className="text-xs bg-gray-100 rounded px-2 py-0.5 font-mono">
+                        {a.name || a.serial}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end border-t">
+            <div className="border-t px-6 py-3 flex justify-end">
               <button
                 onClick={() => setShowAuditModal(false)}
-                className="px-6 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 font-semibold"
+                className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium"
               >
                 Close
               </button>

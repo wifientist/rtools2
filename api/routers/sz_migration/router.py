@@ -37,6 +37,7 @@ import logging
 import time
 import uuid
 from datetime import datetime
+from routers.tenant_scope import resolve_tenant_id
 from typing import Dict, Any, Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -523,9 +524,7 @@ async def capture_r1_snapshot(
         raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
     # Determine tenant_id
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     r1_client = create_r1_client_from_controller(request.controller_id, db)
 
@@ -921,11 +920,7 @@ async def create_migration_plan(
     if controller.controller_type != "RuckusONE":
         raise HTTPException(status_code=400, detail="R1 controller must be RuckusONE")
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400, detail="tenant_id is required for MSP controllers"
-        )
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Build job options
     options = {
@@ -1496,7 +1491,7 @@ async def run_audit_endpoint(
             try:
                 r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
                 r1_controller = db.query(Controller).filter(Controller.id == request.r1_controller_id).first()
-                tenant_id = request.tenant_id or (r1_controller.r1_tenant_id if r1_controller else None)
+                tenant_id = resolve_tenant_id(r1_controller, request.tenant_id) if r1_controller else request.tenant_id
             except Exception:
                 pass  # Non-critical — audit works without full details
     else:
@@ -1510,7 +1505,7 @@ async def run_audit_endpoint(
         if r1_controller.controller_type != "RuckusONE":
             raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
 
-        tenant_id = request.tenant_id or r1_controller.r1_tenant_id
+        tenant_id = resolve_tenant_id(r1_controller, request.tenant_id)
         if r1_controller.controller_subtype == "MSP" and not tenant_id:
             raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 

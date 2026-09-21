@@ -17,6 +17,7 @@ import re
 import uuid
 import logging
 from datetime import datetime
+from routers.tenant_scope import resolve_tenant_id
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional, Literal
@@ -451,13 +452,7 @@ async def audit_venue(
     r1_client = create_r1_client_from_controller(controller.id, db)
 
     # Determine tenant_id
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     logger.info(f"Controller validated - type: {controller.controller_type}, tenant: {tenant_id}")
 
@@ -518,13 +513,7 @@ async def start_audit_job(
         )
 
     # Determine tenant_id
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(
-            status_code=400,
-            detail="tenant_id is required for MSP controllers"
-        )
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Generate job ID
     job_id = str(uuid.uuid4())
@@ -755,9 +744,7 @@ async def populate_from_existing(
             detail=f"Controller must be RuckusONE, got {controller.controller_type}"
         )
 
-    tenant_id = request.tenant_id or controller.r1_tenant_id
-    if controller.controller_subtype == "MSP" and not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id is required for MSP controllers")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
 
     # Validate regex
     try:

@@ -430,6 +430,36 @@ class DpskService:
         # passphrase did not -- an aborted run, a partial cleanup, a deleted
         # passphrase. Sending `identityId` instead attaches the passphrase to
         # the existing identity, which is what we actually want.
+        # =================================================================
+        # Never let R1 name an identity for us.
+        #
+        # Sending `username` makes R1 run BULK_CREATE_PERSONAS and mint a NEW
+        # identity, which fails with GENERAL-010 ("An identity with this name
+        # already exists in the group") whenever the identity survived but its
+        # passphrase did not. Sending `identityId` instead attaches to the
+        # existing identity, which is what we want -- so identityId still wins.
+        #
+        # But it is exclusive by necessity, not by choice, and that had a
+        # cost: with identityId sent and username withheld, a request R1
+        # could not honour (an identity group with no DPSK pool attached) had
+        # NO name to fall back on. R1 minted a persona and invented one:
+        # "DPSK_User_2Uj85Sj1xH_1". 93 of them on one property, each a
+        # duplicate of a correctly named identity, each carrying the
+        # resident's Cloudpath GUID so later runs matched the debris instead
+        # of the real thing.
+        #
+        # Refusing the nameless call is the only part of that we can enforce
+        # here. A caller with neither is asking R1 to make something up, and
+        # a passphrase named after nobody is worse than no passphrase --
+        # nothing downstream can match it, and it looks like a real resident.
+        # =================================================================
+        if not identity_id and not user_name:
+            raise ValueError(
+                "create_passphrase needs a username or an identity id: with "
+                "neither, RuckusONE invents a name (DPSK_User_xxxx) and the "
+                "resident cannot be matched to it afterwards"
+            )
+
         if identity_id:
             payload["identityId"] = identity_id
         elif user_name:
