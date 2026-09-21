@@ -154,6 +154,7 @@ REGRESSION_TESTS=(
     test_import_shadowing.py
     test_rerun_identity_matching.py
     test_msp_tenant_scope.py
+    test_shared_resource_linking.py
 )
 
 echo "🧪 Running regression gates..."
