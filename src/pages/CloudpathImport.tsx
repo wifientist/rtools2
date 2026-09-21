@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
+import MspEcPicker from "@/components/MspEcPicker";
 import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
 import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
@@ -659,12 +660,35 @@ function CloudpathImport() {
   // Pool picker state for step 1
   const [pickerSelectedPoolIds, setPickerSelectedPoolIds] = useState<string[]>([]);
 
-  // Determine tenant ID (for MSP, it's null until explicitly set; for EC, use r1_tenant_id)
   const activeController = controllers.find(c => c.id === activeControllerId);
   const needsEcSelection = activeControllerSubtype === "MSP";
+
+  // An MSP holds no venues of its own. Its API key delegates down to one
+  // MSP-EC via a tenant header, so the EC has to be chosen before anything
+  // below it -- venues, SSIDs, DPSK pools -- can be listed at all. On a
+  // direct EC controller the key already belongs to the tenant and
+  // r1_tenant_id is it. Either way effectiveTenantId is what every request
+  // sends, and the backend turns it into the delegation header.
+  const [ecId, setEcId] = useState<string | null>(null);
+  const [ecName, setEcName] = useState<string | null>(null);
   const effectiveTenantId = needsEcSelection
-    ? null
+    ? ecId
     : (activeController?.r1_tenant_id || null);
+
+  // A venue belongs to exactly one tenant, so changing the EC (or the
+  // controller) invalidates the venue and everything loaded from it.
+  useEffect(() => {
+    setVenueId(null);
+    setVenueName(null);
+    setAuditData(null);
+    setIdentityAuditData(null);
+  }, [activeControllerId, ecId]);
+
+  // Switching controllers leaves the previous controller's EC behind.
+  useEffect(() => {
+    setEcId(null);
+    setEcName(null);
+  }, [activeControllerId]);
 
   // Compute unique DPSK pools from identity export data for filtering
   const uniqueIdentityPools = useMemo(() => {
@@ -1259,6 +1283,10 @@ function CloudpathImport() {
       setError("Please upload a JSON file first");
       return;
     }
+    if (needsEcSelection && !ecId) {
+      setError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
+      return;
+    }
 
     if (!venueId) {
       setError("Please select a venue");
@@ -1333,6 +1361,10 @@ function CloudpathImport() {
   };
 
   const handleAuditVenue = async () => {
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
+      return;
+    }
     if (!venueId) {
       setAuditError("Please select a venue");
       return;
@@ -1354,6 +1386,7 @@ function CloudpathImport() {
         body: JSON.stringify({
           controller_id: activeControllerId,
           venue_id: venueId,
+          tenant_id: effectiveTenantId,
         }),
       });
 
@@ -1401,6 +1434,10 @@ function CloudpathImport() {
       setAuditError("Please select an active controller first");
       return;
     }
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
+      return;
+    }
     if (!venueId) {
       setAuditError("Please select a venue first");
       return;
@@ -1421,6 +1458,7 @@ function CloudpathImport() {
         body: JSON.stringify({
           controller_id: activeControllerId,
           venue_id: venueId,
+          tenant_id: effectiveTenantId,
           identities: fileIdentities,
           policy_set_name: policySetName || null,
           verify_conditions: identityAuditVerifyConditions,
@@ -1588,6 +1626,10 @@ function CloudpathImport() {
   const handleViewIdentities = () => {
     if (!activeControllerId) {
       setAuditError("Please select an active controller first");
+      return;
+    }
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues or DPSK pools");
       return;
     }
     setAuditError("");
@@ -1855,12 +1897,44 @@ function CloudpathImport() {
             </p>
           </div>
         ) : (
-          <SingleVenueSelector
-            controllerId={activeControllerId}
-            tenantId={effectiveTenantId}
-            onVenueSelect={handleVenueSelect}
-            selectedVenueId={venueId}
-          />
+          <>
+            {/*
+              On an MSP the key delegates down to one EC, so the venue list
+              cannot load until that EC is chosen -- picking it is a step, not
+              a filter. A direct EC controller skips this entirely.
+            */}
+            {needsEcSelection && activeControllerId && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  MSP-EC (tenant)
+                </label>
+                <MspEcPicker
+                  controllerId={activeControllerId}
+                  ecId={ecId}
+                  ecName={ecName}
+                  onChange={(id, name) => {
+                    setEcId(id);
+                    setEcName(name);
+                  }}
+                />
+              </div>
+            )}
+
+            {needsEcSelection && !ecId ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  Select an MSP-EC above — venues belong to a tenant, not to the MSP.
+                </p>
+              </div>
+            ) : (
+              <SingleVenueSelector
+                controllerId={activeControllerId}
+                tenantId={effectiveTenantId}
+                onVenueSelect={handleVenueSelect}
+                selectedVenueId={venueId}
+              />
+            )}
+          </>
         )}
 
         {venueId && venueName && (
