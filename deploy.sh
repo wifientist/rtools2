@@ -157,6 +157,7 @@ REGRESSION_TESTS=(
     test_shared_resource_linking.py
     test_no_autonamed_identities.py
     test_passphrase_never_leaves.py
+    test_client_factory_arity.py
 )
 
 echo "🧪 Running regression gates..."

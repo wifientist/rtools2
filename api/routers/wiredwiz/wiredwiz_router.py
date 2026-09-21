@@ -153,7 +153,7 @@ async def list_venues(controller_id: int,
     c = _controller(controller_id, user, db)
     override, key = _resolve_tenant(c, tenant_id)
 
-    r1 = create_r1_client_from_controller(controller_id, user, db)
+    r1 = create_r1_client_from_controller(controller_id, db)
     rows = r1.switches.list_switches(override)
 
     venues: Dict[str, Dict[str, Any]] = {}
@@ -197,7 +197,7 @@ async def crawl(controller_id: int,
     c = _controller(controller_id, user, db)
     override, key = _resolve_tenant(c, tenant_id)
 
-    r1 = create_r1_client_from_controller(controller_id, user, db)
+    r1 = create_r1_client_from_controller(controller_id, db)
     snap = take_snapshot(r1, override, venue_ids=_venue_ids(venue_ids))
     filename = store.save(key, snap)
 
@@ -361,7 +361,7 @@ async def switch_config(controller_id: int, switch_id: str,
     c = _controller(controller_id, user, db)
     override, _ = _resolve_tenant(c, tenant_id)
 
-    r1 = create_r1_client_from_controller(controller_id, user, db)
+    r1 = create_r1_client_from_controller(controller_id, db)
     entry = fetch_redacted_config(r1, override, venue_id, switch_id)
     if entry is None:
         raise HTTPException(404, "This switch has no configuration backup in RUCKUS ONE. "
@@ -484,7 +484,7 @@ async def create_baseline(controller_id: int,
                                  + (f" Missing venue ids: {', '.join(missing[:5])}."
                                     if missing else ""))
 
-    r1 = create_r1_client_from_controller(controller_id, user, db)
+    r1 = create_r1_client_from_controller(controller_id, db)
     # snap is already narrowed to `wanted` by load_covering.
     targets = [s for s in snap["switches"]
                if s.get("deviceStatus") == "ONLINE" and s.get("venueId")]
@@ -714,7 +714,7 @@ async def health(controller_id: int,
                   "baselineSwitches": len((baseline or {}).get("configs") or {}),
                   "source": None}
     if audit_configs:
-        r1 = create_r1_client_from_controller(controller_id, user, db)
+        r1 = create_r1_client_from_controller(controller_id, db)
         latest = snaps[-1]
         targets = [s for s in latest["switches"]
                    if s.get("deviceStatus") == "ONLINE" and s.get("venueId")
