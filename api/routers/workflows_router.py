@@ -16,6 +16,7 @@ import logging
 import asyncio
 import json
 from fastapi import APIRouter, Depends, HTTPException, Body
+from utils.dpsk_redact import redact_passphrases
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional, List
@@ -207,7 +208,11 @@ def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
             "tasks": [],
         }
         if result:
-            phase_data["result"] = result
+            # Redacted on the way out. validate_and_plan's result is the
+            # whole parsed roster, passphrases included -- 153 of them on a
+            # real job, re-sent on every poll of a screen that polls
+            # continuously. The UI needs "is one set", never the value.
+            phase_data["result"] = redact_passphrases(result)
         phases.append(phase_data)
 
         if status == "RUNNING" and current_phase is None:

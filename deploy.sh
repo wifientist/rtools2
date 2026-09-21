@@ -156,6 +156,7 @@ REGRESSION_TESTS=(
     test_msp_tenant_scope.py
     test_shared_resource_linking.py
     test_no_autonamed_identities.py
+    test_passphrase_never_leaves.py
 )
 
 echo "🧪 Running regression gates..."

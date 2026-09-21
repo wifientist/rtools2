@@ -141,12 +141,21 @@ class ExportIdentitiesRequest(BaseModel):
 
 
 class IdentityExportRow(BaseModel):
-    """Single row in identity export"""
+    """
+    Single row in identity export.
+
+    NO PASSPHRASE VALUE. The backend reads passphrases to join identities to
+    pools and to confirm one exists, and that is where they stop: the row
+    carries has_passphrase, a boolean, and passphrase_id for addressing the
+    record. A value the UI never renders is still a value in the response
+    body, in browser memory, in devtools, and in anything logging traffic in
+    between -- so it is not sent at all rather than sent and ignored.
+    """
     cloudpath_guid: str = ""
     identity_id: str = ""
     passphrase_id: str = ""
     username: str = ""
-    passphrase: str = ""
+    has_passphrase: bool = False
     identity_group_name: str = ""
     dpsk_pool_id: str = ""
     dpsk_pool_name: str = ""
@@ -504,7 +513,10 @@ async def _fetch_identity_passphrase_data(
                 if username:
                     passphrase_map[(username, pool_id)] = {
                         'passphrase_id': pp.get('id') or '',
-                        'passphrase': pp.get('passphrase') or '',
+                        # The value is read from R1 and immediately reduced
+                        # to "one exists". Not kept, so it cannot later be
+                        # returned by a caller that did not mean to.
+                        'has_passphrase': bool(pp.get('passphrase')),
                         'dpsk_pool_id': pool_id or '',
                         'dpsk_pool_name': pool_name
                     }
@@ -541,7 +553,7 @@ async def _fetch_identity_passphrase_data(
             'identity_id': identity_data.get('identity_id') or '',
             'passphrase_id': passphrase_data.get('passphrase_id') or '',
             'username': username or '',
-            'passphrase': passphrase_data.get('passphrase') or '',
+            'has_passphrase': bool(passphrase_data.get('has_passphrase')),
             'identity_group_name': identity_data.get('identity_group_name') or '',
             'dpsk_pool_id': final_pool_id,
             'dpsk_pool_name': pool_name
@@ -613,13 +625,13 @@ async def export_identities_csv(
         writer = csv.writer(output)
         writer.writerow([
             'cloudpath_guid', 'identity_id', 'passphrase_id', 'username',
-            'passphrase', 'identity_group_name', 'dpsk_pool_id', 'dpsk_pool_name'
+            'has_passphrase', 'identity_group_name', 'dpsk_pool_id', 'dpsk_pool_name'
         ])
 
         for row in data:
             writer.writerow([
                 row['cloudpath_guid'], row['identity_id'], row['passphrase_id'],
-                row['username'], row['passphrase'], row['identity_group_name'],
+                row['username'], row['has_passphrase'], row['identity_group_name'],
                 row['dpsk_pool_id'], row['dpsk_pool_name']
             ])
 

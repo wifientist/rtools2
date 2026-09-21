@@ -637,7 +637,11 @@ class SyncEngine:
             sync_status="orphan",
             suggested_source_pool_id=suggested_pool_id,
             vlan_id=self._normalize_vlan(site_pp.get('vlanId')),
-            passphrase_preview=site_pp.get('passphrase', '')[:4] + '****' if site_pp.get('passphrase') else None
+            # Not even a prefix. Four characters of a 12-character
+            # passphrase is a real head start for anyone who gets the
+            # response, and "does one exist" is the only thing the UI needs
+            # in order to render this row.
+            passphrase_preview='set' if site_pp.get('passphrase') else None
         )
         self.db.add(mapping)
         self.db.commit()
