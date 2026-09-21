@@ -74,5 +74,39 @@ check(
   missing.join(", "),
 );
 
+// ---- every gate in deploy.sh must be able to RUN where deploy.sh runs it ----
+//
+// This check was first written as `docker compose exec frontend node ...`.
+// That works in dev, where the frontend service builds the `development`
+// target and is a node container. Production builds `production` --
+// nginx:alpine, holding /usr/share/nginx/html and nothing else. Verified:
+// `docker run nginx:alpine node` gives "node: not found".
+//
+// So it would have failed on every production deploy while passing in dev.
+// A gate that cannot run is worse than no gate: it reads as a failure nobody
+// can act on, or -- as the first attempt at this check did, as a Python test
+// in the backend container, which mounts only ./api -- it silently skips and
+// reads as green. Both happened here, which is why this is checked at all.
+if (existsSync("deploy.sh")) {
+  // Commands only. deploy.sh explains this trap in a comment that names the
+  // very string being looked for, and a naive substring match flags it.
+  const commands = readFileSync("deploy.sh", "utf8")
+    .split("\n")
+    .filter((l) => !l.trimStart().startsWith("#"))
+    .join("\n");
+  const deploy = readFileSync("deploy.sh", "utf8");
+  check(
+    "no deploy gate runs node inside the frontend container",
+    !/exec\s+(-T\s+)?frontend/.test(commands),
+    "prod's frontend is nginx:alpine — no node, no source",
+  );
+  check(
+    "the frontend gate runs against the checked-out source instead",
+    deploy.includes("node:20-alpine") && deploy.includes("check-msp-ec-pickers.mjs"),
+  );
+} else {
+  console.log("  note  deploy.sh not visible from here; gate runnability unchecked");
+}
+
 console.log(`\n${failures ? `FAILED (${failures})` : "All checks passed"}`);
 process.exit(failures ? 1 : 0);
