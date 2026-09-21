@@ -247,7 +247,9 @@ async def _dpsk_pool_ids_for_venue(r1_client, tenant_id: str, venue_id: str) -> 
     """
     warnings: List[str] = []
 
-    networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
+    networks_response = await r1_client.networks.get_wifi_networks(
+        tenant_id, venue_id=venue_id
+    )
     all_networks = networks_response.get('data', []) if isinstance(networks_response, dict) else []
 
     venue_network_ids: List[str] = []
