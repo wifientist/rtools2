@@ -372,6 +372,11 @@ function PerUnitSSID() {
       return;
     }
 
+    if (needsEcSelection && !ecId) {
+      setError("Select an MSP-EC first — the MSP itself holds no venues");
+      return;
+    }
+
     if (!venueId.trim()) {
       setError("Please enter a Venue ID");
       return;
@@ -481,6 +486,7 @@ function PerUnitSSID() {
 
       const requestBody = {
         controller_id: activeControllerId,
+        tenant_id: effectiveTenantId,
         venue_id: venueId,
         units: units,
         ap_group_prefix: apGroupPrefix,
@@ -548,6 +554,10 @@ function PerUnitSSID() {
 
   const handlePopulateFetch = async () => {
     if (!venueId || !activeControllerId) return;
+    if (needsEcSelection && !ecId) {
+      setPopulateError("Select an MSP-EC first — the MSP itself holds no venues");
+      return;
+    }
 
     setPopulateLoading(true);
     setPopulateError("");
@@ -559,6 +569,7 @@ function PerUnitSSID() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
+          tenant_id: effectiveTenantId,
           venue_id: venueId,
           ssid_pattern: ssidPattern,
           unit_regex: unitRegex,
@@ -629,6 +640,10 @@ function PerUnitSSID() {
   const [auditProgress, setAuditProgress] = useState<string>("");
 
   const handleAuditVenue = async () => {
+    if (needsEcSelection && !ecId) {
+      setAuditError("Select an MSP-EC first — the MSP itself holds no venues");
+      return;
+    }
     if (!venueId) {
       setAuditError("Please select a venue");
       return;
@@ -652,6 +667,7 @@ function PerUnitSSID() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           controller_id: activeControllerId,
+          tenant_id: effectiveTenantId,
           venue_id: venueId,
         }),
       });
