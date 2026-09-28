@@ -74,22 +74,53 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
         # 1. Newly created passphrases (not skipped) with identity_id
         # 2. Existing/skipped passphrases where the GUID is missing from the
         #    identity description (enables idempotent re-runs)
+        # ------------------------------------------------------------------
+        # Update whenever we have a GUID, an identity to put it on, and no
+        # evidence it is already there.
+        #
+        # This used to be two narrow branches: "created, not skipped, has
+        # identity_id" or "skipped AND needs_description_update AND has
+        # existing_identity_id". A row that fell between them -- creation
+        # rejected as a duplicate, so skipped=True with no identity_id, or an
+        # identity recovered by the backfill sweep after creation -- matched
+        # neither and silently kept a blank description.
+        #
+        # The identity id can arrive from three places and any of them is
+        # good enough: creation reported it, the backfill sweep recovered it,
+        # or validate matched an existing identity (by Cloudpath GUID, or by
+        # the stripped name a previous run left behind). PATCHing a
+        # description that is already correct is harmless, so the only reason
+        # to skip is knowing it already matches.
+        # ------------------------------------------------------------------
         to_update = []
+        already_correct = 0
+        no_identity = 0
         for p in passphrases:
             guid = p.get('cloudpath_guid')
             if not guid:
                 continue
 
-            # Case 1: newly created passphrase with identity_id from creation
-            if not p.get('skipped', False) and p.get('identity_id'):
-                to_update.append(p)
-            # Case 2: skipped passphrase that needs description update (re-run)
-            elif p.get('skipped', False) and p.get('needs_description_update', False):
-                existing_id = p.get('existing_identity_id')
-                if existing_id:
-                    # Use the existing identity_id for the update call
-                    p = {**p, 'identity_id': existing_id}
-                    to_update.append(p)
+            identity_id = p.get('identity_id') or p.get('existing_identity_id')
+            if not identity_id:
+                no_identity += 1
+                continue
+
+            if p.get('existing_description') == guid:
+                already_correct += 1
+                continue
+
+            to_update.append({**p, 'identity_id': identity_id})
+
+        if already_correct:
+            await self.emit(
+                f"{already_correct} identities already carry their Cloudpath GUID"
+            )
+        if no_identity:
+            await self.emit(
+                f"{no_identity} passphrase(s) have a GUID but no identity to "
+                f"put it on — their description stays blank",
+                "warning",
+            )
 
         # Count how many have VLANs to set
         with_vlan = [p for p in to_update if p.get('vlan_id') is not None]

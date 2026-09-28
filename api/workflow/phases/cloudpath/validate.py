@@ -802,7 +802,17 @@ class ValidateCloudpathPhase(PhaseExecutor):
             else:
                 pp_dict['exists'] = False
                 pp_dict['needs_vlan_update'] = False
-                pp_dict['needs_description_update'] = False
+                # needs_description_update is NOT cleared here. It is about the
+                # IDENTITY -- "does this identity already carry this GUID" --
+                # and was computed above from the identity we resolved, by
+                # Cloudpath GUID or by the stripped name a previous run left
+                # behind. Whether this passphrase VALUE happens to exist in the
+                # pool says nothing about that.
+                #
+                # Clearing it lost the GUID for any row whose creation then
+                # came back as a duplicate: skipped=True with the flag forced
+                # False, so neither branch of update_identity_descriptions
+                # claimed it.
                 passphrases_to_create_count += 1
             passphrases_with_exists.append(pp_dict)
 

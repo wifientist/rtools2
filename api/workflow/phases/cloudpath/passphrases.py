@@ -57,6 +57,15 @@ class CreatePassphrasesPhase(PhaseExecutor):
         dpsk_pool_id: Optional[str] = None  # For per-unit mode
         # Used only to backfill identity ids R1 was too slow to report
         identity_group_id: Optional[str] = None
+        # The map form. Every OTHER consumer of a group id falls back to this
+        # (update_identity_descriptions, create_access_policies); this phase
+        # did not even declare it, so if the workflow supplied only the map the
+        # backfill silently did not run -- and every identity R1 was slow to
+        # report lost its Cloudpath GUID with it.
+        identity_group_ids: Dict[str, str] = Field(
+            default_factory=dict,
+            description="Map of group names to IDs (property-wide)"
+        )
         dpsk_pool_ids: Dict[str, str] = Field(
             default_factory=dict,
             description="Map of pool names to IDs (property-wide)"
@@ -131,6 +140,14 @@ class CreatePassphrasesPhase(PhaseExecutor):
         # One sweep now serves every recovery. The lock collapses the ten
         # concurrent failures a wave produces into a single read, and the age
         # check still lets an identity created mid-run be picked up.
+        # Resolved ONCE, here, because two things need it and they used to
+        # disagree: the cache helper short-circuited on identity_group_id and
+        # so did the backfill. A workflow that supplied only the map form got
+        # an empty sweep and no recovery, silently.
+        resolved_group_id = inputs.identity_group_id
+        if not resolved_group_id and inputs.identity_group_ids:
+            resolved_group_id = next(iter(inputs.identity_group_ids.values()), None)
+
         identity_cache: Dict[str, str] = {}
         identity_cache_at: float = 0.0
         identity_lock = asyncio.Lock()
@@ -143,7 +160,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
             seconds when the caller says it needs current data.
             """
             nonlocal identity_cache, identity_cache_at
-            if not inputs.identity_group_id:
+            if not resolved_group_id:
                 return {}
             async with identity_lock:
                 stale = identity_cache_at == 0.0 or (
@@ -152,7 +169,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 )
                 if stale:
                     identity_cache = await self._identities_by_name(
-                        inputs.identity_group_id
+                        resolved_group_id
                     )
                     identity_cache_at = time.monotonic()
                 return identity_cache
@@ -296,7 +313,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 if (
                     'GENERAL-010' in error_msg
                     or 'identity with this name already exists' in error_msg.lower()
-                ) and not pp.get('existing_identity_id') and inputs.identity_group_id:
+                ) and not pp.get('existing_identity_id') and resolved_group_id:
                     try:
                         by_name = await identities_by_name()
                         found = by_name.get(username)
@@ -386,7 +403,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
             r for r in results.succeeded
             if r is not None and not r.identity_id and r.username
         ]
-        if missing and inputs.identity_group_id:
+        if missing and resolved_group_id:
             await self.emit(
                 f"Resolving {len(missing)} identities R1 did not report at "
                 f"creation time"

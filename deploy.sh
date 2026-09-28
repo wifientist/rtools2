@@ -159,6 +159,7 @@ REGRESSION_TESTS=(
     test_passphrase_never_leaves.py
     test_client_factory_arity.py
     test_network_query_resilience.py
+    test_guid_backfill.py
 )
 
 echo "🧪 Running regression gates..."
