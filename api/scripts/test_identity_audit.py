@@ -206,6 +206,7 @@ def new_world():
         "identities": {
             "ig-1": [
                 {"id": "i-1", "name": "4021", "description": "cp-guid-1"},
+                {"id": "i-7", "name": "4027", "description": "cp-guid-WRONG"},
                 {"id": "i-2", "name": "4022_fast", "description": "cp-guid-2"},
                 {"id": "i-3", "name": "4023", "description": "cp-guid-3"},
                 {"id": "i-4", "name": "4024", "description": "cp-guid-4"},
@@ -263,7 +264,16 @@ def new_world():
 ROSTER = [
     "4021_ultrafast", "4022_fast", "4023_gigabit",
     "4024_ultrafast", "4025_gigabit", "4026_fast",
+    # description is SET but holds another resident's guid -- healthy under a
+    # boolean, which is why the audit compares values now.
+    "4027_fast",
 ]
+
+# file guid per username, so the audit can compare it to R1's description
+GUIDS = {
+    "4021_ultrafast": "cp-guid-1",
+    "4027_fast": "cp-guid-7",
+}
 
 
 async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False,
@@ -273,7 +283,8 @@ async def audit(world, roster=None, policy_set_name="CedarPoint", verify=False,
         tenant_id="t-1",
         venue_id="v-1",
         identities=[
-            FileIdentity(name=n, ssids=["403@The_durant"]) for n in (roster or ROSTER)
+            FileIdentity(name=n, ssids=["403@The_durant"], guid=GUIDS.get(n))
+            for n in (roster or ROSTER)
         ],
         policy_set_name=policy_set_name,
         verify_conditions=verify,
@@ -399,11 +410,13 @@ async def main() -> int:
     # totals line up with the rows
     failures += check(
         "totals agree with the rows",
-        result.totals["in_file"] == 6 and result.totals["in_r1_only"] == 1
+        result.totals["in_file"] == 7 and result.totals["in_r1_only"] == 1
         and result.totals["missing_identity"] == 1
         and result.totals["with_policy"] == 5
         and result.totals["policy_in_set"] == 4
         and result.totals["radius_mismatch"] == 1
+        and result.totals["description_wrong_guid"] == 1
+        and result.totals["description_matches_guid"] == 1
         and result.totals["clean"] == 1,
         str(result.totals),
     )
@@ -415,6 +428,38 @@ async def main() -> int:
         any("No policy set named" in w for w in result_nosuch.warnings)
         and result_nosuch.totals["policy_in_set"] == 0,
         f"warnings={result_nosuch.warnings}",
+    )
+
+    # ---- the file guid vs R1's description ----
+    r = rows["4021_ultrafast"]
+    failures += check(
+        "a description holding the right guid is reported as matching",
+        r.guid_json == "cp-guid-1" and r.description_r1 == "cp-guid-1"
+        and r.description_matches_guid is True
+        and not any("Description is" in i for i in r.issues),
+        f"guid={r.guid_json}, desc={r.description_r1}, match={r.description_matches_guid}",
+    )
+    r = rows["4027_fast"]
+    failures += check(
+        "a description set to the WRONG guid is caught, not called healthy",
+        r.has_description is True and r.description_matches_guid is False
+        and any("not this DPSK's guid" in i for i in r.issues)
+        and result.totals["description_wrong_guid"] == 1,
+        f"desc={r.description_r1}, guid={r.guid_json}, issues={r.issues}",
+    )
+    r = rows["4026_fast"]
+    failures += check(
+        "a blank description says what it should have been",
+        r.description_r1 is None
+        and any("should be" in i for i in r.issues if "description" in i.lower())
+        or any("No description set" in i for i in r.issues),
+        f"issues={r.issues}",
+    )
+    extra = [x for x in result.rows if not x.in_file][0]
+    failures += check(
+        "an R1-only row has no guid to compare, so no verdict",
+        extra.guid_json is None and extra.description_matches_guid is None,
+        f"guid={extra.guid_json}, match={extra.description_matches_guid}",
     )
 
     # ---- Tier 0: conditionsCount, free from the policy list ----

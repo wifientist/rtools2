@@ -181,6 +181,9 @@ interface IdentityAuditRow {
   radius_group_name: string | null;
   radius_group_expected: string | null;
   radius_group_matches: boolean | null;
+  guid_json: string | null;
+  description_r1: string | null;
+  description_matches_guid: boolean | null;
   has_description: boolean;
   issues: string[];
 }
@@ -323,7 +326,7 @@ type AuditCellState = "ok" | "warn" | "bad" | "none";
 type AuditSortKey =
   | "username_json" | "username_r1" | "identity_group" | "dpsk_service"
   | "policy" | "policy_username" | "policy_ssid" | "evaluated"
-  | "radius" | "desc" | "issues";
+  | "radius" | "guid_json" | "desc" | "issues";
 
 /**
  * The mark a status column shows for this row.
@@ -361,8 +364,12 @@ function auditCellState(row: IdentityAuditRow, key: AuditSortKey): AuditCellStat
       if (!row.radius_group_name) return row.in_adaptive_policy ? "bad" : "none";
       return row.radius_group_matches === false ? "warn" : "ok";
     case "desc":
+      // A description that is SET but holds the wrong guid is not healthy.
+      if (row.description_matches_guid === false) return "warn";
       if (row.has_description) return "ok";
       return row.in_identity_group ? "bad" : "none";
+    case "guid_json":
+      return row.guid_json ? "ok" : "none";
     default:
       return "none";
   }
@@ -453,6 +460,11 @@ const AUDIT_FINDINGS: {
     key: "radius_mismatch", group: "RADIUS attribute group", severity: "wrong",
     label: "RADIUS group disagrees with the tier in the username",
     test: (r) => r.radius_group_matches === false,
+  },
+  {
+    key: "description_wrong_guid", group: "Description", severity: "wrong",
+    label: "Description is set but holds a different guid than this DPSK's",
+    test: (r) => r.description_matches_guid === false,
   },
   {
     key: "description_blank", group: "Description", severity: "info",
@@ -1423,6 +1435,9 @@ function CloudpathImport() {
       .map((d: any) => ({
         name: String(d?.name || "").trim(),
         ssids: Array.isArray(d?.ssidList) ? d.ssidList : [],
+        // The DPSK's own guid, so the audit can compare it against the R1
+        // description it is supposed to have landed in.
+        guid: String(d?.guid || "").trim() || null,
       }))
       .filter((d) => d.name);
   }, [jsonData]);
@@ -1568,7 +1583,8 @@ function CloudpathImport() {
       "dpsk_service", "adaptive_policy", "policy_in_set", "conditions_count",
       "policy_username_regex", "policy_ssid_regex",
       "r1_matched_policy", "r1_radius_group", "radius_group",
-      "radius_expected", "description_set", "issues",
+      "radius_expected", "guid_json", "description_r1",
+      "description_matches_guid", "issues",
     ];
     const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const lines = [header.join(",")];
@@ -1582,7 +1598,9 @@ function CloudpathImport() {
         row.evaluated ? (row.evaluated_matched ? (row.evaluated_policy_name || "") : "NO MATCH") : "",
         row.evaluated_radius_group || "",
         row.radius_group_name || "", row.radius_group_expected || "",
-        row.has_description, row.issues.join("; "),
+        row.guid_json || "", row.description_r1 || "",
+        row.description_matches_guid ?? "",
+        row.issues.join("; "),
       ].map(escape).join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
@@ -3122,7 +3140,8 @@ function CloudpathImport() {
                           ? ([["evaluated", "R1 Says (actual)"]] as [AuditSortKey, string][])
                           : []),
                         ["radius", "RADIUS Group"],
-                        ["desc", "Desc"],
+                        ["guid_json", "GUID (JSON)"],
+                        ["desc", "Description (R1)"],
                         ["issues", "Notes"],
                       ] as [AuditSortKey, string][]).map(([key, heading]) => (
                         // Sticky goes on the cells, not the row or thead:
@@ -3288,10 +3307,43 @@ function CloudpathImport() {
                             }
                           />
                         </td>
+                        {/*
+                          Values, not ticks. A description that is SET but
+                          holds another resident's guid reads as healthy under
+                          a boolean, and that is exactly what a half-finished
+                          import leaves behind — so both sides are shown and
+                          compared.
+                        */}
+                        <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                          {row.guid_json ? (
+                            <span title={row.guid_json}>
+                              {row.guid_json.length > 20
+                                ? `…${row.guid_json.slice(-16)}`
+                                : row.guid_json}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 font-sans">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2">
                           <AuditCell
                             state={auditCellState(row, "desc")}
-                            title={row.has_description ? "Description set" : "Description blank"}
+                            label={
+                              row.description_r1
+                                ? row.description_r1.length > 20
+                                  ? `…${row.description_r1.slice(-16)}`
+                                  : row.description_r1
+                                : null
+                            }
+                            title={
+                              row.description_matches_guid === false
+                                ? `R1 holds "${row.description_r1}" but this DPSK's guid is "${row.guid_json}"`
+                                : row.description_matches_guid === true
+                                ? "Matches the DPSK's guid from the file"
+                                : row.has_description
+                                ? row.description_r1 || ""
+                                : "Description blank"
+                            }
                           />
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-600">
@@ -3303,7 +3355,7 @@ function CloudpathImport() {
                     ))}
                     {visibleIdentityAuditRows.length === 0 && (
                       <tr>
-                        <td colSpan={8 + (identityAuditDeepChecked ? 2 : 0) + (identityAuditEvaluated ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">
+                        <td colSpan={9 + (identityAuditDeepChecked ? 2 : 0) + (identityAuditEvaluated ? 1 : 0)} className="px-3 py-6 text-center text-gray-500">
                           Nothing matches this filter.
                         </td>
                       </tr>

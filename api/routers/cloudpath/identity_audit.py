@@ -111,6 +111,10 @@ class FileIdentity(BaseModel):
     """One DPSK entry as it appears in the uploaded Cloudpath export."""
     name: str
     ssids: List[str] = Field(default_factory=list)
+    # The Cloudpath DPSK's own guid. The import is supposed to land this on
+    # the R1 identity's description, so having both sides on one row is what
+    # turns "a description is set" into "the RIGHT value is set".
+    guid: Optional[str] = None
 
 
 class IdentityAuditRequest(BaseModel):
@@ -204,7 +208,14 @@ class IdentityAuditRow(BaseModel):
     radius_group_expected: Optional[str] = None
     radius_group_matches: Optional[bool] = None
 
-    # Column 6
+    # Columns 6 and 7. The guid the FILE carries for this DPSK, and the
+    # description R1 actually holds -- the place that guid is supposed to
+    # land. Shown as values rather than a tick: a description that is set but
+    # holds the WRONG guid reads as healthy under a boolean, and that is
+    # exactly what a half-finished import leaves behind.
+    guid_json: Optional[str] = None
+    description_r1: Optional[str] = None
+    description_matches_guid: Optional[bool] = None   # None = nothing to compare
     has_description: bool = False
 
     # Anything worth the reader's attention on this row.
@@ -637,6 +648,7 @@ def _build_row(
     file_ssids: Optional[Set[str]] = None,
     evaluation: Optional[Dict[str, Any]] = None,
     evaluated_ssid: Optional[str] = None,
+    guid_json: Optional[str] = None,
 ) -> IdentityAuditRow:
     """Join one identity against everything collected, and name what is wrong."""
     row = IdentityAuditRow(
@@ -644,6 +656,7 @@ def _build_row(
         account=account,
         suffix=suffix,
         in_file=in_file,
+        guid_json=guid_json or None,
     )
 
     if identity:
@@ -652,7 +665,13 @@ def _build_row(
         row.identity_id = identity.get('identity_id')
         row.username_r1 = identity.get('name')
         row.matched_as = matched_as
-        row.has_description = bool(identity.get('description'))
+        row.description_r1 = identity.get('description') or None
+        row.has_description = bool(row.description_r1)
+        # Compared only when there is something on both sides to compare.
+        # None means "not applicable", which is not the same as a mismatch --
+        # an R1-only identity has no file guid to be wrong about.
+        if guid_json:
+            row.description_matches_guid = (row.description_r1 == guid_json)
         # The group was reached BY its pool, so a group implies a service.
         row.in_dpsk_service = bool(identity.get('dpsk_service_name'))
         row.dpsk_service_name = identity.get('dpsk_service_name')
@@ -800,7 +819,18 @@ def _build_row(
             f"'{row.evaluated_radius_group}', not '{expected_suffix}'"
         )
     if row.in_identity_group and not row.has_description:
-        row.issues.append("No description set")
+        row.issues.append(
+            "No description set"
+            + (f" (should be {guid_json})" if guid_json else "")
+        )
+    elif row.description_matches_guid is False:
+        # Set, but to something else. A boolean "has a description" called
+        # this healthy; it is a half-finished import, or a row that picked up
+        # another resident's guid.
+        row.issues.append(
+            f"Description is {row.description_r1!r}, not this DPSK's guid "
+            f"{guid_json!r}"
+        )
 
     return row
 
@@ -960,6 +990,7 @@ async def run_identity_audit(
                 ((identity or {}).get("name") or account, eval_ssid_for.get(username, "")),
             ),
             evaluated_ssid=eval_ssid_for.get(username),
+            guid_json=(entry.guid or '').strip() or None,
         ))
 
     # ---- identities R1 holds that the file does not mention ----
@@ -1011,6 +1042,12 @@ async def run_identity_audit(
         "policy_in_set": sum(1 for r in in_file_rows if r.policy_in_set),
         "radius_mismatch": sum(1 for r in in_file_rows if r.radius_group_matches is False),
         "with_description": sum(1 for r in in_file_rows if r.has_description),
+        "description_wrong_guid": sum(
+            1 for r in rows if r.description_matches_guid is False
+        ),
+        "description_matches_guid": sum(
+            1 for r in rows if r.description_matches_guid is True
+        ),
         "clean": sum(1 for r in in_file_rows if not r.issues),
         "conditions_checked": sum(1 for r in rows if r.conditions_checked),
         "evaluated": sum(1 for r in rows if r.evaluated),
