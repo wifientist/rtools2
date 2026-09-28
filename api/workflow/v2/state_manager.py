@@ -21,7 +21,9 @@ Redis Key Schema:
 import json
 import logging
 import asyncio
+import random
 import redis.asyncio as redis
+from redis.exceptions import WatchError
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
@@ -43,6 +45,10 @@ JOB_TTL_SECONDS = 604800      # 7 days
 JOB_HEARTBEAT_TTL = 120
 LOCK_TTL_SECONDS = 300         # 5 minutes
 UNIT_LOCK_TTL_SECONDS = 60     # 1 minute (shorter for fine-grained ops)
+# Retries for a read-modify-write of the job blob that lost a WATCH race.
+# Contention is bounded by the concurrent phase tasks, so a handful of
+# retries is plenty; running out means something is wrong, not busy.
+MUTATE_MAX_ATTEMPTS = 50
 
 # Key prefixes
 PREFIX = "workflow:v2"
@@ -216,17 +222,67 @@ class RedisStateManagerV2:
         error: str = None
     ) -> bool:
         """Update job status atomically."""
-        job = await self.get_job(job_id)
-        if not job:
-            return False
+        def mutate(job: WorkflowJobV2) -> None:
+            job.status = status
+            if error:
+                job.errors.append(error)
+            if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL):
+                job.completed_at = datetime.utcnow()
 
-        job.status = status
-        if error:
-            job.errors.append(error)
-        if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.PARTIAL):
-            job.completed_at = datetime.utcnow()
+        return await self._mutate_job(job_id, mutate)
 
-        return await self.save_job(job)
+    async def append_job_error(self, job_id: str, error: str) -> bool:
+        """Append one error to the job without touching anything else."""
+        return await self._mutate_job(job_id, lambda job: job.errors.append(error))
+
+    async def _mutate_job(self, job_id: str, mutate) -> bool:
+        """
+        Read-modify-write the job blob under WATCH, retrying on conflict.
+
+        The blob holds global_phase_status, global_phase_results,
+        created_resources and errors, and every writer rewrites the whole
+        thing. Done as a plain get_job() + save_job(), two concurrent writers
+        each save their own stale copy and the last one silently undoes the
+        other. That happens constantly: on a per_unit Cloudpath import, 80
+        create_ap_group units call track_created_resource while
+        create_shared_resources is finishing. One of them read the blob while
+        the phase was RUNNING and saved it back after the phase wrote
+        COMPLETED -- the phase then stayed RUNNING forever, its outputs were
+        gone, and every unit waiting on it stalled.
+
+        Only the blob is read (not the units, which live in their own keys),
+        which also keeps the window between read and write short.
+        """
+        key = f"{PREFIX}:jobs:{job_id}"
+        for attempt in range(MUTATE_MAX_ATTEMPTS):
+            async with self.redis.pipeline(transaction=True) as pipe:
+                try:
+                    await pipe.watch(key)
+                    data = await pipe.get(key)
+                    if not data:
+                        return False
+                    job = WorkflowJobV2(**json.loads(data))
+                    mutate(job)
+                    job.updated_at = datetime.utcnow()
+
+                    pipe.multi()
+                    pipe.setex(key, JOB_TTL_SECONDS, job.model_dump_json(exclude={"units"}))
+                    if job.status == JobStatus.RUNNING:
+                        pipe.sadd(f"{PREFIX}:jobs:active", job.id)
+                    else:
+                        pipe.srem(f"{PREFIX}:jobs:active", job.id)
+                    await pipe.execute()
+                    return True
+                except WatchError:
+                    # Someone wrote the blob between our read and write.
+                    # Re-read and re-apply; the mutation is replayed on
+                    # their version, so neither update is lost.
+                    # Jittered so a crowd of losers doesn't retry in step.
+                    await asyncio.sleep(random.uniform(0, 0.005 * (attempt + 1)))
+        raise RuntimeError(
+            f"Job {job_id}: gave up updating job state after "
+            f"{MUTATE_MAX_ATTEMPTS} conflicting writes"
+        )
 
     # =========================================================================
     # Unit Operations (atomic per-unit updates)
@@ -415,15 +471,12 @@ class RedisStateManagerV2:
         result: Dict[str, Any] = None
     ) -> bool:
         """Update status of a global (non-per-unit) phase."""
-        job = await self.get_job(job_id)
-        if not job:
-            return False
+        def mutate(job: WorkflowJobV2) -> None:
+            job.global_phase_status[phase_id] = status
+            if result:
+                job.global_phase_results[phase_id] = result
 
-        job.global_phase_status[phase_id] = status
-        if result:
-            job.global_phase_results[phase_id] = result
-
-        return await self.save_job(job)
+        return await self._mutate_job(job_id, mutate)
 
     # =========================================================================
     # Activity Tracking
@@ -480,15 +533,10 @@ class RedisStateManagerV2:
         resource_data: Dict[str, Any]
     ) -> bool:
         """Track a resource created during the workflow."""
-        job = await self.get_job(job_id)
-        if not job:
-            return False
+        def mutate(job: WorkflowJobV2) -> None:
+            job.created_resources.setdefault(resource_type, []).append(resource_data)
 
-        if resource_type not in job.created_resources:
-            job.created_resources[resource_type] = []
-        job.created_resources[resource_type].append(resource_data)
-
-        return await self.save_job(job)
+        return await self._mutate_job(job_id, mutate)
 
     # =========================================================================
     # Events (Pub/Sub)

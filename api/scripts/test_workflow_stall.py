@@ -49,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from workflow.v2.brain import WorkflowBrain, WorkflowStalled, STALL_GRACE_SECONDS
 from workflow.v2.graph import DependencyGraph
-from workflow.v2.models import UnitStatus
+from workflow.v2.models import PhaseStatus, UnitStatus
 
 
 class FakeUnit:
@@ -76,6 +76,7 @@ class FakeJob:
         self.phase_definitions = phase_definitions
         self.units = {u.unit_id: u for u in units}
         self._settled = set(settled)
+        self.global_phase_status = {}
 
 
 class FakeState:
@@ -151,6 +152,20 @@ async def main() -> int:
     failures += check(
         "per-unit blockage is aggregated, not one line per unit",
         "4 unit(s)" in msg and msg.count("unit phase") == 1,
+        msg,
+    )
+
+    # 3b. a global with a status is not "ready but never scheduled"
+    # _find_ready_global_phases skips any phase that already has a status,
+    # so a phase left RUNNING by a lost write must not be reported as merely
+    # unscheduled -- that message sent the Cloudpath stall hunt the wrong way.
+    job = FakeJob(PHASES, [FakeUnit(n) for n in range(101, 105)], settled={"validate"})
+    job.global_phase_status = {"create_shared": PhaseStatus.RUNNING}
+    msg = make_brain(job)._diagnose_stall(job, graph)
+    failures += check(
+        "a global stuck RUNNING with no task says so",
+        "'create_shared' is RUNNING but nothing is running it" in msg
+        and "never scheduled" not in msg,
         msg,
     )
 

@@ -462,6 +462,21 @@ class WorkflowBrain:
                     job.errors.append("Cancelled by user")
                     break
 
+                # A critical global phase that failed ends the run. Everything
+                # downstream of it is blocked for good; left alone, the job
+                # would sit out the stall grace and fail with a stall message
+                # that hides the real error. Stop scheduling, but let tasks
+                # already in flight finish: cancelling one mid-R1-call can
+                # leave a resource created in R1 and never tracked.
+                failed_critical = self._failed_critical_globals(job)
+                if failed_critical and not in_flight:
+                    logger.error(
+                        f"Job {job.id}: critical global phase(s) failed: "
+                        f"{failed_critical} - stopping"
+                    )
+                    job.status = JobStatus.FAILED
+                    break
+
                 # Launch ready global phases FIRST.
                 #
                 # Globals and per-unit work share _phase_semaphore, and its
@@ -472,7 +487,10 @@ class WorkflowBrain:
                 # property that left it waiting while the units it unblocks sat
                 # in front of it. There are only ever a handful of globals, so
                 # letting them in first costs the per-unit fan-out nothing.
-                ready_global = self._find_ready_global_phases(job, graph)
+                ready_global = (
+                    [] if failed_critical
+                    else self._find_ready_global_phases(job, graph)
+                )
                 for phase_id in ready_global:
                     key = f"global:{phase_id}"
                     if key not in in_flight:
@@ -482,7 +500,9 @@ class WorkflowBrain:
                         in_flight[key] = task
 
                 # Then per-unit work that isn't already in flight
-                ready_work = self._find_ready_work(job, graph)
+                ready_work = (
+                    [] if failed_critical else self._find_ready_work(job, graph)
+                )
                 for unit_id, phase_id in ready_work:
                     key = f"{unit_id}:{phase_id}"
                     if key not in in_flight:
@@ -571,8 +591,8 @@ class WorkflowBrain:
                                     job.id, global_phase_id, PhaseStatus.FAILED
                                 )
                                 job.global_phase_status[global_phase_id] = PhaseStatus.FAILED
-                                job.errors.append(
-                                    f"Phase '{global_phase_id}' failed: {error_msg}"
+                                await self._record_job_error(
+                                    job, f"Phase '{global_phase_id}' failed: {error_msg}"
                                 )
                                 await self._publish_event(job.id, "phase_failed", {
                                     "phase_id": global_phase_id,
@@ -934,8 +954,23 @@ class WorkflowBrain:
         lines: List[str] = []
 
         # Global phases that never ran, and what they are waiting on.
+        #
+        # "Ready but never scheduled" is only true for a phase with no status
+        # yet: _find_ready_global_phases skips anything that already has one.
+        # A phase stuck at RUNNING with nothing running it, or a critical
+        # failure, reads very differently, so name the status.
         for phase in job.phase_definitions:
             if phase.per_unit or phase.id in settled:
+                continue
+            status = job.global_phase_status.get(phase.id)
+            if status == PhaseStatus.FAILED:
+                lines.append(f"global '{phase.id}' FAILED (critical)")
+                continue
+            if status is not None:
+                lines.append(
+                    f"global '{phase.id}' is {getattr(status, 'value', status)} "
+                    f"but nothing is running it"
+                )
                 continue
             unmet = sorted(graph.get_dependencies(phase.id) - settled)
             lines.append(
@@ -1837,13 +1872,10 @@ class WorkflowBrain:
         graph: DependencyGraph
     ) -> None:
         """Handle a completed phase result."""
-        # Global phases carry no unit_id. _execute_global_phase writes the
-        # terminal status to Redis, but update_global_phase_status is a
-        # read-modify-write of the whole job — the scheduler's own save_job()
-        # can clobber it back with its stale in-memory copy, leaving the phase
-        # RUNNING forever and stranding every dependent phase. Sync the
-        # in-memory copy here (the failure path at the task handler already
-        # does this) so both views agree.
+        # Global phases carry no unit_id. _execute_global_phase has already
+        # written the terminal status to Redis (atomically -- see
+        # RedisStateManagerV2._mutate_job); mirror it in memory so this tick
+        # sees it before the next metadata refresh.
         if result.unit_id is None:
             gp_def = job.get_phase_definition(result.phase_id)
             if gp_def and not gp_def.per_unit:
@@ -1852,6 +1884,16 @@ class WorkflowBrain:
                 )
                 if result.success and result.outputs:
                     job.global_phase_results[result.phase_id] = result.outputs
+                if not result.success:
+                    # _execute_global_phase catches the exception and returns
+                    # it here, so this is the only place it can be recorded.
+                    # It used to go only to the log, leaving the job's errors
+                    # with nothing but a stall message.
+                    await self._record_job_error(
+                        job,
+                        f"Phase '{result.phase_id}' failed: "
+                        f"{result.error or 'no error message'}",
+                    )
 
         if not result.success:
             phase_def = job.get_phase_definition(result.phase_id)
@@ -1877,6 +1919,31 @@ class WorkflowBrain:
             await self._publish_event(job.id, "progress_update", {
                 "progress": job.get_progress(),
             })
+
+    async def _record_job_error(self, job: WorkflowJobV2, message: str) -> None:
+        """
+        Add an error to the job, in Redis as well as in memory.
+
+        In memory alone is not enough: the main loop replaces job.errors with
+        Redis's copy on every tick, so an unpersisted error is gone by the
+        time the final status is written.
+        """
+        job.errors.append(message)
+        try:
+            await self.state.append_job_error(job.id, message)
+        except Exception as e:
+            logger.warning(f"Job {job.id}: could not persist error ({e}): {message}")
+
+    def _failed_critical_globals(self, job: WorkflowJobV2) -> List[str]:
+        """Critical global phases that have FAILED."""
+        failed = []
+        for pid, status in job.global_phase_status.items():
+            if status != PhaseStatus.FAILED:
+                continue
+            phase_def = job.get_phase_definition(pid)
+            if phase_def and phase_def.critical and not phase_def.per_unit:
+                failed.append(pid)
+        return failed
 
     def _settled_global_phases(self, job: WorkflowJobV2) -> Set[str]:
         """
@@ -1937,7 +2004,10 @@ class WorkflowBrain:
 
         total_units = len(job.units)
         if total_units == 0:
-            job.status = JobStatus.COMPLETED
+            job.status = (
+                JobStatus.FAILED if self._failed_critical_globals(job)
+                else JobStatus.COMPLETED
+            )
             return job
 
         # Build set of required per-unit phases (excluding skipped)
@@ -1977,7 +2047,11 @@ class WorkflowBrain:
             if u.status == UnitStatus.FAILED
         )
 
-        if failed_units == 0:
+        if self._failed_critical_globals(job):
+            # A shared prerequisite failed. Whatever the units managed, the
+            # run as a whole did not do its job.
+            job.status = JobStatus.FAILED
+        elif failed_units == 0:
             job.status = JobStatus.COMPLETED
         elif failed_units == total_units:
             job.status = JobStatus.FAILED
