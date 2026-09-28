@@ -423,12 +423,14 @@ class IdentityService:
             Identity details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/identityGroups/{group_id}/identities/{identity_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/identityGroups/{group_id}/identities/{identity_id}"
             )
         return self.client.safe_json(response)
@@ -475,13 +477,15 @@ class IdentityService:
         logger.info(f"🔍 DEBUG IDENTITY API - create_identity payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/identityGroups/{group_id}/identities",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/identityGroups/{group_id}/identities",
                 payload=payload
             )
@@ -531,13 +535,15 @@ class IdentityService:
         logger.info(f"🔍 DEBUG IDENTITY API - update_identity payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/identityGroups/{group_id}/identities/{identity_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/identityGroups/{group_id}/identities/{identity_id}",
                 payload=payload
             )
@@ -568,13 +574,15 @@ class IdentityService:
         payload = [identity_id]
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/identities",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/identities",
                 payload=payload
             )

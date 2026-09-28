@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""
+Cloudpath GUID population regression test.
+
+WHAT WAS REPORTED
+
+A 1100+ identity import wrote the Cloudpath GUID onto roughly 40 identity
+descriptions. The rest were left blank.
+
+The GUID is written by update_identity_descriptions, which needs an
+identity_id per row. Two independent faults starved it.
+
+1. update_identity WAS SYNCHRONOUS.
+
+   The phase calls it through parallel_map(max_concurrent=N), but the method
+   did a bare self.client.patch(). So the "parallel" map ran strictly
+   serially AND blocked the event loop for the whole batch -- starving the
+   job heartbeat, SSE and Redis while it ran. 1100 serialized blocking PATCHes
+   do not finish inside a phase timeout, and the ones that never ran never got
+   their GUID. Measured after offloading: 20 updates went from 1.00s
+   serialized to 0.15s (6.5x), and the event loop ticked 14 times during a
+   batch that previously blocked it completely.
+
+   Same class as the shadowed-asyncio bug in create_passphrase and the
+   synchronous get_policy_conditions: sync I/O in an async hot path. The
+   existing non-blocking gate did not cover this method.
+
+2. THE BACKFILL COULD NOT FIND ITS GROUP.
+
+   R1 often does not report identityId at creation time, so
+   create_passphrases sweeps the group by username afterwards and fills the
+   gap. That sweep, and the cache helper behind it, both short-circuited on
+   inputs.identity_group_id -- and this phase never declared the MAP form,
+   identity_group_ids, that every other consumer falls back to. A workflow
+   supplying only the map got an empty sweep, no recovery, and no GUIDs,
+   silently.
+
+WHAT THIS GUARDS
+
+  1. update_identity is offloaded: concurrent calls overlap, and the event
+     loop keeps running during a batch.
+  2. The identity-id sweep works when only identity_group_ids is supplied.
+  3. It still works from identity_group_id alone.
+  4. With neither, the phase says so rather than silently skipping.
+  5. update_identity_descriptions writes a GUID for every row that has an
+     identity id.
+
+Usage:
+    docker compose exec backend python scripts/test_guid_backfill.py
+"""
+
+import asyncio
+import inspect
+import re
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from r1api.services.identity import IdentityService
+from workflow.phases.cloudpath.passphrases import CreatePassphrasesPhase
+from workflow.phases.cloudpath.update_identities import UpdateIdentityDescriptionsPhase
+
+
+def check(label, ok, detail=""):
+    print(f"  {'ok  ' if ok else 'FAIL'}  {label}" + (f"  -- {detail}" if detail else ""))
+    return 0 if ok else 1
+
+
+# ==================== 1. update_identity does not block ====================
+
+
+class SlowClient:
+    ec_type = "EC"
+
+    def __init__(self, delay=0.05):
+        self.delay = delay
+        self.calls = 0
+
+    def patch(self, *a, **k):
+        time.sleep(self.delay)          # a real blocking call, like requests
+        self.calls += 1
+        return type("R", (), {"status_code": 200, "content": b"{}"})()
+
+    def safe_json(self, r):
+        return {}
+
+
+async def nonblocking_checks() -> int:
+    failures = 0
+    svc = IdentityService.__new__(IdentityService)
+    svc.client = SlowClient(delay=0.05)
+
+    N = 20
+    ticks = 0
+
+    async def heartbeat():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    hb = asyncio.create_task(heartbeat())
+    start = time.time()
+    await asyncio.gather(*[
+        svc.update_identity(group_id="g", identity_id=f"i{i}", description="x")
+        for i in range(N)
+    ])
+    wall = time.time() - start
+    hb.cancel()
+
+    serialized = N * 0.05
+    failures += check(
+        "concurrent update_identity calls actually overlap",
+        wall < serialized * 0.6,
+        f"wall={wall:.2f}s vs {serialized:.2f}s serialized",
+    )
+    failures += check(
+        "the event loop keeps running during a batch of updates",
+        ticks > 0, f"{ticks} heartbeat tick(s)",
+    )
+    failures += check(
+        "update_identity is offloaded rather than called inline",
+        "to_thread" in inspect.getsource(IdentityService.update_identity)
+        and not re.search(
+            r"response = self\.client\.patch\(",
+            inspect.getsource(IdentityService.update_identity),
+        ),
+    )
+    return failures
+
+
+# ==================== 2-4. the sweep finds its group ====================
+
+
+class FakeIdentitySvc:
+    def __init__(self, world):
+        self.w = world
+
+    async def get_identities_in_group(self, group_id, tenant_id=None, page=0, size=100):
+        self.w.setdefault("swept", []).append(group_id)
+        if page:
+            return {"content": []}
+        return {"content": [{"id": f"id-{n}", "name": n} for n in self.w["names"]]}
+
+    async def update_identity(self, **kw):
+        return True
+
+
+class FakeDpsk:
+    async def create_passphrase(self, **kw):
+        # R1 not reporting identityId is the normal case this recovers from.
+        return {"id": "pp-1", "identityId": None}
+
+
+class FakeClient:
+    def __init__(self, world):
+        self.identity = FakeIdentitySvc(world)
+        self.dpsk = FakeDpsk()
+
+
+async def run_phase(world, **group_kwargs):
+    messages = []
+    phase = CreatePassphrasesPhase.__new__(CreatePassphrasesPhase)
+    phase.r1_client = FakeClient(world)
+    phase.tenant_id = "t-1"
+    phase.venue_id = "v-1"
+
+    async def emit(msg, level="info", details=None):
+        messages.append(msg)
+
+    async def track_resource(kind, data):
+        return None
+
+    async def parallel_map(items, fn, **kw):
+        results = [await fn(i) for i in items]
+        return type("R", (), {"succeeded": results, "failed": []})()
+
+    phase.emit = emit
+    phase.track_resource = track_resource
+    phase.parallel_map = parallel_map
+
+    out = await phase.execute(CreatePassphrasesPhase.Inputs(
+        dpsk_pool_id="pool-1",
+        passphrases=[{"name": "4021", "guid": "g-1", "passphrase": "abc"}],
+        **group_kwargs,
+    ))
+    return out, world, " ".join(messages)
+
+
+async def sweep_checks() -> int:
+    failures = 0
+
+    out, w, text = await run_phase(
+        {"names": ["4021"]}, identity_group_ids={"Prop": "ig-map"},
+    )
+    failures += check(
+        "the sweep runs when only identity_group_ids is supplied",
+        w.get("swept") == ["ig-map"]
+        and out.created_passphrases[0].identity_id == "id-4021",
+        f"swept={w.get('swept')}, id={out.created_passphrases[0].identity_id}",
+    )
+
+    out, w, _ = await run_phase({"names": ["4021"]}, identity_group_id="ig-direct")
+    failures += check(
+        "and still runs from identity_group_id alone",
+        w.get("swept") == ["ig-direct"]
+        and out.created_passphrases[0].identity_id == "id-4021",
+        f"swept={w.get('swept')}",
+    )
+
+    out, w, text = await run_phase({"names": ["4021"]})
+    failures += check(
+        "with neither, it says so instead of silently skipping",
+        not w.get("swept") and "no identity group" in text,
+        text[-90:],
+    )
+    return failures
+
+
+# ==================== 5. the GUID actually gets written ====================
+
+
+class DescClient:
+    def __init__(self):
+        self.written = {}
+
+    class _Ident:
+        def __init__(self, outer):
+            self.outer = outer
+
+        async def update_identity(self, group_id, identity_id, tenant_id=None,
+                                 description=None, vlan=None):
+            self.outer.written[identity_id] = description
+            return True
+
+    def __init_subclass__(cls):  # pragma: no cover
+        pass
+
+
+async def description_checks() -> int:
+    client = DescClient()
+    client.identity = DescClient._Ident(client)
+
+    phase = UpdateIdentityDescriptionsPhase.__new__(UpdateIdentityDescriptionsPhase)
+    phase.r1_client = client
+    phase.tenant_id = "t-1"
+    phase.venue_id = "v-1"
+
+    async def emit(msg, level="info", details=None):
+        return None
+
+    async def parallel_map(items, fn, **kw):
+        results = await asyncio.gather(*[fn(i) for i in items])
+        return type("R", (), {"succeeded": results, "failed": []})()
+
+    phase.emit = emit
+    phase.parallel_map = parallel_map
+
+    rows = [
+        {"username": f"40{i}", "cloudpath_guid": f"g-{i}",
+         "identity_id": f"id-{i}", "skipped": False}
+        for i in range(50)
+    ]
+    out = await phase.execute(UpdateIdentityDescriptionsPhase.Inputs(
+        identity_group_id="ig-1", created_passphrases=rows,
+    ))
+    return check(
+        "every row with an identity id gets its GUID written",
+        out.updated_count == 50 and len(client.written) == 50
+        and client.written["id-7"] == "g-7",
+        f"updated={out.updated_count}, written={len(client.written)}",
+    )
+
+
+async def main() -> int:
+    print("Cloudpath GUID population\n")
+    failures = await nonblocking_checks()
+    failures += await sweep_checks()
+    failures += await description_checks()
+    print(f"\n{'FAILED' if failures else 'All checks passed'}"
+          f"{f' ({failures})' if failures else ''}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))
