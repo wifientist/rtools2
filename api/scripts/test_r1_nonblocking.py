@@ -21,8 +21,8 @@ while the import itself was healthy:
 WHAT THIS GUARDS
 
   1. N GENERAL-010 recoveries page the identity group ONCE, not N times.
-  2. The recovery still works: each passphrase is retried against the
-     identity id resolved from that one read.
+  2. The recovery still works: each passphrase is written onto the identity
+     resolved from that one read.
   3. A name missing from the cached view triggers at most one refresh, shared
      by every caller waiting, rather than one sweep each.
   4. The hot R1 calls do not block the event loop, so slow R1 responses can
@@ -54,10 +54,8 @@ class FakeDpsk:
         self.calls = calls
 
     async def create_passphrase(self, pool_id, passphrase, tenant_id=None,
-                                user_name=None, identity_id=None, **kw):
+                                user_name=None, **kw):
         self.calls.append("create_passphrase")
-        if identity_id:
-            return {"id": f"pp-{identity_id}", "identityId": identity_id}
         raise RuntimeError(
             "GENERAL-010: Invalid Identity: An identity with this name "
             "already exists in the group."
@@ -73,6 +71,13 @@ class FakeIdentity:
         if page:
             return {"content": []}
         return {"content": [{"id": f"id-{n}", "name": n} for n in self.names]}
+
+    async def set_identity_passphrase(self, group_id, identity_id, passphrase,
+                                      tenant_id=None, vlan=None):
+        # The recovery writes the passphrase onto the identity it resolved;
+        # a passphrase create cannot attach to an existing identity.
+        self.calls.append("set_identity_passphrase")
+        return {"id": identity_id, "dpskGuid": f"pp-{identity_id}"}
 
 
 class FakeR1:

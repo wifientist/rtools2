@@ -160,6 +160,7 @@ REGRESSION_TESTS=(
     test_client_factory_arity.py
     test_network_query_resilience.py
     test_guid_backfill.py
+    test_attach_existing_identity.py
 )
 
 echo "🧪 Running regression gates..."
