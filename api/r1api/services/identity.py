@@ -550,6 +550,92 @@ class IdentityService:
 
         return self.client.safe_json(response)
 
+    async def set_identity_passphrase(
+        self,
+        group_id: str,
+        identity_id: str,
+        passphrase: str,
+        tenant_id: str = None,
+        vlan: int = None,
+    ):
+        """
+        Give an identity that ALREADY EXISTS its DPSK passphrase.
+
+        This is the only route R1 offers for that. Verified on SuperSandbox,
+        2026-09-30, against a throwaway group:
+
+          POST /dpskServices/{pool}/passphrases {identityId}
+              `identityId` is readOnly in DpskPassphraseCreateDto and R1
+              ignores it. The request reads as nameless, so R1 mints a new
+              identity called "DPSK_User_xxxx_1" and hangs the passphrase on
+              that. The identity we named is left with nothing.
+          POST ... {username} (with or without identityId)
+              Rejected: DPSK-020 (409) if the identity holds a passphrase,
+              GENERAL-010 if it holds none.
+          PATCH /identityGroups/{g}/identities/{id} {dpskPassphrase}
+              Works in both cases. With no passphrase it creates one in the
+              group's pool; with one it replaces the value and keeps the id.
+              `vlan` sent alongside lands on the passphrase's vlanId too.
+
+        One trap: a value shorter than the pool's minimum length is not
+        rejected. R1 reports success and substitutes a generated passphrase.
+        So the write is read back and compared, and a mismatch is an error --
+        a resident silently given a key nobody chose cannot connect, and
+        nothing else would say why.
+
+        Returns:
+            The identity as R1 holds it afterwards. `dpskGuid` is the
+            passphrase id.
+        """
+        payload = {"dpskPassphrase": passphrase}
+        if vlan is not None:
+            payload["vlan"] = vlan
+
+        kwargs = {"payload": payload}
+        if self.client.ec_type == "MSP" and tenant_id:
+            kwargs["override_tenant_id"] = tenant_id
+        response = await asyncio.to_thread(
+            self.client.patch,
+            f"/identityGroups/{group_id}/identities/{identity_id}",
+            **kwargs,
+        )
+        result = self.client.safe_json(response)
+
+        request_id = result.get('requestId') if isinstance(result, dict) else None
+        if response.status_code == 202 and request_id:
+            # A timeout is not treated as failure here because the read-back
+            # below is what decides, not the activity.
+            await self.client.await_task_completion(
+                request_id=request_id,
+                override_tenant_id=tenant_id,
+                max_attempts=40,
+                assume_success_on_timeout=True,
+            )
+
+        # R1 can report the activity complete before the identity reads back
+        # with its new passphrase, so allow it a few seconds to settle.
+        identity = {}
+        for attempt in range(5):
+            identity = await self.get_identity(group_id, identity_id, tenant_id)
+            if (
+                identity.get('dpskGuid')
+                and identity.get('dpskPassphrase') == passphrase
+            ):
+                return identity
+            await asyncio.sleep(1.0 + attempt)
+
+        if identity.get('dpskGuid'):
+            raise Exception(
+                f"RuckusONE did not keep the passphrase written to identity "
+                f"{identity_id}: it holds a different one. R1 substitutes a "
+                f"generated passphrase when the value is shorter than the "
+                f"DPSK pool's minimum length."
+            )
+        raise Exception(
+            f"Identity {identity_id} still has no passphrase after it was "
+            f"written. Its identity group may have no DPSK pool attached."
+        )
+
     async def delete_identity(
         self,
         group_id: str,

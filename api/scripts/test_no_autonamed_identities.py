@@ -4,18 +4,19 @@ Auto-named identity regression test.
 
 WHAT WENT WRONG
 
-create_passphrase sends `identityId` OR `username`, never both:
+create_passphrase sent `identityId` OR `username`, never both:
 
     if identity_id:
         payload["identityId"] = identity_id
     elif user_name:
         payload["username"] = user_name
 
-That exclusivity is deliberate -- sending a username makes R1 mint a NEW
-identity and fail with GENERAL-010 when one already exists -- but it means a
-request carrying identityId has NO name to fall back on. When R1 could not
-honour the id (the identity group had no DPSK pool attached) it minted a
-persona anyway and invented a name: "DPSK_User_2Uj85Sj1xH_1".
+`identityId` is readOnly on a passphrase create and R1 ignores it, so a
+request carrying only that was nameless. R1 minted a persona and invented a
+name: "DPSK_User_2Uj85Sj1xH_1". This was first blamed on an identity group
+with no DPSK pool attached; it happens in a correctly linked group too
+(verified on SuperSandbox, 2026-09-30). The attach path is covered by
+test_attach_existing_identity.py.
 
 Then update_identity_descriptions stamped the resident's Cloudpath GUID onto
 that debris, so the NEXT run matched the GUID, found the debris, passed its
@@ -27,8 +28,8 @@ GUIDs each carried by exactly TWO identities -- one correctly named
 
 WHAT THIS GUARDS
 
-  1. create_passphrase REFUSES a call with neither username nor identity id,
-     rather than letting R1 name the resident for us.
+  1. create_passphrase REFUSES a call with no username, and any call carrying
+     an identity id, rather than letting R1 name the resident for us.
   2. A GUID carried by both a real and an invented name resolves to the REAL
      one, whichever was seen first.
   3. A file entry never matches an invented name by name either.
@@ -94,6 +95,21 @@ async def main() -> int:
             "create_passphrase refuses a nameless call",
             "invents a name" in str(e), str(e)[:70],
         )
+
+    # 1b. identityId is readOnly on a passphrase create: R1 ignores it, and a
+    # request carrying only that is nameless however it looks from here.
+    for kwargs, label in (
+        ({"identity_id": "i-1"}, "an identity id alone"),
+        ({"identity_id": "i-1", "user_name": "4021"}, "an identity id with a username"),
+    ):
+        try:
+            await svc.create_passphrase(pool_id="p", passphrase="x", **kwargs)
+            failures += check(f"create_passphrase refuses {label}", False, "no raise")
+        except ValueError as e:
+            failures += check(
+                f"create_passphrase refuses {label}",
+                "set_identity_passphrase" in str(e), str(e)[:70],
+            )
 
     GUID = "AccountDpsk-9bfdc969fe58"
     REAL = {"id": "i-real", "name": "8155400502000993", "description": GUID}

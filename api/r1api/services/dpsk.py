@@ -422,48 +422,42 @@ class DpskService:
 
         if passphrase:
             payload["passphrase"] = passphrase
-        # Attaching to an identity that already exists.
-        #
-        # Sending `username` makes R1 run BULK_CREATE_PERSONAS and mint a NEW
-        # identity, which fails with GENERAL-010 ("An identity with this name
-        # already exists in the group") whenever the identity survived but its
-        # passphrase did not -- an aborted run, a partial cleanup, a deleted
-        # passphrase. Sending `identityId` instead attaches the passphrase to
-        # the existing identity, which is what we actually want.
         # =================================================================
-        # Never let R1 name an identity for us.
+        # This call creates a passphrase AND a new identity named `username`.
+        # It cannot attach to an identity that already exists.
         #
-        # Sending `username` makes R1 run BULK_CREATE_PERSONAS and mint a NEW
-        # identity, which fails with GENERAL-010 ("An identity with this name
-        # already exists in the group") whenever the identity survived but its
-        # passphrase did not. Sending `identityId` instead attaches to the
-        # existing identity, which is what we want -- so identityId still wins.
+        # `identityId` is in DpskPassphraseCreateDto but marked readOnly, and
+        # R1 ignores it on the way in. Sending it without a username -- which
+        # this method did from 2026-08-31 -- is therefore a nameless request:
+        # R1 mints an identity called "DPSK_User_2Uj85Sj1xH_1" and hangs the
+        # passphrase on that, leaving the identity we meant untouched. Every
+        # re-import onto surviving identities did this, one invented identity
+        # per resident (149 on one production property).
         #
-        # But it is exclusive by necessity, not by choice, and that had a
-        # cost: with identityId sent and username withheld, a request R1
-        # could not honour (an identity group with no DPSK pool attached) had
-        # NO name to fall back on. R1 minted a persona and invented one:
-        # "DPSK_User_2Uj85Sj1xH_1". 93 of them on one property, each a
-        # duplicate of a correctly named identity, each carrying the
-        # resident's Cloudpath GUID so later runs matched the debris instead
-        # of the real thing.
+        # An earlier fix blamed an identity group with no pool attached. That
+        # was a real fault but not this one: the same thing happens in a
+        # correctly linked group. Verified on SuperSandbox 2026-09-30, on both
+        # /dpskServices/{pool}/passphrases and the identityGroups-scoped form.
         #
-        # Refusing the nameless call is the only part of that we can enforce
-        # here. A caller with neither is asking R1 to make something up, and
-        # a passphrase named after nobody is worse than no passphrase --
-        # nothing downstream can match it, and it looks like a real resident.
+        # So identity_id is refused outright rather than quietly dropped. The
+        # route that does work is IdentityService.set_identity_passphrase.
         # =================================================================
-        if not identity_id and not user_name:
+        if identity_id:
             raise ValueError(
-                "create_passphrase needs a username or an identity id: with "
-                "neither, RuckusONE invents a name (DPSK_User_xxxx) and the "
-                "resident cannot be matched to it afterwards"
+                "create_passphrase cannot attach to an existing identity: "
+                "RuckusONE ignores identityId and invents a name "
+                "(DPSK_User_xxxx) instead. Use "
+                "identity.set_identity_passphrase for an identity that "
+                "already exists."
+            )
+        if not user_name:
+            raise ValueError(
+                "create_passphrase needs a username: without one RuckusONE "
+                "invents a name (DPSK_User_xxxx) and the resident cannot be "
+                "matched to it afterwards"
             )
 
-        if identity_id:
-            payload["identityId"] = identity_id
-        elif user_name:
-            payload["username"] = user_name  # FIXED: API uses 'username' not 'userName'
+        payload["username"] = user_name  # FIXED: API uses 'username' not 'userName'
         if user_email:
             payload["email"] = user_email  # FIXED: API uses 'email' not 'userEmail'
         if description:

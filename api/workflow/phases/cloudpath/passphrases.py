@@ -41,6 +41,11 @@ class PassphraseResult(BaseModel):
     # For idempotent re-runs: carry identity info from validate phase through to Phase 4
     existing_identity_id: Optional[str] = None
     needs_description_update: bool = False
+    # Written onto an identity that was already there, rather than created
+    # together with a new one.
+    attached_to_existing: bool = False
+    # ...and that identity held a different passphrase, now replaced.
+    replaced_existing: bool = False
 
 
 @register_phase("create_passphrases", "Create DPSK Passphrases")
@@ -174,6 +179,105 @@ class CreatePassphrasesPhase(PhaseExecutor):
                     identity_cache_at = time.monotonic()
                 return identity_cache
 
+        # identity id -> the file entry whose passphrase it was given this run
+        claimed_identities: Dict[str, str] = {}
+
+        async def attach_to_identity(
+            pp: Dict[str, Any], identity_id: str, expiration: Optional[str]
+        ) -> PassphraseResult:
+            """
+            Put this resident's passphrase on the identity they already have.
+
+            create_passphrase cannot do this: R1 ignores identityId on a
+            passphrase create and mints a "DPSK_User_xxxx" identity instead,
+            and rejects the username because the identity exists. Writing the
+            passphrase onto the identity is the only route that lands it on
+            the right one -- see IdentityService.set_identity_passphrase.
+
+            If the identity already holds a different passphrase, this
+            replaces it. R1 allows one per identity, so there is no way to
+            add a second, and the import's file is the source of truth.
+            """
+            guid = pp.get('guid', '')
+            username = pp.get('name', '')
+            vlan_id = pp.get('vlan_id')
+
+            if not resolved_group_id:
+                raise RuntimeError(
+                    f"{username} already has an identity, but no identity "
+                    f"group id was supplied to write its passphrase through"
+                )
+
+            # One passphrase per identity, so two file entries that resolve
+            # to the same identity ("4021_gigabit" and "4021_ultrafast" both
+            # matching a renamed "4021") cannot both land: the second would
+            # silently overwrite the first. Checked before the first await,
+            # so concurrent entries cannot both pass.
+            claimed_by = claimed_identities.setdefault(identity_id, username)
+            if claimed_by != username:
+                raise RuntimeError(
+                    f"{username} resolves to the same identity as "
+                    f"{claimed_by}, which already received its passphrase in "
+                    f"this run. RuckusONE holds one passphrase per identity."
+                )
+
+            vlan = None
+            if vlan_id is not None and vlan_id != '' and vlan_id != '0':
+                try:
+                    vlan = int(vlan_id)
+                except (ValueError, TypeError):
+                    vlan = None
+
+            identity = await self.r1_client.identity.set_identity_passphrase(
+                group_id=resolved_group_id,
+                identity_id=identity_id,
+                passphrase=pp.get('passphrase', ''),
+                tenant_id=self.tenant_id,
+                vlan=vlan,
+            )
+            passphrase_id = (
+                identity.get('dpskGuid') if isinstance(identity, dict) else None
+            )
+
+            if expiration and passphrase_id:
+                # The identity write has no expiry field; set it on the
+                # passphrase it produced. A miss here leaves a working
+                # passphrase with the pool's default expiry, so it is logged
+                # rather than failing the resident.
+                try:
+                    await self.r1_client.dpsk.update_passphrase(
+                        pool_id=pool_id,
+                        passphrase_id=passphrase_id,
+                        tenant_id=self.tenant_id,
+                        expiration_date=expiration,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not set expiration on passphrase for "
+                        f"{username}: {e}"
+                    )
+
+            await self.track_resource('passphrases', {
+                'id': passphrase_id,
+                'identity_id': identity_id,
+                'pool_id': pool_id,
+                'username': username,
+                'cloudpath_guid': guid,
+            })
+
+            return PassphraseResult(
+                cloudpath_guid=guid,
+                username=username,
+                passphrase_id=passphrase_id,
+                identity_id=identity_id,
+                existing_identity_id=identity_id,
+                needs_description_update=pp.get('needs_description_update', False),
+                vlan_id=vlan_id,
+                success=True,
+                attached_to_existing=True,
+                replaced_existing=bool(pp.get('existing_identity_passphrase_id')),
+            )
+
         # Define the creation function for parallel_map
         async def create_one(pp: Dict[str, Any]) -> PassphraseResult:
             guid = pp.get('guid', '')
@@ -265,15 +369,18 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 # Extract VLAN ID if present (per-identity VLAN from Cloudpath)
                 vlan_id = pp.get('vlan_id')
 
-                # If validate already found this username's identity, attach
-                # to it rather than asking R1 to mint another one (GENERAL-010).
+                # If validate already found this resident's identity, write
+                # the passphrase onto it. Creating one would either be
+                # rejected (the name is taken) or land on an identity R1
+                # invents.
                 known_identity = pp.get('existing_identity_id')
+                if known_identity:
+                    return await attach_to_identity(pp, known_identity, expiration)
 
-                # Create the passphrase in R1
+                # New resident: R1 creates the identity with the passphrase.
                 result = await self.r1_client.dpsk.create_passphrase(
                     pool_id=pool_id,
                     user_name=username,
-                    identity_id=known_identity,
                     passphrase=passphrase_value,
                     tenant_id=self.tenant_id,
                     expiration_date=expiration,
@@ -308,12 +415,22 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 error_msg = str(e)
 
                 # The identity exists but we didn't know its id (created after
-                # validation ran, or missed). Resolve by name and attach to it
-                # instead of surfacing GENERAL-010 as a failure.
-                if (
+                # validation ran, or missed). R1 says so two ways: GENERAL-010
+                # when that identity holds no passphrase, DPSK-020 ("Username
+                # 'x' already exists") when it holds one. Resolve it by name
+                # and write the passphrase onto it.
+                #
+                # DPSK-020 used to fall through to the duplicate check below
+                # and be reported as "skipped, already exists" -- a success,
+                # for a resident whose identity held some other passphrase.
+                lowered = error_msg.lower()
+                name_taken = (
                     'GENERAL-010' in error_msg
-                    or 'identity with this name already exists' in error_msg.lower()
-                ) and not pp.get('existing_identity_id') and resolved_group_id:
+                    or 'identity with this name already exists' in lowered
+                    or 'DPSK-020' in error_msg
+                    or ('username' in lowered and 'already exists' in lowered)
+                )
+                if name_taken and resolved_group_id:
                     try:
                         by_name = await identities_by_name()
                         found = by_name.get(username)
@@ -324,36 +441,34 @@ class CreatePassphrasesPhase(PhaseExecutor):
                             by_name = await identities_by_name(max_age=15.0)
                             found = by_name.get(username)
                         if found:
-                            result = await self.r1_client.dpsk.create_passphrase(
-                                pool_id=pool_id,
-                                user_name=username,
-                                identity_id=found,
-                                passphrase=passphrase_value,
-                                tenant_id=self.tenant_id,
-                                expiration_date=expiration,
-                                description=f"Imported from Cloudpath: {guid}",
-                                vlan_id=vlan_id,
-                            )
+                            attached = await attach_to_identity(pp, found, expiration)
                             logger.info(
                                 f"Attached passphrase for {username} to its "
                                 f"existing identity {found}"
                             )
-                            return PassphraseResult(
-                                cloudpath_guid=guid,
-                                username=username,
-                                passphrase_id=(
-                                    result.get('id') if isinstance(result, dict) else None
-                                ),
-                                identity_id=found,
-                                existing_identity_id=found,
-                                vlan_id=vlan_id,
-                                success=True,
-                            )
+                            return attached
                     except Exception as retry_err:
                         logger.warning(
                             f"Could not attach {username} to its existing "
                             f"identity: {retry_err}"
                         )
+                        return PassphraseResult(
+                            cloudpath_guid=guid,
+                            username=username,
+                            success=False,
+                            error=f"Could not attach to existing identity: {retry_err}",
+                        )
+
+                if name_taken:
+                    # The name is taken and its identity is not in this
+                    # group. That is not "already imported".
+                    logger.error(f"Failed to create passphrase {username}: {error_msg}")
+                    return PassphraseResult(
+                        cloudpath_guid=guid,
+                        username=username,
+                        success=False,
+                        error=error_msg,
+                    )
 
                 # Check for duplicate
                 if 'already exists' in error_msg.lower() or 'duplicate' in error_msg.lower():
@@ -459,13 +574,29 @@ class CreatePassphrasesPhase(PhaseExecutor):
         skipped_count = 0
         updated_count = 0
 
+        attached_count = 0
+        replaced_count = 0
+        returned_failures = 0
+
         for result in results.succeeded:
             if result is None:
                 continue
-            if result.skipped:
+            if not result.success:
+                # create_one returns its failures rather than raising, so
+                # they arrive here among the "succeeded" calls, and were
+                # counted as created. They stay in created_passphrases --
+                # downstream phases filter on `success` and still use the
+                # row's identity -- but they are reported as what they are.
+                failed.append(result)
+                returned_failures += 1
+            elif result.skipped:
                 skipped_count += 1
             elif result.updated:
                 updated_count += 1
+            if result.attached_to_existing:
+                attached_count += 1
+                if result.replaced_existing:
+                    replaced_count += 1
             created.append(result)
 
         for failure in results.failed:
@@ -477,12 +608,23 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 error=failure.get('error', 'Unknown error'),
             ))
 
-        created_count = len(created) - skipped_count - updated_count
+        created_count = (
+            len(created) - skipped_count - updated_count - returned_failures
+        )
 
         # Build summary message
         parts = []
         if created_count > 0:
             parts.append(f"{created_count} created")
+        if attached_count > 0:
+            parts.append(
+                f"{attached_count} of those written onto identities that "
+                f"already existed"
+                + (
+                    f" ({replaced_count} replacing the passphrase the "
+                    f"identity held)" if replaced_count else ""
+                )
+            )
         if updated_count > 0:
             parts.append(f"{updated_count} VLAN updated")
         if skipped_count > 0:
