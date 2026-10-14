@@ -101,6 +101,50 @@ def main():
     failures += check("other fields still migrate alongside a dropped one",
                       get_nested(outn, f"{RO}.nasIdType") == "BSSID")
 
+    # 5. SZ "0 = off" -> R1 enable flag False, value not sent (R1 defaults ARP/DHCP ON)
+    AC = "wlan.advancedCustomization"
+    off, _ = build(wlan(advanced={"arpRequestRateLimit": 0, "dhcpRequestRateLimit": 0, "probeRssiThr": 0}))
+    failures += check("SZ 0 rate limits/RSSI -> R1 flags off, no out-of-range value sent",
+                      get_nested(off, f"{AC}.enableArpRequestRateLimit") is False
+                      and get_nested(off, f"{AC}.enableDhcpRequestRateLimit") is False
+                      and get_nested(off, f"{AC}.enableJoinRSSIThreshold") is False
+                      and get_nested(off, f"{AC}.arpRequestRateLimit") is None
+                      and get_nested(off, f"{AC}.joinRSSIThreshold") is None)
+    on, _ = build(wlan(advanced={"arpRequestRateLimit": 30, "probeRssiThr": -85}))
+    failures += check("set values -> R1 flag on plus value",
+                      get_nested(on, f"{AC}.enableArpRequestRateLimit") is True
+                      and get_nested(on, f"{AC}.arpRequestRateLimit") == 30
+                      and get_nested(on, f"{AC}.enableJoinRSSIThreshold") is True
+                      and get_nested(on, f"{AC}.joinRSSIThreshold") == -85)
+
+    # 6. out of R1's range -> dropped and reported
+    oor, dropped = build(wlan(advanced={"probeRssiThr": -40, "clientIdleTimeoutSec": 30}))
+    failures += check("out-of-range values are not sent",
+                      get_nested(oor, f"{AC}.joinRSSIThreshold") is None
+                      and get_nested(oor, f"{AC}.clientInactivityTimeout") is None)
+    failures += check("out-of-range values are reported",
+                      {d["label"] for d in dropped} >= {"RSSI Threshold", "Client Inactivity Timeout"},
+                      str(dropped))
+
+    # 7. WIFI-10107: management rate must equal a set BSS minimum rate
+    r12, _ = build(wlan(advanced={"bssMinRateMbps": "12 mbps", "ofdmOnlyEnabled": True, "mgmtTxRateMbps": "12 mbps"}))
+    failures += check("BSS min 12 -> management 12",
+                      get_nested(r12, f"{RC}.managementFrameMinimumPhyRate") == "12")
+    rmis, dropped = build(wlan(advanced={"bssMinRateMbps": "24 mbps", "ofdmOnlyEnabled": True, "mgmtTxRateMbps": "12 mbps"}))
+    failures += check("differing SZ management rate is forced to the BSS minimum and reported",
+                      get_nested(rmis, f"{RC}.managementFrameMinimumPhyRate") == "24"
+                      and any(d["label"] == "Mgmt Tx Rate" for d in dropped))
+    rdef, _ = build(wlan(advanced={"mgmtTxRateMbps": "2 mbps"}))
+    failures += check("no BSS minimum, OFDM off -> SZ management rate kept",
+                      get_nested(rdef, f"{RC}.managementFrameMinimumPhyRate") == "2")
+
+    # 8. every ranged mapping's value lands in range for a real-zone default WLAN
+    default_out, _ = build(wlan())
+    stray = [m.label for m in WLAN_FIELD_MAPPINGS if m.r1_range and m.r1_path
+             and (v := get_nested(default_out, m.r1_path)) is not None
+             and not m.r1_range[0] <= v <= m.r1_range[1]]
+    failures += check("no value outside R1's range is ever sent", not stray, str(stray))
+
     # 4. exhaustive: every SZ value, every enum mapping
     by_path = {m.sz_path: m for m in WLAN_FIELD_MAPPINGS}
     violations = []

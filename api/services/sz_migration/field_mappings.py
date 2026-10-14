@@ -21,7 +21,7 @@ field routing:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, Union
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,16 @@ class FieldMapping:
     r1_enum: Optional[FrozenSet[Any]] = None
     # Only migrate this field when the predicate holds for the SZ WLAN raw.
     only_if: Optional[Callable[[dict], bool]] = None
+    # Inclusive numeric bounds R1 accepts (from the R1 spec). Out-of-range
+    # values are left out and reported, same as a bad enum: R1 rejects the
+    # whole network on one (WIFI-10200 "must be greater than or equal to").
+    r1_range: Optional[Tuple[float, float]] = None
+    # SZ often encodes "feature off" as a value (0) where R1 has a separate
+    # enable flag. When the SZ value is in off_values, the R1 flag at
+    # r1_toggle is set False and the value is not sent; otherwise the flag is
+    # set True alongside it. Needed both ways: R1 defaults some of these ON.
+    r1_toggle: Optional[str] = None
+    off_values: Tuple[Any, ...] = ()
 
 
 def _sz_rate_to_r1(value: Any) -> Any:
@@ -77,7 +87,8 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
     FieldMapping("Security & Encryption", "802.11r (Fast Roaming)", "encryption.support80211rEnabled",
                  "wlan.advancedCustomization.enableFastRoaming"),
     FieldMapping("Security & Encryption", "Mobility Domain ID", "encryption.mobilityDomainId",
-                 "wlan.advancedCustomization.mobilityDomainId"),
+                 "wlan.advancedCustomization.mobilityDomainId",
+                 r1_range=(1, 65535)),
     FieldMapping("Security & Encryption", "GTK Rekey", "advancedOptions.gtkRekeyEnabled",
                  "wlan.advancedCustomization.enableGtkRekey"),
     FieldMapping("Security & Encryption", "Anti-Spoofing", "advancedOptions.antiSpoofingEnabled",
@@ -118,10 +129,12 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
                  r1_enum=frozenset({"BSSID", "AP_MAC", "NONE", "AP_GROUP"})),
     FieldMapping("Authentication & RADIUS", "NAS Request Timeout",
                  "radiusOptions.nasRequestTimeoutSec",
-                 "wlan.advancedCustomization.radiusOptions.nasRequestTimeoutSec"),
+                 "wlan.advancedCustomization.radiusOptions.nasRequestTimeoutSec",
+                 r1_range=(2, 20)),
     FieldMapping("Authentication & RADIUS", "NAS Max Retry",
                  "radiusOptions.nasMaxRetry",
-                 "wlan.advancedCustomization.radiusOptions.nasMaxRetry"),
+                 "wlan.advancedCustomization.radiusOptions.nasMaxRetry",
+                 r1_range=(2, 10)),
     FieldMapping("Authentication & RADIUS", "Single Session ID Accounting",
                  "radiusOptions.singleSessionIdAcctEnabled",
                  "wlan.advancedCustomization.radiusOptions.singleSessionIdAccounting"),
@@ -129,10 +142,12 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
     # ── 5. Client Management ──────────────────────────────────────────────
     FieldMapping("Client Management", "Max Clients per Radio",
                  "advancedOptions.maxClientsPerRadio",
-                 "wlan.advancedCustomization.maxClientsOnWlanPerRadio"),
+                 "wlan.advancedCustomization.maxClientsOnWlanPerRadio",
+                 r1_range=(1, 512)),
     FieldMapping("Client Management", "Client Inactivity Timeout",
                  "advancedOptions.clientIdleTimeoutSec",
-                 "wlan.advancedCustomization.clientInactivityTimeout"),
+                 "wlan.advancedCustomization.clientInactivityTimeout",
+                 r1_range=(60, 86400)),
     FieldMapping("Client Management", "Client Isolation",
                  "advancedOptions.clientIsolationEnabled",
                  "wlan.advancedCustomization.clientIsolation"),
@@ -162,6 +177,13 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
                  "wlan.advancedCustomization.radioCustomization.bssMinimumPhyRate",
                  transform=_sz_rate_to_r1,
                  r1_enum=frozenset({"default", "1", "2", "5.5", "12", "24"})),
+    # SZ: "2 mbps" ... R1: 1 | 2 | 5.5 | 6 | 9 | 11 | 12 | 18 | 24 | 36 | 48 | 54.
+    # Must equal the BSS minimum rate when one is set -- see _reconcile_rates.
+    FieldMapping("Radio & Spectrum", "Mgmt Tx Rate",
+                 "advancedOptions.mgmtTxRateMbps",
+                 "wlan.advancedCustomization.radioCustomization.managementFrameMinimumPhyRate",
+                 transform=_sz_rate_to_r1,
+                 r1_enum=frozenset({"1", "2", "5.5", "6", "9", "11", "12", "18", "24", "36", "48", "54"})),
     FieldMapping("Radio & Spectrum", "MLO (Wi-Fi 7)",
                  "advancedOptions.multiLinkOperationEnabled",
                  "wlan.advancedCustomization.multiLinkOperationEnabled"),
@@ -169,16 +191,20 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
     # ── 7. Rate Limiting ──────────────────────────────────────────────────
     FieldMapping("Rate Limiting", "User Uplink Limit",
                  "advancedOptions.uplinkRate",
-                 "wlan.advancedCustomization.userUplinkRateLimiting"),
+                 "wlan.advancedCustomization.userUplinkRateLimiting",
+                 r1_range=(0, 200)),
     FieldMapping("Rate Limiting", "User Downlink Limit",
                  "advancedOptions.downlinkRate",
-                 "wlan.advancedCustomization.userDownlinkRateLimiting"),
+                 "wlan.advancedCustomization.userDownlinkRateLimiting",
+                 r1_range=(0, 200)),
     FieldMapping("Rate Limiting", "Total Uplink Limit",
                  "firewallUplinkRateLimitingMbps",
-                 "wlan.advancedCustomization.totalUplinkRateLimiting"),
+                 "wlan.advancedCustomization.totalUplinkRateLimiting",
+                 r1_range=(0, 500)),
     FieldMapping("Rate Limiting", "Total Downlink Limit",
                  "firewallDownlinkRateLimitingMbps",
-                 "wlan.advancedCustomization.totalDownlinkRateLimiting"),
+                 "wlan.advancedCustomization.totalDownlinkRateLimiting",
+                 r1_range=(0, 500)),
     FieldMapping("Rate Limiting", "Multicast DL Rate Limit",
                  "advancedOptions.multicastDownlinkRateLimitEnabled",
                  "wlan.advancedCustomization.enableMulticastDownlinkRateLimiting"),
@@ -196,24 +222,33 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
                  "wlan.advancedCustomization.forceMobileDeviceDhcp"),
     FieldMapping("DHCP & IP", "ARP Rate Limit",
                  "advancedOptions.arpRequestRateLimit",
-                 "wlan.advancedCustomization.arpRequestRateLimit"),
+                 "wlan.advancedCustomization.arpRequestRateLimit",
+                 r1_range=(15, 100), off_values=(0,),
+                 r1_toggle="wlan.advancedCustomization.enableArpRequestRateLimit"),
     FieldMapping("DHCP & IP", "DHCP Rate Limit",
                  "advancedOptions.dhcpRequestRateLimit",
-                 "wlan.advancedCustomization.dhcpRequestRateLimit"),
+                 "wlan.advancedCustomization.dhcpRequestRateLimit",
+                 r1_range=(15, 100), off_values=(0,),
+                 r1_toggle="wlan.advancedCustomization.enableDhcpRequestRateLimit"),
 
     # ── 9. Roaming & RSSI ─────────────────────────────────────────────────
     FieldMapping("Roaming & RSSI", "RSSI Threshold",
                  "advancedOptions.probeRssiThr",
-                 "wlan.advancedCustomization.joinRSSIThreshold"),
+                 "wlan.advancedCustomization.joinRSSIThreshold",
+                 r1_range=(-90, -60), off_values=(0,),
+                 r1_toggle="wlan.advancedCustomization.enableJoinRSSIThreshold"),
     FieldMapping("Roaming & RSSI", "Join Wait Time",
                  "advancedOptions.joinIgnoreTimeout",
-                 "wlan.advancedCustomization.joinWaitTime"),
+                 "wlan.advancedCustomization.joinWaitTime",
+                 r1_range=(1, 60)),
     FieldMapping("Roaming & RSSI", "Join Expire Time",
                  "advancedOptions.joinAcceptTimeout",
-                 "wlan.advancedCustomization.joinExpireTime"),
+                 "wlan.advancedCustomization.joinExpireTime",
+                 r1_range=(1, 300)),
     FieldMapping("Roaming & RSSI", "Join Wait Threshold",
                  "advancedOptions.joinIgnoreThr",
-                 "wlan.advancedCustomization.joinWaitThreshold"),
+                 "wlan.advancedCustomization.joinWaitThreshold",
+                 r1_range=(1, 50)),
 
     # ── 10. Advanced Features ─────────────────────────────────────────────
     FieldMapping("Advanced Features", "Proxy ARP",
@@ -386,28 +421,77 @@ def build_r1_advanced_settings(sz_raw: dict, dropped: Optional[List[Dict[str, An
         if sz_value is None:
             continue
 
+        def drop(reason: str) -> None:
+            if dropped is not None:
+                dropped.append({"label": mapping.label, "sz_value": sz_value, "reason": reason})
+
+        # "Off" in SZ is a value; in R1 it is an enable flag.
+        if mapping.r1_toggle and sz_value in mapping.off_values:
+            set_nested(result, _strip_wlan(mapping.r1_toggle), False)
+            continue
+
         r1_value = _apply_transform(sz_value, mapping.transform)
 
         if mapping.r1_enum is not None and not _enum_accepts(mapping.r1_enum, r1_value):
-            if dropped is not None:
-                dropped.append({
-                    "label": mapping.label,
-                    "sz_value": sz_value,
-                    "reason": (
-                        f"R1 has no equivalent for SZ value {sz_value!r}; "
-                        f"R1's default will apply (accepts: {', '.join(sorted(map(str, mapping.r1_enum)))})"
-                    ),
-                })
+            drop(
+                f"R1 has no equivalent for SZ value {sz_value!r}; "
+                f"R1's default will apply (accepts: {', '.join(sorted(map(str, mapping.r1_enum)))})"
+            )
             continue
 
-        # Strip the "wlan." prefix — the caller merges this into wlan_settings
-        r1_key = mapping.r1_path
-        if r1_key.startswith("wlan."):
-            r1_key = r1_key[5:]  # Remove "wlan."
+        if mapping.r1_range is not None and not _in_range(mapping.r1_range, r1_value):
+            lo, hi = mapping.r1_range
+            drop(f"SZ value {sz_value!r} is outside R1's range {lo:g}–{hi:g}; R1's default will apply")
+            continue
 
-        set_nested(result, r1_key, r1_value)
+        if mapping.r1_toggle:
+            set_nested(result, _strip_wlan(mapping.r1_toggle), True)
+        set_nested(result, _strip_wlan(mapping.r1_path), r1_value)
 
+    _reconcile_rates(result, sz_raw, dropped)
     return result
+
+
+def _strip_wlan(r1_path: str) -> str:
+    """The caller merges into wlan_settings, so drop the leading "wlan."."""
+    return r1_path[5:] if r1_path.startswith("wlan.") else r1_path
+
+
+def _in_range(bounds: Tuple[float, float], value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return bounds[0] <= value <= bounds[1]
+
+
+def _reconcile_rates(result: dict, sz_raw: dict, dropped: Optional[List[Dict[str, Any]]]) -> None:
+    """
+    R1 rule (WIFI-10107): the management Tx rate must equal the BSS minimum
+    rate, except when OFDM-only is off and the BSS minimum is "default".
+    SZ allows them to differ, so when a BSS minimum is set, R1 gets it as
+    the management rate too, and a differing SZ value is reported.
+    """
+    radio = (result.get("advancedCustomization") or {}).get("radioCustomization") or {}
+    bss = radio.get("bssMinimumPhyRate")
+    if bss is None or bss == "default":
+        if radio.get("phyTypeConstraint") == "OFDM" and "managementFrameMinimumPhyRate" in radio:
+            # OFDM-only with no BSS minimum: leave R1's own (OFDM-safe) default.
+            mgmt = radio.pop("managementFrameMinimumPhyRate")
+            if dropped is not None and mgmt != "6":
+                dropped.append({
+                    "label": "Mgmt Tx Rate",
+                    "sz_value": get_nested(sz_raw, "advancedOptions.mgmtTxRateMbps"),
+                    "reason": "OFDM-only with no BSS minimum rate: R1's default management rate (6) applies",
+                })
+        return
+    mgmt = radio.get("managementFrameMinimumPhyRate")
+    if mgmt != bss:
+        radio["managementFrameMinimumPhyRate"] = bss
+        if dropped is not None and mgmt is not None:
+            dropped.append({
+                "label": "Mgmt Tx Rate",
+                "sz_value": get_nested(sz_raw, "advancedOptions.mgmtTxRateMbps"),
+                "reason": f"R1 requires the management rate to equal the BSS minimum rate; set to {bss}",
+            })
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -456,8 +540,11 @@ def compare_fields(sz_raw: dict, r1_network: dict) -> List[FieldComparison]:
         # Normalize the SZ value using the transform for comparison
         sz_normalized = _apply_transform(sz_value, mapping.transform)
 
-        # Compare normalized values
-        match = _values_match(sz_normalized, r1_value)
+        if mapping.r1_toggle and sz_value in mapping.off_values:
+            # SZ "off" is a value; R1 "off" is the flag, whatever value sits beside it.
+            match = get_nested(r1_network, mapping.r1_toggle) is False
+        else:
+            match = _values_match(sz_normalized, r1_value)
 
         comparisons.append(FieldComparison(
             section=mapping.section,
