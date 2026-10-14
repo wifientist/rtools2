@@ -60,6 +60,7 @@ import WiredWiz from "@/pages/WiredWiz";
 // who never open the map should not pay for them. Deliberate inconsistency.
 const Topology = lazy(() => import("@/pages/Topology"));
 import PISR from "@/pages/PISR";
+import TemplateTool from "@/pages/TemplateTool";
 import FilesharePage from "@/pages/Fileshare/FilesharePage";
 import FolderView from "@/pages/Fileshare/FolderView";
 import FileshareAdmin from "@/pages/Fileshare/FileshareAdmin";
@@ -138,6 +139,7 @@ const App = () => {
           />
           <Route path="/pisr" element={<AlphaRoute element={<PISR />} />} />
           <Route path="/tracker" element={<AlphaRoute element={<MigrationTracker />} />} />
+          <Route path="/template-tool" element={<AlphaRoute element={<TemplateTool />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
