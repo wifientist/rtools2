@@ -223,11 +223,17 @@ async def main():
                        ({"devices_per_passphrase": 0}, "0 devices"),
                        ({"devices_per_passphrase": 513}, "513 devices"),
                        ({"passphrase_format": "EMOJI"}, "unknown format"),
-                       ({"expiration_days": 0}, "0-day expiry")):
+                       ({"expiration_days": 0}, "0-day expiry"),
+                       ({"passphrase_format": "DICTIONARY_WORDS", "word_count": 2}, "2 dictionary words"),
+                       ({"passphrase_format": "DICTIONARY_WORDS", "word_count": 7}, "7 dictionary words"),
+                       ({"passphrase_format": "DICTIONARY_WORDS", "word_count": None}, "dictionary words without a count")):
         failures += check(f"{label} blocks", bool(v({**NEW, **bad})))
     failures += check("valid settings pass",
                       not v({**NEW, "passphrase_length": 16, "devices_per_passphrase": 5,
-                             "passphrase_format": "DICTIONARY_WORDS", "expiration_days": 365}))
+                             "passphrase_format": "DICTIONARY_WORDS", "word_count": 4, "expiration_days": 365}))
+    failures += check("dictionary words ignore character length (R1 sizes them in words)",
+                      not v({**NEW, "passphrase_format": "DICTIONARY_WORDS", "word_count": 5,
+                             "passphrase_length": 99}))
     failures += check("existing pool that no longer exists blocks",
                       any("no longer exists" in e for e in v({"mode": "existing", "existing_pool_id": "gone"})))
     failures += check("existing pool is accepted",
@@ -237,7 +243,9 @@ async def main():
     r1 = FakeR1()
     state = FakeState()
     phase = pools_mod.CreateDpskPoolsPhase(ctx(r1, {
-        "dpsk_pools": {"shared": {**NEW, "devices_per_passphrase": None, "expiration_days": 30},
+        "dpsk_pools": {"shared": {**NEW, "devices_per_passphrase": None, "expiration_days": 30,
+                                  "passphrase_format": "DICTIONARY_WORDS", "word_count": 5,
+                                  "numeric_suffix_enabled": True},
                        "old": {"mode": "existing", "existing_pool_id": "pool-old"}},
         "dpsk_assignments": {"w-res": "shared", "w-corp": "shared", "w-x": "old"},
     }, state))
@@ -245,7 +253,8 @@ async def main():
     failures += check("shared new pool created exactly once", len(r1.dpsk.created) == 1)
     kw = r1.dpsk.created[0]
     failures += check("pool created with the chosen settings",
-                      kw["passphrase_length"] == 12 and kw["passphrase_format"] == "KEYBOARD_FRIENDLY"
+                      kw["passphrase_format"] == "DICTIONARY_WORDS" and kw["word_count"] == 5
+                      and kw["numeric_suffix_enabled"] is True
                       and kw["max_devices_per_passphrase"] == 0 and kw["expiration_days"] == 30)
     failures += check("new identity group created and used for the pool",
                       r1.identity.created == ["Oak-Park-identities"] and kw["identity_group_id"] == "ig-new-1")

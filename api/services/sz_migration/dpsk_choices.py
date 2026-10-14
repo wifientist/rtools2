@@ -28,15 +28,22 @@ the Cloudpath import's job.
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from r1api.constants import DpskPassphraseFormat
 from workflow.v2.models import ConflictDetail, ResourceAction
 
 PASSPHRASE_FORMATS = ("KEYBOARD_FRIENDLY", "MOST_SECURED", "NUMBERS_ONLY", "DICTIONARY_WORDS")
 MIN_PASSPHRASE_LENGTH, MAX_PASSPHRASE_LENGTH = 8, 63   # WPA2 PSK bounds
 MAX_DEVICES = 512
+# DICTIONARY_WORDS is sized in words, not characters: R1 requires wordCount
+# for it (GENERAL-010 "Word count is required") and ignores it otherwise.
+DICTIONARY_WORDS = "DICTIONARY_WORDS"
+MIN_WORD_COUNT, MAX_WORD_COUNT = DpskPassphraseFormat.MIN_WORD_COUNT, DpskPassphraseFormat.MAX_WORD_COUNT
 
 DEFAULT_SETTINGS = {
     "passphrase_length": 12,
     "passphrase_format": "KEYBOARD_FRIENDLY",
+    "word_count": DpskPassphraseFormat.DEFAULT_WORD_COUNT,
+    "numeric_suffix_enabled": False,
     "devices_per_passphrase": None,   # unlimited; today's hard-coded 1 surprised BYOD users
     "expiration_days": None,
 }
@@ -143,9 +150,15 @@ def validate_dpsk_plan(
             err(name, f"Two new DPSK services are both named '{name}'")
         new_pool_names[name.lower()] = key
 
-        length = spec.get("passphrase_length")
-        if not isinstance(length, int) or not MIN_PASSPHRASE_LENGTH <= length <= MAX_PASSPHRASE_LENGTH:
-            err(name, f"'{name}' — passphrase length must be {MIN_PASSPHRASE_LENGTH}–{MAX_PASSPHRASE_LENGTH}")
+        dictionary = spec.get("passphrase_format") == DICTIONARY_WORDS
+        if dictionary:
+            words = spec.get("word_count")
+            if not isinstance(words, int) or not MIN_WORD_COUNT <= words <= MAX_WORD_COUNT:
+                err(name, f"'{name}' — dictionary-word passphrases need {MIN_WORD_COUNT}–{MAX_WORD_COUNT} words")
+        else:
+            length = spec.get("passphrase_length")
+            if not isinstance(length, int) or not MIN_PASSPHRASE_LENGTH <= length <= MAX_PASSPHRASE_LENGTH:
+                err(name, f"'{name}' — passphrase length must be {MIN_PASSPHRASE_LENGTH}–{MAX_PASSPHRASE_LENGTH}")
         if spec.get("passphrase_format") not in PASSPHRASE_FORMATS:
             err(name, f"'{name}' — unknown passphrase format {spec.get('passphrase_format')!r}")
         devices = spec.get("devices_per_passphrase")
@@ -188,8 +201,13 @@ def validate_dpsk_plan(
                     notes=[f"For DPSK service '{name}'"],
                 ))
 
+        shape = (
+            f"{spec.get('word_count')} dictionary words"
+            + (" + numeric suffix" if spec.get("numeric_suffix_enabled") else "")
+            if dictionary else f"{spec.get('passphrase_length')}-char {spec.get('passphrase_format')}"
+        )
         notes.append(
-            f"{spec.get('passphrase_length')}-char {spec.get('passphrase_format')}, "
+            f"{shape}, "
             f"{devices if devices else 'unlimited'} device(s)/passphrase, "
             f"{f'expires after {days} days' if days else 'no expiry'}"
         )

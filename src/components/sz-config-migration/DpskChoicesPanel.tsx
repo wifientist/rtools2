@@ -44,6 +44,7 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
 
   const [minLen, maxLen] = choices.limits.passphrase_length;
   const [, maxDev] = choices.limits.devices_per_passphrase;
+  const [minWords, maxWords] = choices.limits.word_count ?? [3, 6];
   const keys = Object.keys(pools);
   // Groups already chosen by some new pool here: one group can serve one pool.
   const claimed = new Set(
@@ -243,12 +244,29 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
                   </select>
                 </label>
 
-                <label className="flex flex-col gap-0.5">
-                  <span className="text-gray-600">Passphrase length ({minLen}–{maxLen})</span>
-                  <input type="number" min={minLen} max={maxLen} className={`${input} w-24`}
-                    value={spec.passphrase_length} disabled={disabled}
-                    onChange={e => setPool(key, { passphrase_length: parseInt(e.target.value, 10) || minLen })} />
-                </label>
+                {spec.passphrase_format === 'DICTIONARY_WORDS' ? (
+                  // Sized in words, not characters: R1 requires wordCount here.
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-gray-600">Words per passphrase ({minWords}–{maxWords})</span>
+                    <div className="flex items-center gap-3">
+                      <input type="number" min={minWords} max={maxWords} className={`${input} w-20`}
+                        value={spec.word_count ?? 4} disabled={disabled}
+                        onChange={e => setPool(key, { word_count: parseInt(e.target.value, 10) || minWords })} />
+                      <label className="flex items-center gap-1">
+                        <input type="checkbox" checked={!!spec.numeric_suffix_enabled} disabled={disabled}
+                          onChange={e => setPool(key, { numeric_suffix_enabled: e.target.checked })} />
+                        Add a number at the end
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-gray-600">Passphrase length ({minLen}–{maxLen})</span>
+                    <input type="number" min={minLen} max={maxLen} className={`${input} w-24`}
+                      value={spec.passphrase_length} disabled={disabled}
+                      onChange={e => setPool(key, { passphrase_length: parseInt(e.target.value, 10) || minLen })} />
+                  </label>
+                )}
 
                 <div className="flex flex-col gap-0.5">
                   <span className="text-gray-600">Devices per passphrase</span>

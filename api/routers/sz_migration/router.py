@@ -61,6 +61,7 @@ from services.sz_migration.radius_choices import (
 )
 from services.sz_migration.dpsk_choices import (
     MAX_DEVICES, MAX_PASSPHRASE_LENGTH, MIN_PASSPHRASE_LENGTH, PASSPHRASE_FORMATS,
+    MAX_WORD_COUNT, MIN_WORD_COUNT,
     default_plan, load_r1_dpsk,
 )
 from services.sz_migration.auditor import run_audit as run_migration_audit
@@ -699,6 +700,9 @@ class DpskPoolSpec(BaseModel):
     identity_group: Optional[DpskIdentityGroupSpec] = None
     passphrase_length: int = 12
     passphrase_format: str = "KEYBOARD_FRIENDLY"
+    # DICTIONARY_WORDS only: R1 requires wordCount (3-6) for that format.
+    word_count: int = 4
+    numeric_suffix_enabled: bool = False
     devices_per_passphrase: Optional[int] = None   # None = unlimited
     expiration_days: Optional[int] = None          # None = never
 
@@ -1037,6 +1041,7 @@ async def get_dpsk_choices(
         "default_pool": default,
         "formats": list(PASSPHRASE_FORMATS),
         "limits": {
+            "word_count": [MIN_WORD_COUNT, MAX_WORD_COUNT],
             "passphrase_length": [MIN_PASSPHRASE_LENGTH, MAX_PASSPHRASE_LENGTH],
             "devices_per_passphrase": [1, MAX_DEVICES],
         },

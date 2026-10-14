@@ -164,6 +164,8 @@ export interface DpskPoolSpec {
   identity_group?: { mode: 'new' | 'existing'; name?: string; id?: string | null };
   passphrase_length: number;
   passphrase_format: string;
+  word_count?: number;               // DICTIONARY_WORDS only (3-6); R1 requires it there
+  numeric_suffix_enabled?: boolean;  // DICTIONARY_WORDS only
   devices_per_passphrase: number | null;  // null = unlimited
   expiration_days: number | null;         // null = never
 }
@@ -190,7 +192,7 @@ export interface DpskChoices {
   r1_identity_groups: R1IdentityGroup[];
   default_pool: DpskPoolSpec;
   formats: string[];
-  limits: { passphrase_length: [number, number]; devices_per_passphrase: [number, number] };
+  limits: { passphrase_length: [number, number]; devices_per_passphrase: [number, number]; word_count: [number, number] };
   error: string | null;
 }
 

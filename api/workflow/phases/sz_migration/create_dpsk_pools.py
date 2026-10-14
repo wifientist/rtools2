@@ -82,6 +82,9 @@ class CreateDpskPoolsPhase(PhaseExecutor):
                 # 0 = unlimited: create_dpsk_pool then omits deviceCountLimit.
                 max_devices_per_passphrase=spec.get("devices_per_passphrase") or 0,
                 expiration_days=spec.get("expiration_days"),
+                # Sent only for DICTIONARY_WORDS by create_dpsk_pool; required there.
+                word_count=spec.get("word_count"),
+                numeric_suffix_enabled=spec.get("numeric_suffix_enabled"),
             )
             pool_id = await self._resolve_pool_id(pool, name)
             pool_ids[key] = pool_id
