@@ -21,7 +21,7 @@ field routing:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,26 @@ class FieldMapping:
     label: str                           # Human-readable field name
     sz_path: str                         # Dot-path into SZ wlan.raw
     r1_path: Optional[str] = None        # Dot-path into R1 network object (None = SZ-only)
-    transform: Optional[Dict] = None     # SZ value → R1 value normalization map
+    # SZ value → R1 value: a lookup map (unmapped values pass through) or a function
+    transform: Optional[Union[Dict, Callable[[Any], Any]]] = None
     sz_only: bool = False                # True if no R1 equivalent exists
+    # Values R1 accepts, for enum fields. A value outside this set is left out
+    # of the create payload and reported, rather than sent: R1 rejects the
+    # whole network on one bad enum (WIFI-10001), so one unmapped SZ value
+    # would otherwise fail every WLAN that carries it.
+    r1_enum: Optional[FrozenSet[Any]] = None
+    # Only migrate this field when the predicate holds for the SZ WLAN raw.
+    only_if: Optional[Callable[[dict], bool]] = None
+
+
+def _sz_rate_to_r1(value: Any) -> Any:
+    """SZ bssMinRateMbps ("Disable", "12 mbps", "5.5 mbps") → R1 bssMinimumPhyRate ("default", "12", "5.5")."""
+    if not isinstance(value, str):
+        return value
+    v = value.strip().lower()
+    if v in ("disable", "disabled", "default", ""):
+        return "default"
+    return v.replace("mbps", "").strip()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -54,7 +72,8 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
                  sz_only=True),
     FieldMapping("Security & Encryption", "Mgmt Frame Protection", "encryption.mfp",
                  "wlan.managementFrameProtection",
-                 transform={"disabled": "Disabled", "capable": "Optional", "required": "Required"}),
+                 transform={"disabled": "Disabled", "capable": "Optional", "required": "Required"},
+                 r1_enum=frozenset({"Disabled", "Optional", "Required"})),
     FieldMapping("Security & Encryption", "802.11r (Fast Roaming)", "encryption.support80211rEnabled",
                  "wlan.advancedCustomization.enableFastRoaming"),
     FieldMapping("Security & Encryption", "Mobility Domain ID", "encryption.mobilityDomainId",
@@ -80,13 +99,23 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
                  sz_only=True),
     FieldMapping("Authentication & RADIUS", "MAC Auth", "macAuth.macAuthMacFormat",
                  "wlan.macAddressAuthentication"),
+    # SZ: WLAN_BSSID | AP_MAC | Customized.  R1: BSSID | AP_MAC | USER | VENUE_NAME | AP_GROUP_NAME.
     FieldMapping("Authentication & RADIUS", "NAS ID Type",
                  "radiusOptions.nasIdType",
-                 "wlan.advancedCustomization.radiusOptions.nasIdType"),
+                 "wlan.advancedCustomization.radiusOptions.nasIdType",
+                 transform={"WLAN_BSSID": "BSSID", "Customized": "USER"},
+                 r1_enum=frozenset({"BSSID", "AP_MAC", "USER", "VENUE_NAME", "AP_GROUP_NAME"})),
+    # SZ fills customizedNasId on every WLAN; it only means anything when the type is Customized.
+    FieldMapping("Authentication & RADIUS", "Custom NAS ID",
+                 "radiusOptions.customizedNasId",
+                 "wlan.advancedCustomization.radiusOptions.userDefinedNasId",
+                 only_if=lambda raw: get_nested(raw, "radiusOptions.nasIdType") == "Customized"),
+    # SZ: WLAN_BSSID | AP_MAC | NONE | AP_GROUP | AP_NAME.  R1 has no AP_NAME.
     FieldMapping("Authentication & RADIUS", "Called-Station-ID Type",
                  "radiusOptions.calledStaIdType",
                  "wlan.advancedCustomization.radiusOptions.calledStationIdType",
-                 transform={"WLAN_BSSID": "BSSID"}),
+                 transform={"WLAN_BSSID": "BSSID"},
+                 r1_enum=frozenset({"BSSID", "AP_MAC", "NONE", "AP_GROUP"})),
     FieldMapping("Authentication & RADIUS", "NAS Request Timeout",
                  "radiusOptions.nasRequestTimeoutSec",
                  "wlan.advancedCustomization.radiusOptions.nasRequestTimeoutSec"),
@@ -121,14 +150,18 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
     FieldMapping("Radio & Spectrum", "OFDM Only",
                  "advancedOptions.ofdmOnlyEnabled",
                  "wlan.advancedCustomization.radioCustomization.phyTypeConstraint",
-                 transform={True: "OFDM", False: "NONE"}),
+                 transform={True: "OFDM", False: "NONE"},
+                 r1_enum=frozenset({"OFDM", "NONE"})),
     FieldMapping("Radio & Spectrum", "Band Balancing",
                  "advancedOptions.bandBalancing",
                  "wlan.advancedCustomization.enableBandBalancing",
                  transform={"UseZoneSetting": True, "Disabled": False}),
+    # SZ: "Disable" | "12 mbps" | ...  R1: default | 1 | 2 | 5.5 | 12 | 24.
     FieldMapping("Radio & Spectrum", "BSS Min Rate",
                  "advancedOptions.bssMinRateMbps",
-                 "wlan.advancedCustomization.radioCustomization.bssMinimumPhyRate"),
+                 "wlan.advancedCustomization.radioCustomization.bssMinimumPhyRate",
+                 transform=_sz_rate_to_r1,
+                 r1_enum=frozenset({"default", "1", "2", "5.5", "12", "24"})),
     FieldMapping("Radio & Spectrum", "MLO (Wi-Fi 7)",
                  "advancedOptions.multiLinkOperationEnabled",
                  "wlan.advancedCustomization.multiLinkOperationEnabled"),
@@ -156,7 +189,8 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
                  "wlan.advancedCustomization.dhcpOption82Enabled"),
     FieldMapping("DHCP & IP", "Option 82 MAC Format",
                  "advancedOptions.dhcp82MacFormat",
-                 "wlan.advancedCustomization.dhcpOption82MacFormat"),
+                 "wlan.advancedCustomization.dhcpOption82MacFormat",
+                 r1_enum=frozenset({"COLON", "HYPHEN", "NODELIMITER"})),
     FieldMapping("DHCP & IP", "Force Client DHCP",
                  "advancedOptions.forceClientDHCPTimeoutSec",
                  "wlan.advancedCustomization.forceMobileDeviceDhcp"),
@@ -203,7 +237,8 @@ WLAN_FIELD_MAPPINGS: List[FieldMapping] = [
     FieldMapping("Advanced Features", "BSS Priority",
                  "advancedOptions.priority",
                  "wlan.advancedCustomization.bssPriority",
-                 transform={"High": "HIGH", "Low": "LOW"}),
+                 transform={"High": "HIGH", "Low": "LOW"},
+                 r1_enum=frozenset({"HIGH", "LOW"})),
     FieldMapping("Advanced Features", "Multicast Filter",
                  "advancedOptions.multicastFilterDrop",
                  "wlan.advancedCustomization.multicastFilterEnabled"),
@@ -285,18 +320,30 @@ def set_nested(obj: dict, dot_path: str, value: Any) -> None:
     current[parts[-1]] = value
 
 
-def _apply_transform(value: Any, transform: Optional[Dict]) -> Any:
-    """Apply a value transform map. Returns original value if no mapping found."""
+def _apply_transform(value: Any, transform: Optional[Union[Dict, Callable[[Any], Any]]]) -> Any:
+    """Apply a value transform (map or function). A map returns the original value if unmapped."""
     if transform is None or value is None:
         return value
-    return transform.get(value, value)
+    if callable(transform):
+        return transform(value)
+    try:
+        return transform.get(value, value)
+    except TypeError:  # unhashable SZ value (dict/list) -- nothing to map
+        return value
+
+
+def _enum_accepts(allowed: FrozenSet[Any], value: Any) -> bool:
+    try:
+        return value in allowed
+    except TypeError:
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Migration: Build R1 payload from SZ raw
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_r1_advanced_settings(sz_raw: dict) -> dict:
+def build_r1_advanced_settings(sz_raw: dict, dropped: Optional[List[Dict[str, Any]]] = None) -> dict:
     """
     Build an R1 network creation payload fragment from SZ WLAN raw data.
 
@@ -309,6 +356,10 @@ def build_r1_advanced_settings(sz_raw: dict) -> dict:
     - Have a non-None value in the SZ raw
     - Are NOT basic fields handled by the creation method itself
       (name, ssid, vlan, security type, passphrase)
+
+    A value R1 would reject (outside the mapping's r1_enum) is left out, so
+    R1 applies its default, and appended to `dropped` as
+    {label, sz_value, reason} for the plan to show before anything runs.
 
     Returns:
         Dict like {"advancedCustomization": {"enableFastRoaming": True, ...}}
@@ -328,11 +379,26 @@ def build_r1_advanced_settings(sz_raw: dict) -> dict:
         if mapping.r1_path in SKIP_R1_PATHS:
             continue
 
+        if mapping.only_if and not mapping.only_if(sz_raw):
+            continue
+
         sz_value = get_nested(sz_raw, mapping.sz_path)
         if sz_value is None:
             continue
 
         r1_value = _apply_transform(sz_value, mapping.transform)
+
+        if mapping.r1_enum is not None and not _enum_accepts(mapping.r1_enum, r1_value):
+            if dropped is not None:
+                dropped.append({
+                    "label": mapping.label,
+                    "sz_value": sz_value,
+                    "reason": (
+                        f"R1 has no equivalent for SZ value {sz_value!r}; "
+                        f"R1's default will apply (accepts: {', '.join(sorted(map(str, mapping.r1_enum)))})"
+                    ),
+                })
+            continue
 
         # Strip the "wlan." prefix — the caller merges this into wlan_settings
         r1_key = mapping.r1_path
@@ -368,6 +434,9 @@ def compare_fields(sz_raw: dict, r1_network: dict) -> List[FieldComparison]:
     comparisons: List[FieldComparison] = []
 
     for mapping in WLAN_FIELD_MAPPINGS:
+        if mapping.only_if and not mapping.only_if(sz_raw):
+            continue
+
         sz_value = get_nested(sz_raw, mapping.sz_path)
 
         if mapping.sz_only or not mapping.r1_path:

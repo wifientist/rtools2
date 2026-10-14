@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import re
 import requests
 import threading
 import time
@@ -9,6 +10,29 @@ from r1api.token_cache import get_cached_token, store_token, invalidate_token
 from r1api.services.msp import MspService
 
 logger = logging.getLogger(__name__)
+
+# R1_VERBOSE logs full payloads and responses. Those carry DPSK passphrases
+# and RADIUS shared secrets, which must never reach a log; mask them first.
+_SECRET_LOG_KEY = re.compile(r"(passphrase|sharedsecret|secret|password)$", re.IGNORECASE)
+_SECRET_LOG_TEXT = re.compile(
+    r'("(?:[A-Za-z_]*(?:[Pp]assphrase|[Ss]ecret|[Pp]assword))"\s*:\s*)"(?:[^"\\]|\\.)*"'
+)
+
+
+def _mask_for_log(value):
+    if isinstance(value, dict):
+        return {
+            k: ("***" if isinstance(k, str) and _SECRET_LOG_KEY.search(k) and isinstance(v, str)
+                else _mask_for_log(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_mask_for_log(v) for v in value]
+    return value
+
+
+def _mask_text_for_log(text: str) -> str:
+    return _SECRET_LOG_TEXT.sub(r'\1"***"', text)
 from r1api.services.venues import VenueService
 from r1api.services.networks import NetworksService
 from r1api.services.tenant import TenantService
@@ -176,7 +200,7 @@ class R1Client:
         if verbose:
             logger.info(f">>> {method.upper()} {path}")
             if payload:
-                logger.info(f">>> PAYLOAD: {json.dumps(payload, indent=2)[:2000]}")
+                logger.info(f">>> PAYLOAD: {json.dumps(_mask_for_log(payload), indent=2)[:2000]}")
             if params:
                 logger.info(f">>> PARAMS: {params}")
 
@@ -199,7 +223,7 @@ class R1Client:
             )
 
             if verbose:
-                body = response.text[:3000] if response.text else '(empty)'
+                body = _mask_text_for_log(response.text)[:3000] if response.text else '(empty)'
                 logger.info(f"<<< {response.status_code} {path}\n{body}")
             else:
                 logger.debug(f"{method.upper()} {url} --> {response.status_code}")

@@ -8,6 +8,7 @@ Stores the mapping (sz_service_id → r1_profile_id) in global_phase_results
 so the per-WLAN create_networks phase can link profiles.
 """
 
+import asyncio
 import logging
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
@@ -16,6 +17,10 @@ from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
 from redis_client import get_redis_client
 from schemas.sz_migration import SZMigrationSnapshot
+from services.sz_migration.radius_choices import (
+    PLACEHOLDER_RADIUS_SECRET, RADIUS_SECRET_KEY, referenced_services, sz_server_details,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,137 +43,119 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
         radius_profiles_reused: int = 0
         skipped: bool = False
 
+
     async def execute(self, inputs: Inputs) -> Outputs:
-        # Load SZ snapshot
         redis = await get_redis_client()
+        secret_key = RADIUS_SECRET_KEY.format(job_id=self.job_id)
+        try:
+            return await self._execute(inputs, redis, secret_key)
+        finally:
+            # Secrets typed on Review are single-use: gone once this phase
+            # has run, whether it succeeded or not.
+            await redis.delete(secret_key)
+
+    async def _execute(self, inputs: Inputs, redis, secret_key: str) -> Outputs:
         snapshot_key = f"sz_migration:extraction:{inputs.sz_snapshot_job_id}:snapshot"
         raw = await redis.get(snapshot_key)
         if not raw:
             raise RuntimeError("SZ snapshot not found")
         snapshot = SZMigrationSnapshot.model_validate_json(raw)
 
-        # Find AAA WLANs that need RADIUS profiles
-        aaa_wlans = [w for w in snapshot.wlans if w.auth_service_id]
-        if not aaa_wlans:
-            await self.emit("No AAA WLANs — skipping RADIUS profile creation")
+        services = referenced_services(snapshot)
+        if not services:
+            await self.emit("No RADIUS-backed WLANs — skipping RADIUS profiles")
             return self.Outputs(skipped=True)
 
-        # Collect unique auth service IDs
-        unique_auth_ids = set()
-        for wlan in aaa_wlans:
-            if wlan.auth_service_id:
-                unique_auth_ids.add(wlan.auth_service_id)
-            if wlan.accounting_service_id:
-                unique_auth_ids.add(wlan.accounting_service_id)
+        # None = a plan from before Review offered choices: create them all.
+        decisions: Optional[Dict[str, Dict[str, Any]]] = self.context.options.get("radius_decisions")
+        await self.emit(f"{len(services)} RADIUS service(s) referenced by this zone")
 
-        await self.emit(
-            f"Found {len(aaa_wlans)} AAA WLANs with "
-            f"{len(unique_auth_ids)} unique RADIUS references"
-        )
-
-        # For each unique RADIUS reference, get details from snapshot and create in R1
         mappings: Dict[str, str] = {}
-        created = 0
-        reused = 0
+        created = reused = skipped = 0
 
-        for service_id in unique_auth_ids:
-            # Look up the chased reference in the snapshot
-            auth_ref = snapshot.referenced_objects.get(f"auth_service:{service_id}")
-            acct_ref = snapshot.referenced_objects.get(f"accounting_service:{service_id}")
-            ref = auth_ref or acct_ref
+        for s in services:
+            sid, sz_name = s["id"], s["name"]
+            d = {"action": "create"} if decisions is None else decisions.get(sid)
+            action = (d or {}).get("action")
 
-            if not ref or not ref.raw:
+            if action == "skip" or d is None:
+                skipped += 1
+                await self.emit(f"RADIUS '{sz_name}' — not migrated (by choice)")
+                continue
+
+            if action == "existing":
+                profile_id = d.get("r1_profile_id")
+                mappings[sid] = profile_id
+                reused += 1
+                await self.emit(f"RADIUS '{sz_name}' → existing R1 profile (id={profile_id[:12]})")
+                continue
+
+            # ── create ────────────────────────────────────────────────
+            details = sz_server_details(snapshot, sid)
+            if details["error"] or not details["primary"]:
+                skipped += 1
                 await self.emit(
-                    f"RADIUS service {service_id[:12]} not found in snapshot — "
-                    f"will need manual configuration",
+                    f"RADIUS '{sz_name}' has no server address in the snapshot — not created",
                     "warning",
                 )
                 continue
 
-            raw_service = ref.raw
-            if raw_service.get("_error"):
-                await self.emit(
-                    f"RADIUS service {service_id[:12]} had extraction error — skipping",
-                    "warning",
-                )
-                continue
-
-            # Extract server details
-            name = raw_service.get("name", f"migrated-radius-{service_id[:8]}")
-            primary_ip = None
-            primary_port = 1812
-            primary_secret = ""
-
-            # SZ stores RADIUS server details in various formats
-            primary = raw_service.get("primary") or {}
-            if isinstance(primary, dict):
-                primary_ip = primary.get("ip") or primary.get("server")
-                primary_port = primary.get("port", 1812)
-                primary_secret = primary.get("sharedSecret", "")
-            elif raw_service.get("ip"):
-                primary_ip = raw_service.get("ip")
-                primary_port = raw_service.get("port", 1812)
-                primary_secret = raw_service.get("sharedSecret", "")
-
-            if not primary_ip:
-                await self.emit(
-                    f"RADIUS '{name}' has no server IP — skipping",
-                    "warning",
-                )
-                continue
-
-            # SZ API never exposes shared secrets — use placeholder
-            if not primary_secret:
-                primary_secret = "CHANGE_ME_after_migration"
-                await self.emit(
-                    f"RADIUS '{name}' shared secret not available from SZ — "
-                    f"using placeholder (manual update required after migration)",
-                    "warning",
-                )
-
-            # Determine profile type
-            profile_type = "ACCOUNTING" if acct_ref and not auth_ref else "AUTHENTICATION"
-
-            # Find-or-create in R1
-            await self.emit(f"Finding/creating RADIUS profile '{name}'...")
-            result = await self.r1_client.radius_profiles.find_or_create_radius_profile(
-                tenant_id=self.tenant_id,
-                name=name,
-                primary_ip=primary_ip,
-                primary_port=primary_port,
-                primary_secret=primary_secret,
-                profile_type=profile_type,
+            # Same name already in R1: link it rather than create a duplicate.
+            # The secret typed on Review is NOT applied to it.
+            existing = await asyncio.to_thread(
+                self.r1_client.radius_profiles.find_radius_profile_by_name,
+                self.tenant_id, details["name"],
             )
-
-            if result and result.get("id"):
-                r1_profile_id = result["id"]
-                mappings[service_id] = r1_profile_id
-
-                # Check if reused or created (find_or_create logs this)
-                was_existing = bool(
-                    self.r1_client.radius_profiles.find_radius_profile_by_name(
-                        self.tenant_id, name
-                    )
+            if existing and existing.get("id"):
+                mappings[sid] = existing["id"]
+                reused += 1
+                await self.emit(
+                    f"RADIUS '{details['name']}' already exists in R1 — linked it; its "
+                    "shared secret was left unchanged",
+                    "warning",
                 )
-                if was_existing:
-                    reused += 1
-                    await self.emit(f"Reused RADIUS profile '{name}' (id={r1_profile_id[:12]})")
-                else:
-                    created += 1
-                    await self.emit(f"Created RADIUS profile '{name}' (id={r1_profile_id[:12]})")
+                continue
 
-                await self.track_resource("radius_profiles", {
-                    "id": r1_profile_id,
-                    "name": name,
-                    "sz_service_id": service_id,
-                })
+            raw_secret = await redis.hget(secret_key, sid)
+            secret = raw_secret.decode() if isinstance(raw_secret, bytes) else raw_secret
+            if not secret:
+                secret = PLACEHOLDER_RADIUS_SECRET
+                await self.emit(
+                    f"RADIUS '{details['name']}' — no shared secret given; using a placeholder. "
+                    "Set it in R1 before this network can authenticate.",
+                    "warning",
+                )
+
+            primary, secondary = details["primary"], details["secondary"]
+            result = await self.r1_client.radius_profiles.create_radius_profile(
+                tenant_id=self.tenant_id,
+                name=details["name"],
+                primary_ip=primary["ip"],
+                primary_port=primary["port"],
+                primary_secret=secret,
+                secondary_ip=secondary["ip"] if secondary else None,
+                secondary_port=secondary["port"] if secondary else 1812,
+                secondary_secret=secret if secondary else "",
+                profile_type=details["role"],
+            )
+            secret = None  # don't keep it around longer than the call
+
+            profile_id = (result or {}).get("id")
+            if not profile_id:
+                raise RuntimeError(f"RADIUS profile creation returned no ID for '{details['name']}'")
+            mappings[sid] = profile_id
+            created += 1
+            await self.emit(f"Created RADIUS profile '{details['name']}' (id={profile_id[:12]})")
+            # Only profiles this run created are tracked: a linked, pre-existing
+            # profile belongs to the tenant, not to this migration.
+            await self.track_resource("radius_profiles", {
+                "id": profile_id, "name": details["name"], "sz_service_id": sid,
+            })
 
         await self.emit(
-            f"RADIUS profiles: {created} created, {reused} reused, "
-            f"{len(unique_auth_ids) - created - reused} skipped",
+            f"RADIUS profiles: {created} created, {reused} linked existing, {skipped} not migrated",
             "success",
         )
-
         return self.Outputs(
             radius_profile_mappings=mappings,
             radius_profiles_created=created,

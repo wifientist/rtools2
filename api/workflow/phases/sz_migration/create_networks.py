@@ -191,3 +191,15 @@ class CreateNetworksPhase(PhaseExecutor):
             tenant_id=self.tenant_id,
         )
         await self.emit(f"[{wlan_name}] RADIUS profile linked")
+
+        # Accounting is a separate profile on the same network. Absent from
+        # the mapping when its service was set to "don't migrate".
+        acct_service_id = extra.get("accounting_service_id")
+        acct_profile_id = mappings.get(acct_service_id) if acct_service_id else None
+        if acct_profile_id and acct_profile_id != r1_profile_id:
+            await self.r1_client.radius_profiles.link_radius_to_network(
+                network_id=network_id,
+                radius_profile_id=acct_profile_id,
+                tenant_id=self.tenant_id,
+            )
+            await self.emit(f"[{wlan_name}] Accounting profile linked")

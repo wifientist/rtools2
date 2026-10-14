@@ -38,11 +38,11 @@ import time
 import uuid
 from datetime import datetime
 from routers.tenant_scope import resolve_tenant_id
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_user
@@ -56,6 +56,9 @@ from redis_client import get_redis_client
 from services.sz_migration.extractor import extract_zone_snapshot
 from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans
+from services.sz_migration.radius_choices import (
+    RADIUS_SECRET_KEY, RADIUS_SECRET_TTL, r1_profile_summary, referenced_services, suggest,
+)
 from services.sz_migration.auditor import run_audit as run_migration_audit
 from services.r1_inventory import capture_venue_inventory
 from schemas.sz_migration import SZMigrationSnapshot, ResolverResult
@@ -657,6 +660,23 @@ async def resolve_snapshot(
 # ══════════════════════════════════════════════════════════════════════
 
 
+class RadiusDecision(BaseModel):
+    """What to do with one SZ RADIUS service referenced by the zone."""
+    action: Literal["create", "existing", "skip"]
+    r1_profile_id: Optional[str] = Field(None, description="Required for 'existing'")
+    # Write-only. SecretStr keeps it out of repr/logs; the plan endpoint moves
+    # it to its own Redis key and it never enters job options.
+    shared_secret: Optional[SecretStr] = Field(None, description="Only for 'create'")
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.action == "existing" and not self.r1_profile_id:
+            raise ValueError("'existing' needs r1_profile_id")
+        if self.action != "create" and self.shared_secret is not None:
+            raise ValueError("shared_secret only applies to 'create'")
+        return self
+
+
 class MigrationPlanRequest(BaseModel):
     """Request to create a migration workflow plan."""
     sz_controller_id: int = Field(..., description="SZ controller ID (for snapshot reference)")
@@ -664,6 +684,10 @@ class MigrationPlanRequest(BaseModel):
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
     venue_id: str = Field(..., description="R1 venue ID (target)")
     sz_snapshot_job_id: str = Field(..., description="SZ extraction job ID (from M0)")
+    # Keyed by SZ service id. Absent = legacy behaviour (create every referenced service).
+    radius_decisions: Optional[Dict[str, RadiusDecision]] = None
+    # Keyed by SZ WLAN id: what happens to a WLAN whose RADIUS service is 'skip'.
+    wlan_fallbacks: Dict[str, Literal["skip", "dpsk"]] = Field(default_factory=dict)
 
 
 class MigrationPlanResponse(BaseModel):
@@ -889,6 +913,59 @@ def _persist_execution_results(db, job_id: str, job) -> None:
 
 # ── Endpoints ─────────────────────────────────────────────────────────
 
+@router.get("/radius-choices/{sz_snapshot_job_id}")
+@require_alpha()
+async def get_radius_choices(
+    sz_snapshot_job_id: str,
+    r1_controller_id: int,
+    tenant_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    The RADIUS services this zone's WLANs reference, the R1 profiles they
+    could map to, and a suggested choice for each -- for the Review step,
+    before a plan is built.
+
+    Only services referenced by WLANs in the extracted zone are listed: R1
+    profiles are tenant-wide, but nothing outside this zone is migrated.
+    Shared secrets are never returned (SZ doesn't expose them, and R1
+    profiles are reduced to name/type/ip:port).
+    """
+    raw = await _get_snapshot_raw(sz_snapshot_job_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
+    snapshot = SZMigrationSnapshot.model_validate_json(raw)
+    services = referenced_services(snapshot)
+
+    r1_profiles: List[Dict[str, Any]] = []
+    error = None
+    if services:
+        controller = validate_controller_access(r1_controller_id, current_user, db)
+        if controller.controller_type != "RuckusONE":
+            raise HTTPException(status_code=400, detail="R1 controller must be RuckusONE")
+        resolved_tenant = resolve_tenant_id(controller, tenant_id)
+        r1_client = create_r1_client_from_controller(r1_controller_id, db)
+        try:
+            rows = await asyncio.to_thread(
+                r1_client.radius_profiles.get_radius_profiles, resolved_tenant
+            )
+            # Reduce immediately: these rows carry sharedSecret.
+            r1_profiles = [r1_profile_summary(p) for p in rows if p.get("id")]
+        except Exception as e:
+            logger.warning(f"Could not list R1 RADIUS profiles: {type(e).__name__}")
+            error = "Could not list RADIUS profiles in R1; 'Use existing' is unavailable"
+
+    for s in services:
+        s["suggestion"] = suggest(s, r1_profiles)
+
+    return {
+        "services": services,
+        "r1_profiles": sorted(r1_profiles, key=lambda p: (p.get("name") or "").lower()),
+        "error": error,
+    }
+
+
 @router.post("/workflow/plan", response_model=MigrationPlanResponse)
 @require_alpha()
 async def create_migration_plan(
@@ -926,7 +1003,22 @@ async def create_migration_plan(
     options = {
         "sz_snapshot_job_id": request.sz_snapshot_job_id,
         "sz_controller_id": request.sz_controller_id,
+        "wlan_fallbacks": dict(request.wlan_fallbacks),
     }
+    # Decisions go into options WITHOUT their secrets: options are persisted
+    # with the job and come back through job/status endpoints.
+    secrets: Dict[str, str] = {}
+    if request.radius_decisions is not None:
+        options["radius_decisions"] = {}
+        for sid, d in request.radius_decisions.items():
+            secret = d.shared_secret.get_secret_value() if d.shared_secret else ""
+            if secret:
+                secrets[sid] = secret
+            options["radius_decisions"][sid] = {
+                "action": d.action,
+                "r1_profile_id": d.r1_profile_id,
+                "secret_provided": bool(secret),
+            }
 
     input_data = {
         "sz_snapshot_job_id": request.sz_snapshot_job_id,
@@ -951,6 +1043,11 @@ async def create_migration_plan(
         options=options,
         input_data=input_data,
     )
+
+    if secrets:
+        key = RADIUS_SECRET_KEY.format(job_id=job.id)
+        await redis_client.hset(key, mapping=secrets)
+        await redis_client.expire(key, RADIUS_SECRET_TTL)
 
     # Start validation in background
     background_tasks.add_task(

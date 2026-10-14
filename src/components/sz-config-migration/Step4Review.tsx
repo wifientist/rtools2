@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import ActivationMatrix from './ActivationMatrix';
@@ -6,7 +6,10 @@ import NetworkSettingsReview from './NetworkSettingsReview';
 import DpskDecisions from './DpskDecisions';
 import RadiusMapping from './RadiusMapping';
 import MigrationBlueprint from './MigrationBlueprint';
-import type { WizardState, WizardAction, ResolverResult, TypeMapping, PlanResult } from '@/types/szConfigMigration';
+import type {
+  WizardState, WizardAction, ResolverResult, TypeMapping, PlanResult,
+  RadiusChoices, RadiusDecision, WlanFallback,
+} from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -29,12 +32,85 @@ export default function Step4Review({ state, dispatch }: Props) {
     }
   }, []);
 
-  // Run plan after resolve completes
+  // RADIUS services this zone uses, and the R1 profiles they could map to.
+  const [radiusChoices, setRadiusChoices] = useState<RadiusChoices | null>(null);
+  const [choicesLoading, setChoicesLoading] = useState(false);
+  // Typed shared secrets: component memory only. Never dispatched (wizard
+  // state is persisted), never rendered back; sent once with the plan request.
+  const secrets = useRef<Record<string, string>>({});
+  const [secretSet, setSecretSet] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
-    if (state.resolverResult && !state.planResult && !planning) {
-      runPlan();
+    if (state.resolverResult && !radiusChoices && !choicesLoading) {
+      loadRadiusChoices();
     }
   }, [state.resolverResult]);
+
+  const needsRadiusChoice = (radiusChoices?.services.length ?? 0) > 0;
+
+  // Effective decisions: what was chosen, else the suggestion.
+  const decisions: Record<string, RadiusDecision> = {};
+  for (const svc of radiusChoices?.services ?? []) {
+    decisions[svc.id] = state.radiusDecisions?.[svc.id] ?? {
+      action: svc.suggestion.action, r1_profile_id: svc.suggestion.r1_profile_id,
+    };
+  }
+  const decisionsComplete = (radiusChoices?.services ?? []).every(svc => {
+    const d = decisions[svc.id];
+    if (d.action === 'existing') return !!d.r1_profile_id;
+    if (d.action === 'skip') {
+      return svc.used_by.filter(u => u.role === 'authentication')
+        .every(u => !!state.wlanFallbacks[u.wlan_id]);
+    }
+    return true;
+  });
+
+  // Zones with no RADIUS have nothing to decide: plan straight away, as before.
+  useEffect(() => {
+    if (radiusChoices && !needsRadiusChoice && !state.planResult && !planning) {
+      runPlan();
+    }
+  }, [radiusChoices]);
+
+  const loadRadiusChoices = async () => {
+    if (!state.extractionJobId || !state.r1ControllerId) return;
+    setChoicesLoading(true);
+    try {
+      const params = new URLSearchParams({ r1_controller_id: String(state.r1ControllerId) });
+      if (state.tenantId) params.set('tenant_id', state.tenantId);
+      const res = await apiFetch(
+        `${API_URL}/sz-migration/radius-choices/${state.extractionJobId}?${params}`
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Could not load RADIUS choices: ${res.status}`);
+      }
+      const data: RadiusChoices = await res.json();
+      setRadiusChoices(data);
+      if (data.services.length > 0) {
+        setOpenSections(prev => new Set(prev).add('radius'));
+      }
+    } catch (e: any) {
+      dispatch({ type: 'SET_ERROR', error: e.message });
+    } finally {
+      setChoicesLoading(false);
+    }
+  };
+
+  const updateChoices = (
+    nextDecisions: Record<string, RadiusDecision>,
+    nextFallbacks: Record<string, WlanFallback>,
+  ) => {
+    dispatch({ type: 'SET_RADIUS_CHOICES', decisions: nextDecisions, fallbacks: nextFallbacks });
+    if (state.planResult) dispatch({ type: 'CLEAR_PLAN' });
+  };
+
+  const handleSecret = (serviceId: string, value: string) => {
+    if (value) secrets.current[serviceId] = value;
+    else delete secrets.current[serviceId];
+    setSecretSet(prev => ({ ...prev, [serviceId]: !!value }));
+    if (state.planResult) dispatch({ type: 'CLEAR_PLAN' });
+  };
 
   const runResolve = async () => {
     if (!state.extractionJobId) return;
@@ -77,6 +153,17 @@ export default function Step4Review({ state, dispatch }: Props) {
           tenant_id: state.tenantId,
           venue_id: state.destVenueId,
           sz_snapshot_job_id: state.extractionJobId,
+          ...(needsRadiusChoice && {
+            radius_decisions: Object.fromEntries(
+              Object.entries(decisions).map(([sid, d]) => [sid, {
+                action: d.action,
+                r1_profile_id: d.action === 'existing' ? d.r1_profile_id : null,
+                ...(d.action === 'create' && secrets.current[sid]
+                  ? { shared_secret: secrets.current[sid] } : {}),
+              }]),
+            ),
+            wlan_fallbacks: state.wlanFallbacks,
+          }),
         }),
       });
       if (!res.ok) {
@@ -190,13 +277,49 @@ export default function Step4Review({ state, dispatch }: Props) {
               </AccordionPanel>
 
               <AccordionPanel
-                title="RADIUS / AAA Mapping"
-                subtitle={`${Object.values(state.typeMappings).filter(m => m.r1_network_type === 'aaa').length} AAA WLANs`}
+                title="RADIUS Servers"
+                subtitle={
+                  radiusChoices
+                    ? `${radiusChoices.services.length} used by this zone`
+                    : choicesLoading ? 'Loading…' : ''
+                }
                 section="radius"
                 isOpen={openSections.has('radius')}
                 onToggle={toggleSection}
+                badge={needsRadiusChoice && !plan ? 'CHOOSE' : undefined}
+                badgeColor={needsRadiusChoice && !plan ? 'amber' : undefined}
               >
-                <RadiusMapping typeMappings={state.typeMappings} />
+                {radiusChoices ? (
+                  <div className="space-y-3">
+                    <RadiusMapping
+                      choices={radiusChoices}
+                      decisions={decisions}
+                      fallbacks={state.wlanFallbacks}
+                      secretSet={secretSet}
+                      disabled={planning}
+                      onDecision={(sid, d) => updateChoices({ ...decisions, [sid]: d }, state.wlanFallbacks)}
+                      onFallback={(wid, fb) => updateChoices(decisions, { ...state.wlanFallbacks, [wid]: fb })}
+                      onSecret={handleSecret}
+                    />
+                    {needsRadiusChoice && !plan && (
+                      <div className="flex justify-end">
+                        <button
+                          onClick={runPlan}
+                          disabled={!decisionsComplete || planning}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm font-semibold flex items-center gap-2"
+                        >
+                          {planning && <Loader2 size={14} className="animate-spin" />}
+                          Build plan with these choices
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500 flex items-center gap-2">
+                    {choicesLoading && <Loader2 size={14} className="animate-spin" />}
+                    {choicesLoading ? 'Loading RADIUS servers…' : 'RADIUS choices unavailable'}
+                  </div>
+                )}
               </AccordionPanel>
             </>
           )}
@@ -320,6 +443,7 @@ function AccordionPanel({ title, subtitle, section, isOpen, onToggle, badge, bad
     red: 'bg-red-100 text-red-700',
     green: 'bg-green-100 text-green-700',
     blue: 'bg-blue-100 text-blue-700',
+    amber: 'bg-amber-100 text-amber-700',
   };
 
   return (

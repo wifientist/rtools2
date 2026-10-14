@@ -8,6 +8,7 @@ This is the "dry-run" phase — no writes to R1. The Brain will pause the
 workflow after this phase for user confirmation.
 """
 
+import asyncio
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -17,7 +18,7 @@ from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
 from workflow.v2.models import (
     UnitMapping, UnitPlan, UnitResolved, UnitStatus,
-    ValidationResult, ValidationSummary, ResourceAction,
+    ValidationResult, ValidationSummary, ResourceAction, ConflictDetail,
 )
 
 from redis_client import get_redis_client
@@ -26,6 +27,7 @@ from schemas.r1_inventory import R1VenueInventory
 from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans, R1NetworkTypeMapping
 from services.sz_migration.field_mappings import build_r1_advanced_settings
+from services.sz_migration.radius_choices import referenced_services, r1_profile_summary
 from services.r1_inventory import capture_venue_inventory
 
 logger = logging.getLogger(__name__)
@@ -113,11 +115,51 @@ class ValidateMigrationPhase(PhaseExecutor):
         actions: List[ResourceAction] = []
         will_create = 0
         will_reuse = 0
+        # SZ settings R1 cannot take: shown on Review as warnings, never sent
+        setting_warnings: List[ConflictDetail] = []
+
+        # ── RADIUS choices made on Review ─────────────────────────────
+        radius_conflicts, radius_actions, skipped_services = await self._apply_radius_decisions(
+            snapshot
+        )
+        actions.extend(radius_actions)
+        fallbacks: Dict[str, str] = self.context.options.get("wlan_fallbacks") or {}
+        wlan_overrides: Dict[str, Dict[str, Any]] = {}
 
         for wlan in snapshot.wlans:
             wlan_id = wlan.id
             mapping = type_mappings.get(wlan_id)
             r1_type = mapping.r1_network_type if mapping else "unsupported"
+            notes = mapping.notes if mapping else ""
+
+            # Authentication service not migrated: the WLAN is skipped or
+            # becomes an R1 DPSK network, per the choice made for it.
+            if wlan.auth_service_id and wlan.auth_service_id in skipped_services:
+                fallback = fallbacks.get(wlan_id)
+                if fallback == "skip":
+                    actions.append(ResourceAction(
+                        resource_type="wifi_network", name=wlan.name, action="skip",
+                        notes=["RADIUS service not migrated; WLAN skipped by choice"],
+                    ))
+                    wlan_overrides[wlan_id] = {"r1_network_type": "skipped",
+                                               "notes": "Skipped: its RADIUS service is not migrated"}
+                    continue
+                if fallback == "dpsk":
+                    r1_type = "dpsk"
+                    notes = "Converted to R1 DPSK: its RADIUS service is not migrated"
+                    wlan_overrides[wlan_id] = {"r1_network_type": "dpsk", "notes": notes}
+                else:
+                    radius_conflicts.append(ConflictDetail(
+                        unit_id=wlan_id,
+                        resource_type="wifi_network",
+                        resource_name=wlan.name,
+                        description=(
+                            f"{wlan.name} — its RADIUS service is set to 'Don't migrate'; "
+                            "choose whether to skip this WLAN or convert it to R1 DPSK"
+                        ),
+                        severity="error",
+                    ))
+                    continue
 
             # Check if R1 network already exists (by name)
             existing_network = r1_inventory.network_by_name(wlan.name)
@@ -136,7 +178,16 @@ class ValidateMigrationPhase(PhaseExecutor):
                 wlan_activations.append(act)
 
             # Pre-compute R1 advanced settings from SZ raw data
-            r1_advanced = build_r1_advanced_settings(wlan.raw) if wlan.raw else {}
+            dropped: List[Dict[str, Any]] = []
+            r1_advanced = build_r1_advanced_settings(wlan.raw, dropped) if wlan.raw else {}
+            for d in dropped:
+                setting_warnings.append(ConflictDetail(
+                    unit_id=wlan_id,
+                    resource_type="wifi_network_setting",
+                    resource_name=wlan.name,
+                    description=f"{wlan.name} — {d['label']}: {d['reason']}",
+                    severity="warning",
+                ))
 
             # Build plan
             plan = UnitPlan(
@@ -149,7 +200,7 @@ class ValidateMigrationPhase(PhaseExecutor):
                     "activations": wlan_activations,
                     "needs_user_decision": mapping.needs_user_decision if mapping else False,
                     "dpsk_type": mapping.dpsk_type if mapping else None,
-                    "notes": mapping.notes if mapping else "",
+                    "notes": notes,
                     "vlan_id": wlan.vlan_id or 1,
                     # SZ encryption details for PSK passphrase
                     "encryption": wlan.encryption,
@@ -202,13 +253,10 @@ class ValidateMigrationPhase(PhaseExecutor):
             )
 
         # ── Build validation result ───────────────────────────────────
-        # Estimate API calls
-        aaa_count = sum(
-            1 for m in type_mappings.values() if m.r1_network_type == "aaa"
-        )
-        dpsk_count = sum(
-            1 for m in type_mappings.values() if m.r1_network_type == "dpsk"
-        )
+        # Estimate API calls (from the units actually planned)
+        planned_types = [u.plan.extra.get("r1_network_type") for u in unit_mappings.values()]
+        aaa_count = planned_types.count("aaa")
+        dpsk_count = planned_types.count("dpsk")
         total_api_calls = (
             will_create  # network creation
             + aaa_count  # RADIUS profile creation (max, may reuse)
@@ -216,9 +264,10 @@ class ValidateMigrationPhase(PhaseExecutor):
             + len(resolver_result.activations)  # SSID activations
         )
 
+        conflicts = radius_conflicts + setting_warnings
         validation_result = ValidationResult(
-            valid=True,
-            conflicts=[],
+            valid=not any(c.severity == "error" for c in conflicts),
+            conflicts=conflicts,
             summary=ValidationSummary(
                 total_units=len(unit_mappings),
                 networks_to_create=will_create,
@@ -236,6 +285,7 @@ class ValidateMigrationPhase(PhaseExecutor):
                 "notes": m.notes,
                 "needs_user_decision": m.needs_user_decision,
                 "dpsk_type": m.dpsk_type,
+                **wlan_overrides.get(wlan_id, {}),
             }
             for wlan_id, m in type_mappings.items()
         }
@@ -254,3 +304,119 @@ class ValidateMigrationPhase(PhaseExecutor):
             type_mappings=type_mappings_serializable,
             r1_inventory_summary=r1_inventory.summary(),
         )
+
+    async def _apply_radius_decisions(self, snapshot: SZMigrationSnapshot):
+        """
+        Turn the Review step's RADIUS choices into plan actions and conflicts.
+
+        Returns (conflicts, actions, skipped_service_ids). With no decisions in
+        the job options (an older client), every referenced service is
+        planned as 'create' -- the previous behaviour.
+        """
+        decisions: Optional[Dict[str, Dict[str, Any]]] = self.context.options.get("radius_decisions")
+        services = referenced_services(snapshot)
+        conflicts: List[ConflictDetail] = []
+        actions: List[ResourceAction] = []
+        skipped: set = set()
+        if not services:
+            return conflicts, actions, skipped
+
+        r1_profiles: Dict[str, Dict[str, Any]] = {}
+        # Needed for "existing" (does it still exist?) and "create" (name collision).
+        if decisions is None or any(d.get("action") in ("existing", "create") for d in decisions.values()):
+            rows = await asyncio.to_thread(
+                self.r1_client.radius_profiles.get_radius_profiles, self.tenant_id
+            )
+            r1_profiles = {p["id"]: r1_profile_summary(p) for p in rows if p.get("id")}
+
+        for s in services:
+            d = (decisions or {}).get(s["id"]) if decisions is not None else {"action": "create"}
+            users = ", ".join(sorted({u["wlan_name"] for u in s["used_by"]}))
+            if not d:
+                conflicts.append(ConflictDetail(
+                    resource_type="radius_profile", resource_name=s["name"],
+                    description=f"RADIUS '{s['name']}' (used by {users}) — no choice made",
+                    severity="error",
+                ))
+                continue
+
+            action = d.get("action")
+            if action == "skip":
+                skipped.add(s["id"])
+                actions.append(ResourceAction(
+                    resource_type="radius_profile", name=s["name"], action="skip",
+                    notes=[f"Not migrated (used by {users})"],
+                ))
+            elif action == "existing":
+                p = r1_profiles.get(d.get("r1_profile_id"))
+                if p is None:
+                    conflicts.append(ConflictDetail(
+                        resource_type="radius_profile", resource_name=s["name"],
+                        description=f"RADIUS '{s['name']}' — the chosen R1 profile no longer exists",
+                        severity="error",
+                    ))
+                    continue
+                if p.get("placeholder_secret"):
+                    conflicts.append(ConflictDetail(
+                        resource_type="radius_profile", resource_name=p["name"],
+                        description=(
+                            f"R1 profile '{p['name']}' still has the placeholder shared secret — "
+                            f"{users} will not authenticate until you set it in R1"
+                        ),
+                        severity="warning",
+                    ))
+                actions.append(ResourceAction(
+                    resource_type="radius_profile", name=p["name"], action="reuse",
+                    existing_id=p["id"],
+                    notes=[f"For SZ '{s['name']}' (used by {users})"],
+                ))
+            elif action == "create":
+                same_name = next(
+                    (p for p in r1_profiles.values() if p.get("name") == s["name"]), None
+                )
+                if same_name is not None:
+                    # The phase links a same-named profile rather than create a
+                    # duplicate, and leaves its secret alone. Say so now.
+                    conflicts.append(ConflictDetail(
+                        resource_type="radius_profile", resource_name=s["name"],
+                        description=(
+                            f"R1 already has a profile named '{s['name']}' — Create will link it "
+                            "instead, and any secret entered here is NOT applied to it"
+                            + (" (it still has the placeholder secret)"
+                               if same_name.get("placeholder_secret") else "")
+                            + ". Choose Use existing, or delete or rename it in R1 first."
+                        ),
+                        severity="warning",
+                    ))
+                if not s.get("primary"):
+                    conflicts.append(ConflictDetail(
+                        resource_type="radius_profile", resource_name=s["name"],
+                        description=(
+                            f"RADIUS '{s['name']}' — the SZ snapshot has no server address "
+                            "to create it from; use an existing R1 profile or don't migrate it"
+                        ),
+                        severity="error",
+                    ))
+                    continue
+                notes = [f"{s['primary']} (used by {users})"]
+                if not d.get("secret_provided"):
+                    conflicts.append(ConflictDetail(
+                        resource_type="radius_profile", resource_name=s["name"],
+                        description=(
+                            f"RADIUS '{s['name']}' will be created with a placeholder shared "
+                            "secret — authentication fails until you set it in R1"
+                        ),
+                        severity="warning",
+                    ))
+                    notes.append("placeholder shared secret")
+                actions.append(ResourceAction(
+                    resource_type="radius_profile", name=s["name"], action="create", notes=notes,
+                ))
+            else:
+                conflicts.append(ConflictDetail(
+                    resource_type="radius_profile", resource_name=s["name"],
+                    description=f"RADIUS '{s['name']}' — unknown choice {action!r}",
+                    severity="error",
+                ))
+
+        return conflicts, actions, skipped
