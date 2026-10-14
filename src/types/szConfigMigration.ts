@@ -154,6 +154,46 @@ export interface RadiusDecision {
   r1_profile_id: string | null;
 }
 
+// ── DPSK service choices (Review step) ─────────────────────────────
+// Counts and settings only; nothing here ever holds a passphrase.
+
+export interface DpskPoolSpec {
+  mode: 'new' | 'existing';
+  existing_pool_id?: string | null;
+  name?: string;
+  identity_group?: { mode: 'new' | 'existing'; name?: string; id?: string | null };
+  passphrase_length: number;
+  passphrase_format: string;
+  devices_per_passphrase: number | null;  // null = unlimited
+  expiration_days: number | null;         // null = never
+}
+
+export interface R1DpskPool {
+  id: string;
+  name: string;
+  passphrase_length: number | null;
+  passphrase_format: string | null;
+  devices_per_passphrase: number | null;
+  network_count: number | null;
+  identity_groups: Array<{ id: string; name: string; identity_count: number | null }>;
+}
+
+export interface R1IdentityGroup {
+  id: string;
+  name: string;
+  dpsk_pool_id: string | null;
+  identity_count: number | null;
+}
+
+export interface DpskChoices {
+  r1_pools: R1DpskPool[];
+  r1_identity_groups: R1IdentityGroup[];
+  default_pool: DpskPoolSpec;
+  formats: string[];
+  limits: { passphrase_length: [number, number]; devices_per_passphrase: [number, number] };
+  error: string | null;
+}
+
 // ── Wizard State ───────────────────────────────────────────────────
 
 export interface WizardState {
@@ -187,6 +227,8 @@ export interface WizardState {
   typeMappings: Record<string, TypeMapping> | null;
   radiusDecisions: Record<string, RadiusDecision> | null;  // null = not chosen yet
   wlanFallbacks: Record<string, WlanFallback>;
+  dpskPools: Record<string, DpskPoolSpec> | null;   // null = not edited yet (default applies)
+  dpskAssignments: Record<string, string>;          // wlan id -> pool key
   planJobId: string | null;
   planResult: PlanResult | null;
 
@@ -216,6 +258,7 @@ export type WizardAction =
   | { type: 'SET_PLAN'; jobId: string; result: PlanResult }
   | { type: 'SET_RADIUS_CHOICES'; decisions: Record<string, RadiusDecision>; fallbacks: Record<string, WlanFallback> }
   | { type: 'CLEAR_PLAN' }
+  | { type: 'SET_DPSK_CHOICES'; pools: Record<string, DpskPoolSpec>; assignments: Record<string, string> }
   | { type: 'SET_EXECUTION_STARTED'; jobId: string }
   | { type: 'SET_SESSION_ID'; sessionId: number }
   | { type: 'SET_ERROR'; error: string | null }
@@ -244,6 +287,8 @@ export const INITIAL_STATE: WizardState = {
   typeMappings: null,
   radiusDecisions: null,
   wlanFallbacks: {},
+  dpskPools: null,
+  dpskAssignments: {},
   planJobId: null,
   planResult: null,
   executionStarted: false,
@@ -348,6 +393,8 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         snapshotSummary: null,
         radiusDecisions: null,
         wlanFallbacks: {},
+        dpskPools: null,
+        dpskAssignments: {},
         currentStep: 2,
         highestStepReached: Math.max(state.highestStepReached ?? state.currentStep, 2),
       };
@@ -369,6 +416,7 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         destVenueName: action.venueName,
         // R1 profile ids belong to the tenant: a new destination re-asks.
         radiusDecisions: action.tenantId === state.tenantId ? state.radiusDecisions : null,
+        dpskPools: action.tenantId === state.tenantId ? state.dpskPools : null,
       };
 
     case 'SET_R1_SNAPSHOT':
@@ -398,6 +446,9 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         radiusDecisions: action.decisions,
         wlanFallbacks: action.fallbacks,
       };
+
+    case 'SET_DPSK_CHOICES':
+      return { ...state, dpskPools: action.pools, dpskAssignments: action.assignments };
 
     case 'CLEAR_PLAN':
       // Choices changed after a plan was built: that plan no longer describes

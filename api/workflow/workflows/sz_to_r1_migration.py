@@ -13,13 +13,14 @@ Prerequisites (completed BEFORE workflow starts):
 
 Flow:
 1. sz_validate_and_plan (global) → Read SZ snapshot, resolve, build unit mappings, pause
-2. create_radius_profiles (global) → Find-or-create RADIUS profiles for AAA WLANs
+2. create_radius_profiles (global) → RADIUS profiles as chosen on Review
+2b. create_dpsk_pools (global) → DPSK pools + identity groups as chosen on Review
 3. create_networks (per-WLAN) → Create/reuse WiFi networks in R1
 4. configure_dpsk (per-WLAN, skip if not DPSK) → Create identity groups + DPSK pools
 5. activate_ssids (per-WLAN) → Activate SSIDs on appropriate AP Groups
 
 Dependency graph:
-    sz_validate_and_plan → create_radius_profiles → create_networks → configure_dpsk
+    sz_validate_and_plan → create_radius_profiles → create_dpsk_pools → create_networks → configure_dpsk
                                                                   → activate_ssids
 """
 
@@ -70,6 +71,25 @@ SZtoR1MigrationWorkflow = Workflow(
             api_calls_per_unit=0,
         ),
 
+        # Phase 1b: Create DPSK Pools (global)
+        Phase(
+            id="create_dpsk_pools",
+            name="Create DPSK Pools",
+            description=(
+                "Create the DPSK services (and identity groups) chosen on Review, "
+                "once each. Global because several WLANs can share one pool and "
+                "per-WLAN units would race to create it. No-op for plans without "
+                "DPSK choices."
+            ),
+            executor="workflow.phases.sz_migration.create_dpsk_pools.CreateDpskPoolsPhase",
+            depends_on=["create_radius_profiles"],
+            per_unit=False,
+            critical=True,
+            inputs=["sz_snapshot_job_id"],
+            outputs=["dpsk_pool_ids"],
+            api_calls_per_unit=0,
+        ),
+
         # Phase 2: Create Networks (per-WLAN)
         Phase(
             id="create_networks",
@@ -79,7 +99,7 @@ SZtoR1MigrationWorkflow = Workflow(
                 "Network type (PSK/Open/AAA/DPSK) determined by security mapper."
             ),
             executor="workflow.phases.sz_migration.create_networks.CreateNetworksPhase",
-            depends_on=["create_radius_profiles"],
+            depends_on=["create_dpsk_pools"],
             per_unit=True,
             critical=True,
             inputs=["unit_id", "unit_number"],

@@ -28,6 +28,7 @@ from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans, R1NetworkTypeMapping
 from services.sz_migration.field_mappings import build_r1_advanced_settings
 from services.sz_migration.radius_choices import referenced_services, r1_profile_summary
+from services.sz_migration.dpsk_choices import load_r1_dpsk, validate_dpsk_plan
 from services.r1_inventory import capture_venue_inventory
 
 logger = logging.getLogger(__name__)
@@ -252,6 +253,28 @@ class ValidateMigrationPhase(PhaseExecutor):
                 },
             )
 
+        # ── DPSK services chosen on Review ────────────────────────────
+        # Runs after the loop: which WLANs end up DPSK depends on the RADIUS
+        # fallbacks applied above. None = an older client; configure_dpsk then
+        # keeps its per-WLAN {wlan}-pool behaviour.
+        dpsk_conflicts: List[ConflictDetail] = []
+        dpsk_pools = self.context.options.get("dpsk_pools")
+        if dpsk_pools is not None:
+            assignments = self.context.options.get("dpsk_assignments") or {}
+            dpsk_wlans = {
+                uid: u.plan.extra.get("sz_wlan_name", uid)
+                for uid, u in unit_mappings.items()
+                if u.plan.extra.get("r1_network_type") == "dpsk"
+            }
+            if dpsk_wlans:
+                r1_pools, r1_groups = await load_r1_dpsk(self.r1_client, self.tenant_id)
+                dpsk_conflicts, dpsk_actions = validate_dpsk_plan(
+                    dpsk_pools, assignments, dpsk_wlans, r1_pools, r1_groups,
+                )
+                actions.extend(dpsk_actions)
+                for uid in dpsk_wlans:
+                    unit_mappings[uid].plan.extra["dpsk_pool_key"] = assignments.get(uid)
+
         # ── Build validation result ───────────────────────────────────
         # Estimate API calls (from the units actually planned)
         planned_types = [u.plan.extra.get("r1_network_type") for u in unit_mappings.values()]
@@ -264,7 +287,7 @@ class ValidateMigrationPhase(PhaseExecutor):
             + len(resolver_result.activations)  # SSID activations
         )
 
-        conflicts = radius_conflicts + setting_warnings
+        conflicts = radius_conflicts + dpsk_conflicts + setting_warnings
         validation_result = ValidationResult(
             valid=not any(c.severity == "error" for c in conflicts),
             conflicts=conflicts,

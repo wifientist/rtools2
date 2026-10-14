@@ -3,12 +3,12 @@ import { ChevronDown, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import ActivationMatrix from './ActivationMatrix';
 import NetworkSettingsReview from './NetworkSettingsReview';
-import DpskDecisions from './DpskDecisions';
+import DpskChoicesPanel, { type DpskWlan } from './DpskChoicesPanel';
 import RadiusMapping from './RadiusMapping';
 import MigrationBlueprint from './MigrationBlueprint';
 import type {
   WizardState, WizardAction, ResolverResult, TypeMapping, PlanResult,
-  RadiusChoices, RadiusDecision, WlanFallback,
+  RadiusChoices, RadiusDecision, WlanFallback, DpskChoices, DpskPoolSpec,
 } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -65,12 +65,77 @@ export default function Step4Review({ state, dispatch }: Props) {
     return true;
   });
 
-  // Zones with no RADIUS have nothing to decide: plan straight away, as before.
+  // ── DPSK services ──────────────────────────────────────────────
+  // Which WLANs end up DPSK: native SZ DPSK, plus RADIUS WLANs converted
+  // above -- minus any whose RADIUS service is dropped and the WLAN skipped.
+  const radiusSkippedWlans = new Set(
+    (radiusChoices?.services ?? [])
+      .filter(svc => decisions[svc.id]?.action === 'skip')
+      .flatMap(svc => svc.used_by.filter(u => u.role === 'authentication').map(u => u.wlan_id)),
+  );
+  const dpskWlans: DpskWlan[] = Object.entries(state.typeMappings ?? {}).flatMap(([id, m]): DpskWlan[] => {
+    const name = m.wlan_name ?? id;
+    if (radiusSkippedWlans.has(id)) {
+      return state.wlanFallbacks[id] === 'dpsk' ? [{ id, name, source: 'converted' as const }] : [];
+    }
+    return m.r1_network_type === 'dpsk' ? [{ id, name, source: 'sz_dpsk' as const }] : [];
+  });
+  const needsDpskChoice = dpskWlans.length > 0;
+
+  const [dpskChoices, setDpskChoices] = useState<DpskChoices | null>(null);
+  const [dpskLoading, setDpskLoading] = useState(false);
   useEffect(() => {
-    if (radiusChoices && !needsRadiusChoice && !state.planResult && !planning) {
+    if (needsDpskChoice && !dpskChoices && !dpskLoading) loadDpskChoices();
+  }, [needsDpskChoice]);
+
+  // Effective choices: what was edited, else one shared new pool for all.
+  const dpskPools: Record<string, DpskPoolSpec> =
+    state.dpskPools ?? (dpskChoices ? { shared: dpskChoices.default_pool } : {});
+  const firstPoolKey = Object.keys(dpskPools)[0] ?? '';
+  const dpskAssignments: Record<string, string> = Object.fromEntries(
+    dpskWlans.map(w => [w.id, state.dpskAssignments[w.id] ?? firstPoolKey]),
+  );
+  const dpskComplete = !needsDpskChoice || (!!dpskChoices && dpskWlans.every(w => {
+    const spec = dpskPools[dpskAssignments[w.id]];
+    if (!spec) return false;
+    if (spec.mode === 'existing') return !!spec.existing_pool_id;
+    const ig = spec.identity_group;
+    return !!spec.name?.trim() && !!ig && (ig.mode === 'new' ? !!ig.name?.trim() : !!ig.id);
+  }));
+
+  const needsReviewChoice = needsRadiusChoice || needsDpskChoice;
+
+  // Nothing to decide (no RADIUS, no DPSK): plan straight away, as before.
+  useEffect(() => {
+    if (radiusChoices && !needsReviewChoice && !state.planResult && !planning) {
       runPlan();
     }
   }, [radiusChoices]);
+
+  const loadDpskChoices = async () => {
+    if (!state.extractionJobId || !state.r1ControllerId) return;
+    setDpskLoading(true);
+    try {
+      const params = new URLSearchParams({ r1_controller_id: String(state.r1ControllerId) });
+      if (state.tenantId) params.set('tenant_id', state.tenantId);
+      const res = await apiFetch(`${API_URL}/sz-migration/dpsk-choices/${state.extractionJobId}?${params}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Could not load DPSK choices: ${res.status}`);
+      }
+      setDpskChoices(await res.json());
+      setOpenSections(prev => new Set(prev).add('dpsk'));
+    } catch (e: any) {
+      dispatch({ type: 'SET_ERROR', error: e.message });
+    } finally {
+      setDpskLoading(false);
+    }
+  };
+
+  const updateDpsk = (pools: Record<string, DpskPoolSpec>, assignments: Record<string, string>) => {
+    dispatch({ type: 'SET_DPSK_CHOICES', pools, assignments });
+    if (state.planResult) dispatch({ type: 'CLEAR_PLAN' });
+  };
 
   const loadRadiusChoices = async () => {
     if (!state.extractionJobId || !state.r1ControllerId) return;
@@ -163,6 +228,13 @@ export default function Step4Review({ state, dispatch }: Props) {
               }]),
             ),
             wlan_fallbacks: state.wlanFallbacks,
+          }),
+          ...(needsDpskChoice && {
+            // Only the services some WLAN actually uses.
+            dpsk_pools: Object.fromEntries(
+              Object.entries(dpskPools).filter(([k]) => Object.values(dpskAssignments).includes(k)),
+            ),
+            dpsk_assignments: dpskAssignments,
           }),
         }),
       });
@@ -267,16 +339,6 @@ export default function Step4Review({ state, dispatch }: Props) {
               </AccordionPanel>
 
               <AccordionPanel
-                title="DPSK Configuration"
-                subtitle={`${Object.values(state.typeMappings).filter(m => m.r1_network_type === 'dpsk').length} DPSK WLANs`}
-                section="dpsk"
-                isOpen={openSections.has('dpsk')}
-                onToggle={toggleSection}
-              >
-                <DpskDecisions typeMappings={state.typeMappings} />
-              </AccordionPanel>
-
-              <AccordionPanel
                 title="RADIUS Servers"
                 subtitle={
                   radiusChoices
@@ -301,18 +363,6 @@ export default function Step4Review({ state, dispatch }: Props) {
                       onFallback={(wid, fb) => updateChoices(decisions, { ...state.wlanFallbacks, [wid]: fb })}
                       onSecret={handleSecret}
                     />
-                    {needsRadiusChoice && !plan && (
-                      <div className="flex justify-end">
-                        <button
-                          onClick={runPlan}
-                          disabled={!decisionsComplete || planning}
-                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm font-semibold flex items-center gap-2"
-                        >
-                          {planning && <Loader2 size={14} className="animate-spin" />}
-                          Build plan with these choices
-                        </button>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="text-sm text-gray-500 flex items-center gap-2">
@@ -321,6 +371,54 @@ export default function Step4Review({ state, dispatch }: Props) {
                   </div>
                 )}
               </AccordionPanel>
+
+              <AccordionPanel
+                title="DPSK Services"
+                subtitle={`${dpskWlans.length} WLAN${dpskWlans.length === 1 ? '' : 's'} will be DPSK`}
+                section="dpsk"
+                isOpen={openSections.has('dpsk')}
+                onToggle={toggleSection}
+                badge={needsDpskChoice && !plan ? 'CHOOSE' : undefined}
+                badgeColor={needsDpskChoice && !plan ? 'amber' : undefined}
+              >
+                {!needsDpskChoice ? (
+                  <div className="text-sm text-gray-500 italic">
+                    No WLAN will be a DPSK network in R1. This section can be skipped.
+                  </div>
+                ) : dpskChoices ? (
+                  <DpskChoicesPanel
+                    choices={dpskChoices}
+                    wlans={dpskWlans}
+                    pools={dpskPools}
+                    assignments={dpskAssignments}
+                    onChange={updateDpsk}
+                    disabled={planning}
+                  />
+                ) : (
+                  <div className="text-sm text-gray-500 flex items-center gap-2">
+                    {dpskLoading && <Loader2 size={14} className="animate-spin" />}
+                    {dpskLoading ? 'Loading DPSK pools…' : 'DPSK choices unavailable'}
+                  </div>
+                )}
+              </AccordionPanel>
+
+              {needsReviewChoice && !plan && (
+                <div className="flex justify-end items-center gap-3">
+                  {(!decisionsComplete || !dpskComplete) && (
+                    <span className="text-xs text-amber-700">
+                      Finish the choices marked CHOOSE above
+                    </span>
+                  )}
+                  <button
+                    onClick={runPlan}
+                    disabled={!decisionsComplete || !dpskComplete || planning}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm font-semibold flex items-center gap-2"
+                  >
+                    {planning && <Loader2 size={14} className="animate-spin" />}
+                    Build plan with these choices
+                  </button>
+                </div>
+              )}
             </>
           )}
 

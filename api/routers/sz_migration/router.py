@@ -59,6 +59,10 @@ from services.sz_migration.mapper import map_all_wlans
 from services.sz_migration.radius_choices import (
     RADIUS_SECRET_KEY, RADIUS_SECRET_TTL, r1_profile_summary, referenced_services, suggest,
 )
+from services.sz_migration.dpsk_choices import (
+    MAX_DEVICES, MAX_PASSPHRASE_LENGTH, MIN_PASSPHRASE_LENGTH, PASSPHRASE_FORMATS,
+    default_plan, load_r1_dpsk,
+)
 from services.sz_migration.auditor import run_audit as run_migration_audit
 from services.r1_inventory import capture_venue_inventory
 from schemas.sz_migration import SZMigrationSnapshot, ResolverResult
@@ -677,6 +681,28 @@ class RadiusDecision(BaseModel):
         return self
 
 
+class DpskIdentityGroupSpec(BaseModel):
+    mode: Literal["new", "existing"]
+    name: Optional[str] = None   # for "new"
+    id: Optional[str] = None     # for "existing"
+
+
+class DpskPoolSpec(BaseModel):
+    """
+    One DPSK service on Review. Field-level rules (lengths, R1 name clashes,
+    a group already bound to a pool) are checked by validation, where they
+    become plan conflicts the user can see and fix, rather than a 422 here.
+    """
+    mode: Literal["new", "existing"]
+    existing_pool_id: Optional[str] = None
+    name: Optional[str] = None
+    identity_group: Optional[DpskIdentityGroupSpec] = None
+    passphrase_length: int = 12
+    passphrase_format: str = "KEYBOARD_FRIENDLY"
+    devices_per_passphrase: Optional[int] = None   # None = unlimited
+    expiration_days: Optional[int] = None          # None = never
+
+
 class MigrationPlanRequest(BaseModel):
     """Request to create a migration workflow plan."""
     sz_controller_id: int = Field(..., description="SZ controller ID (for snapshot reference)")
@@ -688,6 +714,10 @@ class MigrationPlanRequest(BaseModel):
     radius_decisions: Optional[Dict[str, RadiusDecision]] = None
     # Keyed by SZ WLAN id: what happens to a WLAN whose RADIUS service is 'skip'.
     wlan_fallbacks: Dict[str, Literal["skip", "dpsk"]] = Field(default_factory=dict)
+    # DPSK services by key, and which WLAN uses which. Absent = legacy
+    # per-WLAN {wlan}-pool behaviour.
+    dpsk_pools: Optional[Dict[str, DpskPoolSpec]] = None
+    dpsk_assignments: Dict[str, str] = Field(default_factory=dict)
 
 
 class MigrationPlanResponse(BaseModel):
@@ -966,6 +996,54 @@ async def get_radius_choices(
     }
 
 
+@router.get("/dpsk-choices/{sz_snapshot_job_id}")
+@require_alpha()
+async def get_dpsk_choices(
+    sz_snapshot_job_id: str,
+    r1_controller_id: int,
+    tenant_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    What the Review step needs to choose DPSK services: the tenant's pools
+    (settings, identity groups, counts) and identity groups (which pool, if
+    any, each already serves), plus a suggested new shared pool.
+
+    Counts only -- no passphrase is read or returned.
+    """
+    raw = await _get_snapshot_raw(sz_snapshot_job_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
+    snapshot = SZMigrationSnapshot.model_validate_json(raw)
+
+    controller = validate_controller_access(r1_controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="R1 controller must be RuckusONE")
+    resolved_tenant = resolve_tenant_id(controller, tenant_id)
+    r1_client = create_r1_client_from_controller(r1_controller_id, db)
+
+    error = None
+    try:
+        pools, groups = await load_r1_dpsk(r1_client, resolved_tenant)
+    except Exception as e:
+        logger.warning(f"Could not list R1 DPSK pools/identity groups: {type(e).__name__}: {e}")
+        pools, groups, error = {}, {}, "Could not list DPSK pools in R1; only 'Create new' is available"
+
+    default = default_plan(snapshot.zone.name, [])["pools"]["shared"]
+    return {
+        "r1_pools": sorted(pools.values(), key=lambda p: (p.get("name") or "").lower()),
+        "r1_identity_groups": sorted(groups.values(), key=lambda g: (g.get("name") or "").lower()),
+        "default_pool": default,
+        "formats": list(PASSPHRASE_FORMATS),
+        "limits": {
+            "passphrase_length": [MIN_PASSPHRASE_LENGTH, MAX_PASSPHRASE_LENGTH],
+            "devices_per_passphrase": [1, MAX_DEVICES],
+        },
+        "error": error,
+    }
+
+
 @router.post("/workflow/plan", response_model=MigrationPlanResponse)
 @require_alpha()
 async def create_migration_plan(
@@ -1004,7 +1082,10 @@ async def create_migration_plan(
         "sz_snapshot_job_id": request.sz_snapshot_job_id,
         "sz_controller_id": request.sz_controller_id,
         "wlan_fallbacks": dict(request.wlan_fallbacks),
+        "dpsk_assignments": dict(request.dpsk_assignments),
     }
+    if request.dpsk_pools is not None:
+        options["dpsk_pools"] = {k: v.model_dump() for k, v in request.dpsk_pools.items()}
     # Decisions go into options WITHOUT their secrets: options are persisted
     # with the job and come back through job/status endpoints.
     secrets: Dict[str, str] = {}
