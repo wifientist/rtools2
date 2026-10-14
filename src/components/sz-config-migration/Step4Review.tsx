@@ -360,7 +360,10 @@ export default function Step4Review({ state, dispatch }: Props) {
                       secretSet={secretSet}
                       disabled={planning}
                       onDecision={(sid, d) => updateChoices({ ...decisions, [sid]: d }, state.wlanFallbacks)}
-                      onFallback={(wid, fb) => updateChoices(decisions, { ...state.wlanFallbacks, [wid]: fb })}
+                      onFallback={(wids, fb) => updateChoices(decisions, {
+                        ...state.wlanFallbacks,
+                        ...Object.fromEntries(wids.map(w => [w, fb])),
+                      })}
                       onSecret={handleSecret}
                     />
                   </div>

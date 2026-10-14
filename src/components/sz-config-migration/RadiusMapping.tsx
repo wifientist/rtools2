@@ -11,7 +11,8 @@ interface Props {
   // parent and are never rendered back.
   secretSet: Record<string, boolean>;
   onDecision: (serviceId: string, decision: RadiusDecision) => void;
-  onFallback: (wlanId: string, fallback: WlanFallback) => void;
+  // Takes many ids so one click can set every stranded WLAN at once.
+  onFallback: (wlanIds: string[], fallback: WlanFallback) => void;
   onSecret: (serviceId: string, secret: string) => void;
   disabled?: boolean;
 }
@@ -45,6 +46,31 @@ export default function RadiusMapping({
           <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> {choices.error}
         </div>
       )}
+
+      {(() => {
+        // Every WLAN stranded by a "Don't migrate" service, across all of them.
+        const stranded = Array.from(new Set(
+          choices.services
+            .filter(s => (decisions[s.id]?.action ?? s.suggestion.action) === 'skip')
+            .flatMap(s => s.used_by.filter(u => u.role === 'authentication').map(u => u.wlan_id)),
+        ));
+        const skippedServices = choices.services.filter(
+          s => (decisions[s.id]?.action ?? s.suggestion.action) === 'skip',
+        ).length;
+        if (stranded.length === 0 || skippedServices < 2) return null;
+        const open = stranded.filter(id => !fallbacks[id]).length;
+        return (
+          <div className="border border-gray-200 bg-white rounded-lg px-3 py-2 text-xs flex items-center gap-2 flex-wrap">
+            <span className="text-gray-700">
+              {stranded.length} WLANs across {skippedServices} services lose their RADIUS server
+              {open ? <span className="text-red-600"> · {open} still need a choice</span> : null}
+            </span>
+            <span className="ml-auto">
+              <BulkButtons label="All of them:" disabled={disabled} onPick={fb => onFallback(stranded, fb)} />
+            </span>
+          </div>
+        );
+      })()}
 
       {choices.services.map(svc => {
         const d = decisions[svc.id] ?? { action: svc.suggestion.action, r1_profile_id: svc.suggestion.r1_profile_id };
@@ -143,9 +169,23 @@ export default function RadiusMapping({
 
             {d.action === 'skip' && authUsers.length > 0 && (
               <div className="pl-6 space-y-1.5">
-                <div className="text-xs text-gray-700">
-                  These WLANs authenticate against it. For each, choose what happens:
+                <div className="text-xs text-gray-700 flex items-center gap-2 flex-wrap">
+                  <span>
+                    {authUsers.length} WLAN{authUsers.length === 1 ? '' : 's'} authenticate against it.
+                    {(() => {
+                      const open = authUsers.filter(u => !fallbacks[u.wlan_id]).length;
+                      return open ? <span className="text-red-600"> {open} still need a choice.</span> : null;
+                    })()}
+                  </span>
+                  {authUsers.length > 1 && (
+                    <BulkButtons
+                      label={`All ${authUsers.length}:`}
+                      disabled={disabled}
+                      onPick={fb => onFallback(authUsers.map(u => u.wlan_id), fb)}
+                    />
+                  )}
                 </div>
+                <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
                 {authUsers.map(u => (
                   <div key={u.wlan_id} className="flex items-center gap-3 text-xs flex-wrap">
                     <span className="font-medium w-32 truncate" title={u.wlan_name}>{u.wlan_name}</span>
@@ -156,7 +196,7 @@ export default function RadiusMapping({
                           name={`fallback-${u.wlan_id}`}
                           checked={fallbacks[u.wlan_id] === fb}
                           disabled={disabled}
-                          onChange={() => onFallback(u.wlan_id, fb)}
+                          onChange={() => onFallback([u.wlan_id], fb)}
                         />
                         {fb === 'skip' ? 'Skip this WLAN' : 'Convert to R1 DPSK'}
                       </label>
@@ -164,11 +204,33 @@ export default function RadiusMapping({
                     {!fallbacks[u.wlan_id] && <span className="text-red-600">choose one</span>}
                   </div>
                 ))}
+                </div>
               </div>
             )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+function BulkButtons({ label, disabled, onPick }: {
+  label: string;
+  disabled?: boolean;
+  onPick: (fb: WlanFallback) => void;
+}) {
+  const btn = 'px-2 py-0.5 rounded border text-xs disabled:opacity-50';
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="text-gray-500">{label}</span>
+      <button type="button" disabled={disabled} onClick={() => onPick('skip')}
+        className={`${btn} border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}>
+        Skip
+      </button>
+      <button type="button" disabled={disabled} onClick={() => onPick('dpsk')}
+        className={`${btn} border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100`}>
+        Convert to R1 DPSK
+      </button>
+    </span>
   );
 }

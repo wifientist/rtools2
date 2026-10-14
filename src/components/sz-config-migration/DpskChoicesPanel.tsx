@@ -97,8 +97,26 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
 
       {/* WLAN → pool */}
       <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-3 py-2 bg-gray-50 text-xs font-semibold text-gray-700">Which DPSK service each WLAN uses</div>
-        <div className="divide-y divide-gray-100">
+        <div className="px-3 py-2 bg-gray-50 text-xs flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-gray-700">Which DPSK service each WLAN uses</span>
+          {wlans.length > 1 && keys.length > 0 && (
+            <label className="ml-auto flex items-center gap-1.5 text-gray-600">
+              Set all {wlans.length} to
+              <select
+                className={input}
+                value=""
+                disabled={disabled}
+                onChange={e => e.target.value && onChange(
+                  pools, Object.fromEntries(wlans.map(w => [w.id, e.target.value])),
+                )}
+              >
+                <option value="">Choose…</option>
+                {keys.map(k => <option key={k} value={k}>{poolLabel(k, pools[k], choices)}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
           {wlans.map(w => (
             <div key={w.id} className="px-3 py-2 flex items-center gap-3 text-xs flex-wrap">
               <span className="font-medium w-36 truncate" title={w.name}>{w.name}</span>
