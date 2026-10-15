@@ -29,6 +29,7 @@ from services.sz_migration.mapper import map_all_wlans, R1NetworkTypeMapping
 from services.sz_migration.field_mappings import build_r1_advanced_settings
 from services.sz_migration.radius_choices import referenced_services, r1_profile_summary
 from services.sz_migration.dpsk_choices import load_r1_dpsk, validate_dpsk_plan
+from services.sz_migration.ap_group_plan import plan_ap_groups, r1_radio_types
 from services.r1_inventory import capture_venue_inventory
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,9 @@ class ValidateMigrationPhase(PhaseExecutor):
         resolver_result: Dict[str, Any] = {}
         type_mappings: Dict[str, Any] = {}
         r1_inventory_summary: Dict[str, Any] = {}
+        # R1 AP Group names create_ap_groups must create (SZ groups with APs
+        # and no R1 counterpart).
+        ap_groups_to_create: List[str] = []
 
     async def execute(self, inputs: Inputs) -> Outputs:
         # ── Load SZ snapshot from Redis ───────────────────────────────
@@ -127,6 +131,31 @@ class ValidateMigrationPhase(PhaseExecutor):
         fallbacks: Dict[str, str] = self.context.options.get("wlan_fallbacks") or {}
         wlan_overrides: Dict[str, Dict[str, Any]] = {}
 
+        # ── Where each SZ AP Group lands in R1 ────────────────────────
+        apg_plan = plan_ap_groups(snapshot.ap_groups, r1_inventory)
+        apg_conflicts: List[ConflictDetail] = []
+        for sz_name, apg in apg_plan.items():
+            if apg["error"]:
+                apg_conflicts.append(ConflictDetail(
+                    resource_type="ap_group", resource_name=sz_name,
+                    description=f"AP Group '{sz_name}' — {apg['error']}", severity="error",
+                ))
+            elif apg["empty"] and apg["r1_id"] is None:
+                actions.append(ResourceAction(
+                    resource_type="ap_group", name=sz_name, action="skip",
+                    notes=["No APs in this SZ AP Group, so nothing broadcasts there"],
+                ))
+            elif apg["create"]:
+                actions.append(ResourceAction(
+                    resource_type="ap_group", name=sz_name, action="create",
+                    notes=["Created empty; APs join it when they are moved into the venue"],
+                ))
+            else:
+                actions.append(ResourceAction(
+                    resource_type="ap_group", name=apg["r1_name"], action="reuse",
+                    existing_id=apg["r1_id"], notes=[f"For SZ AP Group '{sz_name}'"],
+                ))
+
         for wlan in snapshot.wlans:
             wlan_id = wlan.id
             mapping = type_mappings.get(wlan_id)
@@ -165,17 +194,29 @@ class ValidateMigrationPhase(PhaseExecutor):
             # Check if R1 network already exists (by name)
             existing_network = r1_inventory.network_by_name(wlan.name)
 
-            # Collect activations for this WLAN and map SZ AP Group names → R1 IDs
+            # Collect activations for this WLAN: R1 AP Group (existing or to
+            # be created) and R1 radio types. Never an SZ id -- R1 can't use one.
             wlan_activations = []
             for a in resolver_result.activations:
                 if a.wlan_id != wlan_id:
                     continue
+                apg = apg_plan.get(a.ap_group_name)
+                if apg is None or apg["empty"] or apg["error"]:
+                    continue
+                radio_types, radio_notes = r1_radio_types(a.radios, wlan.encryption)
+                for n in radio_notes:
+                    setting_warnings.append(ConflictDetail(
+                        unit_id=wlan_id, resource_type="wifi_network_activation",
+                        resource_name=wlan.name, description=f"{wlan.name} on '{a.ap_group_name}' — {n}",
+                        severity="warning",
+                    ))
+                if not radio_types:
+                    continue
                 act = a.model_dump()
-                # Resolve SZ AP Group name to R1 AP Group ID
-                r1_apg = r1_inventory.ap_group_by_name(a.ap_group_name)
-                if r1_apg:
-                    act["r1_ap_group_id"] = r1_apg.get("id")
-                    act["r1_ap_group_name"] = r1_apg.get("name", a.ap_group_name)
+                act["r1_ap_group_id"] = apg["r1_id"]          # None until create_ap_groups runs
+                act["r1_ap_group_name"] = apg["r1_name"]
+                act["r1_ap_group_create"] = apg["create"]
+                act["r1_radio_types"] = radio_types
                 wlan_activations.append(act)
 
             # Pre-compute R1 advanced settings from SZ raw data
@@ -287,7 +328,7 @@ class ValidateMigrationPhase(PhaseExecutor):
             + len(resolver_result.activations)  # SSID activations
         )
 
-        conflicts = radius_conflicts + dpsk_conflicts + setting_warnings
+        conflicts = apg_conflicts + radius_conflicts + dpsk_conflicts + setting_warnings
         validation_result = ValidationResult(
             valid=not any(c.severity == "error" for c in conflicts),
             conflicts=conflicts,
@@ -326,6 +367,7 @@ class ValidateMigrationPhase(PhaseExecutor):
             resolver_result=resolver_result.model_dump(),
             type_mappings=type_mappings_serializable,
             r1_inventory_summary=r1_inventory.summary(),
+            ap_groups_to_create=sorted(a["r1_name"] for a in apg_plan.values() if a["create"]),
         )
 
     async def _apply_radius_decisions(self, snapshot: SZMigrationSnapshot):
