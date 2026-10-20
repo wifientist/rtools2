@@ -33,6 +33,7 @@ import PerUnitSSID from "@/pages/PerUnitSSID";
 import APPortConfig from "@/pages/APPortConfig";
 import APRename from "@/pages/APRename";
 import BulkWlanEdit from "@/pages/BulkWlanEdit";
+import BulkWlanDelete from "@/pages/BulkWlanDelete";
 import MigrationDashboard from "@/pages/MigrationDashboard";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import RoamingExplainer from "@/pages/RoamingExplainer";
@@ -88,6 +89,7 @@ const App = () => {
           <Route path="/ap-port-config" element={<ProtectedRoute element={<APPortConfig />} />} />
           <Route path="/ap-rename" element={<ProtectedRoute element={<APRename />} />} />
           <Route path="/bulk-wlan" element={<ProtectedRoute element={<BulkWlanEdit />} />} />
+          <Route path="/bulk-wlan-delete" element={<BetaRoute element={<BulkWlanDelete />} />} />
           <Route path="/pop-swap" element={<AlphaRoute element={<APPopAndSwap />} />} />
           <Route path="/bulk-ap-tagging" element={<BetaRoute element={<BulkAPTagging />} />} />
           <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />

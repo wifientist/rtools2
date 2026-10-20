@@ -201,6 +201,9 @@ app.include_router(ap_rename.router, tags=["AP Rename"])
 # Bulk WLAN Edit Router - bulk WiFi network settings editing
 app.include_router(bulk_wlan.router, tags=["Bulk WLAN Edit"])
 
+# Bulk WLAN Delete Router - bulk WiFi network deletion with in-use checks
+app.include_router(bulk_wlan.delete_router, tags=["Bulk WLAN Delete"])
+
 # Workflow Job Management Router - generic job management for all workflows
 app.include_router(workflows_router)
 
