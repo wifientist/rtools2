@@ -381,6 +381,9 @@ class ValidationSummary(BaseModel):
     # SSIDs excluded because their unit name is an export artefact
     # ("undefined@Property"). Named so a broken export is obvious in the plan.
     excluded_junk_ssids: List[str] = Field(default_factory=list)
+    # Export entries dropped because the username is not an account number
+    # (likely an unconverted email). A count only -- the names are PII.
+    skipped_nonnumeric_usernames: int = 0
     radius_groups_to_create: int = 0
     radius_groups_existing: int = 0
     total_api_calls: int = 0

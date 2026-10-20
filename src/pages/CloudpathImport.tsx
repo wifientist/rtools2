@@ -238,6 +238,7 @@ interface ScenarioDetection {
   unit_ssid_counts: { ssid: string; unit: string; count: number }[];
   passphrases_without_unit: number;   // no unit SSID at all
   excluded_junk_ssids: string[];      // "undefined@Property" etc — not created
+  skipped_usernames: number;          // not an account number — not imported
   property_name: string;              // the part after '@' on the unit SSIDs
 }
 
@@ -765,7 +766,13 @@ function CloudpathImport() {
 
   // Analyze uploaded JSON for scenario detection and suffix patterns (client-side preview)
   const analyzeCloudpathData = (data: Record<string, any>): ScenarioDetection => {
-    const dpsks = data.dpsks || [];
+    // Only "4021" or "4021_tier" usernames import; anything else is likely an
+    // unconverted email (PII) and is dropped. Mirrors is_importable_username
+    // in dpsk_usernames.py -- keep the two in step.
+    const importableUsername = /^\d+(?:_[A-Za-z0-9-]+)?$/;
+    const rawDpsks: any[] = data.dpsks || [];
+    const dpsks = rawDpsks.filter((d) => importableUsername.test(d.name || ''));
+    const skippedUsernames = rawDpsks.length - dpsks.length;
     // Split on the LAST '@': everything before it is the unit, everything
     // after is the property. Mirrors unit_ssid.py on the backend -- keep the
     // two in step. The old /^(\d+)@(.+)$/ required an all-digit unit, so a
@@ -942,6 +949,7 @@ function CloudpathImport() {
       passphrases_on_property: passphrasesOnProperty,
       unit_ssid_counts: unitSsidCounts,
       excluded_junk_ssids: Array.from(junkSsids).sort(),
+      skipped_usernames: skippedUsernames,
       // Most common property token across the unit SSIDs. Used to prefill the
       // AP Group postfix so the seeded list and the "Update AP list" button
       // agree — otherwise the default produced "unit@Property" while the
@@ -2010,6 +2018,21 @@ function CloudpathImport() {
                     </div>
                   )}
                 </div>
+
+                {scenarioDetection.skipped_usernames > 0 && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
+                    <div className="font-medium">
+                      {scenarioDetection.skipped_usernames} DPSK(s) will NOT be
+                      imported — username is not an account number
+                    </div>
+                    <div className="mt-1">
+                      Only usernames that are all digits, or digits_tier
+                      (e.g. 4021_ultrafast), are imported. Anything else is
+                      likely an email that was never converted, so it is left
+                      out to keep personal data out of RuckusONE.
+                    </div>
+                  </div>
+                )}
 
                 {scenarioDetection.excluded_junk_ssids.length > 0 && (
                   <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">

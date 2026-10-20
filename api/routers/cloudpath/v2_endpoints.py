@@ -34,6 +34,7 @@ from workflow.v2.brain import WorkflowBrain
 from workflow.v2.graph import DependencyGraph
 from workflow.workflows import get_workflow
 from workflow.workflows.cloudpath_import import CloudpathImportWorkflow
+from workflow.phases.dpsk_usernames import is_importable_username
 from workflow.events import WorkflowEventPublisher
 
 # Reuse validation from existing router
@@ -414,7 +415,10 @@ async def get_plan(
 
     # Get passphrase count from input data or unit mappings
     input_passphrases = job.input_data.get('cloudpath_data', {}).get('dpsks', [])
-    result.passphrase_count = len(input_passphrases)
+    # Count what validate kept, not what the file held.
+    result.passphrase_count = sum(
+        1 for d in input_passphrases if is_importable_username(d.get('name', ''))
+    )
 
     # Build descriptive message based on scenario
     scenario_names = {
