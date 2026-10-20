@@ -91,6 +91,10 @@ async def capture_venue_inventory(
         ap_groups_response = await r1_client.venues.query_ap_groups(
             tenant_id,
             venue_id=venue_id,
+            # isDefault: the venue's default group has an empty name, so it
+            # can only be recognised by this flag.
+            fields=['id', 'name', 'venueId', 'venueName', 'description', 'aps',
+                    'wifiNetworks', 'isDefault'],
         )
         ap_groups = ap_groups_response.get("data", []) if isinstance(ap_groups_response, dict) else []
         progress("ap_groups", f"Found {len(ap_groups)} AP groups")

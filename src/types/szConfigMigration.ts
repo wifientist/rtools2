@@ -115,6 +115,87 @@ export interface PlanResult {
   r1_inventory_summary: Record<string, any>;
 }
 
+// ── RADIUS choices (Review step) ───────────────────────────────────
+// Shared secrets are deliberately NOT part of any of these: wizard state is
+// saved to localStorage and to the session record. A typed secret lives only
+// in the Review component's memory and is sent once, with the plan request.
+
+export type RadiusAction = 'create' | 'existing' | 'skip';
+export type WlanFallback = 'skip' | 'dpsk';
+
+export interface RadiusService {
+  id: string;
+  name: string;
+  roles: Array<'authentication' | 'accounting'>;
+  primary: string | null;
+  secondary: string | null;
+  used_by: Array<{ wlan_id: string; wlan_name: string; auth_type: string; role: string }>;
+  extraction_error: boolean;
+  suggestion: { action: RadiusAction; r1_profile_id: string | null; reason: string };
+}
+
+export interface R1RadiusProfile {
+  id: string;
+  name: string;
+  type: string | null;
+  primary: string | null;
+  secondary: string | null;
+  placeholder_secret: boolean;  // still on the migration placeholder: authenticates nobody
+}
+
+export interface RadiusChoices {
+  services: RadiusService[];
+  r1_profiles: R1RadiusProfile[];
+  error: string | null;
+}
+
+export interface RadiusDecision {
+  action: RadiusAction;
+  r1_profile_id: string | null;
+}
+
+// ── DPSK service choices (Review step) ─────────────────────────────
+// Counts and settings only; nothing here ever holds a passphrase.
+
+export interface DpskPoolSpec {
+  mode: 'new' | 'existing';
+  existing_pool_id?: string | null;
+  name?: string;
+  identity_group?: { mode: 'new' | 'existing'; name?: string; id?: string | null };
+  passphrase_length: number;
+  passphrase_format: string;
+  word_count?: number;               // DICTIONARY_WORDS only (3-6); R1 requires it there
+  numeric_suffix_enabled?: boolean;  // DICTIONARY_WORDS only
+  devices_per_passphrase: number | null;  // null = unlimited
+  expiration_days: number | null;         // null = never
+}
+
+export interface R1DpskPool {
+  id: string;
+  name: string;
+  passphrase_length: number | null;
+  passphrase_format: string | null;
+  devices_per_passphrase: number | null;
+  network_count: number | null;
+  identity_groups: Array<{ id: string; name: string; identity_count: number | null }>;
+}
+
+export interface R1IdentityGroup {
+  id: string;
+  name: string;
+  dpsk_pool_id: string | null;
+  identity_count: number | null;
+}
+
+export interface DpskChoices {
+  r1_pools: R1DpskPool[];
+  r1_identity_groups: R1IdentityGroup[];
+  default_pool: DpskPoolSpec;
+  formats: string[];
+  limits: { passphrase_length: [number, number]; devices_per_passphrase: [number, number]; word_count: [number, number] };
+  error: string | null;
+}
+
 // ── Wizard State ───────────────────────────────────────────────────
 
 export interface WizardState {
@@ -146,6 +227,10 @@ export interface WizardState {
   // Step 4: Review
   resolverResult: ResolverResult | null;
   typeMappings: Record<string, TypeMapping> | null;
+  radiusDecisions: Record<string, RadiusDecision> | null;  // null = not chosen yet
+  wlanFallbacks: Record<string, WlanFallback>;
+  dpskPools: Record<string, DpskPoolSpec> | null;   // null = not edited yet (default applies)
+  dpskAssignments: Record<string, string>;          // wlan id -> pool key
   planJobId: string | null;
   planResult: PlanResult | null;
 
@@ -173,6 +258,9 @@ export type WizardAction =
   | { type: 'SET_R1_SNAPSHOT'; jobId: string; summary: R1InventorySummary }
   | { type: 'SET_RESOLVER'; result: ResolverResult; mappings: Record<string, TypeMapping> }
   | { type: 'SET_PLAN'; jobId: string; result: PlanResult }
+  | { type: 'SET_RADIUS_CHOICES'; decisions: Record<string, RadiusDecision>; fallbacks: Record<string, WlanFallback> }
+  | { type: 'CLEAR_PLAN' }
+  | { type: 'SET_DPSK_CHOICES'; pools: Record<string, DpskPoolSpec>; assignments: Record<string, string> }
   | { type: 'SET_EXECUTION_STARTED'; jobId: string }
   | { type: 'SET_SESSION_ID'; sessionId: number }
   | { type: 'SET_ERROR'; error: string | null }
@@ -199,6 +287,10 @@ export const INITIAL_STATE: WizardState = {
   r1InventorySummary: null,
   resolverResult: null,
   typeMappings: null,
+  radiusDecisions: null,
+  wlanFallbacks: {},
+  dpskPools: null,
+  dpskAssignments: {},
   planJobId: null,
   planResult: null,
   executionStarted: false,
@@ -301,6 +393,10 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         extractionStatus: 'running',
         extractionProgress: null,
         snapshotSummary: null,
+        radiusDecisions: null,
+        wlanFallbacks: {},
+        dpskPools: null,
+        dpskAssignments: {},
         currentStep: 2,
         highestStepReached: Math.max(state.highestStepReached ?? state.currentStep, 2),
       };
@@ -320,6 +416,9 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         tenantId: action.tenantId,
         destVenueId: action.venueId,
         destVenueName: action.venueName,
+        // R1 profile ids belong to the tenant: a new destination re-asks.
+        radiusDecisions: action.tenantId === state.tenantId ? state.radiusDecisions : null,
+        dpskPools: action.tenantId === state.tenantId ? state.dpskPools : null,
       };
 
     case 'SET_R1_SNAPSHOT':
@@ -342,6 +441,21 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         planJobId: action.jobId,
         planResult: action.result,
       };
+
+    case 'SET_RADIUS_CHOICES':
+      return {
+        ...state,
+        radiusDecisions: action.decisions,
+        wlanFallbacks: action.fallbacks,
+      };
+
+    case 'SET_DPSK_CHOICES':
+      return { ...state, dpskPools: action.pools, dpskAssignments: action.assignments };
+
+    case 'CLEAR_PLAN':
+      // Choices changed after a plan was built: that plan no longer describes
+      // what would run, so it is dropped and has to be rebuilt.
+      return { ...state, planJobId: null, planResult: null };
 
     case 'SET_EXECUTION_STARTED':
       return {

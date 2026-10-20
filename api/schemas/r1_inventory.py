@@ -60,6 +60,16 @@ class R1VenueInventory(BaseModel):
                 return n
         return None
 
+    def default_ap_group(self) -> Optional[Dict[str, Any]]:
+        """The venue's default AP group: isDefault, or (older captures) an empty name."""
+        for g in self.ap_groups:
+            if g.get("isDefault") is True:
+                return g
+        for g in self.ap_groups:
+            if not (g.get("name") or "").strip():
+                return g
+        return None
+
     def ap_group_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Find an AP group by exact name match."""
         for g in self.ap_groups:

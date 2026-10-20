@@ -1257,6 +1257,8 @@ class VenueService:
         dpsk_service_id: str = None,
         already_activated: bool = False,
         wait_for_completion: bool = True,
+        step1_ap_groups: list = None,
+        skip_step1: bool = False,
     ):
         """
         Activate SSID directly on a specific AP Group, bypassing venue-wide broadcast.
@@ -1321,8 +1323,13 @@ class VenueService:
         if vlan_id is not None:
             ap_group_entry["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
+        # One network on SEVERAL groups (SZ migration): step 1 runs once with
+        # every target group in apGroups (step1_ap_groups), and the calls for
+        # the remaining groups pass skip_step1 so they only do steps 2-3.
+        # Re-sending step 1 with a one-group list may replace the association's
+        # group list rather than extend it -- unverified, so never risked.
         settings_payload = {
-            "apGroups": [ap_group_entry],
+            "apGroups": step1_ap_groups or [ap_group_entry],
             "scheduler": {"type": "ALWAYS_ON"},
             "isAllApGroups": False,
             "allApGroupsRadio": "Both",
@@ -1333,29 +1340,32 @@ class VenueService:
         if dpsk_service_id:
             settings_payload["dpskServiceProfileId"] = dpsk_service_id
 
-        if self.client.ec_type == "MSP":
-            response = self.client.put(
-                step1_path,
-                payload=settings_payload,
-                override_tenant_id=tenant_id
-            )
+        if skip_step1:
+            logger.info(f"[Step 1/3] Skipped (association already carries this group)")
         else:
-            response = self.client.put(
-                step1_path,
-                payload=settings_payload
-            )
+            if self.client.ec_type == "MSP":
+                response = self.client.put(
+                    step1_path,
+                    payload=settings_payload,
+                    override_tenant_id=tenant_id
+                )
+            else:
+                response = self.client.put(
+                    step1_path,
+                    payload=settings_payload
+                )
 
-        if response.status_code not in [200, 201, 202]:
-            logger.error(f"[Step 1/3] FAILED: {response.status_code} - {response.text}")
-            response.raise_for_status()
+            if response.status_code not in [200, 201, 202]:
+                logger.error(f"[Step 1/3] FAILED: {response.status_code} - {response.text}")
+                response.raise_for_status()
 
-        result_1 = response.json() if response.content else {"status": "accepted"}
-        request_id_1 = result_1.get('requestId') if response.status_code == 202 else None
+            result_1 = response.json() if response.content else {"status": "accepted"}
+            request_id_1 = result_1.get('requestId') if response.status_code == 202 else None
 
-        if request_id_1 and wait_for_completion:
-            logger.info(f"[Step 1/3] Waiting for task {request_id_1}...")
-            await self.client.await_task_completion(request_id_1, override_tenant_id=tenant_id)
-        logger.info(f"[Step 1/3] Complete")
+            if request_id_1 and wait_for_completion:
+                logger.info(f"[Step 1/3] Waiting for task {request_id_1}...")
+                await self.client.await_task_completion(request_id_1, override_tenant_id=tenant_id)
+            logger.info(f"[Step 1/3] Complete")
 
         # Step 2: Bind AP Group to the network (no payload)
         logger.info(f"[Step 2/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}")

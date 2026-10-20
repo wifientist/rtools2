@@ -49,6 +49,25 @@ class ConfigureDPSKPhase(PhaseExecutor):
             await self.emit(f"[{wlan_name}] No network_id — skipping DPSK config", "warning")
             return self.Outputs(skipped=True)
 
+        # DPSK service chosen on Review: create_dpsk_pools has already made
+        # (or found) it, so this unit only links it to its network.
+        pool_key = plan_extra.get("dpsk_pool_key")
+        if pool_key:
+            job = await self.context.state_manager.get_job(self.job_id)
+            pool_ids = job.global_phase_results.get("create_dpsk_pools", {}).get("dpsk_pool_ids", {})
+            pool_id = pool_ids.get(pool_key)
+            if not pool_id:
+                raise RuntimeError(f"[{wlan_name}] DPSK service '{pool_key}' was not created")
+            await self.emit(f"[{wlan_name}] Linking DPSK service...")
+            await self.r1_client.networks.activate_dpsk_service_on_network(
+                tenant_id=self.tenant_id,
+                network_id=inputs.network_id,
+                dpsk_service_id=pool_id,
+            )
+            await self.emit(f"[{wlan_name}] DPSK service linked (id={pool_id[:12]})", "success")
+            return self.Outputs(dpsk_pool_id=pool_id)
+
+        # Older plan (no DPSK choices): per-WLAN {wlan}-pool, as before.
         # Use the existing idempotent helper pattern
         helper = IdempotentHelper(self.r1_client)
 
