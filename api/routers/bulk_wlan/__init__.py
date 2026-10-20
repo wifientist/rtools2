@@ -7,5 +7,6 @@ OFDM Only, Join RSSI Threshold, DTIM Interval, and QoS Mirroring.
 """
 
 from routers.bulk_wlan.bulk_wlan_router import router
+from routers.bulk_wlan.bulk_wlan_delete_router import router as delete_router
 
-__all__ = ['router']
+__all__ = ['router', 'delete_router']

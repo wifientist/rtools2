@@ -150,6 +150,14 @@ const Home = () => {
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-green-900 mb-2">🗑️ Bulk WLAN Delete <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">BETA</span></h3>
+            <p className="text-sm text-green-800">
+              Delete multiple WiFi networks at once, with venue, AP, and client checks and
+              a per-network confirmation for anything still in use.
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
             <h3 className="text-lg font-semibold text-green-900 mb-2">🏷️ Bulk AP Tagging <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">BETA</span></h3>
             <p className="text-sm text-green-800">
               Add, remove, or set tags on multiple access points in bulk across a venue for
