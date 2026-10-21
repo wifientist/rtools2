@@ -66,6 +66,7 @@ from services.sz_migration.dpsk_choices import (
 )
 from services.sz_migration.auditor import run_audit as run_migration_audit
 from services.sz_migration.auth_probe import collect_auth_facts
+from services.sz_migration.venue_settings import fetch_r1_venue_settings
 from services.sz_migration.audit_redaction import (
     CredentialLeakError, assert_clean, collect_secrets, scrub_report,
 )
@@ -1733,6 +1734,14 @@ async def run_audit_endpoint(
         except Exception as e:
             logger.exception(f"Auth-path probe failed during audit: {e}")
 
+    # ── Venue-level Wi-Fi settings (as the EC tenant for MSP) ──
+    r1_venue_settings: Optional[Dict[str, Any]] = None
+    if r1_client is not None:
+        try:
+            r1_venue_settings = await fetch_r1_venue_settings(r1_client, tenant_id, r1_inventory.venue_id)
+        except Exception as e:
+            logger.exception(f"Venue settings read failed during audit: {e}")
+
     # ── Run audit ──
     report = run_migration_audit(
         snapshot=snapshot,
@@ -1741,6 +1750,7 @@ async def run_audit_endpoint(
         r1_snapshot_job_id=r1_job_id,
         r1_network_details=r1_network_details,
         auth_facts=auth_facts,
+        r1_venue_settings=r1_venue_settings,
     )
     if auth_facts is None:
         report.warnings.append(
@@ -1752,6 +1762,7 @@ async def run_audit_endpoint(
         [w.raw for w in snapshot.wlans],
         [w.encryption for w in snapshot.wlans],
         [r.raw for r in snapshot.referenced_objects.values()],
+        snapshot.zone.raw,          # mesh passphrase, AP login password
         r1_network_details,
         r1_inventory.wifi_networks,
     )

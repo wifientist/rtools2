@@ -229,6 +229,24 @@ class AuditMatching(BaseModel):
     counts: Dict[str, int] = Field(default_factory=dict)
 
 
+class SettingComparison(BaseModel):
+    """One zone/venue-level setting, SZ vs R1, both normalised to R1's encoding."""
+    section: str
+    label: str
+    sz_value: Optional[Any] = None
+    r1_value: Optional[Any] = None
+    # match | differs | sz_only (no R1 field) | unmappable (SZ value has no R1
+    # encoding) | unavailable (R1 read failed) | review (needs a human eye)
+    status: str
+    note: str = ""
+
+
+class VenueSettingsAudit(BaseModel):
+    """Checkpoint 1b: SZ zone settings vs R1 venue Wi-Fi settings."""
+    rows: List[SettingComparison] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+
+
 class AlignmentCategory(BaseModel):
     """
     One row of the end-of-run scorecard: SZ vs R1 for one category.
@@ -282,6 +300,7 @@ class MigrationAuditReport(BaseModel):
     summary: AuditSummary
     scorecard: List[AlignmentCategory] = Field(default_factory=list)
     matching: AuditMatching = Field(default_factory=AuditMatching)
+    venue_settings: Optional[VenueSettingsAudit] = None   # None: no live R1 read this run
     networks: List[NetworkAuditItem] = Field(default_factory=list)
     extra_r1_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_group_activations: List[APGroupActivationAudit] = Field(default_factory=list)

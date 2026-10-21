@@ -11,6 +11,7 @@ import SmartZoneDomainSelector from '@/components/SmartZoneDomainSelector';
 import SmartZoneZoneSelector from '@/components/SmartZoneZoneSelector';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
+import { Scorecard, VenueSettingsSection, MatchingSection } from '@/components/migration-audit/AlignmentSections';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
   FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
@@ -502,6 +503,17 @@ function AuditResults({
           </div>
         </div>
       </div>
+
+      {/* Scorecard: how aligned is this site, category by category */}
+      {report.scorecard && report.scorecard.length > 0 && <Scorecard categories={report.scorecard} />}
+
+      {/* Zone ↔ Venue settings */}
+      {report.venue_settings && <VenueSettingsSection audit={report.venue_settings} />}
+
+      {/* Pairings the rest of the report rests on */}
+      {report.matching && <MatchingSection matching={report.matching} />}
+
+      <h3 className="text-sm font-semibold text-gray-700 pt-2">Per-WLAN detail</h3>
 
       {/* Summary cards (clickable filters) */}
       <div className="grid grid-cols-5 gap-3">

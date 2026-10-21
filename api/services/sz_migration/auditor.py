@@ -26,6 +26,7 @@ from services.sz_migration.mapper import map_all_wlans
 from services.sz_migration.field_mappings import compare_fields
 from services.sz_migration.audit_matching import build_matching
 from services.sz_migration.audit_scorecard import build_scorecard
+from services.sz_migration.venue_settings import compare_venue_settings
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ def run_audit(
     r1_snapshot_job_id: str,
     r1_network_details: Optional[Dict[str, Dict]] = None,
     auth_facts: Optional[Dict] = None,
+    r1_venue_settings: Optional[Dict] = None,
 ) -> MigrationAuditReport:
     """
     Run the full three-way audit comparison.
@@ -69,6 +71,12 @@ def run_audit(
     matching = build_matching(snapshot, r1_inventory)
     wlan_pairs = {m.sz_wlan_id: m for m in matching.wlans}
     venue_networks = {n.get("id"): n for n in r1_inventory.wifi_networks if n.get("id")}
+
+    # Step 0b: Zone vs venue settings (needs a live R1 read)
+    venue_settings = (
+        compare_venue_settings(snapshot.zone.raw, r1_inventory.venue, r1_venue_settings)
+        if r1_venue_settings is not None else None
+    )
 
     # Step 1: Resolve WLAN activations
     resolver_result = resolve_wlan_activations(snapshot)
@@ -286,8 +294,9 @@ def run_audit(
         audit_timestamp=datetime.now(timezone.utc).isoformat(),
         summary=summary,
         matching=matching,
+        venue_settings=venue_settings,
         scorecard=build_scorecard(
-            snapshot, r1_inventory, matching, resolver_result, network_items,
+            snapshot, r1_inventory, matching, venue_settings, resolver_result, network_items,
             ap_group_audits, auth_items if auth_facts is not None else None,
         ),
         networks=network_items,

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from schemas.migration_audit import (
     AlignmentCategory, APGroupActivationAudit, AuditMatching, AuthPath, AuthPathAudit,
-    NetworkAuditItem,
+    NetworkAuditItem, VenueSettingsAudit,
 )
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
@@ -33,11 +33,29 @@ def _status(aligned: int, total: int) -> str:
     return "misaligned" if aligned == 0 else "partial"
 
 
-def _venue_config() -> AlignmentCategory:
-    return AlignmentCategory(
-        key="venue_config", label="Zone ↔ Venue settings",
-        details=["Radio, channel, OFDM-only and other zone-level settings — arriving later in this checkpoint"],
-    )
+def _venue_config(vs: Optional[VenueSettingsAudit]) -> AlignmentCategory:
+    cat = AlignmentCategory(key="venue_config", label="Zone ↔ Venue settings")
+    if vs is None:
+        cat.details.append("Needs a live R1 connection for this run")
+        return cat
+    compared = [r for r in vs.rows if r.status in ("match", "differs", "unmappable")]
+    ok = sum(1 for r in compared if r.status == "match")
+    cat.sz_count = cat.r1_count = len(compared)
+    cat.aligned_count = ok
+    cat.status = _status(ok, len(compared))
+    by_section: Dict[str, Dict[str, int]] = {}
+    for r in vs.rows:
+        s = by_section.setdefault(r.section, {"match": 0, "differs": 0, "other": 0})
+        s["match" if r.status == "match" else "differs" if r.status in ("differs", "unmappable") else "other"] += 1
+    cat.breakdown = [{"section": k, **v} for k, v in by_section.items()]
+    for status, text in (("unmappable", "SZ value(s) R1 can't express"),
+                         ("sz_only", "SZ setting(s) with no R1 equivalent"),
+                         ("review", "setting(s) to confirm by eye"),
+                         ("unavailable", "R1 setting(s) could not be read")):
+        n = sum(1 for r in vs.rows if r.status == status)
+        if n:
+            cat.details.append(f"{n} {text}")
+    return cat
 
 
 def _aps(m: AuditMatching, inv: R1VenueInventory, snapshot: SZMigrationSnapshot) -> AlignmentCategory:
@@ -251,13 +269,14 @@ def build_scorecard(
     snapshot: SZMigrationSnapshot,
     inv: R1VenueInventory,
     matching: AuditMatching,
+    venue_settings: Optional[VenueSettingsAudit],
     resolver_result,
     network_items: List[NetworkAuditItem],
     ap_group_audits: List[APGroupActivationAudit],
     auth_items: Optional[List[AuthPathAudit]],
 ) -> List[AlignmentCategory]:
     return [
-        _venue_config(),
+        _venue_config(venue_settings),
         _aps(matching, inv, snapshot),
         _ap_groups(matching, inv),
         _ap_membership(matching),

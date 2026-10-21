@@ -92,6 +92,9 @@ export interface MigrationAuditReport {
   ap_group_activations: APGroupActivationAudit[];
   resource_coverage: ResourceCoverage[];
   auth_paths: AuthPathAudit[];
+  scorecard?: AlignmentCategory[];
+  matching?: AuditMatching;
+  venue_settings?: VenueSettingsAudit | null;
   warnings: string[];
 }
 
@@ -144,4 +147,86 @@ export interface AuthPathAudit {
   identity_total: number | null;
   status: AuditStatus;
   issues: AuthIssue[];
+}
+
+// ── Checkpoint 1: scorecard, pairings, zone/venue settings ───────
+
+export type CategoryStatus = 'aligned' | 'partial' | 'misaligned' | 'pending' | 'manual' | 'not_checked';
+
+export interface AlignmentCategory {
+  key: string;
+  label: string;
+  sz_count: number | null;
+  r1_count: number | null;
+  aligned_count: number | null;
+  status: CategoryStatus;
+  details: string[];
+  breakdown: Array<Record<string, any>>;
+}
+
+export type MatchMethod = 'name' | 'name_case' | 'ssid' | 'default' | 'serial' | 'mac' | 'none';
+
+export interface WlanMatch {
+  sz_wlan_id: string;
+  sz_name: string;
+  sz_ssid: string;
+  r1_network_id: string | null;
+  r1_name: string | null;
+  r1_ssid: string | null;
+  method: MatchMethod;
+  activated_in_venue: boolean;
+  notes: string[];
+}
+
+export interface ApGroupMatch {
+  sz_ap_group_id: string;
+  sz_name: string;
+  sz_ap_count: number;
+  r1_ap_group_id: string | null;
+  r1_name: string | null;
+  r1_ap_count: number;
+  method: MatchMethod;
+  notes: string[];
+}
+
+export interface ApMatch {
+  name: string | null;
+  serial: string | null;
+  mac: string | null;
+  model: string | null;
+  sz_ap_group: string | null;
+  r1_ap_group: string | null;
+  expected_r1_ap_group: string | null;
+  method: MatchMethod;
+  presence: 'in_both' | 'sz_only' | 'r1_only';
+  group_aligned: boolean | null;
+  r1_status: string | null;
+  sz_name: string | null;
+  r1_name: string | null;
+  name_alignment: 'exact' | 'case' | 'differs' | null;
+}
+
+export interface AuditMatching {
+  wlans: WlanMatch[];
+  r1_only_networks: Array<{ id: string; name: string; ssid: string; nwSubType: string }>;
+  ap_groups: ApGroupMatch[];
+  r1_only_ap_groups: Array<{ id: string; name: string; ap_count: number }>;
+  aps: ApMatch[];
+  counts: Record<string, number>;
+}
+
+export type SettingStatus = 'match' | 'differs' | 'sz_only' | 'unmappable' | 'unavailable' | 'review';
+
+export interface SettingComparison {
+  section: string;
+  label: string;
+  sz_value: any;
+  r1_value: any;
+  status: SettingStatus;
+  note: string;
+}
+
+export interface VenueSettingsAudit {
+  rows: SettingComparison[];
+  errors: string[];
 }
