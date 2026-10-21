@@ -1431,6 +1431,57 @@ class VenueService:
         )
         return result_3
 
+    async def get_ssid_ap_group_settings(
+        self, tenant_id: str, venue_id: str, wifi_network_id: str, ap_group_id: str,
+    ) -> dict:
+        """
+        A network's settings on one AP Group: {"radioTypes": [...], "vlanId": n}.
+
+        GET /venues/{venueId}/wifiNetworks/{networkId}/apGroups/{apGroupId}/settings.
+        vlanId is present ONLY when the group overrides the network's VLAN
+        (verified live 2026-10-20: an inheriting group returns radioTypes alone).
+        """
+        import asyncio
+        path = f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings"
+        if self.client.ec_type == "MSP":
+            response = await asyncio.to_thread(self.client.get, path, override_tenant_id=tenant_id)
+        else:
+            response = await asyncio.to_thread(self.client.get, path)
+        response.raise_for_status()
+        return response.json() if response.content else {}
+
+    async def set_ssid_ap_group_settings(
+        self,
+        tenant_id: str,
+        venue_id: str,
+        wifi_network_id: str,
+        ap_group_id: str,
+        radio_types: list,
+        vlan_id: int = None,
+        wait_for_completion: bool = True,
+    ):
+        """
+        Step 3 of activate_ssid_for_ap_group_direct on its own: set radios and
+        the AP-Group VLAN override on a group the network is already bound to.
+        vlan_id None leaves vlanId out of the payload.
+        """
+        path = f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings"
+        payload = {"apGroupId": ap_group_id, "radioTypes": radio_types, "radio": "Both"}
+        if vlan_id is not None:
+            payload["vlanId"] = int(vlan_id)
+        if self.client.ec_type == "MSP":
+            response = self.client.put(path, payload=payload, override_tenant_id=tenant_id)
+        else:
+            response = self.client.put(path, payload=payload)
+        if response.status_code not in [200, 201, 202]:
+            logger.error(f"[ap_group_settings] FAILED: {response.status_code} - {response.text}")
+            response.raise_for_status()
+        result = response.json() if response.content else {"status": "accepted"}
+        request_id = result.get('requestId') if response.status_code == 202 else None
+        if request_id and wait_for_completion:
+            await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
+        return result
+
     async def configure_ssid_for_specific_ap_group(
         self,
         tenant_id: str,
