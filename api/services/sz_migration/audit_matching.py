@@ -161,6 +161,7 @@ def match_aps(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         gm = expected_by_sz_group.get(s["group_id"])
         m = ApMatch(
             name=s["name"], serial=s["serial"], mac=s["mac"], model=s["model"],
+            sz_ap_mac=raw.get("apMac") or raw.get("mac"),
             sz_ap_group=s["group_name"] or sz_group_name.get(s["group_id"]),
             expected_r1_ap_group=gm.r1_name if gm and gm.r1_ap_group_id else None,
             method=method,
@@ -172,6 +173,7 @@ def match_aps(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
             m.r1_ap_group = r1.get("apGroupName") or r1_group_name.get(r1.get("apGroupId"))
             m.r1_status = r1.get("status")
             m.sz_name, m.r1_name = s["name"], r1.get("name")
+            m.r1_serial = r1.get("serialNumber")
             m.name_alignment = name_alignment(s["name"], r1.get("name"))
             m.model = m.model or r1.get("model")
             if gm and gm.r1_ap_group_id:
@@ -184,7 +186,7 @@ def match_aps(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         out.append(ApMatch(
             name=a.get("name"), serial=norm_serial(a.get("serialNumber")), mac=norm_mac(a.get("macAddress")),
             model=a.get("model"), r1_ap_group=a.get("apGroupName") or r1_group_name.get(a.get("apGroupId")),
-            presence="r1_only", r1_status=a.get("status"),
+            presence="r1_only", r1_status=a.get("status"), r1_serial=a.get("serialNumber"),
         ))
     return out
 

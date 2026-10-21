@@ -217,6 +217,9 @@ class ApMatch(BaseModel):
     sz_name: Optional[str] = None
     r1_name: Optional[str] = None
     name_alignment: Optional[str] = None
+    # Raw keys as each controller reports them (for lookups, not display)
+    sz_ap_mac: Optional[str] = None
+    r1_serial: Optional[str] = None
 
 
 class AuditMatching(BaseModel):
@@ -245,6 +248,62 @@ class VenueSettingsAudit(BaseModel):
     """Checkpoint 1b: SZ zone settings vs R1 venue Wi-Fi settings."""
     rows: List[SettingComparison] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
+
+
+class ApBroadcast(BaseModel):
+    """Which SSIDs one AP broadcasts on each controller (radio-agnostic for now)."""
+    name: Optional[str] = None
+    serial: Optional[str] = None
+    mac: Optional[str] = None
+    sz_ap_group: Optional[str] = None
+    r1_ap_group: Optional[str] = None
+    presence: str = "in_both"            # in_both | sz_only | r1_only
+    sz_ssids: List[str] = Field(default_factory=list)
+    r1_ssids: List[str] = Field(default_factory=list)
+    missing_in_r1: List[str] = Field(default_factory=list)
+    extra_in_r1: List[str] = Field(default_factory=list)
+    # match | differs | pending (not in R1 yet) | r1_only | unknown (SZ overrides unreadable)
+    status: str = "match"
+    # Where each SZ radio's WLAN Group came from, e.g. "5 GHz: AP override → wg-101"
+    sz_sources: List[str] = Field(default_factory=list)
+
+
+class SsidCoverage(BaseModel):
+    """How many APs broadcast one SSID on each controller."""
+    ssid: str
+    sz_ap_count: int = 0
+    r1_ap_count: int = 0                  # from AP Group membership (APs in this venue)
+    r1_reported_ap_count: Optional[int] = None   # R1's own apCount on the network
+    missing_in_r1: int = 0
+    extra_in_r1: int = 0
+    sample_missing: List[str] = Field(default_factory=list)
+    sample_extra: List[str] = Field(default_factory=list)
+    status: str = "match"
+
+
+class BroadcastGroup(BaseModel):
+    """
+    APs that broadcast exactly the same SSID set on SZ -- the groups SZ's
+    overrides effectively create -- and where those APs sit in R1.
+    """
+    ssids: List[str] = Field(default_factory=list)
+    sz_ap_count: int = 0
+    sz_ap_groups: Dict[str, int] = Field(default_factory=dict)
+    r1_ap_groups: Dict[str, int] = Field(default_factory=dict)   # R1 group -> APs of this set in it
+    r1_not_in_venue: int = 0
+    # R1 groups whose activations carry exactly these SSIDs
+    r1_groups_matching_ssids: List[str] = Field(default_factory=list)
+    status: str = "match"   # match | split | differs | pending
+    sample_aps: List[str] = Field(default_factory=list)
+
+
+class BroadcastAudit(BaseModel):
+    """Checkpoint 2: per-AP SSID broadcast, resolved through each controller's hierarchy."""
+    aps: List[ApBroadcast] = Field(default_factory=list)
+    ssids: List[SsidCoverage] = Field(default_factory=list)
+    groups: List[BroadcastGroup] = Field(default_factory=list)
+    counts: Dict[str, int] = Field(default_factory=dict)
+    notes: List[str] = Field(default_factory=list)
 
 
 class AlignmentCategory(BaseModel):
@@ -301,6 +360,7 @@ class MigrationAuditReport(BaseModel):
     scorecard: List[AlignmentCategory] = Field(default_factory=list)
     matching: AuditMatching = Field(default_factory=AuditMatching)
     venue_settings: Optional[VenueSettingsAudit] = None   # None: no live R1 read this run
+    broadcast: Optional[BroadcastAudit] = None
     networks: List[NetworkAuditItem] = Field(default_factory=list)
     extra_r1_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_group_activations: List[APGroupActivationAudit] = Field(default_factory=list)

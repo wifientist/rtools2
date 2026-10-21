@@ -95,6 +95,7 @@ export interface MigrationAuditReport {
   scorecard?: AlignmentCategory[];
   matching?: AuditMatching;
   venue_settings?: VenueSettingsAudit | null;
+  broadcast?: BroadcastAudit | null;
   warnings: string[];
 }
 
@@ -229,4 +230,52 @@ export interface SettingComparison {
 export interface VenueSettingsAudit {
   rows: SettingComparison[];
   errors: string[];
+}
+
+// ── Checkpoint 2: per-AP SSID broadcast ──────────────────────────
+
+export interface ApBroadcast {
+  name: string | null;
+  serial: string | null;
+  mac: string | null;
+  sz_ap_group: string | null;
+  r1_ap_group: string | null;
+  presence: 'in_both' | 'sz_only' | 'r1_only';
+  sz_ssids: string[];
+  r1_ssids: string[];
+  missing_in_r1: string[];
+  extra_in_r1: string[];
+  status: 'match' | 'differs' | 'pending' | 'r1_only' | 'unknown';
+  sz_sources: string[];
+}
+
+export interface SsidCoverage {
+  ssid: string;
+  sz_ap_count: number;
+  r1_ap_count: number;
+  r1_reported_ap_count: number | null;
+  missing_in_r1: number;
+  extra_in_r1: number;
+  sample_missing: string[];
+  sample_extra: string[];
+  status: 'match' | 'differs' | 'missing' | 'extra';
+}
+
+export interface BroadcastGroup {
+  ssids: string[];
+  sz_ap_count: number;
+  sz_ap_groups: Record<string, number>;
+  r1_ap_groups: Record<string, number>;
+  r1_not_in_venue: number;
+  r1_groups_matching_ssids: string[];
+  status: 'match' | 'split' | 'differs' | 'pending';
+  sample_aps: string[];
+}
+
+export interface BroadcastAudit {
+  aps: ApBroadcast[];
+  ssids: SsidCoverage[];
+  groups: BroadcastGroup[];
+  counts: Record<string, number>;
+  notes: string[];
 }

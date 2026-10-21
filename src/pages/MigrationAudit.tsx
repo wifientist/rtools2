@@ -12,6 +12,7 @@ import SmartZoneZoneSelector from '@/components/SmartZoneZoneSelector';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
 import { Scorecard, VenueSettingsSection, MatchingSection } from '@/components/migration-audit/AlignmentSections';
+import BroadcastSection from '@/components/migration-audit/BroadcastSection';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
   FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
@@ -513,6 +514,9 @@ function AuditResults({
       {/* Pairings the rest of the report rests on */}
       {report.matching && <MatchingSection matching={report.matching} />}
 
+      {/* Which SSIDs each AP broadcasts, through each controller's hierarchy */}
+      {report.broadcast && <BroadcastSection audit={report.broadcast} />}
+
       <h3 className="text-sm font-semibold text-gray-700 pt-2">Per-WLAN detail</h3>
 
       {/* Summary cards (clickable filters) */}
@@ -934,7 +938,9 @@ function APGroupCoverage({
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-700">AP Group SSID Coverage</h3>
+        <h3 className="text-sm font-semibold text-gray-700">
+          AP Group SSID Coverage <span className="font-normal text-gray-400 text-xs">(SZ AP Group level — ignores per-AP overrides; see "What each AP broadcasts")</span>
+        </h3>
         <span className={`text-xs font-bold ${coveragePercent === 100 ? 'text-green-600' : 'text-amber-600'}`}>
           {coveragePercent}% covered
         </span>

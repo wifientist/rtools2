@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from schemas.migration_audit import (
     AlignmentCategory, APGroupActivationAudit, AuditMatching, AuthPath, AuthPathAudit,
-    NetworkAuditItem, VenueSettingsAudit,
+    NetworkAuditItem, VenueSettingsAudit, BroadcastAudit,
 )
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
@@ -145,45 +145,97 @@ def _ap_membership(m: AuditMatching) -> AlignmentCategory:
     return cat
 
 
-def _wlan_groups(snapshot: SZMigrationSnapshot, ap_group_audits: List[APGroupActivationAudit]) -> AlignmentCategory:
-    # Where each WLAN Group is applied: AP Group radio overrides, else the zone default group.
-    usage: Dict[str, Set[str]] = {g.id: set() for g in snapshot.wlan_groups}
-    default_id = next((g.id for g in snapshot.wlan_groups if g.name == SZ_DEFAULT_WLAN_GROUP), None)
+def _wlan_groups(snapshot: SZMigrationSnapshot, inv: R1VenueInventory, bc: BroadcastAudit) -> AlignmentCategory:
+    """
+    SZ WLAN Groups have no R1 counterpart; what they produce -- sets of APs
+    broadcasting the same SSIDs -- maps onto R1 AP Groups. So the row counts
+    WLAN Groups by where they're applied, and judges the broadcast groups.
+    """
+    apg_use: Dict[str, int] = {}
     for apg in snapshot.ap_groups:
         rc = apg.radio_config.model_dump() if apg.radio_config else {}
-        for band, label in (("radio_24g", "2.4"), ("radio_5g", "5"), ("radio_6g", "6")):
-            wg = rc.get(band) or default_id
-            if wg in usage and (apg.ap_count or 0) > 0:
-                usage[wg].add(f"{apg.name} ({label})")
-    covered = sum(1 for a in ap_group_audits if a.r1_ap_group_found and not a.missing_ssids)
-    judged = sum(1 for a in ap_group_audits if a.r1_ap_group_found)
-    return AlignmentCategory(
-        key="wlan_groups", label="WLAN Groups (SZ only)",
-        sz_count=len(snapshot.wlan_groups), r1_count=None, aligned_count=covered,
-        status="pending" if judged == 0 else _status(covered, judged),
+        for gid in {v for v in rc.values() if v}:
+            apg_use[gid] = apg_use.get(gid, 0) + 1
+    ap_use: Dict[str, int] = {}
+    for v in snapshot.ap_radio_config.values():
+        for gid in {r.get("wlan_group_id") for r in (v.get("radios") or {}).values() if r.get("wlan_group_id")}:
+            ap_use[gid] = ap_use.get(gid, 0) + 1
+    zone_rc = snapshot.zone.radio_config.model_dump() if snapshot.zone.radio_config else {}
+    zone_ids = {v for v in zone_rc.values() if v}
+
+    groups = bc.groups
+    judged = [g for g in groups if g.status != "pending"]
+    ok = sum(1 for g in judged if g.status in ("match", "split"))
+    cat = AlignmentCategory(
+        key="wlan_groups", label="WLAN Groups → R1 AP Groups",
+        sz_count=len(snapshot.wlan_groups), r1_count=len(inv.ap_groups),
+        aligned_count=ok, status="pending" if not judged else _status(ok, len(judged)),
         details=[
-            "R1 has no WLAN Groups: each becomes SSID activations on the R1 AP Groups it applies to.",
-            f"{covered} of {judged} paired AP Group(s) carry every SSID their SZ WLAN Groups put there",
-            "Per-AP WLAN Group overrides are compared in checkpoint 2",
+            "R1 has no WLAN Groups. What SZ's WLAN Groups and overrides produce is groups of APs "
+            "broadcasting the same SSIDs; each should land on R1 AP Group(s) activated with those SSIDs.",
+            f"{len(groups)} distinct SZ broadcast set(s); {ok} of {len(judged)} comparable "
+            "match R1 AP by AP",
+            f"WLAN Groups applied by AP override: {len(ap_use)} (on {bc.counts.get('sz_aps_with_ap_override', 0)} APs), "
+            f"by AP Group: {len(apg_use)}, by zone: {len(zone_ids)}",
         ],
         breakdown=[
-            {"wlan_group": g.name, "members": len(g.members),
-             "applied_to": sorted(usage.get(g.id, set())) or ["(not applied to any AP Group with APs)"]}
-            for g in snapshot.wlan_groups
+            {"wlan_group": g.name, "wlans": len(g.members),
+             "aps_overridden_to_it": ap_use.get(g.id, 0), "ap_groups_using_it": apg_use.get(g.id, 0),
+             "zone": "yes" if g.id in zone_ids or (g.name == SZ_DEFAULT_WLAN_GROUP and not zone_ids) else ""}
+            for g in sorted(snapshot.wlan_groups, key=lambda g: -(ap_use.get(g.id, 0) + 100 * apg_use.get(g.id, 0)))
         ],
     )
+    return cat
 
 
-def wlan_scopes(resolver_result) -> Dict[str, str]:
-    """wlan_id -> property (every AP Group with APs) / unit (some) / none."""
-    groups_with_aps = {s.ap_group_name for s in resolver_result.ap_group_summaries if s.ap_count > 0}
-    on: Dict[str, Set[str]] = {}
-    for a in resolver_result.activations:
-        if a.ap_count > 0:
-            on.setdefault(a.wlan_id, set()).add(a.ap_group_name)
+def _ssid_broadcast(bc: BroadcastAudit) -> AlignmentCategory:
+    c = bc.counts
+    compared = c.get("aps_compared", 0)
+    cat = AlignmentCategory(
+        key="ssid_broadcast", label="SSIDs broadcast per AP",
+        sz_count=compared, r1_count=compared, aligned_count=c.get("aps_match", 0),
+        details=list(bc.notes),
+        breakdown=[
+            {"label": "APs broadcasting the same SSIDs", "count": c.get("aps_match", 0)},
+            {"label": "APs with SSIDs missing or extra in R1", "count": c.get("aps_differs", 0)},
+            {"label": "APs matching, but SZ AP overrides unreadable", "count": c.get("aps_unknown", 0)},
+            {"label": "SZ APs not in the R1 venue yet", "count": c.get("aps_pending", 0)},
+            {"label": "R1-only APs", "count": c.get("aps_r1_only", 0)},
+            {"label": "SSIDs on the same APs both sides", "count": c.get("ssids_match", 0)},
+            {"label": "SSIDs on SZ, broadcast nowhere in R1", "count": c.get("ssids_missing_in_r1", 0)},
+            {"label": "SSIDs broadcast in R1, nowhere on SZ", "count": c.get("ssids_extra_in_r1", 0)},
+        ],
+    )
+    if compared == 0:
+        cat.status = "pending" if c.get("aps_pending") else "aligned"
+    else:
+        cat.status = _status(c.get("aps_match", 0), compared)
+    worst = sorted((s for s in bc.ssids if s.status != "match"), key=lambda s: -(s.missing_in_r1 + s.extra_in_r1))[:5]
+    for s in worst:
+        parts = [p for p in (f"{s.missing_in_r1} missing" if s.missing_in_r1 else "",
+                             f"{s.extra_in_r1} extra" if s.extra_in_r1 else "") if p]
+        cat.details.append(
+            f"{s.ssid}: SZ {s.sz_ap_count} APs, R1 {s.r1_ap_count} APs"
+            + (f" ({', '.join(parts)})" if parts else "")
+        )
+    return cat
+
+
+PROPERTY_WIDE_SHARE = 0.9
+
+
+def wlan_scopes(snapshot: SZMigrationSnapshot, bc: BroadcastAudit) -> Dict[str, str]:
+    """
+    wlan_id -> property / unit / none, from where SZ actually broadcasts it:
+    property-wide = on at least 90% of the zone's APs. Judged per AP because
+    per-unit sites usually do it with AP-level overrides inside one AP Group.
+    """
+    total = sum(1 for a in bc.aps if a.presence in ("in_both", "sz_only"))
+    on = {s.ssid: s.sz_ap_count for s in bc.ssids}
     out = {}
-    for wid, groups in on.items():
-        out[wid] = "property" if groups_with_aps and groups >= groups_with_aps else "unit"
+    for w in snapshot.wlans:
+        n = on.get(w.ssid, 0)
+        out[w.id] = "none" if n == 0 else ("property" if total and n >= PROPERTY_WIDE_SHARE * total else "unit")
     return out
 
 
@@ -202,6 +254,10 @@ def _wlans(snapshot: SZMigrationSnapshot, inv: R1VenueInventory, m: AuditMatchin
         status=_status(len(ok), len(snapshot.wlans)), breakdown=breakdown,
     )
     c = m.counts
+    cat.details.append(
+        f"Property-wide = broadcast on at least {int(PROPERTY_WIDE_SHARE * 100)}% of the zone's APs on SZ; "
+        "per-unit = fewer (worked out per AP, so AP-level overrides count)"
+    )
     if c.get("wlans_not_activated"):
         cat.details.append(f"{c['wlans_not_activated']} exist in R1 but aren't activated in this venue")
     if c.get("wlans_unmatched"):
@@ -270,6 +326,7 @@ def build_scorecard(
     inv: R1VenueInventory,
     matching: AuditMatching,
     venue_settings: Optional[VenueSettingsAudit],
+    broadcast: BroadcastAudit,
     resolver_result,
     network_items: List[NetworkAuditItem],
     ap_group_audits: List[APGroupActivationAudit],
@@ -280,8 +337,9 @@ def build_scorecard(
         _aps(matching, inv, snapshot),
         _ap_groups(matching, inv),
         _ap_membership(matching),
-        _wlan_groups(snapshot, ap_group_audits),
-        _wlans(snapshot, inv, matching, wlan_scopes(resolver_result)),
+        _wlan_groups(snapshot, inv, broadcast),
+        _ssid_broadcast(broadcast),
+        _wlans(snapshot, inv, matching, wlan_scopes(snapshot, broadcast)),
         _wlan_config(network_items),
         _passphrases(auth_items),
     ]

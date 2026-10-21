@@ -27,6 +27,7 @@ from services.sz_migration.field_mappings import compare_fields
 from services.sz_migration.audit_matching import build_matching
 from services.sz_migration.audit_scorecard import build_scorecard
 from services.sz_migration.venue_settings import compare_venue_settings
+from services.sz_migration.broadcast_model import build_broadcast_audit
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,8 @@ def run_audit(
     # Step 0: Pair SZ objects with R1 objects (shown on its own, used below)
     matching = build_matching(snapshot, r1_inventory)
     wlan_pairs = {m.sz_wlan_id: m for m in matching.wlans}
+    # Step 0c: which SSIDs each AP broadcasts, resolved through each hierarchy
+    broadcast = build_broadcast_audit(snapshot, r1_inventory, matching)
     venue_networks = {n.get("id"): n for n in r1_inventory.wifi_networks if n.get("id")}
 
     # Step 0b: Zone vs venue settings (needs a live R1 read)
@@ -295,8 +298,9 @@ def run_audit(
         summary=summary,
         matching=matching,
         venue_settings=venue_settings,
+        broadcast=broadcast,
         scorecard=build_scorecard(
-            snapshot, r1_inventory, matching, venue_settings, resolver_result, network_items,
+            snapshot, r1_inventory, matching, venue_settings, broadcast, resolver_result, network_items,
             ap_group_audits, auth_items if auth_facts is not None else None,
         ),
         networks=network_items,

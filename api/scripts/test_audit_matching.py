@@ -164,7 +164,8 @@ def main():
     sc = {c.key: c for c in report.scorecard}
     failures += check("scorecard has every category in order",
                       [c.key for c in report.scorecard] == ["venue_config", "aps", "ap_groups", "ap_membership",
-                                                            "wlan_groups", "wlans", "wlan_config", "passphrases"])
+                                                            "wlan_groups", "ssid_broadcast", "wlans", "wlan_config",
+                                                            "passphrases"])
     failures += check("AP row: 4 SZ / 3 R1 / 2 in both, partial",
                       (sc["aps"].sz_count, sc["aps"].r1_count, sc["aps"].aligned_count, sc["aps"].status)
                       == (4, 3, 2, "partial"), str(sc["aps"]))

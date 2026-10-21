@@ -138,7 +138,10 @@ class VenueService:
                 'venueId': [venue_id]
             },
             'page': 0,
-            'pageSize': 500  # Large enough to get all APs in one request (broken pagination workaround)
+            # page is ignored by this endpoint, so the whole venue must fit in one
+            # response. 500 silently truncated a 609-AP venue; per-venue calls
+            # honour a large pageSize (10000 proven -- see the pagination memory).
+            'pageSize': 10000
         }
 
         # Fetch first page
@@ -154,7 +157,10 @@ class VenueService:
 
         # Check if we got everything in one request
         if total_count > len(all_aps):
-            logger.warning(f"API returned {len(all_aps)} APs but reports {total_count} total - pagination is broken on this endpoint")
+            logger.warning(
+                f"Venue {venue_id}: R1 returned {len(all_aps)} of {total_count} APs -- truncated "
+                f"(this endpoint ignores page; the venue exceeds the page size)"
+            )
 
         # Deduplicate APs by serial number (in case API returns duplicates)
         seen_serials = set()
