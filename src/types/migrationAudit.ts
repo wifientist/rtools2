@@ -34,6 +34,9 @@ export interface NetworkAuditItem {
   actual_r1_type: string | null;
   actual_r1_vlan: number | null;
   field_comparisons: FieldComparisonItem[];
+  // PSK passphrase verdict (server-side comparison; never a value)
+  passphrase_check?: "match" | "differs" | "missing_in_r1" | "missing_in_sz" | "unknown" | null;
+  passphrase_note?: string;
   status: AuditStatus;
   diffs: FieldDiff[];
   notes: string;

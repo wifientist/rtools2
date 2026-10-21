@@ -24,7 +24,7 @@ from schemas.sz_migration import SZMigrationSnapshot
 SZ_DEFAULT_WLAN_GROUP = "default"
 # Key WLAN settings for the scorecard row; the detail table shows everything.
 _KEY_FIELD_LABELS = {"VLAN ID": "VLAN", "Security Mode": "Security", "Mgmt Frame Protection": "MFP"}
-_KEY_DIFF_FIELDS = {"ssid": "SSID", "network_type": "Type", "vlan_id": "VLAN"}
+_KEY_DIFF_FIELDS = {"ssid": "SSID", "network_type": "Type", "vlan_id": "VLAN", "passphrase": "Passphrase"}
 
 
 def _status(aligned: int, total: int) -> str:
@@ -284,11 +284,19 @@ def _wlan_config(items: List[NetworkAuditItem]) -> AlignmentCategory:
         for f in bad:
             per_field.setdefault(f, []).append(i.sz_wlan_name)
         clean += not bad
+    pp = [i.passphrase_check for i in compared if i.passphrase_check]
+    pp_details = []
+    if pp:
+        pp_details.append(
+            f"PSK passphrases: {len(pp)} compared — {pp.count('match')} match, {pp.count('differs')} differ, "
+            f"{pp.count('missing_in_r1') + pp.count('missing_in_sz')} set on one side only, "
+            f"{pp.count('unknown')} not comparable (compared server-side; values never shown)"
+        )
     return AlignmentCategory(
-        key="wlan_config", label="WLAN settings (VLAN, type, security)",
+        key="wlan_config", label="WLAN settings (VLAN, type, security, passphrase)",
         sz_count=len(compared), r1_count=len(compared), aligned_count=clean,
         status=_status(clean, len(compared)),
-        details=["Per-AP-Group VLAN overrides and the full security set are compared in checkpoint 3"],
+        details=pp_details + ["Per-AP-Group VLAN overrides and the full security set are compared in checkpoint 3"],
         breakdown=[{"field": f, "mismatches": len(n), "wlans": n[:10]} for f, n in sorted(per_field.items())],
     )
 

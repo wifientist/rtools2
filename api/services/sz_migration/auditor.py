@@ -28,6 +28,7 @@ from services.sz_migration.audit_matching import build_matching
 from services.sz_migration.audit_scorecard import build_scorecard
 from services.sz_migration.venue_settings import compare_venue_settings
 from services.sz_migration.broadcast_model import build_broadcast_audit
+from services.sz_migration.passphrase_check import PSK_AUTH_TYPES, compare_passphrases
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,23 @@ def run_audit(
             except (ValueError, TypeError):
                 pass
 
+        # PSK passphrase: compared server-side as keyed fingerprints; only the
+        # verdict leaves (never the value, never a fingerprint).
+        pp_check: Optional[Dict[str, str]] = None
+        if wlan.auth_type in PSK_AUTH_TYPES and actual_type == "psk":
+            detail = (r1_network_details or {}).get(actual_id)
+            pp_check = compare_passphrases(
+                (wlan.raw or {}).get("encryption") or wlan.encryption,
+                (detail or {}).get("wlan") if detail else None,
+            )
+            if pp_check["status"] in ("differs", "missing_in_r1", "missing_in_sz"):
+                diffs.append(FieldDiff(
+                    field="passphrase", expected="same as SZ",
+                    actual={"differs": "different", "missing_in_r1": "none set in R1",
+                            "missing_in_sz": "set in R1, none on SZ"}[pp_check["status"]],
+                    severity="error",
+                ))
+
         notes = mapping.notes if mapping and mapping.notes else ""
         auth = None
         if auth_facts is not None:
@@ -234,6 +252,8 @@ def run_audit(
             actual_r1_type=actual_type_raw,
             actual_r1_vlan=actual_vlan,
             field_comparisons=field_comps,
+            passphrase_check=pp_check["status"] if pp_check else None,
+            passphrase_note=pp_check["note"] if pp_check else "",
             status=status,
             diffs=diffs,
             notes=notes,

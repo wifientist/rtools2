@@ -59,6 +59,12 @@ class NetworkAuditItem(BaseModel):
     actual_r1_type: Optional[str] = None
     actual_r1_vlan: Optional[int] = None
 
+    # PSK passphrase SZ vs R1, compared server-side as keyed fingerprints:
+    # match | differs | missing_in_r1 | missing_in_sz | unknown; None when not a PSK pair.
+    # Never carries a value.
+    passphrase_check: Optional[str] = None
+    passphrase_note: str = ""
+
     # Deep field comparisons (from field_mappings.compare_fields)
     field_comparisons: List[FieldComparisonItem] = Field(default_factory=list)
 

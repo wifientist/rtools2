@@ -31,6 +31,9 @@ import re
 from typing import Any, Iterable, Set, Tuple
 
 WITHHELD = "[withheld]"
+# Prefix of a keyed passphrase fingerprint (passphrase_check); mirrored here to
+# keep this module free of imports.
+FP_PREFIX = "hmac-sha256:"
 # Stands in for a credential in cached captures (audit_cache); not itself a secret.
 CREDENTIAL_PRESENT = "__credential_present__"
 MIN_SUBSTRING_LEN = 8
@@ -48,6 +51,11 @@ class CredentialLeakError(RuntimeError):
     """The report still contained credential material after scrubbing."""
 
 
+def _is_placeholder(value: str) -> bool:
+    """Cache stand-ins for credentials (marker or keyed fingerprint) -- not secrets themselves."""
+    return value == CREDENTIAL_PRESENT or value.startswith(FP_PREFIX)
+
+
 def is_secret_key(key: Any) -> bool:
     return isinstance(key, str) and bool(_SECRET_KEY.search(key))
 
@@ -59,7 +67,7 @@ def collect_secrets(*sources: Any) -> Set[str]:
     def walk(node: Any) -> None:
         if isinstance(node, dict):
             for k, v in node.items():
-                if is_secret_key(k) and isinstance(v, str) and v and v != CREDENTIAL_PRESENT:
+                if is_secret_key(k) and isinstance(v, str) and v and not _is_placeholder(v):
                     found.add(v)
                 else:
                     walk(v)

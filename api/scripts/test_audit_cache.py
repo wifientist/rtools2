@@ -125,8 +125,8 @@ async def main():
     failures += check("SZ round trip keeps the data",
                       back and back.wlans[0].ssid == "U101" and back.ap_radio_config == snap.ap_radio_config
                       and m["zone_name"] == "Zone" and m["stale_reason"] is None)
-    failures += check("credential replaced by the marker",
-                      back.wlans[0].encryption["passphrase"] == CREDENTIAL_PRESENT)
+    failures += check("passphrase replaced by its keyed fingerprint",
+                      back.wlans[0].encryption["passphrase"].startswith("hmac-sha256:"))
 
     # 2
     bundle = {"inventory": {"venue_id": "v", "venue_name": "V", "tenant_id": "t",

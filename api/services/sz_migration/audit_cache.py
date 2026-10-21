@@ -36,13 +36,14 @@ from typing import Any, Dict, Optional, Tuple
 from redis_client import get_audit_cache_redis
 from schemas.sz_migration import SZMigrationSnapshot
 from services.sz_migration.audit_redaction import CREDENTIAL_PRESENT, is_secret_key
+from services.sz_migration.passphrase_check import fingerprint
 
 TTL_SECONDS = 7 * 24 * 3600
 
 
 # Bump when a capture's shape changes so old ones read as stale.
-SZ_CAPTURE_VERSION = 2   # 2: per-AP radio config (ap_radio_config)
-R1_CAPTURE_VERSION = 1
+SZ_CAPTURE_VERSION = 3   # 2: per-AP radio config (ap_radio_config); 3: passphrase fingerprints
+R1_CAPTURE_VERSION = 2   # 2: passphrase fingerprints
 
 
 def sz_key(controller_id: int, zone_id: str) -> str:
@@ -53,11 +54,20 @@ def r1_key(controller_id: int, tenant_id: Optional[str], venue_id: str) -> str:
     return f"audit_cache:r1:{controller_id}:{tenant_id or '-'}:{venue_id}"
 
 
+def _strip_value(key: str, value: str) -> str:
+    # Passphrases become keyed fingerprints so a cached capture can still be
+    # checked against the other side (passphrase_check); every other
+    # credential (shared secrets, passwords) is just marked present.
+    if key.lower().endswith("passphrase"):
+        return fingerprint(value)
+    return CREDENTIAL_PRESENT
+
+
 def strip_credentials(node: Any) -> Any:
-    """Copy with every credential-named string replaced by CREDENTIAL_PRESENT (empty stays empty)."""
+    """Copy with every credential-named string replaced (empty stays empty)."""
     if isinstance(node, dict):
         return {
-            k: (CREDENTIAL_PRESENT if is_secret_key(k) and isinstance(v, str) and v else strip_credentials(v))
+            k: (_strip_value(k, v) if is_secret_key(k) and isinstance(v, str) and v else strip_credentials(v))
             for k, v in node.items()
         }
     if isinstance(node, list):

@@ -28,6 +28,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 
 from schemas.migration_audit import SettingComparison, VenueSettingsAudit
+from services.sz_migration.passphrase_check import fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,9 @@ async def fetch_r1_venue_settings(r1_client, tenant_id: Optional[str], venue_id:
         if key == "mesh" and isinstance(body, dict):
             # Never hold the mesh passphrase: keep only whether one is set.
             body = {k: v for k, v in body.items() if k != "passphrase"} | {
-                "passphrase_set": bool(body.get("passphrase"))
+                "passphrase_set": bool(body.get("passphrase")),
+                # Keyed fingerprint, for a match check without keeping the value
+                "passphrase_fp": fingerprint(body.get("passphrase")),
             }
         out[key] = body
 
@@ -278,6 +281,11 @@ def compare_venue_settings(zone_raw: Dict[str, Any], venue: Dict[str, Any], r1: 
               r1_section="mesh")
         R.cmp("Mesh", "Mesh passphrase set", bool(mesh_sz.get("passphrase")), bool(mesh_r1.get("passphrase_set")),
               note="Compared as set / not set only", r1_section="mesh")
+        sz_fp, r1_fp = fingerprint(mesh_sz.get("passphrase")), mesh_r1.get("passphrase_fp")
+        if sz_fp and r1_fp and sz_fp.split(":")[1] == r1_fp.split(":")[1]:
+            R.cmp("Mesh", "Mesh passphrase matches", "SZ passphrase", "same" if sz_fp == r1_fp else "different",
+                  note="Compared server-side; values never shown", r1_section="mesh",
+                  equal=lambda a, b: b == "same")
 
     # ── Load / band balancing ──────────────────────────────────────
     lb = z.get("loadBalancing")
