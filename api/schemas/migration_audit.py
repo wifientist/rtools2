@@ -163,6 +163,95 @@ class AuthPathAudit(BaseModel):
     issues: List[AuthIssue] = Field(default_factory=list)
 
 
+class MatchMethod(str, Enum):
+    """How an SZ object was paired with an R1 one. Shown, so a guess is visible as a guess."""
+    NAME = "name"              # exact name
+    NAME_CASE = "name_case"    # name, ignoring case
+    SSID = "ssid"              # by SSID (name differed)
+    DEFAULT = "default"        # SZ "default" AP Group <-> the venue's default R1 group
+    SERIAL = "serial"
+    MAC = "mac"
+    NONE = "none"              # no R1 counterpart
+
+
+class WlanMatch(BaseModel):
+    sz_wlan_id: str
+    sz_name: str
+    sz_ssid: str
+    r1_network_id: Optional[str] = None
+    r1_name: Optional[str] = None
+    r1_ssid: Optional[str] = None
+    method: MatchMethod = MatchMethod.NONE
+    # Found in the tenant but not activated in this venue
+    activated_in_venue: bool = False
+    notes: List[str] = Field(default_factory=list)
+
+
+class ApGroupMatch(BaseModel):
+    sz_ap_group_id: str
+    sz_name: str
+    sz_ap_count: int = 0
+    r1_ap_group_id: Optional[str] = None
+    r1_name: Optional[str] = None
+    r1_ap_count: int = 0
+    method: MatchMethod = MatchMethod.NONE
+    notes: List[str] = Field(default_factory=list)
+
+
+class ApMatch(BaseModel):
+    """One physical AP across both controllers. Either side may be absent."""
+    name: Optional[str] = None
+    serial: Optional[str] = None
+    mac: Optional[str] = None
+    model: Optional[str] = None
+    sz_ap_group: Optional[str] = None
+    r1_ap_group: Optional[str] = None
+    # R1 group the AP should be in, from the AP Group pairing (None if unpaired)
+    expected_r1_ap_group: Optional[str] = None
+    method: MatchMethod = MatchMethod.NONE
+    # in_both / sz_only (not in the R1 venue yet) / r1_only
+    presence: str = "in_both"
+    group_aligned: Optional[bool] = None
+    r1_status: Optional[str] = None
+    # SZ deviceName vs R1 name: exact / case / differs (None if one side is absent)
+    sz_name: Optional[str] = None
+    r1_name: Optional[str] = None
+    name_alignment: Optional[str] = None
+
+
+class AuditMatching(BaseModel):
+    """Checkpoint 1: what pairs with what, before any setting is compared."""
+    wlans: List[WlanMatch] = Field(default_factory=list)
+    r1_only_networks: List[Dict[str, Any]] = Field(default_factory=list)
+    ap_groups: List[ApGroupMatch] = Field(default_factory=list)
+    r1_only_ap_groups: List[Dict[str, Any]] = Field(default_factory=list)
+    aps: List[ApMatch] = Field(default_factory=list)
+    counts: Dict[str, int] = Field(default_factory=dict)
+
+
+class AlignmentCategory(BaseModel):
+    """
+    One row of the end-of-run scorecard: SZ vs R1 for one category.
+
+    status:
+      aligned      everything that should match does
+      partial      some aligned, some not
+      misaligned   nothing that should match does
+      pending      not comparable YET for a known reason (e.g. APs not moved)
+      manual       the source isn't readable here; R1's side shown for a manual check
+      not_checked  a later audit checkpoint covers this
+    """
+    key: str
+    label: str
+    sz_count: Optional[int] = None
+    r1_count: Optional[int] = None
+    aligned_count: Optional[int] = None
+    status: str = "not_checked"
+    details: List[str] = Field(default_factory=list)
+    # Sub-rows, e.g. per-unit vs property-wide WLANs, per-field mismatches
+    breakdown: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class AuditSummary(BaseModel):
     """Top-level summary statistics."""
     total_sz_wlans: int = 0
@@ -191,6 +280,8 @@ class MigrationAuditReport(BaseModel):
 
     # Results
     summary: AuditSummary
+    scorecard: List[AlignmentCategory] = Field(default_factory=list)
+    matching: AuditMatching = Field(default_factory=AuditMatching)
     networks: List[NetworkAuditItem] = Field(default_factory=list)
     extra_r1_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_group_activations: List[APGroupActivationAudit] = Field(default_factory=list)

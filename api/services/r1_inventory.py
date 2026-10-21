@@ -66,6 +66,10 @@ async def capture_venue_inventory(
     try:
         networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
         all_networks = networks_response.get("data", [])
+        # Slim summary of the whole tenant: no settings, nothing credential-bearing.
+        tenant_networks = [
+            {k: n.get(k) for k in ("id", "name", "ssid", "nwSubType")} for n in all_networks
+        ]
 
         # Filter to networks active in this venue via venueApGroups
         venue_networks = []
@@ -83,6 +87,7 @@ async def capture_venue_inventory(
     except Exception as e:
         logger.warning(f"Failed to fetch WiFi networks: {e}")
         venue_networks = []
+        tenant_networks = []
         progress("networks", f"Failed to fetch networks: {e}")
 
     # ── AP groups ────────────────────────────────────────────────────
@@ -166,6 +171,7 @@ async def capture_venue_inventory(
         tenant_id=tenant_id,
         venue=venue_detail,
         wifi_networks=venue_networks,
+        tenant_networks=tenant_networks,
         ap_groups=ap_groups,
         aps=aps,
         dpsk_pools=dpsk_pools,

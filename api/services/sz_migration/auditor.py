@@ -11,7 +11,7 @@ then compares against the actual R1 venue inventory.
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from schemas.sz_migration import SZMigrationSnapshot
 from schemas.r1_inventory import R1VenueInventory
@@ -24,6 +24,8 @@ from schemas.migration_audit import (
 from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans
 from services.sz_migration.field_mappings import compare_fields
+from services.sz_migration.audit_matching import build_matching
+from services.sz_migration.audit_scorecard import build_scorecard
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,11 @@ def run_audit(
     warnings: List[str] = list((auth_facts or {}).get("errors", []))
     auth_items: List[AuthPathAudit] = []
 
+    # Step 0: Pair SZ objects with R1 objects (shown on its own, used below)
+    matching = build_matching(snapshot, r1_inventory)
+    wlan_pairs = {m.sz_wlan_id: m for m in matching.wlans}
+    venue_networks = {n.get("id"): n for n in r1_inventory.wifi_networks if n.get("id")}
+
     # Step 1: Resolve WLAN activations
     resolver_result = resolve_wlan_activations(snapshot)
 
@@ -99,10 +106,10 @@ def run_audit(
             ))
             continue
 
-        # Find actual R1 network — match by name first, then SSID
-        actual = r1_inventory.network_by_name(wlan.name)
-        if not actual:
-            actual = r1_inventory.network_by_ssid(wlan.ssid)
+        # The R1 network paired by the matching layer -- one pairing for the
+        # whole report, so sections can't disagree about what matched.
+        pair = wlan_pairs.get(wlan.id)
+        actual = venue_networks.get(pair.r1_network_id) if pair and pair.activated_in_venue else None
 
         if not actual:
             # Missing — expected but not found in R1
@@ -117,7 +124,10 @@ def run_audit(
                 expected_r1_type=expected_type,
                 expected_r1_ssid=expected_ssid,
                 status=AuditStatus.MISSING,
-                notes="Network not found in R1 venue",
+                notes=(
+                    f"R1 network '{pair.r1_name}' exists in the tenant but is not activated in this venue"
+                    if pair and pair.r1_network_id else "Network not found in R1"
+                ),
             ))
             continue
 
@@ -232,7 +242,9 @@ def run_audit(
             })
 
     # Step 5: AP Group activation coverage
-    ap_group_audits = _audit_ap_group_activations(resolver_result, r1_inventory)
+    ap_group_audits = _audit_ap_group_activations(
+        resolver_result, r1_inventory, {g.sz_name: g for g in matching.ap_groups},
+    )
 
     # Step 6: Resource coverage
     resource_checks = _audit_resource_coverage(snapshot, r1_inventory)
@@ -273,6 +285,11 @@ def run_audit(
         r1_snapshot_job_id=r1_snapshot_job_id,
         audit_timestamp=datetime.now(timezone.utc).isoformat(),
         summary=summary,
+        matching=matching,
+        scorecard=build_scorecard(
+            snapshot, r1_inventory, matching, resolver_result, network_items,
+            ap_group_audits, auth_items if auth_facts is not None else None,
+        ),
         networks=network_items,
         extra_r1_networks=extra_networks,
         ap_group_activations=ap_group_audits,
@@ -282,9 +299,30 @@ def run_audit(
     )
 
 
+def ssids_on_r1_group(r1_inventory: R1VenueInventory, r1_apg_id: str) -> Set[str]:
+    """
+    SSIDs a venue network activation puts on this R1 AP Group.
+
+    venueApGroups comes in two shapes (apGroupIds, or apGroups[].apGroupId),
+    and an All-AP-Groups activation covers every group in the venue.
+    """
+    out: Set[str] = set()
+    for net in r1_inventory.wifi_networks:
+        for vag in net.get("venueApGroups") or []:
+            if vag.get("venueId") not in (None, r1_inventory.venue_id):
+                continue
+            ids = set(vag.get("apGroupIds") or [])
+            ids |= {g.get("apGroupId") for g in vag.get("apGroups") or [] if g.get("apGroupId")}
+            if vag.get("isAllApGroups") or r1_apg_id in ids:
+                if net.get("ssid"):
+                    out.add(net["ssid"])
+    return out
+
+
 def _audit_ap_group_activations(
     resolver_result,
     r1_inventory: R1VenueInventory,
+    group_pairs: Dict[str, Any],
 ) -> List[APGroupActivationAudit]:
     """Check whether each AP Group has all expected SSIDs activated in R1."""
     audits = []
@@ -292,21 +330,11 @@ def _audit_ap_group_activations(
     for apg_summary in resolver_result.ap_group_summaries:
         expected_ssids = set(apg_summary.ssids)
 
-        # Find matching R1 AP Group
-        r1_apg = r1_inventory.ap_group_by_name(apg_summary.ap_group_name)
-        r1_apg_id = r1_apg.get("id") if r1_apg else None
+        # The R1 group the matching layer paired (SZ "default" -> venue default)
+        pair = group_pairs.get(apg_summary.ap_group_name)
+        r1_apg_id = pair.r1_ap_group_id if pair else None
 
-        # Find actual SSIDs activated on this AP Group
-        actual_ssids: Set[str] = set()
-        if r1_apg_id:
-            for net in r1_inventory.wifi_networks:
-                for vag in net.get("venueApGroups", []):
-                    for apg in vag.get("apGroups", []):
-                        if apg.get("apGroupId") == r1_apg_id:
-                            ssid = net.get("ssid", "")
-                            if ssid:
-                                actual_ssids.add(ssid)
-
+        actual_ssids = ssids_on_r1_group(r1_inventory, r1_apg_id) if r1_apg_id else set()
         missing = sorted(expected_ssids - actual_ssids)
         extra = sorted(actual_ssids - expected_ssids)
 
@@ -318,7 +346,7 @@ def _audit_ap_group_activations(
             missing_ssids=missing,
             extra_ssids=extra,
             r1_ap_group_id=r1_apg_id,
-            r1_ap_group_found=r1_apg is not None,
+            r1_ap_group_found=r1_apg_id is not None,
         ))
 
     return audits

@@ -52,10 +52,26 @@ type AuditMode = 'fresh' | 'sessions';
 
 export default function MigrationAudit() {
   const {
-    activeControllerId, activeControllerName, activeControllerType,
-    secondaryControllerId, secondaryControllerName, secondaryControllerType,
-    secondaryControllerSubtype, controllers,
+    activeControllerId: authActiveId, activeControllerName: authActiveName,
+    activeControllerType: authActiveType, activeControllerSubtype: authActiveSubtype,
+    secondaryControllerId: authSecondaryId, secondaryControllerName: authSecondaryName,
+    secondaryControllerType: authSecondaryType, secondaryControllerSubtype: authSecondarySubtype,
+    controllers,
   } = useAuth();
+
+  // The audit only needs one SZ and one R1 controller among the two selected,
+  // in either slot -- other tools want R1 as the active controller.
+  const slots = [
+    { id: authActiveId, name: authActiveName, type: authActiveType, subtype: authActiveSubtype },
+    { id: authSecondaryId, name: authSecondaryName, type: authSecondaryType, subtype: authSecondarySubtype },
+  ];
+  const szSlot = slots.find(s => s.id && s.type === 'SmartZone');
+  const r1Slot = slots.find(s => s.id && s.type === 'RuckusONE');
+  const activeControllerId = szSlot?.id ?? null;          // SZ controller (either slot)
+  const activeControllerName = szSlot?.name ?? null;
+  const secondaryControllerId = r1Slot?.id ?? null;       // R1 controller (either slot)
+  const secondaryControllerName = r1Slot?.name ?? null;
+  const secondaryControllerSubtype = r1Slot?.subtype ?? null;
 
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<AuditMode>('fresh');
@@ -78,8 +94,8 @@ export default function MigrationAudit() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<AuditStatus | null>(null);
 
-  const szReady = activeControllerId && activeControllerType === 'SmartZone';
-  const r1Ready = secondaryControllerId && secondaryControllerType === 'RuckusONE';
+  const szReady = !!szSlot;
+  const r1Ready = !!r1Slot;
   const isMSP = secondaryControllerSubtype === 'MSP';
   const secondaryController = controllers?.find((c: any) => c.id === secondaryControllerId);
   const defaultTenantId = isMSP ? null : (secondaryController?.r1_tenant_id || null);
@@ -231,7 +247,7 @@ export default function MigrationAudit() {
             <div>
               <p className="text-red-800 font-semibold text-sm">Controller Setup Required</p>
               <p className="text-red-600 text-sm mt-1">
-                Set <strong>Primary</strong> to SmartZone and <strong>Secondary</strong> to RuckusONE.
+                Select one SmartZone and one RuckusONE controller, as primary and secondary in either order.
               </p>
             </div>
           </div>
@@ -292,6 +308,7 @@ export default function MigrationAudit() {
                   </h3>
                   <div className="space-y-3">
                     <SmartZoneDomainSelector
+                      controllerId={activeControllerId}
                       onDomainSelect={(id) => {
                         setDomainId(id);
                         setZoneId(null);
@@ -301,6 +318,7 @@ export default function MigrationAudit() {
                     />
                     {domainId && (
                       <SmartZoneZoneSelector
+                        controllerId={activeControllerId}
                         domainId={domainId}
                         onZoneSelect={(id, name) => {
                           setZoneId(id);
