@@ -177,6 +177,63 @@ async def _get_snapshot_raw(job_id: str) -> Optional[str]:
     return await redis.get(key)
 
 
+# ── Snapshot ownership ───────────────────────────────────────────────
+#
+# Snapshots (SZ extractions, R1 inventories) are addressed by job id, and
+# until now any logged-in user holding an id could read one -- including the
+# raw SZ extraction. Job ids travel (URLs, screenshots), so each snapshot
+# now records the user who created it, and every job-id endpoint checks it.
+# Someone else's snapshot is a 404, so its existence isn't confirmed.
+
+def _owner_key(kind: str, job_id: str) -> str:
+    return f"sz_migration:owner:{kind}:{job_id}"
+
+
+async def _record_owner(kind: str, job_id: str, user_id: int) -> None:
+    redis = await get_redis_client()
+    await redis.set(_owner_key(kind, job_id), str(user_id), ex=SNAPSHOT_TTL)
+
+
+async def _require_owner(kind: str, job_id: str, user: User, db: Session) -> None:
+    """
+    kind: "sz" (extraction job: state + snapshot) or "r1" (R1 inventory snapshot).
+
+    Snapshots written before ownership was recorded fall back to the user's
+    own migration sessions, which already tie job ids to a user -- so an
+    in-progress wizard isn't locked out by the upgrade.
+    """
+    redis = await get_redis_client()
+    owner = await redis.get(_owner_key(kind, job_id))
+    if owner is not None:
+        if owner == str(user.id):
+            return
+    else:
+        # Older snapshots: the creating endpoints already kept a per-user job index...
+        prefix = EXTRACTION_KEY_PREFIX if kind == "sz" else R1_SNAPSHOT_KEY_PREFIX
+        if await redis.zscore(f"{prefix}:user:{user.id}:jobs", job_id) is not None:
+            return
+        # ...and migration sessions tie job ids to their user.
+        column = (SZMigrationSession.extraction_job_id if kind == "sz"
+                  else SZMigrationSession.r1_snapshot_job_id)
+        if db.query(SZMigrationSession).filter(
+            SZMigrationSession.user_id == user.id, column == job_id,
+        ).first():
+            return
+    raise HTTPException(status_code=404, detail="Snapshot not found or expired")
+
+
+async def _require_job_owner(job, user: User) -> None:
+    """Migration workflow jobs: only their creator may read, confirm or graph them."""
+    if job is None or getattr(job, "user_id", None) != user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+
+def _redacted_snapshot_json(raw: str) -> str:
+    """Snapshot JSON for the browser or a download: passphrases become keyed
+    fingerprints, other credentials a marker -- never the values."""
+    return json.dumps(audit_cache.strip_credentials(json.loads(raw)))
+
+
 async def _publish_progress(job_id: str, phase: str, message: str, data: Dict[str, Any]):
     """Publish progress event via Redis pub/sub for SSE."""
     redis = await get_redis_client()
@@ -315,6 +372,7 @@ async def start_extraction(
         raise HTTPException(status_code=400, detail="Controller must be SmartZone")
 
     job_id = str(uuid.uuid4())
+    await _record_owner("sz", job_id, current_user.id)
 
     # Save initial state
     await _save_extraction_state(job_id, {
@@ -351,8 +409,10 @@ async def start_extraction(
 async def get_extraction_status(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Poll extraction progress."""
+    await _require_owner("sz", job_id, current_user, db)
     state = await _get_extraction_state(job_id)
     if not state:
         raise HTTPException(status_code=404, detail="Extraction job not found")
@@ -373,8 +433,10 @@ async def get_extraction_status(
 async def get_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Return the full SZMigrationSnapshot as JSON."""
+    """Return the SZMigrationSnapshot as JSON, credentials redacted."""
+    await _require_owner("sz", job_id, current_user, db)
     raw = await _get_snapshot_raw(job_id)
     if not raw:
         # Check if extraction is still running
@@ -384,7 +446,7 @@ async def get_snapshot(
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
     )
 
@@ -394,8 +456,13 @@ async def get_snapshot(
 async def download_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Download the full SZMigrationSnapshot as a JSON file."""
+    """
+    Download the SZMigrationSnapshot as a JSON file, credentials redacted
+    (passphrases become keyed fingerprints -- still comparable, never readable).
+    """
+    await _require_owner("sz", job_id, current_user, db)
     raw = await _get_snapshot_raw(job_id)
     if not raw:
         state = await _get_extraction_state(job_id)
@@ -416,7 +483,7 @@ async def download_snapshot(
     filename = f"sz_snapshot_{safe_name}_{timestamp}.json"
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -427,11 +494,13 @@ async def download_snapshot(
 async def extraction_sse(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     SSE stream for real-time extraction progress.
     Subscribes to Redis pub/sub for the extraction job.
     """
+    await _require_owner("sz", job_id, current_user, db)
     # Verify job exists
     state = await _get_extraction_state(job_id)
     if not state:
@@ -554,6 +623,7 @@ async def capture_r1_snapshot(
 
     # Persist with a job_id for later retrieval/download
     job_id = str(uuid.uuid4())
+    await _record_owner("r1", job_id, current_user.id)
     await _save_r1_snapshot(job_id, inventory)
 
     # Track in user history
@@ -576,14 +646,16 @@ async def capture_r1_snapshot(
 async def get_r1_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Return the full R1VenueInventory as JSON."""
+    """Return the R1VenueInventory as JSON, credentials redacted."""
+    await _require_owner("r1", job_id, current_user, db)
     raw = await _get_r1_snapshot_raw(job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="R1 snapshot not found")
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
     )
 
@@ -593,8 +665,10 @@ async def get_r1_snapshot(
 async def download_r1_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Download the full R1VenueInventory as a JSON file."""
+    """Download the R1VenueInventory as a JSON file, credentials redacted."""
+    await _require_owner("r1", job_id, current_user, db)
     raw = await _get_r1_snapshot_raw(job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="R1 snapshot not found")
@@ -611,7 +685,7 @@ async def download_r1_snapshot(
     filename = f"r1_snapshot_{safe_name}_{timestamp}.json"
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -626,6 +700,7 @@ async def download_r1_snapshot(
 async def resolve_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Resolve WLAN Groups into per-AP-Group activations and map security types.
@@ -633,6 +708,7 @@ async def resolve_snapshot(
     Reads the SZ snapshot from Redis (produced by /extract), runs the resolver
     and mapper, and returns the combined result.
     """
+    await _require_owner("sz", job_id, current_user, db)
     raw = await _get_snapshot_raw(job_id)
     if not raw:
         state = await _get_extraction_state(job_id)
@@ -972,6 +1048,7 @@ async def get_radius_choices(
     Shared secrets are never returned (SZ doesn't expose them, and R1
     profiles are reduced to name/type/ip:port).
     """
+    await _require_owner("sz", sz_snapshot_job_id, current_user, db)
     raw = await _get_snapshot_raw(sz_snapshot_job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
@@ -1022,6 +1099,7 @@ async def get_dpsk_choices(
 
     Counts only -- no passphrase is read or returned.
     """
+    await _require_owner("sz", sz_snapshot_job_id, current_user, db)
     raw = await _get_snapshot_raw(sz_snapshot_job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
@@ -1074,6 +1152,7 @@ async def create_migration_plan(
     POST /sz-migration/workflow/{job_id}/confirm to start execution.
     """
     # Verify SZ snapshot exists
+    await _require_owner("sz", request.sz_snapshot_job_id, current_user, db)
     raw = await _get_snapshot_raw(request.sz_snapshot_job_id)
     if not raw:
         raise HTTPException(
@@ -1173,6 +1252,7 @@ async def get_migration_plan(
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
     job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -1225,6 +1305,7 @@ async def confirm_migration(
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
     job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -1273,6 +1354,7 @@ async def get_migration_graph(
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
     job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -1682,6 +1764,7 @@ async def run_audit_endpoint(
     # ── SZ snapshot: existing snapshot, else capture cache, else extract inline ──
     if request.sz_snapshot_job_id:
         # Path A: existing snapshot
+        await _require_owner("sz", request.sz_snapshot_job_id, current_user, db)
         sz_raw = await _get_snapshot_raw(request.sz_snapshot_job_id)
         if not sz_raw:
             state = await _get_extraction_state(request.sz_snapshot_job_id)
@@ -1721,6 +1804,7 @@ async def run_audit_endpoint(
 
         # Cache the snapshot for potential reuse
         sz_job_id = str(uuid.uuid4())
+        await _record_owner("sz", sz_job_id, current_user.id)
         await _save_snapshot(sz_job_id, snapshot)
         logger.info(f"Inline extraction for audit saved as {sz_job_id}: {snapshot.summary()}")
         data_sources["sz"] = {"cached": False, "captured_at": datetime.utcnow().isoformat() + "Z"}
@@ -1742,6 +1826,7 @@ async def run_audit_endpoint(
     cached_r1: Optional[Dict[str, Any]] = None
     tenant_id = None
     if request.r1_snapshot_job_id:
+        await _require_owner("r1", request.r1_snapshot_job_id, current_user, db)
         r1_raw = await _get_r1_snapshot_raw(request.r1_snapshot_job_id)
         if not r1_raw:
             raise HTTPException(status_code=404, detail="R1 snapshot not found or expired")
@@ -1787,6 +1872,7 @@ async def run_audit_endpoint(
                 logger.exception(f"R1 snapshot failed during audit: {e}")
                 raise HTTPException(status_code=500, detail=f"Failed to capture R1 inventory: {e}")
             r1_job_id = str(uuid.uuid4())
+            await _record_owner("r1", r1_job_id, current_user.id)
             await _save_r1_snapshot(r1_job_id, r1_inventory)
 
     r1_network_details: Dict[str, Dict] = {}
