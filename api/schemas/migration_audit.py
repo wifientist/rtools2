@@ -89,6 +89,80 @@ class ResourceCoverage(BaseModel):
     missing: List[str] = Field(default_factory=list)
 
 
+class AuthPath(str, Enum):
+    """How an R1 network authenticates, read from what is actually linked to it."""
+    EXTERNAL = "external"   # RADIUS server profile linked (e.g. still Cloudpath)
+    INTERNAL = "internal"   # R1 DPSK service + identity groups
+    HYBRID = "hybrid"       # both linked -- reported, not audited in depth
+    NONE = "none"           # neither -- nothing can authenticate
+
+
+class AuthIssue(BaseModel):
+    severity: str  # info | warning | error
+    message: str
+
+
+class RadiusServerCheck(BaseModel):
+    """One RADIUS role (authentication or accounting): SZ service vs linked R1 profile."""
+    role: str  # authentication | accounting
+    sz_service_name: Optional[str] = None
+    sz_primary: Optional[str] = None      # "ip:port"
+    sz_secondary: Optional[str] = None
+    r1_profile_id: Optional[str] = None
+    r1_profile_name: Optional[str] = None
+    r1_primary: Optional[str] = None
+    r1_secondary: Optional[str] = None
+    primary_match: Optional[bool] = None  # None = nothing to compare
+    secondary_match: Optional[bool] = None
+    # True = the migration's placeholder is still the shared secret.
+    # The secret itself is never read into the report.
+    placeholder_secret: Optional[bool] = None
+
+
+class IdentityGroupCount(BaseModel):
+    id: str
+    name: Optional[str] = None
+    identity_count: Optional[int] = None  # None = could not be read
+
+
+class DpskPoolCheck(BaseModel):
+    id: str
+    name: Optional[str] = None
+    passphrase_count: Optional[int] = None  # None = could not be read
+    identity_groups: List[IdentityGroupCount] = Field(default_factory=list)
+
+
+class AuthPathAudit(BaseModel):
+    """
+    Per-WLAN authentication audit for RADIUS- and DPSK-backed WLANs.
+
+    Quantities only. Passphrases and shared secrets are never part of this
+    model; an external server's identities are not visible at all, so on the
+    external path the counts stay None.
+    """
+    sz_wlan_id: str
+    sz_wlan_name: str
+    sz_ssid: str
+    sz_auth_type: str
+    # Where SZ sent authentication: external_radius | external_dpsk | sz_dpsk
+    sz_backend: str
+    r1_network_id: Optional[str] = None
+    r1_network_name: Optional[str] = None
+    r1_network_type: Optional[str] = None
+
+    path: AuthPath
+    radius: List[RadiusServerCheck] = Field(default_factory=list)
+    auth_proxy: Optional[bool] = None
+    accounting_proxy: Optional[bool] = None
+
+    pools: List[DpskPoolCheck] = Field(default_factory=list)
+    passphrase_total: Optional[int] = None
+    identity_total: Optional[int] = None
+
+    status: AuditStatus
+    issues: List[AuthIssue] = Field(default_factory=list)
+
+
 class AuditSummary(BaseModel):
     """Top-level summary statistics."""
     total_sz_wlans: int = 0
@@ -99,6 +173,11 @@ class AuditSummary(BaseModel):
     unsupported_count: int = 0
     ap_group_coverage: int = 0  # percentage of AP groups fully covered
     total_diffs: int = 0
+    auth_external_count: int = 0
+    auth_internal_count: int = 0
+    auth_hybrid_count: int = 0
+    auth_none_count: int = 0
+    auth_error_count: int = 0
 
 
 class MigrationAuditReport(BaseModel):
@@ -116,4 +195,5 @@ class MigrationAuditReport(BaseModel):
     extra_r1_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_group_activations: List[APGroupActivationAudit] = Field(default_factory=list)
     resource_coverage: List[ResourceCoverage] = Field(default_factory=list)
+    auth_paths: List[AuthPathAudit] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)

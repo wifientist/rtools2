@@ -57,6 +57,10 @@ from services.sz_migration.extractor import extract_zone_snapshot
 from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans
 from services.sz_migration.auditor import run_audit as run_migration_audit
+from services.sz_migration.auth_probe import collect_auth_facts
+from services.sz_migration.audit_redaction import (
+    CredentialLeakError, assert_clean, collect_secrets, scrub_report,
+)
 from services.r1_inventory import capture_venue_inventory
 from schemas.sz_migration import SZMigrationSnapshot, ResolverResult
 from schemas.r1_inventory import R1VenueInventory
@@ -1534,6 +1538,18 @@ async def run_audit_endpoint(
                 except Exception as e:
                     logger.debug(f"Could not fetch full detail for R1 network {net_id}: {e}")
 
+    # ── Auth-path facts: external RADIUS links, DPSK pools, counts ──
+    auth_facts: Optional[Dict[str, Any]] = None
+    if r1_client is not None:
+        try:
+            auth_facts = await collect_auth_facts(
+                r1_client, tenant_id,
+                networks=r1_inventory.wifi_networks,
+                identity_groups=r1_inventory.identity_groups,
+            )
+        except Exception as e:
+            logger.exception(f"Auth-path probe failed during audit: {e}")
+
     # ── Run audit ──
     report = run_migration_audit(
         snapshot=snapshot,
@@ -1541,6 +1557,36 @@ async def run_audit_endpoint(
         sz_snapshot_job_id=sz_job_id,
         r1_snapshot_job_id=r1_job_id,
         r1_network_details=r1_network_details,
+        auth_facts=auth_facts,
     )
+    if auth_facts is None:
+        report.warnings.append(
+            "Authentication paths were not audited (no live R1 connection for this run)"
+        )
 
-    return report.model_dump()
+    # ── Credential gate: nothing that is a passphrase or secret leaves ──
+    secrets = collect_secrets(
+        [w.raw for w in snapshot.wlans],
+        [w.encryption for w in snapshot.wlans],
+        [r.raw for r in snapshot.referenced_objects.values()],
+        r1_network_details,
+        r1_inventory.wifi_networks,
+    )
+    body, withheld = scrub_report(report.model_dump(mode="json"), secrets)
+    if withheld:
+        body["warnings"].append(
+            f"{withheld} value(s) withheld from this report because they matched a "
+            "passphrase or shared secret"
+        )
+    try:
+        assert_clean(body, secrets)
+    except CredentialLeakError as e:
+        # The message names the check, never the value.
+        logger.error(f"Audit report withheld by credential gate: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Audit report withheld: it still contained credential material after "
+                   "scrubbing. This is a bug in the audit, not in your configuration.",
+        )
+
+    return body

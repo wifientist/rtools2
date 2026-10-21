@@ -405,6 +405,38 @@ class IdentityService:
             )
         return self.client.safe_json(response)
 
+    async def count_identities_in_group(self, group_id: str, tenant_id: str = None):
+        """
+        How many identities a group holds, from a one-row page's totalElements.
+
+        Identity rows can carry a dpskPassphrase, so the row is dropped here and
+        only the count leaves. Returns None if the count could not be read.
+        """
+        params = {"page": 0, "size": 1}
+        endpoint = f"/identityGroups/{group_id}/identities"
+        try:
+            if self.client.ec_type == "MSP" and tenant_id:
+                response = await asyncio.to_thread(
+                    self.client.get, endpoint, params=params, override_tenant_id=tenant_id,
+                )
+            else:
+                response = await asyncio.to_thread(self.client.get, endpoint, params=params)
+        except Exception:
+            logger.warning(f"Could not count identities in group {group_id}")
+            return None
+        if not response.ok:
+            logger.warning(f"Could not count identities in group {group_id}: HTTP {response.status_code}")
+            return None
+        try:
+            data = response.json() or {}
+        except ValueError:
+            logger.warning(f"Identity count for group {group_id} returned unparseable JSON")
+            return None
+        total = data.get("totalElements") if isinstance(data, dict) else None
+        if total is None and isinstance(data, dict):
+            total = data.get("totalItems")
+        return total if isinstance(total, int) else None
+
     async def get_identity(
         self,
         group_id: str,

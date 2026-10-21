@@ -16,6 +16,7 @@ from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
 from redis_client import get_redis_client
 from schemas.sz_migration import SZMigrationSnapshot
+from services.sz_migration.auth_probe import PLACEHOLDER_RADIUS_SECRET
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
 
             # SZ API never exposes shared secrets — use placeholder
             if not primary_secret:
-                primary_secret = "CHANGE_ME_after_migration"
+                primary_secret = PLACEHOLDER_RADIUS_SECRET
                 await self.emit(
                     f"RADIUS '{name}' shared secret not available from SZ — "
                     f"using placeholder (manual update required after migration)",

@@ -14,6 +14,7 @@ import SingleEcSelector from '@/components/SingleEcSelector';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
   FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
+  AuthPathAudit, AuthPath, RadiusServerCheck,
 } from '@/types/migrationAudit';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -515,6 +516,11 @@ function AuditResults({
         statusFilter={statusFilter}
       />
 
+      {/* Authentication paths (RADIUS / DPSK-backed WLANs) */}
+      {(report.auth_paths ?? []).length > 0 && (
+        <AuthPathSection items={report.auth_paths} summary={s} />
+      )}
+
       {/* AP Group coverage */}
       {report.ap_group_activations.length > 0 && (
         <APGroupCoverage
@@ -983,5 +989,202 @@ function ResourceCoverageSection({ coverage }: { coverage: ResourceCoverage[] })
         })}
       </div>
     </div>
+  );
+}
+
+// ── Authentication Paths ─────────────────────────────────────────
+// External RADIUS (kept on Cloudpath etc.) vs R1-internal DPSK. Counts only:
+// the backend never sends a passphrase or shared secret, and this view has
+// no field that could show one.
+
+const PATH_CONFIG: Record<AuthPath, { label: string; cls: string }> = {
+  external: { label: 'External RADIUS', cls: 'bg-blue-100 text-blue-700' },
+  internal: { label: 'R1 DPSK',         cls: 'bg-orange-100 text-orange-700' },
+  hybrid:   { label: 'Hybrid',          cls: 'bg-purple-100 text-purple-700' },
+  none:     { label: 'Nothing linked',  cls: 'bg-red-100 text-red-700' },
+};
+
+const BACKEND_LABELS: Record<AuthPathAudit['sz_backend'], string> = {
+  external_radius: 'SZ → external RADIUS',
+  external_dpsk: 'SZ → external DPSK',
+  sz_dpsk: 'SZ internal DPSK',
+};
+
+const ISSUE_STYLE: Record<string, string> = {
+  error: 'text-red-700',
+  warning: 'text-amber-700',
+  info: 'text-gray-500',
+};
+
+function AuthPathSection({
+  items,
+  summary,
+}: {
+  items: AuthPathAudit[];
+  summary: MigrationAuditReport['summary'];
+}) {
+  const counts: Array<[AuthPath, number]> = [
+    ['external', summary.auth_external_count],
+    ['internal', summary.auth_internal_count],
+    ['hybrid', summary.auth_hybrid_count],
+    ['none', summary.auth_none_count],
+  ];
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold text-gray-700">Authentication Paths</h3>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {counts.filter(([, n]) => n > 0).map(([p, n]) => (
+            <span key={p} className={`text-xs px-2 py-0.5 rounded font-medium ${PATH_CONFIG[p].cls}`}>
+              {PATH_CONFIG[p].label}: {n}
+            </span>
+          ))}
+          {summary.auth_error_count > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-100 text-red-700">
+              {summary.auth_error_count} error{summary.auth_error_count === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {items.map(item => <AuthPathRow key={item.sz_wlan_id} item={item} />)}
+      </div>
+    </div>
+  );
+}
+
+function AuthPathRow({ item }: { item: AuthPathAudit }) {
+  const hasProblems = item.issues.some(i => i.severity !== 'info');
+  const [open, setOpen] = useState(hasProblems);
+  const cfg = STATUS_CONFIG[item.status];
+  const StatusIcon = cfg.icon;
+  const auth = item.radius.find(r => r.role === 'authentication');
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-left hover:bg-gray-50"
+      >
+        {open ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+        <StatusIcon size={14} className={cfg.color} />
+        <span className="font-medium w-40 truncate" title={item.sz_wlan_name}>{item.sz_wlan_name}</span>
+        <span className="text-xs text-gray-500 w-36 truncate">{BACKEND_LABELS[item.sz_backend]}</span>
+        <ArrowRight size={12} className="text-gray-300" />
+        <span className={`text-xs px-2 py-0.5 rounded font-medium ${PATH_CONFIG[item.path].cls}`}>
+          {PATH_CONFIG[item.path].label}
+        </span>
+        <span className="text-xs text-gray-500 ml-auto flex items-center gap-3">
+          {(item.path === 'internal' || item.path === 'hybrid') && (
+            <>
+              <span className="flex items-center gap-1" title="Passphrases in the linked DPSK pool(s)">
+                <Key size={11} /> {item.passphrase_total ?? '?'}
+              </span>
+              <span className="flex items-center gap-1" title="Identities in the pool's identity group(s)">
+                <Users size={11} /> {item.identity_total ?? '?'}
+              </span>
+            </>
+          )}
+          {(item.path === 'external' || item.path === 'hybrid') && auth && (
+            <span className="flex items-center gap-1" title="Authentication server">
+              <Shield size={11} /> {auth.r1_primary ?? '—'}
+            </span>
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-10 pb-3 space-y-3">
+          {item.radius.length > 0 && (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-400 text-left">
+                  <th className="font-medium py-1 w-28">Role</th>
+                  <th className="font-medium py-1">SZ</th>
+                  <th className="font-medium py-1">R1 profile</th>
+                  <th className="font-medium py-1 w-32">Shared secret</th>
+                </tr>
+              </thead>
+              <tbody>
+                {item.radius.map(r => <RadiusRow key={r.role} r={r} />)}
+              </tbody>
+            </table>
+          )}
+
+          {item.pools.length > 0 && (
+            <div className="space-y-1.5">
+              {item.pools.map(p => (
+                <div key={p.id} className="text-xs border border-gray-100 rounded p-2">
+                  <div className="flex items-center gap-2">
+                    <Key size={11} className="text-orange-600" />
+                    <span className="font-medium">{p.name || p.id}</span>
+                    <span className="text-gray-500 ml-auto">
+                      {p.passphrase_count ?? '?'} passphrases
+                    </span>
+                  </div>
+                  {p.identity_groups.length === 0 ? (
+                    <div className="text-red-600 mt-1 ml-5">No identity group</div>
+                  ) : p.identity_groups.map(g => (
+                    <div key={g.id} className="flex items-center gap-2 mt-1 ml-5 text-gray-600">
+                      <Users size={11} />
+                      <span>{g.name || g.id}</span>
+                      <span className="text-gray-500 ml-auto">{g.identity_count ?? '?'} identities</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {item.issues.length > 0 && (
+            <div className="space-y-1">
+              {item.issues.map((i, idx) => (
+                <div key={idx} className={`text-xs flex items-start gap-1.5 ${ISSUE_STYLE[i.severity]}`}>
+                  {i.severity === 'error' ? <XCircle size={11} className="mt-0.5 flex-shrink-0" />
+                    : i.severity === 'warning' ? <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />
+                    : <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />}
+                  <span>{i.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ServerCell({ primary, secondary, match }: { primary: string | null; secondary: string | null; match?: boolean | null }) {
+  return (
+    <div className={match === false ? 'text-red-600' : 'text-gray-700'}>
+      <div>{primary ?? '—'}</div>
+      {secondary && <div className="text-gray-400">{secondary}</div>}
+    </div>
+  );
+}
+
+function RadiusRow({ r }: { r: RadiusServerCheck }) {
+  const mismatch = r.primary_match === false || r.secondary_match === false;
+  return (
+    <tr className="border-t border-gray-100 align-top">
+      <td className="py-1.5 capitalize text-gray-600">{r.role}</td>
+      <td className="py-1.5">
+        {r.sz_service_name && <div className="text-gray-400">{r.sz_service_name}</div>}
+        <ServerCell primary={r.sz_primary} secondary={r.sz_secondary} />
+      </td>
+      <td className="py-1.5">
+        {r.r1_profile_name && <div className="text-gray-400">{r.r1_profile_name}</div>}
+        <ServerCell primary={r.r1_primary} secondary={r.r1_secondary} match={mismatch ? false : null} />
+      </td>
+      <td className="py-1.5">
+        {r.placeholder_secret === true ? (
+          <span className="text-red-600 font-medium">Placeholder</span>
+        ) : r.placeholder_secret === false ? (
+          <span className="text-green-600">Set</span>
+        ) : (
+          <span className="text-gray-400">Not checked</span>
+        )}
+      </td>
+    </tr>
   );
 }
