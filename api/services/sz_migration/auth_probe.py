@@ -28,11 +28,12 @@ import asyncio
 import logging
 from typing import Any, Dict, Iterable, List, Optional
 
+# Re-exported for the audit: the migration writes it when SZ will not give
+# up a shared secret, and a profile still carrying it rejects every request.
+from services.sz_migration.radius_choices import PLACEHOLDER_RADIUS_SECRET
+
 logger = logging.getLogger(__name__)
 
-# Re-exported: the migration writes it when SZ will not give up a shared
-# secret, and a profile still carrying it rejects every request.
-from services.sz_migration.radius_choices import PLACEHOLDER_RADIUS_SECRET  # noqa: E402
 
 
 DETAIL_CONCURRENCY = 5
