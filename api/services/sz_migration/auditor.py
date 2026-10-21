@@ -232,6 +232,10 @@ def run_audit(
                     r1_value=fc.r1_value,
                     match=fc.match,
                     sz_only=fc.sz_only,
+                    status=fc.status,
+                    sz_display=fc.sz_display,
+                    r1_display=fc.r1_display,
+                    note=fc.note,
                 )
                 for fc in raw_comparisons
             ]

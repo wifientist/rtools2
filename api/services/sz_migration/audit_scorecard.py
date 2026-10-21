@@ -279,7 +279,7 @@ def _wlan_config(items: List[NetworkAuditItem]) -> AlignmentCategory:
             if d.field in _KEY_DIFF_FIELDS:
                 bad.add(_KEY_DIFF_FIELDS[d.field])
         for fc in i.field_comparisons:
-            if fc.label in _KEY_FIELD_LABELS and not fc.match and not fc.sz_only:
+            if fc.label in _KEY_FIELD_LABELS and fc.status == "differs":
                 bad.add(_KEY_FIELD_LABELS[fc.label])
         for f in bad:
             per_field.setdefault(f, []).append(i.sz_wlan_name)

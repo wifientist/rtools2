@@ -744,7 +744,7 @@ function NetworkRow({ item }: { item: NetworkAuditItem }) {
 
   const hasFieldComparisons = item.field_comparisons && item.field_comparisons.length > 0;
   const mismatchCount = hasFieldComparisons
-    ? item.field_comparisons.filter(fc => !fc.match && !fc.sz_only).length
+    ? item.field_comparisons.filter(fc => fieldStatus(fc) === 'differs').length
     : 0;
 
   return (
@@ -860,11 +860,11 @@ function FieldComparisonAccordion({
     <div className="space-y-1">
       {sortedSections.map(section => {
         const fields = grouped.get(section) || [];
-        const sectionMismatches = fields.filter(f => !f.match && !f.sz_only).length;
+        const sectionMismatches = fields.filter(f => fieldStatus(f) === 'differs').length;
 
-        // In mismatch-only mode, skip sections with no mismatches
+        // In mismatch-only mode, show real differences plus rows needing a look
         const visibleFields = mismatchOnly
-          ? fields.filter(f => !f.match && !f.sz_only)
+          ? fields.filter(f => ['differs', 'review'].includes(fieldStatus(f)))
           : fields;
 
         if (visibleFields.length === 0) return null;
@@ -923,17 +923,18 @@ function FieldSection({
               <th className="py-1 px-3 w-48 font-medium">Field</th>
               <th className="py-1 px-3 font-medium">SZ Value</th>
               <th className="py-1 px-3 font-medium">R1 Value</th>
+              <th className="py-1 px-3 font-medium w-40">Result</th>
             </tr>
           </thead>
           <tbody>
             {fields.map((fc, i) => {
-              const szDisplay = formatFieldValue(fc.sz_value);
-              const r1Display = fc.sz_only ? '—' : formatFieldValue(fc.r1_value);
-              const rowClass = fc.sz_only
-                ? 'text-gray-400 italic'
-                : !fc.match
-                  ? 'bg-amber-50'
-                  : '';
+              const status = fieldStatus(fc);
+              const st = FIELD_STATUS[status];
+              // Both sides in one vocabulary; raw values on hover
+              const szDisplay = fc.sz_display ?? formatFieldValue(fc.sz_value);
+              const r1Display = fc.sz_only ? '—' : (fc.r1_display ?? formatFieldValue(fc.r1_value));
+              const rowClass = status === 'sz_only' ? 'text-gray-400 italic'
+                : status === 'differs' ? 'bg-amber-50' : '';
 
               return (
                 <tr key={i} className={`border-b border-gray-50 ${rowClass}`}>
@@ -941,9 +942,16 @@ function FieldSection({
                     {fc.label}
                     {fc.sz_only && <span className="ml-1 text-[9px] text-gray-400">(SZ only)</span>}
                   </td>
-                  <td className="py-1 px-3 font-mono text-[11px]">{szDisplay}</td>
-                  <td className={`py-1 px-3 font-mono text-[11px] ${!fc.match && !fc.sz_only ? 'text-amber-800 font-semibold' : ''}`}>
-                    {r1Display}
+                  <td className="py-1 px-3 font-mono text-[11px]" title={`SZ reports: ${formatFieldValue(fc.sz_value)}`}>
+                    {szDisplay ?? '—'}
+                  </td>
+                  <td className={`py-1 px-3 font-mono text-[11px] ${status === 'differs' ? 'text-amber-800 font-semibold' : ''}`}
+                    title={fc.sz_only ? '' : `R1 reports: ${formatFieldValue(fc.r1_value)}`}>
+                    {r1Display ?? '—'}
+                  </td>
+                  <td className={`py-1 px-3 text-[11px] ${st.cls}`}>
+                    {st.label}
+                    {fc.note && <div className="text-[10px] text-gray-400">{fc.note}</div>}
                   </td>
                 </tr>
               );
@@ -953,6 +961,23 @@ function FieldSection({
       )}
     </div>
   );
+}
+
+type FieldStatus = 'match' | 'differs' | 'default' | 'review' | 'sz_only';
+
+const FIELD_STATUS: Record<FieldStatus, { label: string; cls: string }> = {
+  match:   { label: 'Same',               cls: 'text-green-700' },
+  differs: { label: 'Differs',            cls: 'text-red-700 font-semibold' },
+  default: { label: 'Default both sides', cls: 'text-gray-400' },
+  review:  { label: 'Review',             cls: 'text-purple-700' },
+  sz_only: { label: 'No R1 equivalent',   cls: 'text-gray-400' },
+};
+
+// Older reports (before per-field status) only carry match / sz_only.
+function fieldStatus(fc: FieldComparisonItem): FieldStatus {
+  if (fc.status) return fc.status;
+  if (fc.sz_only) return 'sz_only';
+  return fc.match ? 'match' : 'differs';
 }
 
 function formatFieldValue(value: any): string {

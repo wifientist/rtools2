@@ -35,6 +35,12 @@ class FieldComparisonItem(BaseModel):
     r1_value: Optional[Any] = None
     match: bool = True
     sz_only: bool = False
+    # match | differs | default (both unset/at default) | review | sz_only
+    status: str = "match"
+    # Both sides in one vocabulary (On/Off, protocol family, ...); raw values above
+    sz_display: Optional[str] = None
+    r1_display: Optional[str] = None
+    note: str = ""
 
 
 class NetworkAuditItem(BaseModel):

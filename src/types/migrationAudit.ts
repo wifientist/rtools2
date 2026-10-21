@@ -16,6 +16,12 @@ export interface FieldComparisonItem {
   r1_value: any;
   match: boolean;
   sz_only: boolean;
+  // match | differs | default (unset/at default) | review | sz_only
+  status?: "match" | "differs" | "default" | "review" | "sz_only";
+  // Both sides in one vocabulary (On/Off, protocol family); raw values above
+  sz_display?: string | null;
+  r1_display?: string | null;
+  note?: string;
 }
 
 export interface NetworkAuditItem {
