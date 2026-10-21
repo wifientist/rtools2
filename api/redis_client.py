@@ -84,6 +84,14 @@ POOL_PROFILES = {
     # Per-request work (rate limiting, and anything else on the hot path).
     # Small and impatient on purpose -- see module docstring.
     "request": ("REDIS_REQUEST_MAX_CONNECTIONS", 25, "REDIS_REQUEST_POOL_TIMEOUT", 2.0),
+    # Migration-audit capture cache: a few large reads/writes per audit run.
+    "audit_cache": ("AUDIT_CACHE_MAX_CONNECTIONS", 10, "AUDIT_CACHE_POOL_TIMEOUT", 10.0),
+}
+
+# Pools that live in their own logical database. The audit cache is kept apart
+# from workflow state so it can be inspected or flushed on its own.
+POOL_DB = {
+    "audit_cache": ("AUDIT_CACHE_REDIS_DB", 2),
 }
 
 
@@ -105,7 +113,11 @@ class RedisClient:
 
         host = os.getenv("REDIS_HOST", "localhost")
         port = int(os.getenv("REDIS_PORT", "6379"))
-        db = int(os.getenv("REDIS_DB", "1"))
+        if pool in POOL_DB:
+            db_var, db_default = POOL_DB[pool]
+            db = int(os.getenv(db_var, str(db_default)))
+        else:
+            db = int(os.getenv("REDIS_DB", "1"))
         password = os.getenv("REDIS_PASSWORD", None)
 
         size_var, size_default, timeout_var, timeout_default = POOL_PROFILES[pool]
@@ -216,6 +228,11 @@ async def get_request_redis() -> redis.Redis:
     hang behind a workflow that has drained the main pool.
     """
     return await RedisClient.get_client("request")
+
+
+async def get_audit_cache_redis() -> redis.Redis:
+    """Client for the migration-audit capture cache (its own logical DB, 7-day keys)."""
+    return await RedisClient.get_client("audit_cache")
 
 
 def redis_pool_stats() -> Dict[str, Dict[str, int]]:

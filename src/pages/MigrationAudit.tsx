@@ -13,6 +13,7 @@ import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
 import { Scorecard, VenueSettingsSection, MatchingSection } from '@/components/migration-audit/AlignmentSections';
 import BroadcastSection from '@/components/migration-audit/BroadcastSection';
+import CachePanel, { ago } from '@/components/migration-audit/CachePanel';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
   FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
@@ -85,6 +86,11 @@ export default function MigrationAudit() {
   const [ecId, setEcId] = useState<string | null>(null);
   const [venueId, setVenueId] = useState<string | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
+
+  // Capture cache: refresh one or both sides instead of re-using the cache
+  const [refreshSz, setRefreshSz] = useState(false);
+  const [refreshR1, setRefreshR1] = useState(false);
+  const [cacheReload, setCacheReload] = useState(0);
 
   // Session list
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -177,6 +183,10 @@ export default function MigrationAudit() {
     }
     body.r1_controller_id = secondaryControllerId;
     body.venue_id = params.venueId;
+    // Capture cache: re-use each side's capture unless asked to refresh it
+    body.use_cache = true;
+    body.sz_refresh = refreshSz;
+    body.r1_refresh = refreshR1;
     if (params.tenantId) {
       body.tenant_id = params.tenantId;
     } else if (effectiveTenantId) {
@@ -186,6 +196,10 @@ export default function MigrationAudit() {
     try {
       const data = await apiPost<MigrationAuditReport>(`${API_URL}/sz-migration/audit`, body);
       setReport(data);
+      // A refresh happened (or nothing was cached): show the new capture's age, untick refresh
+      setRefreshSz(false);
+      setRefreshR1(false);
+      setCacheReload(k => k + 1);
     } catch (e: any) {
       // If snapshot expired (404) and we have a zone_id fallback, retry with inline extraction
       if (body.sz_snapshot_job_id && params.zoneId && e.message?.includes('404')) {
@@ -374,6 +388,19 @@ export default function MigrationAudit() {
                 </div>
               </div>
 
+              <CachePanel
+                szControllerId={activeControllerId}
+                zoneId={zoneId}
+                r1ControllerId={secondaryControllerId}
+                venueId={venueId}
+                tenantId={effectiveTenantId}
+                refreshSz={refreshSz}
+                refreshR1={refreshR1}
+                onRefreshSz={setRefreshSz}
+                onRefreshR1={setRefreshR1}
+                reloadKey={cacheReload}
+              />
+
               <div className="mt-4 flex items-center gap-3 pt-3 border-t border-gray-100">
                 <button
                   onClick={handleFreshAudit}
@@ -497,6 +524,15 @@ function AuditResults({
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
               Audited {new Date(report.audit_timestamp).toLocaleString()}
+              {(['sz', 'r1'] as const).map(side => {
+                const d = report.data_sources?.[side];
+                if (!d) return null;
+                return (
+                  <span key={side} className={d.cached ? 'text-amber-700' : ''}>
+                    {' · '}{side.toUpperCase()}: {d.cached ? `cached data from ${ago(d.age_seconds)}` : d.source ?? 'read live'}
+                  </span>
+                );
+              })}
             </p>
           </div>
           <div className="text-right text-sm text-gray-500">

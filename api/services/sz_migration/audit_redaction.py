@@ -31,6 +31,8 @@ import re
 from typing import Any, Iterable, Set, Tuple
 
 WITHHELD = "[withheld]"
+# Stands in for a credential in cached captures (audit_cache); not itself a secret.
+CREDENTIAL_PRESENT = "__credential_present__"
 MIN_SUBSTRING_LEN = 8
 
 # Key names whose string values are credentials. Anchored at the end so that
@@ -57,7 +59,7 @@ def collect_secrets(*sources: Any) -> Set[str]:
     def walk(node: Any) -> None:
         if isinstance(node, dict):
             for k, v in node.items():
-                if is_secret_key(k) and isinstance(v, str) and v:
+                if is_secret_key(k) and isinstance(v, str) and v and v != CREDENTIAL_PRESENT:
                     found.add(v)
                 else:
                     walk(v)

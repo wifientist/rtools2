@@ -361,6 +361,8 @@ class MigrationAuditReport(BaseModel):
     matching: AuditMatching = Field(default_factory=AuditMatching)
     venue_settings: Optional[VenueSettingsAudit] = None   # None: no live R1 read this run
     broadcast: Optional[BroadcastAudit] = None
+    # Per side: {cached, captured_at, age_seconds, expires_in_seconds, ...}
+    data_sources: Dict[str, Any] = Field(default_factory=dict)
     networks: List[NetworkAuditItem] = Field(default_factory=list)
     extra_r1_networks: List[Dict[str, Any]] = Field(default_factory=list)
     ap_group_activations: List[APGroupActivationAudit] = Field(default_factory=list)

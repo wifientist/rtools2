@@ -96,6 +96,7 @@ export interface MigrationAuditReport {
   matching?: AuditMatching;
   venue_settings?: VenueSettingsAudit | null;
   broadcast?: BroadcastAudit | null;
+  data_sources?: Record<string, { cached: boolean; age_seconds?: number | null; captured_at?: string; source?: string }>;
   warnings: string[];
 }
 
