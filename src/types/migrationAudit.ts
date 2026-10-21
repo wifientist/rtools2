@@ -67,6 +67,11 @@ export interface AuditSummary {
   unsupported_count: number;
   ap_group_coverage: number;
   total_diffs: number;
+  auth_external_count: number;
+  auth_internal_count: number;
+  auth_hybrid_count: number;
+  auth_none_count: number;
+  auth_error_count: number;
 }
 
 export interface MigrationAuditReport {
@@ -86,5 +91,57 @@ export interface MigrationAuditReport {
   }>;
   ap_group_activations: APGroupActivationAudit[];
   resource_coverage: ResourceCoverage[];
+  auth_paths: AuthPathAudit[];
   warnings: string[];
+}
+
+// ── Auth paths (RADIUS / DPSK-backed WLANs) ──────────────────────
+// Quantities only: no passphrase or shared secret is ever part of these.
+
+export type AuthPath = 'external' | 'internal' | 'hybrid' | 'none';
+
+export interface AuthIssue {
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+}
+
+export interface RadiusServerCheck {
+  role: 'authentication' | 'accounting';
+  sz_service_name: string | null;
+  sz_primary: string | null;
+  sz_secondary: string | null;
+  r1_profile_id: string | null;
+  r1_profile_name: string | null;
+  r1_primary: string | null;
+  r1_secondary: string | null;
+  primary_match: boolean | null;
+  secondary_match: boolean | null;
+  placeholder_secret: boolean | null;
+}
+
+export interface DpskPoolCheck {
+  id: string;
+  name: string | null;
+  passphrase_count: number | null;
+  identity_groups: Array<{ id: string; name: string | null; identity_count: number | null }>;
+}
+
+export interface AuthPathAudit {
+  sz_wlan_id: string;
+  sz_wlan_name: string;
+  sz_ssid: string;
+  sz_auth_type: string;
+  sz_backend: 'external_radius' | 'external_dpsk' | 'sz_dpsk';
+  r1_network_id: string | null;
+  r1_network_name: string | null;
+  r1_network_type: string | null;
+  path: AuthPath;
+  radius: RadiusServerCheck[];
+  auth_proxy: boolean | null;
+  accounting_proxy: boolean | null;
+  pools: DpskPoolCheck[];
+  passphrase_total: number | null;
+  identity_total: number | null;
+  status: AuditStatus;
+  issues: AuthIssue[];
 }

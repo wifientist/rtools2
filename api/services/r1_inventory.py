@@ -128,8 +128,16 @@ async def capture_venue_inventory(
     # ── Identity groups (tenant-level) ───────────────────────────────
     progress("identity_groups", "Fetching identity groups...")
     try:
-        ig_response = await r1_client.identity.query_identity_groups(tenant_id=tenant_id)
-        identity_groups = ig_response.get("data", []) if isinstance(ig_response, dict) else []
+        ig_response = await r1_client.identity.query_identity_groups(
+            tenant_id=tenant_id, page=0, size=1000
+        )
+        # Spring Data page: rows are under "content", not "data". Reading
+        # "data" here left this list empty, so every identity group looked
+        # missing to the audit.
+        identity_groups = (
+            ig_response.get("content", ig_response.get("data", []))
+            if isinstance(ig_response, dict) else []
+        )
         progress("identity_groups", f"Found {len(identity_groups)} identity groups")
     except Exception as e:
         logger.warning(f"Failed to fetch identity groups: {e}")

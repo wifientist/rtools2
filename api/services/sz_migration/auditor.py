@@ -18,6 +18,8 @@ from schemas.r1_inventory import R1VenueInventory
 from schemas.migration_audit import (
     MigrationAuditReport, AuditSummary, NetworkAuditItem, AuditStatus,
     FieldDiff, FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
+    AuthPath, AuthIssue, AuthPathAudit, RadiusServerCheck, DpskPoolCheck,
+    IdentityGroupCount,
 )
 from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans
@@ -44,6 +46,7 @@ def run_audit(
     sz_snapshot_job_id: str,
     r1_snapshot_job_id: str,
     r1_network_details: Optional[Dict[str, Dict]] = None,
+    auth_facts: Optional[Dict] = None,
 ) -> MigrationAuditReport:
     """
     Run the full three-way audit comparison.
@@ -54,8 +57,11 @@ def run_audit(
     4. Find R1 networks with no SZ counterpart (extra)
     5. Check AP Group activation coverage
     6. Check supporting resource coverage (DPSK pools, identity groups)
+    7. For RADIUS/DPSK-backed WLANs: which auth path R1 took, and whether it
+       is complete (auth_facts from auth_probe.collect_auth_facts)
     """
-    warnings: List[str] = []
+    warnings: List[str] = list((auth_facts or {}).get("errors", []))
+    auth_items: List[AuthPathAudit] = []
 
     # Step 1: Resolve WLAN activations
     resolver_result = resolve_wlan_activations(snapshot)
@@ -155,7 +161,23 @@ def run_audit(
             except (ValueError, TypeError):
                 pass
 
+        notes = mapping.notes if mapping and mapping.notes else ""
+        auth = None
+        if auth_facts is not None:
+            auth = audit_auth_path(wlan, mapping, actual, snapshot, auth_facts)
+            if auth is not None:
+                auth_items.append(auth)
+                if type_change_explained_by_path(sz_auth_backend(wlan, mapping), auth):
+                    diffs = [d for d in diffs if d.field != "network_type"]
+                    if actual_type != expected_type:
+                        notes = (
+                            f"Became {actual_type_raw} ({auth.path.value} auth path) — "
+                            "a valid outcome for an externally-authenticated WLAN"
+                        )
+
         status = AuditStatus.OK if not diffs else AuditStatus.WARNING
+        if status == AuditStatus.OK and auth is not None and auth.status != AuditStatus.OK:
+            status = AuditStatus.WARNING
 
         # Deep field comparison using field_mappings registry
         field_comps: List[FieldComparisonItem] = []
@@ -193,7 +215,7 @@ def run_audit(
             field_comparisons=field_comps,
             status=status,
             diffs=diffs,
-            notes=mapping.notes if mapping and mapping.notes else "",
+            notes=notes,
         ))
 
     # Step 4: Find extra R1 networks (no SZ counterpart)
@@ -235,6 +257,13 @@ def run_audit(
         unsupported_count=unsupported_count,
         ap_group_coverage=ap_coverage,
         total_diffs=total_diffs,
+        auth_external_count=sum(1 for a in auth_items if a.path == AuthPath.EXTERNAL),
+        auth_internal_count=sum(1 for a in auth_items if a.path == AuthPath.INTERNAL),
+        auth_hybrid_count=sum(1 for a in auth_items if a.path == AuthPath.HYBRID),
+        auth_none_count=sum(1 for a in auth_items if a.path == AuthPath.NONE),
+        auth_error_count=sum(
+            1 for a in auth_items for i in a.issues if i.severity == "error"
+        ),
     )
 
     return MigrationAuditReport(
@@ -248,6 +277,7 @@ def run_audit(
         extra_r1_networks=extra_networks,
         ap_group_activations=ap_group_audits,
         resource_coverage=resource_checks,
+        auth_paths=auth_items,
         warnings=warnings + resolver_result.warnings,
     )
 
@@ -329,3 +359,262 @@ def _audit_resource_coverage(
         ))
 
     return checks
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Auth path: external RADIUS vs R1-internal DPSK
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# A WLAN that authenticated against an external server on SZ (usually
+# Cloudpath) can land in R1 two ways: still pointing at that server through a
+# RADIUS profile, or moved onto R1's own DPSK service with identities held in
+# R1. Which one happened is read from what is linked to the R1 network, not
+# from the migration plan, so a venue built by hand is audited the same way.
+#
+# Neither path exposes credentials here. The external server's identities are
+# invisible to R1 entirely, so that path reports no counts; the internal path
+# reports pool / identity / passphrase QUANTITIES only.
+
+def sz_auth_backend(wlan, mapping) -> Optional[str]:
+    """Where SZ sent this WLAN's authentication, or None if it is not RADIUS/DPSK."""
+    if wlan.auth_type == "DPSK":
+        return "external_dpsk" if (mapping and mapping.dpsk_type == "external") else "sz_dpsk"
+    if wlan.auth_service_id or (mapping and mapping.r1_network_type == "aaa"):
+        return "external_radius"
+    return None
+
+
+def _sz_server(raw: Dict, key: str) -> Optional[str]:
+    """SZ auth/accounting service server as "ip:port" (primary or secondary)."""
+    if not isinstance(raw, dict):
+        return None
+    server = raw.get(key)
+    if isinstance(server, dict):
+        ip = server.get("ip") or server.get("server") or server.get("hostname")
+        port = server.get("port")
+    elif key == "primary" and raw.get("ip"):
+        ip, port = raw.get("ip"), raw.get("port")
+    else:
+        return None
+    if not ip:
+        return None
+    return f"{ip}:{port}" if port else str(ip)
+
+
+def _same_server(a: Optional[str], b: Optional[str]) -> Optional[bool]:
+    """Compare "ip:port" strings; a missing port on either side compares host only."""
+    if not a or not b:
+        return None
+    ha, _, pa = a.strip().lower().rpartition(":") if ":" in a else (a.strip().lower(), "", "")
+    hb, _, pb = b.strip().lower().rpartition(":") if ":" in b else (b.strip().lower(), "", "")
+    if ha != hb:
+        return False
+    return (pa == pb) if (pa and pb) else True
+
+
+def _radius_check(role, sz_ref, r1_profile) -> RadiusServerCheck:
+    raw = sz_ref.raw if sz_ref else {}
+    sz_primary = _sz_server(raw, "primary")
+    sz_secondary = _sz_server(raw, "secondary")
+    r1_primary = (r1_profile or {}).get("primary")
+    r1_secondary = (r1_profile or {}).get("secondary")
+    return RadiusServerCheck(
+        role=role,
+        sz_service_name=(sz_ref.name or raw.get("name")) if sz_ref else None,
+        sz_primary=sz_primary,
+        sz_secondary=sz_secondary,
+        r1_profile_id=(r1_profile or {}).get("id"),
+        r1_profile_name=(r1_profile or {}).get("name"),
+        r1_primary=r1_primary,
+        r1_secondary=r1_secondary,
+        primary_match=_same_server(sz_primary, r1_primary),
+        # A secondary on only one side is a mismatch, not "nothing to compare".
+        secondary_match=(
+            _same_server(sz_secondary, r1_secondary) if (sz_secondary and r1_secondary)
+            else False if sz_secondary
+            else None
+        ),
+        placeholder_secret=(r1_profile or {}).get("placeholder_secret"),
+    )
+
+
+def audit_auth_path(
+    wlan,
+    mapping,
+    actual: Dict,
+    snapshot: SZMigrationSnapshot,
+    facts: Dict,
+) -> Optional[AuthPathAudit]:
+    """Auth-path audit for one matched WLAN, or None if it is not RADIUS/DPSK-backed."""
+    backend = sz_auth_backend(wlan, mapping)
+    if backend is None:
+        return None
+
+    net_id = actual.get("id", "")
+    issues: List[AuthIssue] = []
+
+    def issue(severity: str, message: str) -> None:
+        issues.append(AuthIssue(severity=severity, message=message))
+
+    linked = (facts.get("radius_by_network") or {}).get(net_id, [])
+    auth_profiles = [p for p in linked if p.get("type") != "ACCOUNTING"]
+    acct_profiles = [p for p in linked if p.get("type") == "ACCOUNTING"]
+    pool_info = (facts.get("pools_by_network") or {}).get(net_id) or {}
+    pools = pool_info.get("pools") or []
+
+    has_external = bool(auth_profiles)
+    has_internal = bool(pools)
+    if has_external and has_internal:
+        path = AuthPath.HYBRID
+    elif has_external:
+        path = AuthPath.EXTERNAL
+    elif has_internal:
+        path = AuthPath.INTERNAL
+    else:
+        path = AuthPath.NONE
+
+    settings = (facts.get("radius_settings") or {}).get(net_id) or {}
+    item = AuthPathAudit(
+        sz_wlan_id=wlan.id,
+        sz_wlan_name=wlan.name,
+        sz_ssid=wlan.ssid,
+        sz_auth_type=wlan.auth_type,
+        sz_backend=backend,
+        r1_network_id=net_id or None,
+        r1_network_name=actual.get("name"),
+        r1_network_type=actual.get("nwSubType", actual.get("type")),
+        path=path,
+        auth_proxy=settings.get("enable_auth_proxy"),
+        accounting_proxy=settings.get("enable_accounting_proxy"),
+        status=AuditStatus.OK,
+    )
+
+    # ── External: does R1 point at the same server SZ did? ──────────
+    if path in (AuthPath.EXTERNAL, AuthPath.HYBRID):
+        auth_ref = snapshot.referenced_objects.get(f"auth_service:{wlan.auth_service_id}") \
+            if wlan.auth_service_id else None
+        acct_ref = snapshot.referenced_objects.get(
+            f"accounting_service:{wlan.accounting_service_id}"
+        ) if wlan.accounting_service_id else None
+
+        if len(auth_profiles) > 1:
+            issue("warning", f"{len(auth_profiles)} authentication profiles are linked; expected one")
+        auth_check = _radius_check("authentication", auth_ref, auth_profiles[0])
+        item.radius.append(auth_check)
+
+        if backend == "sz_dpsk":
+            issue("warning",
+                  "SZ held these DPSK passphrases itself, but R1 now sends authentication "
+                  "to an external RADIUS server — confirm that server has the identities")
+        elif auth_ref is None:
+            issue("info", "SZ auth service not in the snapshot — server address not compared")
+
+        if auth_check.primary_match is False:
+            issue("error", "Authentication server differs from SZ "
+                           f"({auth_check.sz_primary} on SZ, {auth_check.r1_primary} in R1)")
+        if auth_check.secondary_match is False:
+            if auth_check.sz_secondary and not auth_check.r1_secondary:
+                issue("warning", "SZ had a secondary authentication server; R1 has none")
+            else:
+                issue("warning", "Secondary authentication server differs from SZ")
+        if auth_check.placeholder_secret:
+            issue("error", "Shared secret is still the migration placeholder — "
+                           "the RADIUS server will reject every request until it is set")
+        elif auth_check.placeholder_secret is None:
+            issue("info", "Could not read the profile to check for the placeholder shared secret")
+
+        if wlan.accounting_service_id:
+            if acct_profiles:
+                acct_check = _radius_check("accounting", acct_ref, acct_profiles[0])
+                item.radius.append(acct_check)
+                if acct_check.primary_match is False:
+                    issue("warning", "Accounting server differs from SZ "
+                                     f"({acct_check.sz_primary} on SZ, {acct_check.r1_primary} in R1)")
+                if acct_check.placeholder_secret:
+                    issue("error", "Accounting shared secret is still the migration placeholder")
+            else:
+                issue("warning", "SZ sent accounting to a RADIUS server; R1 has no accounting profile linked")
+        elif acct_profiles:
+            item.radius.append(_radius_check("accounting", None, acct_profiles[0]))
+            issue("info", "R1 has an accounting profile that SZ did not")
+
+        if item.auth_proxy is True:
+            issue("info", "RADIUS is proxied through R1: the server must accept R1's proxy "
+                          "addresses as RADIUS clients")
+        elif item.auth_proxy is False:
+            issue("info", "APs talk to the RADIUS server directly: the server must accept "
+                          "each AP's address (or its NAT) as a RADIUS client")
+
+        if path == AuthPath.EXTERNAL:
+            issue("info", "Identities live on the external server — R1 cannot count them")
+
+    # ── Internal: is the DPSK service populated? ────────────────────
+    if path in (AuthPath.INTERNAL, AuthPath.HYBRID):
+        for p in pools:
+            item.pools.append(DpskPoolCheck(
+                id=p["id"],
+                name=p.get("name"),
+                passphrase_count=p.get("passphrase_count"),
+                identity_groups=[IdentityGroupCount(**g) for g in p.get("identity_groups", [])],
+            ))
+
+        pp = [p.passphrase_count for p in item.pools]
+        ids = [g.identity_count for p in item.pools for g in p.identity_groups]
+        item.passphrase_total = sum(pp) if pp and None not in pp else None
+        item.identity_total = sum(ids) if ids and None not in ids else None
+
+        if any(not p.identity_groups for p in item.pools):
+            issue("error", "DPSK service has no identity group — no identities can authenticate")
+        if item.passphrase_total == 0:
+            issue("error", "DPSK service holds no passphrases — nobody can connect yet")
+        elif item.passphrase_total is None:
+            issue("warning", "Could not count passphrases")
+        if item.identity_total == 0:
+            issue("warning", "Identity groups are empty")
+        elif ids and item.identity_total is None:
+            issue("warning", "Could not count identities")
+        if (item.passphrase_total is not None and item.identity_total is not None
+                and item.passphrase_total != item.identity_total):
+            issue("info",
+                  f"{item.passphrase_total} passphrases vs {item.identity_total} identities — "
+                  "passphrases created without an existing identity get an auto-named one "
+                  "(DPSK_User_…), so a gap can mean debris")
+
+        if backend in ("external_radius", "external_dpsk"):
+            issue("info",
+                  "Moved from an external server to R1 DPSK. The source's identity count is "
+                  "not visible here — compare these counts against the server's own export")
+
+    if pool_info.get("error"):
+        issue("warning", "Could not read this network's DPSK service link")
+
+    if path == AuthPath.HYBRID:
+        issue("warning", "Both an external RADIUS profile and a DPSK service are linked — "
+                         "hybrid is reported but not audited in depth; confirm it is intended")
+    elif path == AuthPath.NONE:
+        issue("error", "No RADIUS profile and no DPSK service linked — nothing can authenticate")
+
+    item.issues = issues
+    severities = {i.severity for i in issues}
+    item.status = (
+        AuditStatus.MISSING if path == AuthPath.NONE
+        else AuditStatus.WARNING if severities & {"error", "warning"}
+        else AuditStatus.OK
+    )
+    return item
+
+
+def type_change_explained_by_path(backend: Optional[str], auth: Optional[AuthPathAudit]) -> bool:
+    """
+    An externally-authenticated SZ WLAN may legitimately become either an AAA
+    network (kept external) or a DPSK network (moved internal). The mapper can
+    only suggest one, so a network_type mismatch that matches the path taken
+    is a choice, not an error.
+    """
+    if auth is None or backend not in ("external_radius", "external_dpsk"):
+        return False
+    actual = str(auth.r1_network_type or "").lower()
+    return (
+        (auth.path == AuthPath.EXTERNAL and actual == "aaa")
+        or (auth.path == AuthPath.INTERNAL and actual == "dpsk")
+    )

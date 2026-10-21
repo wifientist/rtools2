@@ -1010,6 +1010,28 @@ class NetworksService:
             )
         return self.client.safe_json(response)
 
+    async def get_radius_settings_on_network(
+        self,
+        network_id: str,
+        tenant_id: str = None,
+    ):
+        """
+        GET /wifiNetworks/{id}/radiusServerProfileSettings.
+
+        Returns {enableAuthProxy, enableAccountingProxy, macAuthMacFormat}:
+        whether R1 proxies RADIUS through the cloud or the APs talk to the
+        server directly. That decides which source address the external
+        server has to accept as a client.
+        """
+        endpoint = f"/wifiNetworks/{network_id}/radiusServerProfileSettings"
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = await asyncio.to_thread(
+                self.client.get, endpoint, override_tenant_id=tenant_id,
+            )
+        else:
+            response = await asyncio.to_thread(self.client.get, endpoint)
+        return self.client.safe_json(response)
+
     async def activate_dpsk_service_on_network(
         self,
         tenant_id: str,
