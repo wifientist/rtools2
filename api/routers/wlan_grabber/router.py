@@ -10,7 +10,11 @@ Create in R1 the WLANs of one SZ zone that the R1 tenant does not have yet:
 
 Networks are created tenant-wide and left unactivated (WLAN Activator does
 that). The optional venue is context only: the DPSK pool its DPSK networks
-are tied to is suggested for new DPSK networks.
+are tied to is suggested as the shared pool for new DPSK networks.
+
+DPSK pool: one shared pool for every DPSK network (an existing R1 pool, or
+a new one created here together with its identity group), and any row may
+name another pool or none instead.
 
 Rows, statuses and notes: services/wlan_grabber.py.
 
@@ -37,8 +41,9 @@ from models.user import User
 from routers.tenant_scope import resolve_tenant_id
 from services.sz_migration.radius_choices import r1_profile_summary, sz_server_details
 from services.wlan_grabber import (
-    BLOCKED, EXISTS, build_rows, build_spec, dpsk_pool_suggestion, radius_services,
+    EXISTS, build_rows, build_spec, dpsk_pool_suggestion, radius_services,
 )
+from r1api.constants import DpskPassphraseFormat
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +81,29 @@ class RadiusDecision(BaseModel):
 
 class WlanChoice(BaseModel):
     sz_wlan_id: str
-    dpsk_pool_id: Optional[str] = None
+    r1_type: Optional[Literal["psk", "open", "aaa", "dpsk"]] = None   # None = its default mode
+    # DPSK only: None = the shared pool, "none" = no pool, else an R1 pool id.
+    dpsk_pool: Optional[str] = None
+
+
+class SharedPool(BaseModel):
+    """The DPSK pool every DPSK network uses unless its row says otherwise."""
+    mode: Literal["existing", "new", "none"]
+    pool_id: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=2, max_length=64)
+    passphrase_format: str = DpskPassphraseFormat.KEYBOARD_FRIENDLY
+    passphrase_length: int = Field(12, ge=8, le=64)
+    devices_per_passphrase: Optional[int] = Field(None, ge=1)   # None = unlimited
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.mode == "existing" and not self.pool_id:
+            raise ValueError("'existing' needs pool_id")
+        if self.mode == "new" and not self.name:
+            raise ValueError("'new' needs a name")
+        if self.passphrase_format not in DpskPassphraseFormat.ALL:
+            raise ValueError(f"passphrase_format must be one of {DpskPassphraseFormat.ALL}")
+        return self
 
 
 class ApplyRequest(BaseModel):
@@ -86,6 +113,9 @@ class ApplyRequest(BaseModel):
     tenant_id: Optional[str] = None
     wlans: List[WlanChoice] = Field(..., min_length=1)
     radius: Dict[str, RadiusDecision] = Field(default_factory=dict)
+    dpsk_pool: SharedPool = Field(default_factory=lambda: SharedPool(mode="none"))
+    # Off by default: the R1 network is created with no description.
+    add_description: bool = False
 
 
 # ==================== Helpers ====================
@@ -156,6 +186,50 @@ async def _dpsk_pools(r1_client, tenant_id: str) -> List[Dict[str, Any]]:
         page += 1
 
 
+async def _create_pool(r1_client, tenant_id: str, spec: "SharedPool"):
+    """
+    The new shared DPSK pool and its identity group (same name), as
+    Config Migration's create_dpsk_pools does it. A pool by that name
+    already in R1 is linked unchanged. Returns (pool_id, already_existed).
+    """
+    def find(resp):
+        for p in _rows_of(resp):
+            if p.get("name") == spec.name and p.get("id"):
+                return p["id"]
+        return None
+
+    found = find(await r1_client.dpsk.query_dpsk_pools(
+        tenant_id=tenant_id, search_string=spec.name, page=1, limit=100))
+    if found:
+        return found, True
+
+    group = await r1_client.identity.create_identity_group(
+        tenant_id=tenant_id, name=spec.name,
+    )
+    group_id = (group or {}).get("id")
+    if not group_id:
+        raise RuntimeError(f"Identity group '{spec.name}' was not created (no id returned)")
+
+    pool = await r1_client.dpsk.create_dpsk_pool(
+        identity_group_id=group_id, name=spec.name, tenant_id=tenant_id,
+        passphrase_length=spec.passphrase_length, passphrase_format=spec.passphrase_format,
+        # 0 = unlimited: create_dpsk_pool then omits deviceCountLimit.
+        max_devices_per_passphrase=spec.devices_per_passphrase or 0,
+        word_count=4 if spec.passphrase_format == DpskPassphraseFormat.DICTIONARY_WORDS else None,
+    )
+    if (pool or {}).get("requestId"):
+        await r1_client.await_task_completion(request_id=pool["requestId"], override_tenant_id=tenant_id)
+    if (pool or {}).get("id"):
+        logger.info(f"[WLAN Grabber] Created DPSK pool '{spec.name}' ({pool['id']})")
+        return pool["id"], False
+    found = find(await r1_client.dpsk.query_dpsk_pools(
+        tenant_id=tenant_id, search_string=spec.name, page=1, limit=100))
+    if not found:
+        raise RuntimeError(f"DPSK pool '{spec.name}' was created but could not be found")
+    logger.info(f"[WLAN Grabber] Created DPSK pool '{spec.name}' ({found})")
+    return found, False
+
+
 # ==================== Endpoints ====================
 
 @router.post("/preview")
@@ -214,10 +288,10 @@ async def preview(
     try:
         async with sz_client:
             zone, sz_wlans = await _sz_wlans(sz_client, request.zone_id)
-            result = build_rows(sz_wlans, tenant_networks, request.venue_id, dpsk_suggestion)
+            result = build_rows(sz_wlans, tenant_networks, request.venue_id)
             needed: Dict[str, str] = {}
             for r in result["rows"]:
-                if r["r1_type"] == "aaa" and r["status"] not in (EXISTS, BLOCKED):
+                if "aaa" in r["modes"] and r["status"] != EXISTS and not r["modes"]["aaa"]["blockers"]:
                     if r["auth_service_id"]:
                         needed.setdefault(r["auth_service_id"], "auth")
                     if r["accounting_service_id"]:
@@ -272,7 +346,8 @@ async def apply(
     try:
         async with sz_client:
             _, raws = await _sz_wlans(sz_client, request.zone_id, list(choices))
-            specs = [build_spec(raw) for raw in raws]
+            # _sz_wlans keeps the order of the ids it was given.
+            specs = [build_spec(raw, choices[wid].r1_type) for wid, raw in zip(choices, raws)]
             to_create = {
                 sid: role for s in specs if s["r1_type"] == "aaa" and not s["blockers"]
                 for sid, role in ((s["auth_service_id"], "auth"), (s["accounting_service_id"], "acct"))
@@ -329,6 +404,25 @@ async def apply(
                 logger.error(f"[WLAN Grabber] RADIUS profile '{details['name']}' failed: {_api_error(e)}")
                 radius_results.append({**out, "status": "failed", "error": _api_error(e)})
 
+    # ── The shared DPSK pool, created once if it is new and some row uses it ──
+    def pool_choice(spec):
+        return choices[spec["sz_wlan_id"]].dpsk_pool
+
+    shared = request.dpsk_pool
+    shared_pool_id: Optional[str] = shared.pool_id if shared.mode == "existing" else None
+    pool_result: Optional[Dict[str, Any]] = None
+    wants_shared = any(s["r1_type"] == "dpsk" and not s["blockers"] and pool_choice(s) is None for s in specs)
+    if shared.mode == "new" and wants_shared:
+        pool_result = {"name": shared.name}
+        try:
+            shared_pool_id, existed = await _create_pool(r1_client, tenant_id, shared)
+            pool_result["status"] = "exists" if existed else "created"
+            if existed:
+                pool_result["error"] = "A pool by this name already exists — linked it unchanged"
+        except Exception as e:
+            logger.error(f"[WLAN Grabber] DPSK pool '{shared.name}' failed: {_api_error(e)}")
+            pool_result.update(status="failed", error=_api_error(e))
+
     # ── Networks ──
     sem = asyncio.Semaphore(WRITE_CONCURRENCY)
 
@@ -350,7 +444,7 @@ async def apply(
 
                 common = dict(
                     tenant_id=tenant_id, venue_id=None, name=name, ssid=spec["sz_ssid"],
-                    vlan_id=spec["vlan_id"], description=f"Migrated from SZ: {name}",
+                    vlan_id=spec["vlan_id"], description=f"Migrated from SZ: {name}" if request.add_description else None,
                     advanced_customization=spec["advanced"] or None,
                 )
                 if r1_type == "psk":
@@ -388,8 +482,11 @@ async def apply(
                 except Exception as e:
                     out["warnings"].append(f"{label} profile not linked: {_api_error(e)}")
             if r1_type == "dpsk":
-                pool_id = choices[spec["sz_wlan_id"]].dpsk_pool_id
-                if pool_id:
+                choice = pool_choice(spec)
+                pool_id = shared_pool_id if choice is None else (None if choice == "none" else choice)
+                if choice is None and shared.mode == "new" and not pool_id:
+                    out["warnings"].append("Shared DPSK pool was not created — no pool linked")
+                elif pool_id:
                     try:
                         await r1_client.networks.activate_dpsk_service_on_network(
                             tenant_id=tenant_id, network_id=net_id, dpsk_service_id=pool_id)
@@ -401,4 +498,5 @@ async def apply(
 
     results = await asyncio.gather(*[create_one(s) for s in specs])
     counts = {s: sum(1 for r in results if r["status"] == s) for s in ("created", "exists", "failed")}
-    return {"results": results, "radius_results": radius_results, "counts": counts}
+    return {"results": results, "radius_results": radius_results, "pool_result": pool_result,
+            "counts": counts}

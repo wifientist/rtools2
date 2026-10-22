@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import {
   AlertCircle, Server, Target, ArrowRight, Loader2, Import,
-  CheckCircle, AlertTriangle, XCircle, RefreshCw, Plus, KeyRound,
+  CheckCircle, AlertTriangle, XCircle, RefreshCw, Plus, KeyRound, KeySquare,
 } from 'lucide-react';
 import { apiPost } from '@/utils/api';
 import SmartZoneDomainSelector from '@/components/SmartZoneDomainSelector';
@@ -17,19 +17,27 @@ const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 type RowStatus = 'create' | 'review' | 'exists' | 'blocked';
 type R1Type = 'psk' | 'open' | 'aaa' | 'dpsk' | 'unsupported';
 
+interface ModeOption {
+  r1_type: R1Type;
+  security: string | null;
+  blockers: string[];
+  cautions: string[];
+  notes: string[];
+}
+
 interface GrabRow {
   sz_wlan_id: string;
   sz_name: string;
   sz_ssid: string;
   auth_type: string;
-  r1_type: R1Type;
-  security: string | null;
+  sz_type: R1Type;
   vlan_id: number;
   auth_service_id: string | null;
   accounting_service_id: string | null;
+  modes: Partial<Record<R1Type, ModeOption>>;
+  default_mode: R1Type;
   r1: { network_id: string; name: string; type: string | null; venue_count: number; active_in_venue: boolean | null } | null;
-  suggested_dpsk_pool_id?: string;
-  status: RowStatus;
+  status: RowStatus;   // of the default mode
   notes: string[];
 }
 
@@ -41,7 +49,7 @@ interface RadiusService {
   roles: string[];
   primary: string | null;
   secondary: string | null;
-  used_by: { wlan_name: string; role: string }[];
+  used_by: { wlan_id: string; wlan_name: string; role: string }[];
   extraction_error: boolean;
   suggestion: { action: 'create' | 'existing' | 'skip'; r1_profile_id: string | null; reason: string };
 }
@@ -50,14 +58,24 @@ interface Preview {
   zone_name: string;
   venue_name: string | null;
   rows: GrabRow[];
-  counts: Record<RowStatus, number>;
   radius_services: RadiusService[];
   r1_radius_profiles: RadiusProfile[];
   dpsk_pools: { id: string; name: string }[];
+  dpsk_suggestion: { pool_id: string; pool_name: string; reason: string } | null;
   warnings: string[];
 }
 
-interface RadiusChoice { action: 'create' | 'existing' | 'skip'; r1_profile_id: string | null; secret: string }
+// 'dpsk' = don't map it: create its WLANs as internal R1 DPSK (page-only; never sent).
+interface RadiusChoice { action: 'dpsk' | 'create' | 'existing' | 'skip'; r1_profile_id: string | null; secret: string }
+
+interface SharedPool {
+  mode: 'existing' | 'new' | 'none';
+  pool_id: string | null;
+  name: string;
+  passphrase_format: string;
+  passphrase_length: number;
+  devices_per_passphrase: number | null;   // null = unlimited
+}
 
 interface ApplyResult {
   sz_wlan_id: string;
@@ -69,7 +87,10 @@ interface ApplyResult {
   warnings: string[];
 }
 
-interface RadiusResult { sz_service_id: string; name: string; status: 'created' | 'exists' | 'failed'; error?: string }
+interface ItemResult { name: string; status: 'created' | 'exists' | 'failed'; error?: string }
+interface RadiusResult extends ItemResult { sz_service_id: string }
+
+interface ApplyResponse { results: ApplyResult[]; radius_results: RadiusResult[]; pool_result: ItemResult | null }
 
 const STATUS: Record<RowStatus, { label: string; cls: string; icon: typeof CheckCircle }> = {
   create:  { label: 'Create',  cls: 'text-indigo-700 bg-indigo-50 border-indigo-200', icon: Plus },
@@ -81,6 +102,19 @@ const STATUS: Record<RowStatus, { label: string; cls: string; icon: typeof Check
 const TYPE_LABEL: Record<R1Type, string> = {
   psk: 'PSK', open: 'Open', aaa: 'Enterprise', dpsk: 'DPSK', unsupported: '—',
 };
+
+const PASSPHRASE_FORMATS = [
+  ['KEYBOARD_FRIENDLY', 'Keyboard friendly'],
+  ['NUMBERS_ONLY', 'Numbers only'],
+  ['MOST_SECURED', 'Most secured'],
+  ['DICTIONARY_WORDS', 'Dictionary words'],
+];
+
+const SHARED = '';      // row pool choice: use the shared pool
+const NO_POOL = 'none'; // row pool choice: no pool
+
+const modeStatus = (m: ModeOption): RowStatus =>
+  m.blockers.length ? 'blocked' : m.cautions.length ? 'review' : 'create';
 
 // ── Page ─────────────────────────────────────────────────────────
 
@@ -116,10 +150,13 @@ export default function WlanGrabber() {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [pools, setPools] = useState<Record<string, string>>({});          // sz_wlan_id -> pool id ('' = none)
+  const [modeOf, setModeOf] = useState<Record<string, R1Type>>({});        // sz_wlan_id -> R1 type
+  const [rowPool, setRowPool] = useState<Record<string, string>>({});      // sz_wlan_id -> SHARED | NO_POOL | pool id
+  const [shared, setShared] = useState<SharedPool | null>(null);
   const [radius, setRadius] = useState<Record<string, RadiusChoice>>({});  // SZ service id -> choice
-  const [results, setResults] = useState<{ results: ApplyResult[]; radius_results: RadiusResult[] } | null>(null);
+  const [results, setResults] = useState<ApplyResponse | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [addDescription, setAddDescription] = useState(false);
 
   const ready = !!szId && !!r1Id && !!zoneId && (!isMSP || !!ecId);
 
@@ -136,12 +173,23 @@ export default function WlanGrabber() {
         r1_controller_id: r1Id, tenant_id: tenantId, venue_id: venueId,
       });
       setPreview(data);
+      setModeOf(Object.fromEntries(data.rows.map(r => [r.sz_wlan_id, r.default_mode])));
+      setRowPool({});
+      // Usually one pool serves every DPSK network in a venue: start from the
+      // venue's pool, else a new one named after the zone.
+      setShared({
+        mode: data.dpsk_suggestion ? 'existing' : 'new',
+        pool_id: data.dpsk_suggestion?.pool_id || null,
+        name: `${data.zone_name} DPSK`.slice(0, 64),
+        passphrase_format: 'KEYBOARD_FRIENDLY',
+        passphrase_length: 12,
+        devices_per_passphrase: null,
+      });
       // Preselect only the plain creates; review rows are opt-in.
       setSelected(new Set(data.rows.filter(r => r.status === 'create').map(r => r.sz_wlan_id)));
-      setPools(Object.fromEntries(data.rows.filter(r => r.r1_type === 'dpsk')
-        .map(r => [r.sz_wlan_id, r.suggested_dpsk_pool_id || ''])));
+      // Enterprise WLANs default to DPSK, so their services start on 'dpsk' too.
       setRadius(Object.fromEntries(data.radius_services.map(s => [s.id, {
-        action: s.suggestion.action, r1_profile_id: s.suggestion.r1_profile_id, secret: '',
+        action: 'dpsk', r1_profile_id: s.suggestion.r1_profile_id, secret: '',
       }])));
     } catch (e: any) {
       setError(e.message || 'Preview failed');
@@ -150,44 +198,102 @@ export default function WlanGrabber() {
     }
   };
 
+  const modeFor = (r: GrabRow) => r.modes[modeOf[r.sz_wlan_id] || r.default_mode] || r.modes[r.default_mode]!;
+  const statusOf = (r: GrabRow): RowStatus => r.status === 'exists' ? 'exists' : modeFor(r) ? modeStatus(modeFor(r)) : r.status;
+
   // An Enterprise row can only be created once its auth service maps to an R1 profile.
   const radiusReady = (r: GrabRow) => {
-    if (r.r1_type !== 'aaa') return true;
+    if (modeFor(r).r1_type !== 'aaa') return true;
     const c = r.auth_service_id ? radius[r.auth_service_id] : undefined;
     if (!c) return false;
     if (c.action === 'existing') return !!c.r1_profile_id;
     if (c.action === 'create') return c.secret.length > 0;
     return false;
   };
-  const selectable = (r: GrabRow) => (r.status === 'create' || r.status === 'review') && radiusReady(r);
+  const sharedReady = !shared || shared.mode !== 'new' || shared.name.trim().length >= 2;
+  const poolReady = (r: GrabRow) =>
+    modeFor(r).r1_type !== 'dpsk' || (rowPool[r.sz_wlan_id] || SHARED) !== SHARED || sharedReady;
+  const selectable = (r: GrabRow) => {
+    const s = statusOf(r);
+    return (s === 'create' || s === 'review') && radiusReady(r) && poolReady(r);
+  };
 
   const chosen = useMemo(
     () => (preview?.rows || []).filter(r => selected.has(r.sz_wlan_id) && selectable(r)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [preview, selected, radius],
+    [preview, selected, radius, modeOf, rowPool, shared],
   );
+
+  const counts = useMemo(() => {
+    const c: Record<RowStatus, number> = { create: 0, review: 0, exists: 0, blocked: 0 };
+    (preview?.rows || []).forEach(r => { c[statusOf(r)] += 1; });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview, modeOf]);
+
+  const dpskCapable = (preview?.rows || []).filter(r => r.status !== 'exists' && r.modes.dpsk);
+  const openRows = new Map((preview?.rows || []).filter(r => r.status !== 'exists').map(r => [r.sz_wlan_id, r]));
+  const visibleServices = (preview?.radius_services || []).filter(s => s.used_by.some(u => openRows.has(u.wlan_id)));
+
+  // A service's choice decides what the WLANs authenticating through it become.
+  const changeRadius = (s: RadiusService, c: RadiusChoice) => {
+    setRadius(prev => ({ ...prev, [s.id]: c }));
+    s.used_by.filter(u => u.role === 'authentication').forEach(u => {
+      const r = openRows.get(u.wlan_id);
+      const want: R1Type = c.action === 'dpsk' ? 'dpsk' : 'aaa';
+      if (r && r.modes[want] && modeFor(r).r1_type !== want) setMode(r, want);
+    });
+  };
+
+  const setMode = (r: GrabRow, m: R1Type) => {
+    setModeOf(prev => ({ ...prev, [r.sz_wlan_id]: m }));
+    // A mode that can be created plainly gets ticked; anything else is opt-in.
+    const opt = r.modes[m];
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (opt && modeStatus(opt) === 'create') next.add(r.sz_wlan_id); else next.delete(r.sz_wlan_id);
+      return next;
+    });
+  };
+
+  const allToDpsk = () => {
+    dpskCapable.forEach(r => setMode(r, 'dpsk'));
+    setRadius(prev => Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, { ...v, action: 'dpsk' as const }])));
+  };
 
   const applyChanges = async () => {
     setConfirming(false);
-    if (!chosen.length) return;
+    if (!chosen.length || !shared) return;
     setApplying(true);
     setError(null);
     // Only the services the chosen Enterprise rows use; the secret goes for 'create' only.
-    const used = new Set(chosen.filter(r => r.r1_type === 'aaa')
+    const used = new Set(chosen.filter(r => modeFor(r).r1_type === 'aaa')
       .flatMap(r => [r.auth_service_id, r.accounting_service_id]).filter(Boolean) as string[]);
     const radiusBody = Object.fromEntries([...used].filter(id => radius[id]).map(id => {
       const c = radius[id];
       return [id, c.action === 'create'
         ? { action: 'create', shared_secret: c.secret }
-        : c.action === 'existing' ? { action: 'existing', r1_profile_id: c.r1_profile_id } : { action: 'skip' }];
+        : c.action === 'existing' ? { action: 'existing', r1_profile_id: c.r1_profile_id } : { action: 'skip' }];   // 'dpsk' -> not mapped
     }));
     try {
-      const data = await apiPost<{ results: ApplyResult[]; radius_results: RadiusResult[] }>(
-        `${API_URL}/wlan-grabber/apply`, {
-          sz_controller_id: szId, zone_id: zoneId, r1_controller_id: r1Id, tenant_id: tenantId,
-          wlans: chosen.map(r => ({ sz_wlan_id: r.sz_wlan_id, dpsk_pool_id: pools[r.sz_wlan_id] || null })),
-          radius: radiusBody,
-        });
+      const data = await apiPost<ApplyResponse>(`${API_URL}/wlan-grabber/apply`, {
+        sz_controller_id: szId, zone_id: zoneId, r1_controller_id: r1Id, tenant_id: tenantId,
+        wlans: chosen.map(r => {
+          const t = modeFor(r).r1_type;
+          const p = rowPool[r.sz_wlan_id] || SHARED;
+          return { sz_wlan_id: r.sz_wlan_id, r1_type: t, dpsk_pool: t === 'dpsk' && p !== SHARED ? p : null };
+        }),
+        radius: radiusBody,
+        add_description: addDescription,
+        dpsk_pool: {
+          mode: shared.mode,
+          pool_id: shared.mode === 'existing' ? shared.pool_id : null,
+          name: shared.mode === 'new' ? shared.name.trim() : null,
+          passphrase_format: shared.passphrase_format,
+          passphrase_length: shared.passphrase_length,
+          devices_per_passphrase: shared.devices_per_passphrase,
+        },
+      });
       setResults(data);
       // Secrets are single-use: forget them once sent.
       setRadius(prev => Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, { ...v, secret: '' }])));
@@ -298,7 +404,7 @@ export default function WlanGrabber() {
                         selectedVenueId={venueId}
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Venue is optional: its DPSK networks suggest which DPSK pool new DPSK networks use. Nothing is activated.
+                        Venue is optional: the DPSK pool its DPSK networks use becomes the suggested pool. Nothing is activated.
                       </p>
                     </div>
                   )}
@@ -323,12 +429,12 @@ export default function WlanGrabber() {
             </div>
           </div>
 
-          {results && <ResultsPanel results={results.results} radiusResults={results.radius_results} />}
+          {results && <ResultsPanel data={results} />}
 
-          {confirming && (
+          {confirming && shared && preview && (
             <ConfirmModal
-              rows={chosen} pools={pools} poolNames={preview?.dpsk_pools || []} radius={radius}
-              services={preview?.radius_services || []}
+              rows={chosen} modeFor={modeFor} rowPool={rowPool} shared={shared}
+              poolNames={preview.dpsk_pools} radius={radius} services={preview.radius_services}
               onCancel={() => setConfirming(false)} onConfirm={applyChanges}
             />
           )}
@@ -339,29 +445,42 @@ export default function WlanGrabber() {
             </div>
           )}
 
-          {preview && preview.radius_services.length > 0 && (
+          {preview && shared && dpskCapable.length > 0 && (
+            <DpskPanel
+              shared={shared} onChange={setShared} pools={preview.dpsk_pools}
+              suggestion={preview.dpsk_suggestion} venueName={preview.venue_name}
+              convertible={dpskCapable.filter(r => modeFor(r).r1_type !== 'dpsk').length}
+              onAllToDpsk={allToDpsk} disabled={busy}
+            />
+          )}
+
+          {preview && visibleServices.length > 0 && (
             <RadiusPanel
-              services={preview.radius_services} profiles={preview.r1_radius_profiles}
-              choices={radius} onChange={(id, c) => setRadius(prev => ({ ...prev, [id]: c }))}
+              services={visibleServices} profiles={preview.r1_radius_profiles}
+              choices={radius} onChange={changeRadius}
             />
           )}
 
           {preview && (
             <div className="bg-white border border-gray-200 rounded-lg">
               <div className="flex flex-wrap items-center gap-3 p-3 border-b border-gray-100">
-                <span className="text-sm text-gray-600">
-                  <span className="font-medium">{preview.zone_name}</span>
-                  {preview.venue_name && <> · DPSK context from <span className="font-medium">{preview.venue_name}</span></>}
-                </span>
+                <span className="text-sm text-gray-600 font-medium">{preview.zone_name}</span>
                 {(Object.keys(STATUS) as RowStatus[]).map(s => (
                   <span key={s} className={`text-xs px-2 py-0.5 rounded border ${STATUS[s].cls}`}>
-                    {STATUS[s].label}: {preview.counts[s] ?? 0}
+                    {STATUS[s].label}: {counts[s]}
                   </span>
                 ))}
+                <label className="ml-auto text-xs text-gray-600 flex items-center gap-1.5">
+                  <input
+                    type="checkbox" checked={addDescription} disabled={busy}
+                    onChange={e => setAddDescription(e.target.checked)}
+                  />
+                  Description "Migrated from SZ: &lt;name&gt;"
+                </label>
                 <button
                   onClick={() => setConfirming(true)}
                   disabled={!chosen.length || busy}
-                  className="ml-auto px-4 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
+                  className=" px-4 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
                 >
                   {applying && <Loader2 size={14} className="animate-spin" />}
                   {applying ? 'Creating...' : `Create ${chosen.length} network${chosen.length === 1 ? '' : 's'} in R1`}
@@ -383,7 +502,7 @@ export default function WlanGrabber() {
                         />
                       </th>
                       <th className="p-2 text-left">SZ WLAN</th>
-                      <th className="p-2 text-left">Becomes</th>
+                      <th className="p-2 text-left">Create as</th>
                       <th className="p-2 text-right">VLAN</th>
                       <th className="p-2 text-left">Status</th>
                       <th className="p-2 text-left">Notes</th>
@@ -391,9 +510,16 @@ export default function WlanGrabber() {
                   </thead>
                   <tbody>
                     {preview.rows.map(r => {
-                      const st = STATUS[r.status];
+                      const status = statusOf(r);
+                      const st = STATUS[status];
                       const Icon = st.icon;
-                      const waitingOnRadius = (r.status === 'create' || r.status === 'review') && !radiusReady(r);
+                      const mode = modeFor(r);
+                      const modeKeys = Object.keys(r.modes) as R1Type[];
+                      const open = status !== 'exists';
+                      const waitingOnRadius = (status === 'create' || status === 'review') && !radiusReady(r);
+                      const notes = open && mode
+                        ? [...mode.blockers, ...mode.cautions, ...r.notes, ...mode.notes]
+                        : r.notes;
                       return (
                         <tr key={r.sz_wlan_id} className="border-t border-gray-100 align-top">
                           <td className="p-2">
@@ -410,23 +536,39 @@ export default function WlanGrabber() {
                             <div className="text-xs text-gray-400">{r.auth_type}</div>
                           </td>
                           <td className="p-2">
-                            {r.status === 'exists' && r.r1 ? (
+                            {!open && r.r1 ? (
                               <div className="text-gray-800">{r.r1.name}</div>
                             ) : (
                               <>
-                                <div className="text-gray-800">
-                                  {TYPE_LABEL[r.r1_type]}
-                                  {r.security && <span className="text-xs text-gray-500 ml-1">{r.security}</span>}
-                                </div>
-                                {r.r1_type === 'dpsk' && r.status !== 'blocked' && (
+                                {modeKeys.length > 1 ? (
                                   <select
-                                    className="mt-1 text-xs border border-gray-300 rounded px-1 py-0.5 max-w-[14rem]"
-                                    value={pools[r.sz_wlan_id] ?? ''}
+                                    className="text-xs border border-gray-300 rounded px-1 py-0.5"
+                                    value={mode.r1_type}
                                     disabled={busy}
-                                    onChange={e => setPools(prev => ({ ...prev, [r.sz_wlan_id]: e.target.value }))}
+                                    onChange={e => setMode(r, e.target.value as R1Type)}
                                   >
-                                    <option value="">No DPSK pool (link later)</option>
+                                    {modeKeys.map(k => (
+                                      <option key={k} value={k}>
+                                        {TYPE_LABEL[k]}{r.modes[k]!.security ? ` (${r.modes[k]!.security})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <div className="text-gray-800">
+                                    {TYPE_LABEL[mode.r1_type]}
+                                    {mode.security && <span className="text-xs text-gray-500 ml-1">{mode.security}</span>}
+                                  </div>
+                                )}
+                                {mode.r1_type === 'dpsk' && status !== 'blocked' && (
+                                  <select
+                                    className="mt-1 block text-xs border border-gray-300 rounded px-1 py-0.5 max-w-[14rem]"
+                                    value={rowPool[r.sz_wlan_id] || SHARED}
+                                    disabled={busy}
+                                    onChange={e => setRowPool(prev => ({ ...prev, [r.sz_wlan_id]: e.target.value }))}
+                                  >
+                                    <option value={SHARED}>Shared pool</option>
                                     {preview.dpsk_pools.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    <option value={NO_POOL}>No pool (link later)</option>
                                   </select>
                                 )}
                               </>
@@ -442,7 +584,7 @@ export default function WlanGrabber() {
                             {waitingOnRadius && (
                               <div className="text-amber-700">Choose a RADIUS profile for its auth service above</div>
                             )}
-                            {r.notes.map((n, i) => <div key={i}>{n}</div>)}
+                            {notes.map((n, i) => <div key={i}>{n}</div>)}
                           </td>
                         </tr>
                       );
@@ -458,20 +600,118 @@ export default function WlanGrabber() {
   );
 }
 
+function DpskPanel({ shared, onChange, pools, suggestion, venueName, convertible, onAllToDpsk, disabled }: {
+  shared: SharedPool;
+  onChange: (s: SharedPool) => void;
+  pools: { id: string; name: string }[];
+  suggestion: Preview['dpsk_suggestion'];
+  venueName: string | null;
+  convertible: number;
+  onAllToDpsk: () => void;
+  disabled: boolean;
+}) {
+  const value = shared.mode === 'existing' ? `existing:${shared.pool_id || ''}` : shared.mode;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg mb-4">
+      <div className="p-3 border-b border-gray-100 text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+        <KeySquare size={14} className="text-indigo-600" /> Shared DPSK pool
+        <span className="font-normal text-xs text-gray-500">— every DPSK network uses it unless its row picks another</span>
+        {convertible > 0 && (
+          <button
+            onClick={onAllToDpsk}
+            disabled={disabled}
+            className="ml-auto text-xs font-medium px-2 py-1 rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+          >
+            Create all {convertible} PSK/Enterprise as DPSK
+          </button>
+        )}
+      </div>
+      <div className="p-3 space-y-2 text-sm">
+        <select
+          className="text-sm border border-gray-300 rounded px-2 py-1 w-full"
+          value={value}
+          disabled={disabled}
+          onChange={e => {
+            const v = e.target.value;
+            if (v.startsWith('existing:')) onChange({ ...shared, mode: 'existing', pool_id: v.slice(9) });
+            else onChange({ ...shared, mode: v as SharedPool['mode'], pool_id: null });
+          }}
+        >
+          <option value="new">Create a new DPSK pool…</option>
+          {pools.map(p => (
+            <option key={p.id} value={`existing:${p.id}`}>
+              {p.name}{suggestion?.pool_id === p.id ? ' (used in this venue)' : ''}
+            </option>
+          ))}
+          <option value="none">No shared pool (link later)</option>
+        </select>
+        {suggestion ? (
+          <div className="text-xs text-gray-500">Suggested: {suggestion.pool_name} — {suggestion.reason}</div>
+        ) : (
+          <div className="text-xs text-gray-500">
+            {venueName ? `No DPSK networks in ${venueName} to suggest a pool from.` : 'Pick a venue to suggest the pool its DPSK networks use.'}
+          </div>
+        )}
+        {shared.mode === 'new' && (
+          <div className="grid sm:grid-cols-2 gap-2 pt-1">
+            <label className="text-xs text-gray-600">
+              Pool name (its identity group gets the same name)
+              <input
+                className="mt-0.5 text-sm border border-gray-300 rounded px-2 py-1 w-full"
+                value={shared.name} maxLength={64} disabled={disabled}
+                onChange={e => onChange({ ...shared, name: e.target.value })}
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Passphrase format
+              <select
+                className="mt-0.5 text-sm border border-gray-300 rounded px-2 py-1 w-full"
+                value={shared.passphrase_format} disabled={disabled}
+                onChange={e => onChange({ ...shared, passphrase_format: e.target.value })}
+              >
+                {PASSPHRASE_FORMATS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-gray-600">
+              Passphrase length
+              <input
+                type="number" min={8} max={64}
+                className="mt-0.5 text-sm border border-gray-300 rounded px-2 py-1 w-full"
+                value={shared.passphrase_length} disabled={disabled}
+                onChange={e => onChange({ ...shared, passphrase_length: Math.max(8, Math.min(64, Number(e.target.value) || 12)) })}
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Devices per passphrase (blank = unlimited)
+              <input
+                type="number" min={1}
+                className="mt-0.5 text-sm border border-gray-300 rounded px-2 py-1 w-full"
+                value={shared.devices_per_passphrase ?? ''} disabled={disabled}
+                onChange={e => onChange({ ...shared, devices_per_passphrase: e.target.value ? Math.max(1, Number(e.target.value)) : null })}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RadiusPanel({ services, profiles, choices, onChange }: {
   services: RadiusService[];
   profiles: RadiusProfile[];
   choices: Record<string, RadiusChoice>;
-  onChange: (id: string, c: RadiusChoice) => void;
+  onChange: (s: RadiusService, c: RadiusChoice) => void;
 }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg mb-4">
       <div className="p-3 border-b border-gray-100 text-sm font-semibold text-gray-700 flex items-center gap-1.5">
-        <KeyRound size={14} className="text-indigo-600" /> RADIUS services used by Enterprise WLANs
+        <KeyRound size={14} className="text-indigo-600" /> SZ RADIUS services (Enterprise / Cloudpath)
+        <span className="font-normal text-xs text-gray-500">— convert to internal R1 DPSK, or keep RADIUS</span>
       </div>
       <div className="divide-y divide-gray-100">
         {services.map(s => {
-          const c = choices[s.id] || { action: 'skip', r1_profile_id: null, secret: '' };
+          const c = choices[s.id] || { action: 'dpsk', r1_profile_id: null, secret: '' };
           const wantType = s.roles.length === 1 && s.roles[0] === 'accounting' ? 'ACCOUNTING' : 'AUTHENTICATION';
           const usable = profiles.filter(p => !p.type || p.type === wantType);
           return (
@@ -484,7 +724,7 @@ function RadiusPanel({ services, profiles, choices, onChange }: {
                 <div className="text-xs text-gray-500">
                   Used by {s.used_by.map(u => u.wlan_name).join(', ')}
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">{s.suggestion.reason}</div>
+                {c.action !== 'dpsk' && <div className="text-xs text-gray-400 mt-0.5">{s.suggestion.reason}</div>}
               </div>
               <div className="space-y-1.5">
                 <select
@@ -492,17 +732,18 @@ function RadiusPanel({ services, profiles, choices, onChange }: {
                   value={c.action === 'existing' ? `existing:${c.r1_profile_id || ''}` : c.action}
                   onChange={e => {
                     const v = e.target.value;
-                    if (v.startsWith('existing:')) onChange(s.id, { ...c, action: 'existing', r1_profile_id: v.slice(9) });
-                    else onChange(s.id, { ...c, action: v as RadiusChoice['action'], r1_profile_id: null });
+                    if (v.startsWith('existing:')) onChange(s, { ...c, action: 'existing', r1_profile_id: v.slice(9) });
+                    else onChange(s, { ...c, action: v as RadiusChoice['action'], r1_profile_id: null });
                   }}
                 >
-                  <option value="create" disabled={!s.primary}>Create a new R1 profile from SZ servers</option>
+                  <option value="dpsk">Convert its WLANs to internal R1 DPSK (shared pool)</option>
+                  <option value="create" disabled={!s.primary}>Keep RADIUS: create a new R1 profile from SZ servers</option>
                   {usable.map(p => (
                     <option key={p.id} value={`existing:${p.id}`}>
-                      Use R1 profile {p.name}{p.primary ? ` (${p.primary})` : ''}{p.placeholder_secret ? ' — placeholder secret!' : ''}
+                      Keep RADIUS: use R1 profile {p.name}{p.primary ? ` (${p.primary})` : ''}{p.placeholder_secret ? ' — placeholder secret!' : ''}
                     </option>
                   ))}
-                  <option value="skip">Don't map (its WLANs can't be created)</option>
+                  <option value="skip">Don't map (its Enterprise WLANs can't be created)</option>
                 </select>
                 {c.action === 'create' && (
                   <input
@@ -511,7 +752,7 @@ function RadiusPanel({ services, profiles, choices, onChange }: {
                     placeholder="Shared secret (not stored)"
                     className="text-sm border border-gray-300 rounded px-2 py-1 w-full"
                     value={c.secret}
-                    onChange={e => onChange(s.id, { ...c, secret: e.target.value })}
+                    onChange={e => onChange(s, { ...c, secret: e.target.value })}
                   />
                 )}
               </div>
@@ -523,19 +764,29 @@ function RadiusPanel({ services, profiles, choices, onChange }: {
   );
 }
 
-function ConfirmModal({ rows, pools, poolNames, radius, services, onCancel, onConfirm }: {
+function ConfirmModal({ rows, modeFor, rowPool, shared, poolNames, radius, services, onCancel, onConfirm }: {
   rows: GrabRow[];
-  pools: Record<string, string>;
+  modeFor: (r: GrabRow) => ModeOption;
+  rowPool: Record<string, string>;
+  shared: SharedPool;
   poolNames: { id: string; name: string }[];
   radius: Record<string, RadiusChoice>;
   services: RadiusService[];
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const poolName = (id: string) => poolNames.find(p => p.id === id)?.name || id;
-  const usedServices = new Set(rows.filter(r => r.r1_type === 'aaa').map(r => r.auth_service_id));
+  const poolName = (id: string | null) => poolNames.find(p => p.id === id)?.name || id || '';
+  const sharedLabel = shared.mode === 'new' ? `${shared.name.trim()} (new)`
+    : shared.mode === 'existing' ? poolName(shared.pool_id) : null;
+  const poolOf = (r: GrabRow) => {
+    const p = rowPool[r.sz_wlan_id] || SHARED;
+    return p === SHARED ? sharedLabel : p === NO_POOL ? null : poolName(p);
+  };
+  const dpskRows = rows.filter(r => modeFor(r).r1_type === 'dpsk');
+  const usesShared = dpskRows.some(r => (rowPool[r.sz_wlan_id] || SHARED) === SHARED);
+  const usedServices = new Set(rows.filter(r => modeFor(r).r1_type === 'aaa').map(r => r.auth_service_id));
   const newProfiles = services.filter(s => usedServices.has(s.id) && radius[s.id]?.action === 'create');
-  const noPool = rows.filter(r => r.r1_type === 'dpsk' && !pools[r.sz_wlan_id]).length;
+  const noPool = dpskRows.filter(r => !poolOf(r)).length;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
@@ -548,18 +799,27 @@ function ConfirmModal({ rows, pools, poolNames, radius, services, onCancel, onCo
         <div className="p-4 max-h-80 overflow-y-auto">
           <table className="w-full text-sm">
             <tbody>
-              {rows.map(r => (
-                <tr key={r.sz_wlan_id} className="border-t border-gray-100 first:border-t-0">
-                  <td className="py-1.5 text-gray-800">{r.sz_name}</td>
-                  <td className="py-1.5 text-gray-500 text-xs">
-                    {TYPE_LABEL[r.r1_type]}{r.security ? ` ${r.security}` : ''} · VLAN {r.vlan_id}
-                    {r.r1_type === 'dpsk' && pools[r.sz_wlan_id] && ` · pool ${poolName(pools[r.sz_wlan_id])}`}
-                  </td>
-                </tr>
-              ))}
+              {rows.map(r => {
+                const m = modeFor(r);
+                return (
+                  <tr key={r.sz_wlan_id} className="border-t border-gray-100 first:border-t-0">
+                    <td className="py-1.5 text-gray-800">{r.sz_name}</td>
+                    <td className="py-1.5 text-gray-500 text-xs">
+                      {TYPE_LABEL[m.r1_type]}{m.security ? ` ${m.security}` : ''} · VLAN {r.vlan_id}
+                      {m.r1_type === 'dpsk' && poolOf(r) && ` · pool ${poolOf(r)}`}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        {usesShared && shared.mode === 'new' && (
+          <div className="mx-4 mb-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+            Also creates DPSK pool <span className="font-medium">{shared.name.trim()}</span> and its identity group
+            (linked unchanged if a pool by that name already exists).
+          </div>
+        )}
         {newProfiles.length > 0 && (
           <div className="mx-4 mb-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded px-3 py-2">
             Also creates RADIUS profile{newProfiles.length === 1 ? '' : 's'}: {newProfiles.map(s => s.name).join(', ')}
@@ -583,18 +843,24 @@ function ConfirmModal({ rows, pools, poolNames, radius, services, onCancel, onCo
   );
 }
 
-function ResultsPanel({ results, radiusResults }: { results: ApplyResult[]; radiusResults: RadiusResult[] }) {
+function ResultsPanel({ data }: { data: ApplyResponse }) {
+  const { results, radius_results: radiusResults, pool_result: pool } = data;
   const failed = results.filter(r => r.status === 'failed');
   const created = results.filter(r => r.status === 'created').length;
   const exists = results.filter(r => r.status === 'exists').length;
   const warned = results.filter(r => r.warnings?.length);
-  const radiusFailed = radiusResults.filter(r => r.status === 'failed');
+  const otherFailed = radiusResults.some(r => r.status === 'failed') || pool?.status === 'failed';
   return (
-    <div className={`border rounded-lg p-3 mb-4 text-sm ${failed.length || radiusFailed.length || warned.length ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+    <div className={`border rounded-lg p-3 mb-4 text-sm ${failed.length || otherFailed || warned.length ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
       <div className="font-medium text-gray-800">
         {created} created{exists ? `, ${exists} already in R1` : ''}
         {failed.length ? `, ${failed.length} failed` : ''}
       </div>
+      {pool && (
+        <div className={`text-xs mt-1 ${pool.status === 'failed' ? 'text-red-700' : 'text-gray-600'}`}>
+          DPSK pool {pool.name}: {pool.status}{pool.error ? ` — ${pool.error}` : ''}
+        </div>
+      )}
       {radiusResults.map(r => (
         <div key={r.sz_service_id} className={`text-xs mt-1 ${r.status === 'failed' ? 'text-red-700' : 'text-gray-600'}`}>
           RADIUS {r.name}: {r.status}{r.error ? ` — ${r.error}` : ''}

@@ -3,21 +3,26 @@ WLAN Grabber: create in R1 the SZ WLANs that R1 does not have yet.
 
 One SZ zone in, one R1 tenant out. A network is created tenant-wide and is
 NOT activated anywhere: activation is the WLAN Activator's job. The venue is
-optional context only -- the DPSK networks already active there suggest which
-DPSK pool a new DPSK network should be tied to.
+optional context only -- the DPSK networks already active there suggest the
+DPSK pool new DPSK networks are tied to (usually one pool serves every DPSK
+network in a venue).
 
-What gets created, per SZ auth type (services/sz_migration/mapper.py):
+Each SZ WLAN can be created in one or more MODES (the R1 network type):
+
+    SZ PSK         -> psk (default) or dpsk
+    SZ Enterprise  -> dpsk (default) or aaa
+    SZ DPSK        -> dpsk; external DPSK (Cloudpath/RADIUS) is converted
+                      to an internal R1 DPSK network
+    SZ Open        -> open; a captive portal is not copied
 
     psk   -- SSID, passphrase, security (WPA2 / WPA3 / mixed), VLAN
-    open  -- SSID, VLAN; a captive portal is not copied
     aaa   -- SSID, VLAN, linked to the R1 RADIUS profile chosen for the SZ
-             auth (and accounting) service: an existing one, or one created
-             from the SZ servers with a secret typed by the user
-    dpsk  -- SSID, VLAN, linked to the R1 DPSK pool the user picks (no
-             passphrases or identities are copied)
+             auth (and accounting) service
+    dpsk  -- SSID, VLAN, linked to an R1 DPSK pool (existing or new). No
+             SZ passphrase, DPSK key or identity is copied.
 
-All four also carry the advanced settings field_mappings knows how to copy;
-values R1 would reject are dropped and noted.
+Every mode also carries the advanced settings field_mappings knows how to
+copy; values R1 would reject are dropped and noted.
 
 "Exists" is decided tenant-wide by network name: R1 network names are unique
 in the tenant, so a taken name cannot be created anyway. A network that only
@@ -25,7 +30,7 @@ shares the SSID is a review note, not a match -- many properties broadcast
 the same "Guest".
 
 Passphrases are read and used server-side only: build_spec() keeps the one
-it finds under "passphrase", and public_spec() is what may leave the server.
+it finds under "passphrase", and preview rows never carry it.
 
 Pure: no I/O.
 """
@@ -47,6 +52,15 @@ REVIEW = "review"    # can be created, but read the notes first
 BLOCKED = "blocked"  # cannot be created as it stands
 
 STATUSES = (CREATE, REVIEW, EXISTS, BLOCKED)
+
+# SZ-mapped type -> the R1 types it may be created as, default first.
+MODES = {
+    "psk": ("psk", "dpsk"),
+    "aaa": ("dpsk", "aaa"),
+    "dpsk": ("dpsk",),
+    "open": ("open",),
+    "unsupported": (),
+}
 
 R1_NAME_LEN = (2, 32)
 R1_SSID_LEN = (1, 32)
@@ -98,40 +112,17 @@ def passphrase_problem(passphrase: Optional[str]) -> Optional[str]:
     return None
 
 
-def build_spec(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    What R1 network one SZ WLAN (detail object) becomes, and what stands in
-    the way. Carries the passphrase -- server-side only; see public_spec().
-    """
+def _base(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """What one SZ WLAN is, independent of the R1 type it becomes."""
     auth_type = WlanService.extract_auth_type(raw)
     full = SZWLANFull.from_sz_response(raw, auth_type)
     mapping = map_wlan_to_r1_type(full)
-    r1_type = mapping.r1_network_type
-
     vlan = raw.get("vlan") or {}
-    dropped: List[Dict[str, Any]] = []
-    spec: Dict[str, Any] = {
-        "sz_wlan_id": full.id,
-        "sz_name": full.name,
-        "sz_ssid": full.ssid,
-        "auth_type": auth_type,
-        "r1_type": r1_type,
-        "security": None,
-        "vlan_id": _int(vlan.get("accessVlan")) or 1,
-        "auth_service_id": full.auth_service_id,
-        "accounting_service_id": full.accounting_service_id,
-        "external_dpsk": mapping.dpsk_type == "external",
-        "advanced": {},
-        "blockers": [],
-        "cautions": [],
-        "passphrase": None,
-    }
-    blockers, cautions = spec["blockers"], spec["cautions"]
 
-    if r1_type == "unsupported":
+    blockers: List[str] = []
+    cautions: List[str] = []
+    if mapping.r1_network_type == "unsupported":
         blockers.append(mapping.notes or f"SZ auth type '{auth_type}' has no R1 equivalent")
-        return spec
-
     lo, hi = R1_NAME_LEN
     if not lo <= len(full.name) <= hi:
         blockers.append(f"Name is {len(full.name)} characters; R1 network names are {lo}–{hi}")
@@ -139,9 +130,44 @@ def build_spec(raw: Dict[str, Any]) -> Dict[str, Any]:
     if not lo <= len(full.ssid) <= hi:
         blockers.append(f"SSID is {len(full.ssid)} characters; R1 allows {lo}–{hi}")
 
+    vlan_id = _int(vlan.get("accessVlan")) or 1
+    pool = _ref_name(vlan.get("vlanPooling"))
+    if pool:
+        cautions.append(f"SZ uses VLAN pool '{pool}' — only its access VLAN {vlan_id} is copied")
+    dropped: List[Dict[str, Any]] = []
+    advanced = build_r1_advanced_settings(raw, dropped)
+    if dropped:
+        cautions.append("Left at R1 default: " + ", ".join(d["label"] for d in dropped))
+
+    return {
+        "sz_wlan_id": full.id,
+        "sz_name": full.name,
+        "sz_ssid": full.ssid,
+        "auth_type": auth_type,
+        "sz_type": mapping.r1_network_type,
+        "external_dpsk": mapping.dpsk_type == "external",
+        "vlan_id": vlan_id,
+        "aaa_vlan_override": bool(vlan.get("aaaVlanOverride")),
+        "auth_service_id": full.auth_service_id,
+        "accounting_service_id": full.accounting_service_id,
+        "advanced": advanced,
+        "blockers": blockers,
+        "cautions": cautions,
+    }
+
+
+def _mode(base: Dict[str, Any], raw: Dict[str, Any], r1_type: str) -> Dict[str, Any]:
+    """
+    One way to create it: {r1_type, security, blockers, cautions, notes, passphrase}.
+    blockers/cautions include the WLAN-wide ones; notes are informational.
+    """
+    sz_type = base["sz_type"]
+    blockers, cautions, notes = list(base["blockers"]), list(base["cautions"]), []
+    out = {"r1_type": r1_type, "security": None, "passphrase": None}
+
     if r1_type == "psk":
         sec = psk_security(raw)
-        spec["security"] = sec["security"]
+        out["security"] = sec["security"]
         if sec["caution"]:
             cautions.append(sec["caution"])
         passphrase = psk_passphrase(raw, sec["security"])
@@ -149,36 +175,49 @@ def build_spec(raw: Dict[str, Any]) -> Dict[str, Any]:
         if problem:
             blockers.append(problem)
         else:
-            spec["passphrase"] = passphrase
+            out["passphrase"] = passphrase
     elif r1_type == "aaa":
-        spec["security"] = "WPA3" if "WPA3" in auth_type else "WPA2Enterprise"
-        if not full.auth_service_id:
+        out["security"] = "WPA3" if "WPA3" in base["auth_type"] else "WPA2Enterprise"
+        if not base["auth_service_id"]:
             blockers.append("SZ WLAN has no authentication service to link")
     elif r1_type == "open":
-        if auth_type == "Open + Portal":
+        if base["auth_type"] == "Open + Portal":
             cautions.append("SZ captive portal is not copied — created as a plain Open network")
     elif r1_type == "dpsk":
-        if spec["external_dpsk"]:
-            cautions.append("SZ uses external DPSK (Cloudpath/RADIUS) — the R1 network uses an R1 DPSK pool instead")
+        if sz_type == "psk":
+            notes.append("Converted from PSK — the SZ passphrase is not copied; keys come from the DPSK pool")
+        elif sz_type == "aaa":
+            notes.append("Converted from Enterprise — SZ RADIUS is not used")
+        elif base["external_dpsk"]:
+            notes.append("SZ external DPSK (Cloudpath/RADIUS) converted to an internal R1 DPSK network")
 
-    if r1_type != "aaa" and full.accounting_service_id:
-        cautions.append("SZ accounting service is not copied (only linked on Enterprise networks)")
+    if r1_type != "aaa":
+        if base["accounting_service_id"]:
+            cautions.append("SZ accounting service is not copied (only linked on Enterprise networks)")
+        if base["aaa_vlan_override"]:
+            cautions.append("SZ allows AAA VLAN override — not copied")
+    return {**out, "blockers": blockers, "cautions": cautions, "notes": notes}
 
-    pool = _ref_name(vlan.get("vlanPooling"))
-    if pool:
-        cautions.append(f"SZ uses VLAN pool '{pool}' — only its access VLAN {spec['vlan_id']} is copied")
-    if vlan.get("aaaVlanOverride") and r1_type != "aaa":
-        cautions.append("SZ allows AAA VLAN override — not copied")
 
-    spec["advanced"] = build_r1_advanced_settings(raw, dropped)
-    if dropped:
-        cautions.append("Left at R1 default: " + ", ".join(d["label"] for d in dropped))
+def build_spec(raw: Dict[str, Any], r1_type: Optional[str] = None) -> Dict[str, Any]:
+    """
+    The R1 network one SZ WLAN (detail object) becomes as r1_type (default:
+    its first mode), for apply. Carries the passphrase -- server-side only.
+    An r1_type the WLAN cannot take is a blocker.
+    """
+    base = _base(raw)
+    modes = MODES.get(base["sz_type"], ())
+    chosen = r1_type or (modes[0] if modes else base["sz_type"])
+    spec = {**base, **_mode(base, raw, chosen)}
+    if modes and chosen not in modes:
+        spec["blockers"].append(f"An SZ {base['auth_type']} WLAN cannot be created as {chosen}")
     return spec
 
 
-def public_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
-    """A spec that may leave the server: no passphrase, no payload internals."""
-    return {k: v for k, v in spec.items() if k not in ("passphrase", "advanced")}
+def mode_status(mode: Dict[str, Any]) -> str:
+    if mode["blockers"]:
+        return BLOCKED
+    return REVIEW if mode["cautions"] else CREATE
 
 
 def tenant_match(spec: Dict[str, Any], tenant_networks: List[Dict[str, Any]],
@@ -231,52 +270,55 @@ def build_rows(
     sz_wlans: List[Dict[str, Any]],
     tenant_networks: List[Dict[str, Any]],
     venue_id: Optional[str] = None,
-    dpsk_suggestion: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """One row per SZ WLAN (detail objects): what it becomes in R1, and a status."""
+    """
+    One row per SZ WLAN (detail objects): every mode it can be created in,
+    each with its own blockers/cautions, and the status of the default mode.
+    The page re-derives the status when the user picks another mode.
+    """
     rows = []
     for raw in sz_wlans:
-        spec = build_spec(raw)
-        match = tenant_match(spec, tenant_networks, venue_id)
-        row = {**public_spec(spec), "r1": match["existing"], "notes": []}
-        notes = row["notes"]
+        base = _base(raw)
+        match = tenant_match(base, tenant_networks, venue_id)
+        modes = MODES.get(base["sz_type"], ())
+        options = {}
+        for m in modes or (base["sz_type"],):
+            opt = _mode(base, raw, m)
+            opt.pop("passphrase")
+            options[m] = opt
+        default = next(iter(options))
+
+        notes: List[str] = []
+        row = {
+            **{k: base[k] for k in ("sz_wlan_id", "sz_name", "sz_ssid", "auth_type", "sz_type",
+                                    "vlan_id", "auth_service_id", "accounting_service_id")},
+            "modes": options,
+            "default_mode": default,
+            "r1": match["existing"],
+            "notes": notes,
+        }
         rows.append(row)
 
         if match["existing"]:
             ex = match["existing"]
             row["status"] = EXISTS
-            if ex["name"] != spec["sz_name"]:
+            if ex["name"] != base["sz_name"]:
                 notes.append(f"R1 has it as '{ex['name']}' (case differs)")
-            if ex["ssid"] != spec["sz_ssid"]:
-                notes.append(f"SSID differs: SZ '{spec['sz_ssid']}', R1 '{ex['ssid']}'")
-            if ex["type"] and spec["r1_type"] not in ("unsupported", ex["type"]):
-                notes.append(f"Type differs: SZ maps to {spec['r1_type']}, R1 is {ex['type']}")
+            if ex["ssid"] != base["sz_ssid"]:
+                notes.append(f"SSID differs: SZ '{base['sz_ssid']}', R1 '{ex['ssid']}'")
             if ex["active_in_venue"] is False:
                 notes.append("Not activated in this venue — use WLAN Activator")
             elif not ex["venue_count"]:
                 notes.append("Not activated in any venue — use WLAN Activator")
             continue
 
-        if spec["blockers"]:
-            row["status"] = BLOCKED
-            notes.extend(spec["blockers"])
-            notes.extend(spec["cautions"])
-            continue
-
-        cautions = list(spec["cautions"])
         if match["same_ssid"]:
             shown = ", ".join(f"'{n}'" for n in match["same_ssid"][:3])
             more = len(match["same_ssid"]) - 3
-            cautions.insert(0, f"SSID already broadcast by R1 network {shown}"
-                               + (f" and {more} more" if more > 0 else ""))
-        if spec["r1_type"] == "dpsk":
-            if dpsk_suggestion:
-                row["suggested_dpsk_pool_id"] = dpsk_suggestion["pool_id"]
-                notes.append(f"DPSK pool '{dpsk_suggestion['pool_name']}': {dpsk_suggestion['reason']}")
-            else:
-                cautions.append("Pick a DPSK pool — without one R1 will not activate it (WIFI-20300)")
-        notes[:0] = cautions
-        row["status"] = REVIEW if cautions else CREATE
+            caution = f"SSID already broadcast by R1 network {shown}" + (f" and {more} more" if more > 0 else "")
+            for opt in options.values():
+                opt["cautions"].insert(0, caution)
+        row["status"] = mode_status(options[default])
 
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in STATUSES}
     return {"rows": rows, "counts": counts}
@@ -285,8 +327,8 @@ def build_rows(
 def radius_services(rows: List[Dict[str, Any]], refs: Dict[str, Dict[str, Any]],
                     r1_profiles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    The SZ RADIUS services the Enterprise WLANs still to be created use,
-    with a suggested R1 profile for each (radius_choices.suggest).
+    The SZ RADIUS services of the WLANs that could still be created as
+    Enterprise, with a suggested R1 profile for each (radius_choices.suggest).
 
     refs: "auth_service:{id}" / "accounting_service:{id}" -> SZ service raw.
     r1_profiles: already reduced by r1_profile_summary (no secrets).
@@ -295,7 +337,8 @@ def radius_services(rows: List[Dict[str, Any]], refs: Dict[str, Dict[str, Any]],
         SimpleNamespace(id=r["sz_wlan_id"], name=r["sz_name"], auth_type=r["auth_type"],
                         auth_service_id=r["auth_service_id"],
                         accounting_service_id=r["accounting_service_id"])
-        for r in rows if r["r1_type"] == "aaa" and r["status"] in (CREATE, REVIEW)
+        for r in rows if "aaa" in r["modes"] and r["status"] != EXISTS
+        and not r["modes"]["aaa"]["blockers"]
     ]
     snapshot = SimpleNamespace(wlans=wlans, referenced_objects={
         k: SimpleNamespace(name=(v or {}).get("name"), raw=v or {}) for k, v in refs.items()
