@@ -42,6 +42,7 @@ import CloudpathImport from "@/pages/CloudpathImport";
 import APRegroup from "@/pages/APRegroup";
 import WlanActivator from "@/pages/WlanActivator";
 import WlanVlan from "@/pages/WlanVlan";
+import WlanGrabber from "@/pages/WlanGrabber";
 import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
 import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
 import MigrationAudit from "@/pages/MigrationAudit";
@@ -111,6 +112,7 @@ const App = () => {
           <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
           <Route path="/migration-audit" element={<AlphaRoute element={<MigrationAudit />} />} />
           <Route path="/wlan-vlan" element={<BetaRoute element={<WlanVlan />} />} />
+          <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/dfs-blacklist" element={<AlphaRoute element={<DfsBlacklist />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
