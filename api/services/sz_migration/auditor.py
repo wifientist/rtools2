@@ -27,7 +27,8 @@ from services.sz_migration.field_mappings import compare_fields
 from services.sz_migration.audit_matching import build_matching
 from services.sz_migration.audit_scorecard import build_overview, build_scorecard
 from services.sz_migration.venue_settings import compare_venue_settings
-from services.sz_migration.broadcast_model import build_broadcast_audit
+from services.sz_migration.broadcast_model import build_broadcast_audit, r1_ssids_by_group
+from services.sz_migration.wlan_assignment import SzAssignments, r1_activation, r1_activation_lines
 from services.sz_migration.passphrase_check import PSK_AUTH_TYPES, compare_passphrases
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ def run_audit(
     # Step 0c: which SSIDs each AP broadcasts, resolved through each hierarchy
     broadcast = build_broadcast_audit(snapshot, r1_inventory, matching)
     venue_networks = {n.get("id"): n for n in r1_inventory.wifi_networks if n.get("id")}
+    _annotate_assignments(snapshot, r1_inventory, matching, broadcast, venue_networks)
 
     # Step 0b: Zone vs venue settings (needs a live R1 read)
     venue_settings = (
@@ -684,3 +686,48 @@ def type_change_explained_by_path(backend: Optional[str], auth: Optional[AuthPat
         (auth.path == AuthPath.EXTERNAL and actual == "aaa")
         or (auth.path == AuthPath.INTERNAL and actual == "dpsk")
     )
+
+
+def _annotate_assignments(snapshot, r1_inventory, matching, broadcast, venue_networks) -> None:
+    """
+    Fill the pairing view's "where assigned" columns: every SZ path that
+    brings each WLAN in (zone / AP Group / AP override, with WLAN Group and
+    radios), how R1 activates its network (All AP Groups or specific
+    groups), and how many APs end up broadcasting it on each side.
+    """
+    sz = SzAssignments(snapshot)
+    sz_count = {s.ssid: s.sz_ap_count for s in broadcast.ssids}
+    r1_count = {s.ssid: s.r1_ap_count for s in broadcast.ssids}
+    vlan_by_wlan = {w.id: w.vlan_id for w in snapshot.wlans}
+    for m in matching.wlans:
+        m.sz_assigned = sz.paths_for_wlan(m.sz_wlan_id)
+        m.sz_ap_count = sz_count.get(m.sz_ssid, 0)
+        m.sz_vlan = vlan_by_wlan.get(m.sz_wlan_id)
+        net = venue_networks.get(m.r1_network_id) if m.r1_network_id else None
+        if net is not None:
+            act = r1_activation(r1_inventory, net)
+            m.r1_activated = r1_activation_lines(act)
+            m.r1_all_ap_groups = act["all"]
+            m.r1_ap_count = r1_count.get(m.r1_ssid, 0)
+            m.r1_vlan = _as_int(net.get("vlan"))
+        elif m.r1_network_id:
+            m.r1_activated = ["Not activated in this venue"]
+            m.r1_ap_count = 0
+
+    # WLAN Groups: which R1 AP Groups carry every SSID in each group
+    by_group, everywhere = r1_ssids_by_group(r1_inventory)
+    names = {g.get("id"): (g.get("name") or "(default)") for g in r1_inventory.ap_groups}
+    carrying: Dict[str, List[str]] = {}
+    for g in snapshot.wlan_groups:
+        want = {m.ssid for m in g.members if m.ssid}
+        if want:
+            carrying[g.id] = sorted(names[gid] for gid in names
+                                    if want <= (by_group.get(gid, set()) | everywhere))
+    matching.wlan_groups = sz.usage(carrying)
+
+
+def _as_int(v) -> Optional[int]:
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None

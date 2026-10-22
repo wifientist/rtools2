@@ -187,6 +187,13 @@ export interface WlanMatch {
   r1_ssid: string | null;
   method: MatchMethod;
   activated_in_venue: boolean;
+  sz_assigned?: string[];
+  r1_activated?: string[];
+  r1_all_ap_groups?: boolean;
+  sz_ap_count?: number | null;
+  r1_ap_count?: number | null;
+  sz_vlan?: number | null;
+  r1_vlan?: number | null;
   notes: string[];
 }
 
@@ -221,6 +228,7 @@ export interface ApMatch {
 export interface AuditMatching {
   wlans: WlanMatch[];
   r1_only_networks: Array<{ id: string; name: string; ssid: string; nwSubType: string }>;
+  wlan_groups?: WlanGroupUsage[];
   ap_groups: ApGroupMatch[];
   r1_only_ap_groups: Array<{ id: string; name: string; ap_count: number }>;
   aps: ApMatch[];
@@ -254,6 +262,7 @@ export interface ApBroadcast {
   presence: 'in_both' | 'sz_only' | 'r1_only';
   sz_ssids: string[];
   r1_ssids: string[];
+  r1_via_all_ap_groups?: string[];
   missing_in_r1: string[];
   extra_in_r1: string[];
   status: 'match' | 'differs' | 'pending' | 'r1_only' | 'unknown';
@@ -301,4 +310,16 @@ export interface OverviewRow {
   sz_note: string;
   r1_note: string;
   note: string;
+}
+
+export interface WlanGroupUsage {
+  id: string;
+  name: string;
+  ssids: string[];
+  zone_bands: string[];
+  ap_groups: Record<string, string[]>;
+  ap_override_counts: Record<string, number>;
+  ap_override_total: number;
+  ap_override_sample: string[];
+  r1_groups_carrying_all: string[];
 }

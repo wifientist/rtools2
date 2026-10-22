@@ -123,7 +123,7 @@ class _SzModel:
 # RuckusONE side
 # ═══════════════════════════════════════════════════════════════════════
 
-def _r1_ssids_by_group(inv: R1VenueInventory) -> Tuple[Dict[str, Set[str]], Set[str]]:
+def r1_ssids_by_group(inv: R1VenueInventory) -> Tuple[Dict[str, Set[str]], Set[str]]:
     """(AP Group id -> SSIDs activated on it, SSIDs activated on All AP Groups)."""
     by_group: Dict[str, Set[str]] = defaultdict(set)
     everywhere: Set[str] = set()
@@ -151,7 +151,7 @@ def _r1_ssids_by_group(inv: R1VenueInventory) -> Tuple[Dict[str, Set[str]], Set[
 def build_broadcast_audit(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
                           matching: AuditMatching) -> BroadcastAudit:
     sz = _SzModel(snapshot)
-    r1_by_group, r1_everywhere = _r1_ssids_by_group(inv)
+    r1_by_group, r1_everywhere = r1_ssids_by_group(inv)
     r1_group_name = {g.get("id"): (g.get("name") or "(default)") for g in inv.ap_groups}
     r1_ap_by_serial = {a.get("serialNumber"): a for a in inv.aps if a.get("serialNumber")}
     sz_ap_by_mac = {(a.get("apMac") or a.get("mac")): a for a in snapshot.aps}
@@ -177,6 +177,7 @@ def build_broadcast_audit(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
             r1_ap = r1_ap_by_serial.get(m.r1_serial) or {}
             r1_set = r1_ssids_for(r1_ap)
             row.r1_ssids = sorted(r1_set)
+            row.r1_via_all_ap_groups = sorted(r1_set & r1_everywhere)
         if m.presence == "in_both":
             row.missing_in_r1 = sorted(sz_set - r1_set)
             row.extra_in_r1 = sorted(r1_set - sz_set)

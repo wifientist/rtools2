@@ -196,16 +196,31 @@ const METHOD_LABEL: Record<MatchMethod, string> = {
   serial: 'serial', mac: 'MAC', none: '—',
 };
 
-type PairTab = 'wlans' | 'ap_groups' | 'aps';
+type PairTab = 'wlans' | 'wlan_groups' | 'ap_groups' | 'aps';
+const PAIR_RENDER_CAP = 300;
+
+function Lines({ items }: { items?: string[] | null }) {
+  if (!items || items.length === 0) return <span className="text-gray-300">—</span>;
+  return <>{items.map((s, i) => <div key={i}>{s}</div>)}</>;
+}
 
 export function MatchingSection({ matching }: { matching: AuditMatching }) {
   const [tab, setTab] = useState<PairTab>('wlans');
   const [apFilter, setApFilter] = useState<'all' | 'issues'>('issues');
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const has = (...vals: Array<string | null | undefined>) => !q || vals.some(v => (v || '').toLowerCase().includes(q));
+  const wlans = matching.wlans.filter(w => has(w.sz_name, w.sz_ssid, w.r1_name, w.r1_ssid,
+    ...(w.sz_assigned ?? []), ...(w.r1_activated ?? []), String(w.sz_vlan ?? ''), String(w.r1_vlan ?? '')));
+  const wlanGroups = (matching.wlan_groups ?? []).filter(g => has(g.name, ...g.ssids, ...Object.keys(g.ap_groups),
+    ...g.r1_groups_carrying_all));
   const tabs: Array<[PairTab, string]> = [
     ['wlans', `WLANs (${matching.wlans.length})`],
+    ['wlan_groups', `WLAN Groups (${(matching.wlan_groups ?? []).length})`],
     ['ap_groups', `AP Groups (${matching.ap_groups.length})`],
     ['aps', `APs (${matching.aps.length})`],
   ];
+  const shown = tab === 'wlans' ? wlans.length : tab === 'wlan_groups' ? wlanGroups.length : null;
   const aps = apFilter === 'all'
     ? matching.aps
     : matching.aps.filter(a => a.presence !== 'in_both' || a.group_aligned === false || a.name_alignment === 'differs');
@@ -220,30 +235,96 @@ export function MatchingSection({ matching }: { matching: AuditMatching }) {
             {label}
           </button>
         ))}
+        {(tab === 'wlans' || tab === 'wlan_groups') && (
+          <span className="ml-auto flex items-center gap-2 text-xs">
+            <input value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="Search name, SSID, group, VLAN"
+              className="border border-gray-300 rounded px-2 py-1 w-56 max-w-full bg-white" />
+            <span className="text-gray-400">
+              {shown !== null && shown > PAIR_RENDER_CAP ? `${PAIR_RENDER_CAP} of ${shown}` : `${shown}`}
+            </span>
+          </span>
+        )}
       </div>
 
-      <div className="overflow-x-auto max-h-[28rem] overflow-y-auto">
-        {tab === 'wlans' && (
+      <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
+        {tab === 'wlan_groups' && (
           <table className="w-full text-xs">
-            <thead><tr className="text-gray-500 text-left border-b">
-              <th className="px-4 py-2 font-medium">SZ WLAN (SSID)</th>
-              <th className="px-2 py-2 font-medium">R1 network (SSID)</th>
-              <th className="px-2 py-2 font-medium">Matched by</th>
-              <th className="px-4 py-2 font-medium">Notes</th>
+            <thead className="sticky top-0 bg-white"><tr className="text-gray-500 text-left border-b">
+              <th className="px-4 py-2 font-medium">SZ WLAN Group</th>
+              <th className="px-2 py-2 font-medium">SSIDs</th>
+              <th className="px-2 py-2 font-medium">Applied on SZ</th>
+              <th className="px-4 py-2 font-medium">R1 AP Groups carrying all its SSIDs</th>
             </tr></thead>
             <tbody>
-              {matching.wlans.map(w => (
-                <tr key={w.sz_wlan_id} className="border-b border-gray-100 align-top">
-                  <td className="px-4 py-1.5">{w.sz_name} <span className="text-gray-400">({w.sz_ssid})</span></td>
-                  <td className={`px-2 py-1.5 ${!w.r1_network_id ? 'text-red-600' : !w.activated_in_venue ? 'text-amber-700' : ''}`}>
-                    {w.r1_network_id ? <>{w.r1_name} <span className="text-gray-400">({w.r1_ssid})</span></> : 'not found'}
-                  </td>
-                  <td className={`px-2 py-1.5 ${w.method === 'ssid' || w.method === 'name_case' ? 'text-amber-700' : 'text-gray-500'}`}>
-                    {METHOD_LABEL[w.method]}
-                  </td>
-                  <td className="px-4 py-1.5 text-gray-500">{w.notes.join('; ')}</td>
-                </tr>
-              ))}
+              {wlanGroups.slice(0, PAIR_RENDER_CAP).map(g => {
+                const applied: string[] = [];
+                if (g.zone_bands.length) applied.push(`Zone-wide: ${g.zone_bands.join('/')} GHz`);
+                Object.entries(g.ap_groups).forEach(([n, b]) => applied.push(`AP Group '${n}': ${b.join('/')} GHz`));
+                if (g.ap_override_total) {
+                  applied.push(`AP override on ${g.ap_override_total} AP${g.ap_override_total === 1 ? '' : 's'} (` +
+                    Object.entries(g.ap_override_counts).map(([b, n]) => `${b} GHz: ${n}`).join(', ') + ')');
+                }
+                return (
+                  <tr key={g.id} className="border-b border-gray-100 align-top">
+                    <td className="px-4 py-1.5 font-medium">{g.name}</td>
+                    <td className="px-2 py-1.5"><Lines items={g.ssids} /></td>
+                    <td className={`px-2 py-1.5 ${applied.length ? 'text-gray-600' : 'text-gray-400 italic'}`}>
+                      {applied.length ? <Lines items={applied} /> : 'Not applied anywhere'}
+                      {g.ap_override_sample.length > 0 && (
+                        <div className="text-[11px] text-gray-400">e.g. {g.ap_override_sample.slice(0, 4).join(', ')}</div>
+                      )}
+                    </td>
+                    <td className={`px-4 py-1.5 ${g.r1_groups_carrying_all.length ? 'text-gray-700' : 'text-gray-400'}`}>
+                      {g.r1_groups_carrying_all.length ? <Lines items={g.r1_groups_carrying_all} /> : 'none'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+
+        {tab === 'wlans' && (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-white"><tr className="text-gray-500 text-left border-b">
+              <th className="px-4 py-2 font-medium">SZ WLAN (SSID)</th>
+              <th className="px-2 py-2 font-medium text-right">SZ VLAN</th>
+              <th className="px-2 py-2 font-medium">SZ assigned via</th>
+              <th className="px-2 py-2 font-medium">R1 network (SSID)</th>
+              <th className="px-2 py-2 font-medium text-right">R1 VLAN</th>
+              <th className="px-2 py-2 font-medium">R1 activated on</th>
+              <th className="px-2 py-2 font-medium text-right" title="APs broadcasting it: SZ / R1">APs SZ / R1</th>
+              <th className="px-4 py-2 font-medium">Matched by · notes</th>
+            </tr></thead>
+            <tbody>
+              {wlans.slice(0, PAIR_RENDER_CAP).map(w => {
+                const vlanOff = w.r1_network_id && w.sz_vlan != null && w.r1_vlan != null && w.sz_vlan !== w.r1_vlan;
+                const apOff = w.r1_network_id && w.sz_ap_count != null && w.r1_ap_count != null && w.sz_ap_count !== w.r1_ap_count;
+                return (
+                  <tr key={w.sz_wlan_id} className="border-b border-gray-100 align-top">
+                    <td className="px-4 py-1.5">{w.sz_name}<div className="text-gray-400">{w.sz_ssid}</div></td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${vlanOff ? 'text-red-700 font-semibold' : ''}`}>{w.sz_vlan ?? '—'}</td>
+                    <td className="px-2 py-1.5 text-gray-600"><Lines items={w.sz_assigned} /></td>
+                    <td className={`px-2 py-1.5 ${!w.r1_network_id ? 'text-red-600' : !w.activated_in_venue ? 'text-amber-700' : ''}`}>
+                      {w.r1_network_id ? <>{w.r1_name}<div className="text-gray-400">{w.r1_ssid}</div></> : 'not found'}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${vlanOff ? 'text-red-700 font-semibold' : ''}`}>
+                      {w.r1_network_id ? (w.r1_vlan ?? '—') : '—'}
+                    </td>
+                    <td className={`px-2 py-1.5 ${w.r1_all_ap_groups ? 'text-gray-700 font-medium' : 'text-gray-600'}`}>
+                      <Lines items={w.r1_activated} />
+                    </td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${apOff ? 'text-amber-700' : 'text-gray-500'}`}>
+                      {w.sz_ap_count ?? '—'} / {w.r1_network_id ? (w.r1_ap_count ?? '—') : '—'}
+                    </td>
+                    <td className="px-4 py-1.5 text-gray-500">
+                      <span className={w.method === 'ssid' || w.method === 'name_case' ? 'text-amber-700' : ''}>{METHOD_LABEL[w.method]}</span>
+                      {w.notes.length > 0 && <div>{w.notes.join('; ')}</div>}
+                    </td>
+                  </tr>
+                );
+              })}
               {matching.r1_only_networks.map(n => (
                 <tr key={n.id} className="border-b border-gray-100 text-purple-700">
                   <td className="px-4 py-1.5 text-gray-400">—</td>

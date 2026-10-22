@@ -764,6 +764,16 @@ function NetworkRow({ item }: { item: NetworkAuditItem }) {
         <span className="text-gray-400 w-32 truncate">{item.sz_ssid}</span>
         <span className="text-gray-500 w-28 text-xs">{item.sz_auth_type}</span>
         <span className="text-gray-500 w-16 text-xs">{item.expected_r1_type}</span>
+        {/* Default VLAN on the WLAN itself -- worth seeing without expanding */}
+        <span
+          className={`w-28 text-xs tabular-nums ${
+            item.actual_r1_id && item.sz_vlan_id != null && item.actual_r1_vlan != null &&
+            Number(item.sz_vlan_id) !== Number(item.actual_r1_vlan) ? 'text-red-700 font-semibold' : 'text-gray-500'
+          }`}
+          title="Default VLAN: SZ → R1"
+        >
+          VLAN {item.sz_vlan_id ?? '—'} → {item.actual_r1_id ? (item.actual_r1_vlan ?? '—') : '—'}
+        </span>
         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${cfg.bg} ${cfg.color}`}>
           {cfg.label.toUpperCase()}
         </span>

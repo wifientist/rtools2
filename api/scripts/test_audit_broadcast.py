@@ -90,7 +90,7 @@ def inventory():
     nets = [
         {"id": "n-prop", "name": "Prop", "ssid": "Prop", "apCount": 5,
          "venueApGroups": [{"venueId": "v", "apGroupIds": ["g-01", "g-02", "g-def"], "isAllApGroups": False}]},
-        {"id": "n-101", "name": "U101", "ssid": "U101",
+        {"id": "n-101", "name": "U101", "ssid": "U101", "vlan": 101,
          "venueApGroups": [{"venueId": "v", "apGroupIds": ["g-01"], "isAllApGroups": False}]},
         {"id": "n-102", "name": "U102", "ssid": "U102",
          "venueApGroups": [{"venueId": "v", "apGroupIds": ["g-02"], "isAllApGroups": False}]},
@@ -113,7 +113,9 @@ def inventory():
 def main():
     failures = 0
     print("Audit broadcast model (checkpoint 2)")
-    report = run_audit(snapshot(), inventory(), "sz", "r1", r1_network_details={})
+    snap = snapshot()
+    snap.wlans[1].vlan_id = 101   # U101
+    report = run_audit(snap, inventory(), "sz", "r1", r1_network_details={})
     bc = report.broadcast
     ap = {a.name: a for a in bc.aps}
 
@@ -163,6 +165,25 @@ def main():
     scopes = {b["label"]: b["sz"] for b in sc["wlans"].breakdown}
     failures += check("property-wide vs per-unit decided per AP",
                       scopes.get("Property-wide") == 1 and scopes.get("Per-unit") == 2, str(sc["wlans"].breakdown))
+
+    # 9. where each WLAN is assigned / activated (pairing view)
+    w = {m.sz_ssid: m for m in report.matching.wlans}
+    failures += check("SZ paths for a unit WLAN: zone default + AP override",
+                      w["U101"].sz_assigned == ["Zone-wide: 2.4/5 GHz (WLAN Group 'default')",
+                                               "AP override on 3 APs: 2.4/5 GHz (WLAN Group 'wg-101')"], str(w["U101"].sz_assigned))
+    failures += check("SZ paths include an AP Group override",
+                      "AP Group 'default': 5 GHz (WLAN Group 'wg-prop')" in w["Prop"].sz_assigned, str(w["Prop"].sz_assigned))
+    failures += check("R1 specific-group activation with AP count",
+                      w["U101"].r1_activated == ["AP Group '01' (4 APs)"] and not w["U101"].r1_all_ap_groups)
+    failures += check("AP counts each side", (w["U101"].sz_ap_count, w["U101"].r1_ap_count) == (5, 4))
+    failures += check("default VLAN each side", (w["U101"].sz_vlan, w["U101"].r1_vlan) == (101, 101))
+    wg = {g.name: g for g in report.matching.wlan_groups}
+    failures += check("WLAN Group usage: zone bands, AP Group, AP overrides",
+                      wg["default"].zone_bands == ["2.4", "5"] and wg["wg-prop"].ap_groups == {"default": ["5"]}
+                      and wg["wg-101"].ap_override_total == 3 and wg["wg-101"].ap_override_counts.get("2.4") == 3,
+                      str(wg["wg-101"]))
+    failures += check("R1 groups carrying every SSID of a WLAN Group", wg["wg-101"].r1_groups_carrying_all == ["01"],
+                      str(wg["wg-101"].r1_groups_carrying_all))
 
     print(f"\n{'FAILED' if failures else 'All checks passed'}"
           f"{f' ({failures})' if failures else ''}")

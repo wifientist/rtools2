@@ -194,6 +194,17 @@ class WlanMatch(BaseModel):
     r1_name: Optional[str] = None
     r1_ssid: Optional[str] = None
     method: MatchMethod = MatchMethod.NONE
+    # Where each side assigns it (one line per path), and how many APs end up
+    # broadcasting it (from the per-AP broadcast model)
+    sz_assigned: List[str] = Field(default_factory=list)
+    r1_activated: List[str] = Field(default_factory=list)
+    r1_all_ap_groups: bool = False
+    # Default VLAN on the WLAN itself, each side (WLAN Group / per-AP-Group
+    # VLAN overrides are compared separately)
+    sz_vlan: Optional[int] = None
+    r1_vlan: Optional[int] = None
+    sz_ap_count: Optional[int] = None
+    r1_ap_count: Optional[int] = None
     # Found in the tenant but not activated in this venue
     activated_in_venue: bool = False
     notes: List[str] = Field(default_factory=list)
@@ -234,10 +245,25 @@ class ApMatch(BaseModel):
     r1_serial: Optional[str] = None
 
 
+class WlanGroupUsage(BaseModel):
+    """An SZ WLAN Group: its SSIDs, every place it's applied, and its R1 counterpart."""
+    id: str
+    name: str
+    ssids: List[str] = Field(default_factory=list)
+    zone_bands: List[str] = Field(default_factory=list)            # zone-wide on these radios
+    ap_groups: Dict[str, List[str]] = Field(default_factory=dict)  # AP Group -> radios
+    ap_override_counts: Dict[str, int] = Field(default_factory=dict)  # radio -> APs overridden to it
+    ap_override_total: int = 0
+    ap_override_sample: List[str] = Field(default_factory=list)
+    # R1 AP Groups whose activations carry every SSID in this WLAN Group
+    r1_groups_carrying_all: List[str] = Field(default_factory=list)
+
+
 class AuditMatching(BaseModel):
     """Checkpoint 1: what pairs with what, before any setting is compared."""
     wlans: List[WlanMatch] = Field(default_factory=list)
     r1_only_networks: List[Dict[str, Any]] = Field(default_factory=list)
+    wlan_groups: List[WlanGroupUsage] = Field(default_factory=list)
     ap_groups: List[ApGroupMatch] = Field(default_factory=list)
     r1_only_ap_groups: List[Dict[str, Any]] = Field(default_factory=list)
     aps: List[ApMatch] = Field(default_factory=list)
@@ -272,6 +298,8 @@ class ApBroadcast(BaseModel):
     presence: str = "in_both"            # in_both | sz_only | r1_only
     sz_ssids: List[str] = Field(default_factory=list)
     r1_ssids: List[str] = Field(default_factory=list)
+    # Of r1_ssids, those reaching this AP via an All-AP-Groups activation
+    r1_via_all_ap_groups: List[str] = Field(default_factory=list)
     missing_in_r1: List[str] = Field(default_factory=list)
     extra_in_r1: List[str] = Field(default_factory=list)
     # match | differs | pending (not in R1 yet) | r1_only | unknown (SZ overrides unreadable)

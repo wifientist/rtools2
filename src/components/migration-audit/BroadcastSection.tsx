@@ -12,9 +12,10 @@ const AP_STATUS: Record<ApBroadcast['status'], { label: string; cls: string }> =
   r1_only: { label: 'R1 only',           cls: 'text-purple-700' },
 };
 
+// One SSID per line -- easier to scan than a comma list.
 function List({ items, cls = '' }: { items: string[]; cls?: string }) {
   if (!items.length) return <span className="text-gray-300">—</span>;
-  return <span className={cls}>{items.join(', ')}</span>;
+  return <div className={cls}>{items.map((s, i) => <div key={i}>{s}</div>)}</div>;
 }
 
 export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
@@ -99,12 +100,12 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
                     <td className="px-2 py-1.5">
                       <List items={a.sz_ssids} />
                       {a.sz_sources.length > 0 && (
-                        <div className="text-[11px] text-gray-400 mt-0.5">{a.sz_sources.join(' · ')}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">{a.sz_sources.map((s, i) => <div key={i}>{s}</div>)}</div>
                       )}
                     </td>
                     <td className="px-2 py-1.5">
                       <div className="text-gray-500">{a.r1_ap_group ?? '—'}</div>
-                      <List items={a.r1_ssids} />
+                      <List items={a.r1_ssids.map(s => (a.r1_via_all_ap_groups ?? []).includes(s) ? `${s}  (All AP Groups)` : s)} />
                     </td>
                     <td className="px-2 py-1.5"><List items={a.missing_in_r1} cls="text-red-600" /></td>
                     <td className="px-2 py-1.5"><List items={a.extra_in_r1} cls="text-purple-700" /></td>
