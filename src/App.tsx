@@ -39,7 +39,10 @@ import SpeedExplainer from "@/pages/SpeedExplainer";
 import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathImport from "@/pages/CloudpathImport";
-import APRegroup from "@/pages/APRegroup";
+import WlanActivator from "@/pages/WlanActivator";
+import WlanVlan from "@/pages/WlanVlan";
+import WlanGrabber from "@/pages/WlanGrabber";
+import ApgCleanup from "@/pages/ApgCleanup";
 import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
 import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
 import MigrationAudit from "@/pages/MigrationAudit";
@@ -93,7 +96,9 @@ const App = () => {
           <Route path="/pop-swap" element={<AlphaRoute element={<APPopAndSwap />} />} />
           <Route path="/bulk-ap-tagging" element={<BetaRoute element={<BulkAPTagging />} />} />
           <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />
-          <Route path="/ap-regroup" element={<ProtectedRoute element={<APRegroup />} />} />
+          {/* AP Regroup folded into APG Cleanup (2026-10-22); page kept in src/pages/APRegroup.tsx */}
+          <Route path="/ap-regroup" element={<Navigate to="/apg-cleanup" />} />
+          <Route path="/wlan-activator" element={<BetaRoute element={<WlanActivator />} />} />
           <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />
@@ -107,6 +112,9 @@ const App = () => {
           <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
           <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
           <Route path="/migration-audit" element={<AlphaRoute element={<MigrationAudit />} />} />
+          <Route path="/wlan-vlan" element={<BetaRoute element={<WlanVlan />} />} />
+          <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
+          <Route path="/apg-cleanup" element={<BetaRoute element={<ApgCleanup />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/dfs-blacklist" element={<AlphaRoute element={<DfsBlacklist />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />

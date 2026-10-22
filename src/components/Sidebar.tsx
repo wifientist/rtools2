@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, ArrowLeftRight, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2 } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, ArrowLeftRight, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -78,13 +78,16 @@ const Sidebar = () => {
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"] },
-        { to: "/ap-regroup", icon: <Key size={20} />, label: "AP Regroup", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/wlan-activator", icon: <Radio size={20} />, label: "WLAN Activator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/wlan-vlan", icon: <Layers size={20} />, label: "WLAN VLAN", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/wlan-grabber", icon: <Import size={20} />, label: "WLAN Grabber", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/bulk-wlan-delete", icon: <Trash2 size={20} />, label: "Bulk WLAN Delete", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/apg-cleanup", icon: <Boxes size={20} />, label: "APG Cleanup", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/bulk-ap-tagging", icon: <Tag size={20} />, label: "Bulk AP Tagging", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"] },
-        { to: "/bulk-wlan-delete", icon: <Trash2 size={20} />, label: "Bulk WLAN Delete", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/pop-swap", icon: <ArrowLeftRight size={20} />, label: "Pop and Swap", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, requiresDanger: true },
         { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
