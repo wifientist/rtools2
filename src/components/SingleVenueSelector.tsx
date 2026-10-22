@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { matchesSnippet } from "@/utils/textMatch";
 import { useSingleVenue } from "@/hooks/useSingleVenue";
 import { useApGroups } from "@/hooks/useApGroups";
 import {
@@ -17,6 +18,9 @@ interface SingleVenueSelectorProps {
   onApGroupChange?: (apGroup: string) => void;
   selectedVenueId?: string | null;
   selectedApGroup?: string;
+  // Search text inherited from the page; narrows the list when it matches
+  // anything, otherwise the full list stays visible.
+  filter?: string;
 }
 
 export default function SingleVenueSelector({
@@ -25,7 +29,8 @@ export default function SingleVenueSelector({
   onVenueSelect,
   onApGroupChange,
   selectedVenueId,
-  selectedApGroup = "Default"
+  selectedApGroup = "Default",
+  filter
 }: SingleVenueSelectorProps) {
   const { venueData, loading, error } = useSingleVenue(controllerId, tenantId);
   // Only fetch AP groups if the callback is provided (avoids unnecessary API calls)
@@ -34,6 +39,12 @@ export default function SingleVenueSelector({
     onApGroupChange ? tenantId : null
   );
   const [globalFilter, setGlobalFilter] = useState("");
+
+  useEffect(() => {
+    if (filter === undefined) return;
+    const q = filter.trim();
+    setGlobalFilter(q && venueData.some((r: any) => matchesSnippet(Object.values(r).join(" "), q)) ? q : "");
+  }, [filter, venueData]);
 
   // Filter AP groups to only show those belonging to the selected venue
   const filteredApGroups = selectedVenueId
@@ -98,10 +109,7 @@ export default function SingleVenueSelector({
       globalFilter
     },
     globalFilterFn: (row, columnId, filterValue) => {
-      const searchString = Object.values(row.original)
-        .join(" ")
-        .toLowerCase();
-      return searchString.includes(filterValue.toLowerCase());
+      return matchesSnippet(Object.values(row.original).join(" "), filterValue);
     },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),

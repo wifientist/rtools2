@@ -4,11 +4,10 @@ import { useAuth } from '@/context/AuthContext';
 import {
   AlertCircle, Server, Target, ArrowRight, Loader2, SearchCheck,
   CheckCircle, AlertTriangle, XCircle, Plus, Ban,
-  ChevronDown, ChevronRight, Wifi, Shield, Key, Users, History, Zap,
+  ChevronDown, ChevronRight, Wifi, Shield, Key, Users, Search,
 } from 'lucide-react';
-import { apiFetch, apiPost } from '@/utils/api';
-import SmartZoneDomainSelector from '@/components/SmartZoneDomainSelector';
-import SmartZoneZoneSelector from '@/components/SmartZoneZoneSelector';
+import { apiPost } from '@/utils/api';
+import SzZonePicker from '@/components/migration-audit/SzZonePicker';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
 import { Scorecard, VenueSettingsSection, MatchingSection, OverviewTable } from '@/components/migration-audit/AlignmentSections';
@@ -32,26 +31,7 @@ const STATUS_CONFIG: Record<AuditStatus, { label: string; color: string; bg: str
   unsupported: { label: 'Unsupported', color: 'text-gray-500',   bg: 'bg-gray-50 border-gray-200',    icon: Ban },
 };
 
-// ── Session type ─────────────────────────────────────────────────
-
-interface SessionInfo {
-  id: number;
-  status: string;
-  sz_controller_id: number | null;
-  sz_zone_id: string | null;
-  sz_zone_name: string | null;
-  r1_controller_id: number | null;
-  r1_tenant_id: string | null;
-  r1_venue_id: string | null;
-  r1_venue_name: string | null;
-  extraction_job_id: string | null;
-  wlan_count: number | null;
-  updated_at: string;
-}
-
 // ── Page Component ───────────────────────────────────────────────
-
-type AuditMode = 'fresh' | 'sessions';
 
 export default function MigrationAudit() {
   const {
@@ -77,10 +57,8 @@ export default function MigrationAudit() {
   const secondaryControllerSubtype = r1Slot?.subtype ?? null;
 
   const [searchParams] = useSearchParams();
-  const [mode, setMode] = useState<AuditMode>('fresh');
-
-  // Fresh audit inputs
-  const [domainId, setDomainId] = useState<string | null>(null);
+  // One search box; the zone and venue pickers both follow it
+  const [siteSearch, setSiteSearch] = useState('');
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [zoneName, setZoneName] = useState<string | null>(null);
   const [ecId, setEcId] = useState<string | null>(null);
@@ -91,10 +69,6 @@ export default function MigrationAudit() {
   const [refreshSz, setRefreshSz] = useState(false);
   const [refreshR1, setRefreshR1] = useState(false);
   const [cacheReload, setCacheReload] = useState(0);
-
-  // Session list
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
 
   // Execution
   const [running, setRunning] = useState(false);
@@ -111,30 +85,6 @@ export default function MigrationAudit() {
 
   // Fresh audit ready check
   const freshReady = szReady && r1Ready && zoneId && venueId && (!isMSP || ecId);
-
-  // ── Fetch sessions on mount ──
-  useEffect(() => {
-    if (szReady && r1Ready) {
-      fetchSessions();
-    }
-  }, [activeControllerId, secondaryControllerId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchSessions = async () => {
-    setSessionsLoading(true);
-    try {
-      const res = await apiFetch(
-        `${API_URL}/sz-migration/sessions?status=completed&sz_controller_id=${activeControllerId}&r1_controller_id=${secondaryControllerId}&limit=10`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-      }
-    } catch {
-      // Non-critical
-    } finally {
-      setSessionsLoading(false);
-    }
-  };
 
   // ── URL param quick-launch ──
   useEffect(() => {
@@ -231,17 +181,6 @@ export default function MigrationAudit() {
     });
   };
 
-  // ── Session audit handler ──
-  const handleSessionAudit = (session: SessionInfo) => {
-    runAudit({
-      szSnapshotJobId: session.extraction_job_id || undefined,
-      szControllerId: session.sz_controller_id || undefined,
-      zoneId: session.sz_zone_id || undefined,
-      venueId: session.r1_venue_id || undefined,
-      tenantId: session.r1_tenant_id,
-    });
-  };
-
   return (
     <div className="p-4 max-w-6xl mx-auto">
       {/* Header */}
@@ -284,196 +223,111 @@ export default function MigrationAudit() {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 mb-4">
-            <button
-              onClick={() => setMode('fresh')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-sm font-medium border border-b-0 transition ${
-                mode === 'fresh'
-                  ? 'bg-white text-indigo-700 border-gray-200'
-                  : 'bg-gray-100 text-gray-500 border-transparent hover:text-gray-700'
-              }`}
-            >
-              <Zap size={14} /> Fresh Audit
-            </button>
-            <button
-              onClick={() => setMode('sessions')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-sm font-medium border border-b-0 transition ${
-                mode === 'sessions'
-                  ? 'bg-white text-indigo-700 border-gray-200'
-                  : 'bg-gray-100 text-gray-500 border-transparent hover:text-gray-700'
-              }`}
-            >
-              <History size={14} /> From Session
-              {sessions.length > 0 && (
-                <span className="bg-gray-200 text-gray-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {sessions.length}
-                </span>
-              )}
-            </button>
+          <div className="relative mb-3">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={siteSearch}
+              onChange={e => setSiteSearch(e.target.value)}
+              placeholder="Find a site — type part of the zone / venue name (e.g. kessler)"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              autoFocus
+            />
           </div>
 
-          {/* Fresh Audit Tab */}
-          {mode === 'fresh' && (
-            <div className="bg-white border border-gray-200 rounded-lg rounded-tl-none p-4 mb-6">
-              <div className="space-y-5">
-                {/* SZ Source */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Server size={14} className="text-blue-600" /> SZ Source
-                  </h3>
-                  <div className="space-y-3">
-                    <SmartZoneDomainSelector
-                      controllerId={activeControllerId}
-                      onDomainSelect={(id) => {
-                        setDomainId(id);
-                        setZoneId(null);
-                        setZoneName(null);
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <div className="space-y-5">
+              {/* SZ Source */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                  <Server size={14} className="text-blue-600" /> SZ Source
+                </h3>
+                <div className="space-y-3">
+                  <SzZonePicker
+                    controllerId={activeControllerId}
+                    filter={siteSearch}
+                    selectedZoneId={zoneId}
+                    onZoneSelect={(id, name) => {
+                      setZoneId(id);
+                      setZoneName(name);
+                    }}
+                    disabled={running}
+                  />
+                  {zoneName && (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
+                      Zone: <span className="font-medium text-gray-700">{zoneName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* R1 Destination */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                  <Target size={14} className="text-green-600" /> R1 Destination
+                </h3>
+                <div className="space-y-3">
+                  {isMSP && (
+                    <SingleEcSelector
+                      controllerId={secondaryControllerId}
+                      onEcSelect={(id) => {
+                        setEcId(id);
+                        setVenueId(null);
+                        setVenueName(null);
                       }}
-                      disabled={running}
+                      selectedEcId={ecId}
+                      filter={siteSearch}
                     />
-                    {domainId && (
-                      <SmartZoneZoneSelector
-                        controllerId={activeControllerId}
-                        domainId={domainId}
-                        onZoneSelect={(id, name) => {
-                          setZoneId(id);
-                          setZoneName(name);
-                        }}
-                        disabled={running}
-                      />
-                    )}
-                    {zoneName && (
-                      <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
-                        Zone: <span className="font-medium text-gray-700">{zoneName}</span>
-                      </div>
-                    )}
-                  </div>
+                  )}
+                  {(!isMSP || ecId) && (
+                    <SingleVenueSelector
+                      controllerId={secondaryControllerId}
+                      tenantId={effectiveTenantId}
+                      onVenueSelect={(id, venue) => {
+                        setVenueId(id);
+                        setVenueName(venue?.name || venue?.venueName || id);
+                      }}
+                      selectedVenueId={venueId}
+                      filter={siteSearch}
+                    />
+                  )}
+                  {venueName && (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
+                      Venue: <span className="font-medium text-gray-700">{venueName}</span>
+                    </div>
+                  )}
                 </div>
-
-                {/* R1 Destination */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Target size={14} className="text-green-600" /> R1 Destination
-                  </h3>
-                  <div className="space-y-3">
-                    {isMSP && (
-                      <SingleEcSelector
-                        controllerId={secondaryControllerId}
-                        onEcSelect={(id) => {
-                          setEcId(id);
-                          setVenueId(null);
-                          setVenueName(null);
-                        }}
-                        selectedEcId={ecId}
-                      />
-                    )}
-                    {(!isMSP || ecId) && (
-                      <SingleVenueSelector
-                        controllerId={secondaryControllerId}
-                        tenantId={effectiveTenantId}
-                        onVenueSelect={(id, venue) => {
-                          setVenueId(id);
-                          setVenueName(venue?.name || venue?.venueName || id);
-                        }}
-                        selectedVenueId={venueId}
-                      />
-                    )}
-                    {venueName && (
-                      <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
-                        Venue: <span className="font-medium text-gray-700">{venueName}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <CachePanel
-                szControllerId={activeControllerId}
-                zoneId={zoneId}
-                r1ControllerId={secondaryControllerId}
-                venueId={venueId}
-                tenantId={effectiveTenantId}
-                refreshSz={refreshSz}
-                refreshR1={refreshR1}
-                onRefreshSz={setRefreshSz}
-                onRefreshR1={setRefreshR1}
-                reloadKey={cacheReload}
-              />
-
-              <div className="mt-4 flex items-center gap-3 pt-3 border-t border-gray-100">
-                <button
-                  onClick={handleFreshAudit}
-                  disabled={!freshReady || running}
-                  className="px-5 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-                >
-                  {running ? <Loader2 size={14} className="animate-spin" /> : <SearchCheck size={14} />}
-                  {running ? 'Running Audit...' : 'Run Audit'}
-                </button>
-                {error && (
-                  <span className="text-sm text-red-600 flex items-center gap-1">
-                    <AlertCircle size={14} /> {error}
-                  </span>
-                )}
               </div>
             </div>
-          )}
 
-          {/* From Session Tab */}
-          {mode === 'sessions' && (
-            <div className="bg-white border border-gray-200 rounded-lg rounded-tl-none p-4 mb-6">
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
-                  <Loader2 size={16} className="animate-spin" /> Loading sessions...
-                </div>
-              ) : sessions.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">
-                  No completed migration sessions for this controller pair.
-                </div>
-              ) : (
-                <div className="overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 text-xs border-b">
-                        <th className="py-2 px-3">SZ Zone</th>
-                        <th className="py-2 px-3">R1 Venue</th>
-                        <th className="py-2 px-3">WLANs</th>
-                        <th className="py-2 px-3">Date</th>
-                        <th className="py-2 px-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {sessions.map(s => (
-                        <tr key={s.id} className="hover:bg-gray-50">
-                          <td className="py-2.5 px-3 font-medium">{s.sz_zone_name || '—'}</td>
-                          <td className="py-2.5 px-3">{s.r1_venue_name || '—'}</td>
-                          <td className="py-2.5 px-3 text-gray-500">{s.wlan_count ?? '—'}</td>
-                          <td className="py-2.5 px-3 text-gray-400 text-xs">
-                            {s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <button
-                              onClick={() => handleSessionAudit(s)}
-                              disabled={running}
-                              className="px-3 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1"
-                            >
-                              {running ? <Loader2 size={10} className="animate-spin" /> : <SearchCheck size={10} />}
-                              Audit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+            <CachePanel
+              szControllerId={activeControllerId}
+              zoneId={zoneId}
+              r1ControllerId={secondaryControllerId}
+              venueId={venueId}
+              tenantId={effectiveTenantId}
+              refreshSz={refreshSz}
+              refreshR1={refreshR1}
+              onRefreshSz={setRefreshSz}
+              onRefreshR1={setRefreshR1}
+              reloadKey={cacheReload}
+            />
+
+            <div className="mt-4 flex items-center gap-3 pt-3 border-t border-gray-100">
+              <button
+                onClick={handleFreshAudit}
+                disabled={!freshReady || running}
+                className="px-5 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
+              >
+                {running ? <Loader2 size={14} className="animate-spin" /> : <SearchCheck size={14} />}
+                {running ? 'Running Audit...' : 'Run Audit'}
+              </button>
               {error && (
-                <div className="mt-3 text-sm text-red-600 flex items-center gap-1">
+                <span className="text-sm text-red-600 flex items-center gap-1">
                   <AlertCircle size={14} /> {error}
-                </div>
+                </span>
               )}
             </div>
-          )}
+          </div>
 
           {/* Loading overlay */}
           {running && !report && (
