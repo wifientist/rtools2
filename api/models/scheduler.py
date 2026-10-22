@@ -14,17 +14,17 @@ class ScheduledJob(Base):
     """
     Persistent scheduled job configuration.
 
-    Jobs are registered by features (like DPSK Orchestrator) and executed
+    Jobs are registered by features (like Data Studio Export) and executed
     by the scheduler service at configured intervals.
     """
     __tablename__ = "scheduled_jobs"
 
-    id = Column(String, primary_key=True)              # Unique job ID (e.g., "orchestrator_123_sync")
+    id = Column(String, primary_key=True)              # Unique job ID (e.g., "redis_index_cleanup")
     name = Column(String, nullable=False)              # Human-readable name
     description = Column(String, nullable=True)
 
     # Job target (what to call)
-    callable_path = Column(String, nullable=False)     # e.g., "api.routers.orchestrator.sync_engine:run_sync"
+    callable_path = Column(String, nullable=False)     # e.g., "jobs.redis_cleanup_job:run_cleanup"
     callable_kwargs = Column(JSON, default=dict)       # Arguments to pass to the callable
 
     # Trigger configuration
@@ -36,7 +36,7 @@ class ScheduledJob(Base):
     paused = Column(Boolean, default=False)
 
     # Ownership (for filtering by feature)
-    owner_type = Column(String, nullable=True)         # e.g., "orchestrator", "cleanup", etc.
+    owner_type = Column(String, nullable=True)         # e.g., "data_studio", "system", etc.
     owner_id = Column(String, nullable=True)           # ID of the owning entity
 
     # Metadata

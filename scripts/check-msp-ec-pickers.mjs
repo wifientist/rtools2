@@ -36,7 +36,7 @@ const NULL_ON_MSP =
 
 // Pages that scope work to one tenant and must offer a way to pick it.
 const MUST_OFFER_EC = [
-  "APPopAndSwap.tsx", "APPortConfig.tsx", "APRegroup.tsx", "APRename.tsx",
+  "APPortConfig.tsx", "APRegroup.tsx", "APRename.tsx",
   "BulkAPTagging.tsx", "BulkWlanEdit.tsx", "CloudpathImport.tsx",
   "DangerZone.tsx", "PerUnitSSID.tsx", "Topology.tsx", "WiredWiz.tsx",
 ];

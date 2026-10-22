@@ -2482,7 +2482,7 @@ class VenueService:
             response.raise_for_status()
             return None
 
-    # ========== Pop and Swap: AP Settings GET/PUT Methods ==========
+    # ========== AP Settings GET/PUT Methods ==========
 
     async def _get_ap_setting(self, tenant_id: str, venue_id: str, serial_number: str, setting_path: str):
         """Generic GET for an AP-level setting endpoint."""
