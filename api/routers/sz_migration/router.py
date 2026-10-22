@@ -46,7 +46,7 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_user
-from decorators import require_alpha
+from decorators import require_alpha, require_beta
 from models.user import User
 from models.controller import Controller
 from models.sz_migration_session import SZMigrationSession
@@ -65,6 +65,12 @@ from services.sz_migration.dpsk_choices import (
     default_plan, load_r1_dpsk,
 )
 from services.sz_migration.auditor import run_audit as run_migration_audit
+from services.sz_migration.auth_probe import collect_auth_facts
+from services.sz_migration.venue_settings import fetch_r1_venue_settings
+from services.sz_migration import audit_cache
+from services.sz_migration.audit_redaction import (
+    CredentialLeakError, assert_clean, collect_secrets, scrub_report,
+)
 from services.r1_inventory import capture_venue_inventory
 from schemas.sz_migration import SZMigrationSnapshot, ResolverResult
 from schemas.r1_inventory import R1VenueInventory
@@ -169,6 +175,63 @@ async def _get_snapshot_raw(job_id: str) -> Optional[str]:
     redis = await get_redis_client()
     key = f"{EXTRACTION_KEY_PREFIX}:{job_id}:snapshot"
     return await redis.get(key)
+
+
+# ── Snapshot ownership ───────────────────────────────────────────────
+#
+# Snapshots (SZ extractions, R1 inventories) are addressed by job id, and
+# until now any logged-in user holding an id could read one -- including the
+# raw SZ extraction. Job ids travel (URLs, screenshots), so each snapshot
+# now records the user who created it, and every job-id endpoint checks it.
+# Someone else's snapshot is a 404, so its existence isn't confirmed.
+
+def _owner_key(kind: str, job_id: str) -> str:
+    return f"sz_migration:owner:{kind}:{job_id}"
+
+
+async def _record_owner(kind: str, job_id: str, user_id: int) -> None:
+    redis = await get_redis_client()
+    await redis.set(_owner_key(kind, job_id), str(user_id), ex=SNAPSHOT_TTL)
+
+
+async def _require_owner(kind: str, job_id: str, user: User, db: Session) -> None:
+    """
+    kind: "sz" (extraction job: state + snapshot) or "r1" (R1 inventory snapshot).
+
+    Snapshots written before ownership was recorded fall back to the user's
+    own migration sessions, which already tie job ids to a user -- so an
+    in-progress wizard isn't locked out by the upgrade.
+    """
+    redis = await get_redis_client()
+    owner = await redis.get(_owner_key(kind, job_id))
+    if owner is not None:
+        if owner == str(user.id):
+            return
+    else:
+        # Older snapshots: the creating endpoints already kept a per-user job index...
+        prefix = EXTRACTION_KEY_PREFIX if kind == "sz" else R1_SNAPSHOT_KEY_PREFIX
+        if await redis.zscore(f"{prefix}:user:{user.id}:jobs", job_id) is not None:
+            return
+        # ...and migration sessions tie job ids to their user.
+        column = (SZMigrationSession.extraction_job_id if kind == "sz"
+                  else SZMigrationSession.r1_snapshot_job_id)
+        if db.query(SZMigrationSession).filter(
+            SZMigrationSession.user_id == user.id, column == job_id,
+        ).first():
+            return
+    raise HTTPException(status_code=404, detail="Snapshot not found or expired")
+
+
+async def _require_job_owner(job, user: User) -> None:
+    """Migration workflow jobs: only their creator may read, confirm or graph them."""
+    if job is None or getattr(job, "user_id", None) != user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+
+def _redacted_snapshot_json(raw: str) -> str:
+    """Snapshot JSON for the browser or a download: passphrases become keyed
+    fingerprints, other credentials a marker -- never the values."""
+    return json.dumps(audit_cache.strip_credentials(json.loads(raw)))
 
 
 async def _publish_progress(job_id: str, phase: str, message: str, data: Dict[str, Any]):
@@ -309,6 +372,7 @@ async def start_extraction(
         raise HTTPException(status_code=400, detail="Controller must be SmartZone")
 
     job_id = str(uuid.uuid4())
+    await _record_owner("sz", job_id, current_user.id)
 
     # Save initial state
     await _save_extraction_state(job_id, {
@@ -345,8 +409,10 @@ async def start_extraction(
 async def get_extraction_status(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Poll extraction progress."""
+    await _require_owner("sz", job_id, current_user, db)
     state = await _get_extraction_state(job_id)
     if not state:
         raise HTTPException(status_code=404, detail="Extraction job not found")
@@ -367,8 +433,10 @@ async def get_extraction_status(
 async def get_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Return the full SZMigrationSnapshot as JSON."""
+    """Return the SZMigrationSnapshot as JSON, credentials redacted."""
+    await _require_owner("sz", job_id, current_user, db)
     raw = await _get_snapshot_raw(job_id)
     if not raw:
         # Check if extraction is still running
@@ -378,7 +446,7 @@ async def get_snapshot(
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
     )
 
@@ -388,8 +456,13 @@ async def get_snapshot(
 async def download_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Download the full SZMigrationSnapshot as a JSON file."""
+    """
+    Download the SZMigrationSnapshot as a JSON file, credentials redacted
+    (passphrases become keyed fingerprints -- still comparable, never readable).
+    """
+    await _require_owner("sz", job_id, current_user, db)
     raw = await _get_snapshot_raw(job_id)
     if not raw:
         state = await _get_extraction_state(job_id)
@@ -410,7 +483,7 @@ async def download_snapshot(
     filename = f"sz_snapshot_{safe_name}_{timestamp}.json"
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -421,11 +494,13 @@ async def download_snapshot(
 async def extraction_sse(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     SSE stream for real-time extraction progress.
     Subscribes to Redis pub/sub for the extraction job.
     """
+    await _require_owner("sz", job_id, current_user, db)
     # Verify job exists
     state = await _get_extraction_state(job_id)
     if not state:
@@ -548,6 +623,7 @@ async def capture_r1_snapshot(
 
     # Persist with a job_id for later retrieval/download
     job_id = str(uuid.uuid4())
+    await _record_owner("r1", job_id, current_user.id)
     await _save_r1_snapshot(job_id, inventory)
 
     # Track in user history
@@ -570,14 +646,16 @@ async def capture_r1_snapshot(
 async def get_r1_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Return the full R1VenueInventory as JSON."""
+    """Return the R1VenueInventory as JSON, credentials redacted."""
+    await _require_owner("r1", job_id, current_user, db)
     raw = await _get_r1_snapshot_raw(job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="R1 snapshot not found")
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
     )
 
@@ -587,8 +665,10 @@ async def get_r1_snapshot(
 async def download_r1_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Download the full R1VenueInventory as a JSON file."""
+    """Download the R1VenueInventory as a JSON file, credentials redacted."""
+    await _require_owner("r1", job_id, current_user, db)
     raw = await _get_r1_snapshot_raw(job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="R1 snapshot not found")
@@ -605,7 +685,7 @@ async def download_r1_snapshot(
     filename = f"r1_snapshot_{safe_name}_{timestamp}.json"
 
     return Response(
-        content=raw,
+        content=_redacted_snapshot_json(raw),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -620,6 +700,7 @@ async def download_r1_snapshot(
 async def resolve_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Resolve WLAN Groups into per-AP-Group activations and map security types.
@@ -627,6 +708,7 @@ async def resolve_snapshot(
     Reads the SZ snapshot from Redis (produced by /extract), runs the resolver
     and mapper, and returns the combined result.
     """
+    await _require_owner("sz", job_id, current_user, db)
     raw = await _get_snapshot_raw(job_id)
     if not raw:
         state = await _get_extraction_state(job_id)
@@ -966,6 +1048,7 @@ async def get_radius_choices(
     Shared secrets are never returned (SZ doesn't expose them, and R1
     profiles are reduced to name/type/ip:port).
     """
+    await _require_owner("sz", sz_snapshot_job_id, current_user, db)
     raw = await _get_snapshot_raw(sz_snapshot_job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
@@ -1016,6 +1099,7 @@ async def get_dpsk_choices(
 
     Counts only -- no passphrase is read or returned.
     """
+    await _require_owner("sz", sz_snapshot_job_id, current_user, db)
     raw = await _get_snapshot_raw(sz_snapshot_job_id)
     if not raw:
         raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
@@ -1068,6 +1152,7 @@ async def create_migration_plan(
     POST /sz-migration/workflow/{job_id}/confirm to start execution.
     """
     # Verify SZ snapshot exists
+    await _require_owner("sz", request.sz_snapshot_job_id, current_user, db)
     raw = await _get_snapshot_raw(request.sz_snapshot_job_id)
     if not raw:
         raise HTTPException(
@@ -1167,6 +1252,7 @@ async def get_migration_plan(
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
     job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -1219,6 +1305,7 @@ async def confirm_migration(
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
     job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -1267,6 +1354,7 @@ async def get_migration_graph(
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
     job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -1391,7 +1479,7 @@ def create_session(
 
 
 @router.get("/sessions", response_model=List[SessionResponse])
-@require_alpha()
+@require_beta()
 def list_sessions(
     status: Optional[str] = None,
     sz_controller_id: Optional[int] = None,
@@ -1596,9 +1684,60 @@ class AuditRequest(BaseModel):
     tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (for MSP controllers)")
     venue_id: Optional[str] = Field(None, description="R1 venue ID (for fresh capture)")
 
+    # Capture cache (7 days, per SZ zone / R1 venue). With use_cache, a side
+    # with a current capture is read from the cache unless its refresh flag
+    # is set; a side without one is captured live and cached.
+    use_cache: bool = True
+    sz_refresh: bool = False
+    r1_refresh: bool = False
+
+
+@router.get("/audit-cache")
+@require_beta()
+async def get_audit_cache_status(
+    sz_controller_id: Optional[int] = None,
+    zone_id: Optional[str] = None,
+    r1_controller_id: Optional[int] = None,
+    venue_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """What the capture cache holds for this zone / venue: age, time left, usable or stale."""
+    resolved_tenant = None
+    if sz_controller_id:
+        validate_controller_access(sz_controller_id, current_user, db)
+    if r1_controller_id:
+        r1c = validate_controller_access(r1_controller_id, current_user, db)
+        resolved_tenant = resolve_tenant_id(r1c, tenant_id)
+    return await audit_cache.status(sz_controller_id, zone_id, r1_controller_id, resolved_tenant, venue_id)
+
+
+@router.delete("/audit-cache")
+@require_beta()
+async def clear_audit_cache(
+    side: Literal["sz", "r1", "both"] = "both",
+    sz_controller_id: Optional[int] = None,
+    zone_id: Optional[str] = None,
+    r1_controller_id: Optional[int] = None,
+    venue_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Drop the cached capture(s) for this zone / venue; the next audit captures live."""
+    keys = []
+    if side in ("sz", "both") and sz_controller_id and zone_id:
+        validate_controller_access(sz_controller_id, current_user, db)
+        keys.append(audit_cache.sz_key(sz_controller_id, zone_id))
+    if side in ("r1", "both") and r1_controller_id and venue_id:
+        r1c = validate_controller_access(r1_controller_id, current_user, db)
+        keys.append(audit_cache.r1_key(r1_controller_id, resolve_tenant_id(r1c, tenant_id), venue_id))
+    return {"cleared": await audit_cache.clear(*keys)}
+
 
 @router.post("/audit")
-@require_alpha()
+@require_beta()
 async def run_audit_endpoint(
     request: AuditRequest,
     current_user: User = Depends(get_current_user),
@@ -1618,9 +1757,14 @@ async def run_audit_endpoint(
     Returns a structured audit report with per-WLAN comparison,
     AP Group coverage, and resource checks.
     """
-    # ── SZ snapshot: load existing or extract inline ──
+    # Where each side's data came from (cache or live), shown on the report.
+    data_sources: Dict[str, Any] = {}
+    snapshot: Optional[SZMigrationSnapshot] = None
+
+    # ── SZ snapshot: existing snapshot, else capture cache, else extract inline ──
     if request.sz_snapshot_job_id:
         # Path A: existing snapshot
+        await _require_owner("sz", request.sz_snapshot_job_id, current_user, db)
         sz_raw = await _get_snapshot_raw(request.sz_snapshot_job_id)
         if not sz_raw:
             state = await _get_extraction_state(request.sz_snapshot_job_id)
@@ -1629,13 +1773,22 @@ async def run_audit_endpoint(
             raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
         snapshot = SZMigrationSnapshot.model_validate_json(sz_raw)
         sz_job_id = request.sz_snapshot_job_id
+        data_sources["sz"] = {"cached": False, "source": "migration snapshot"}
 
     elif request.sz_controller_id and request.zone_id:
-        # Path B: inline extraction
         sz_controller = validate_controller_access(request.sz_controller_id, current_user, db)
         if sz_controller.controller_type != "SmartZone":
             raise HTTPException(status_code=400, detail="SZ controller must be SmartZone")
 
+        # Path B1: capture cache
+        if request.use_cache and not request.sz_refresh:
+            snapshot, sz_meta = await audit_cache.load_sz(request.sz_controller_id, request.zone_id)
+            if snapshot is not None:
+                sz_job_id = f"cache:{audit_cache.sz_key(request.sz_controller_id, request.zone_id)}"
+                data_sources["sz"] = {"cached": True, **(sz_meta or {})}
+
+    if snapshot is None and request.sz_controller_id and request.zone_id and not request.sz_snapshot_job_id:
+        # Path B2: inline extraction (then cached)
         sz_client = create_sz_client_from_controller(request.sz_controller_id, db)
         try:
             await sz_client.login()
@@ -1651,10 +1804,18 @@ async def run_audit_endpoint(
 
         # Cache the snapshot for potential reuse
         sz_job_id = str(uuid.uuid4())
+        await _record_owner("sz", sz_job_id, current_user.id)
         await _save_snapshot(sz_job_id, snapshot)
         logger.info(f"Inline extraction for audit saved as {sz_job_id}: {snapshot.summary()}")
+        data_sources["sz"] = {"cached": False, "captured_at": datetime.utcnow().isoformat() + "Z"}
+        if request.use_cache:
+            try:
+                data_sources["sz"] = {"cached": False, **await audit_cache.save_sz(
+                    request.sz_controller_id, request.zone_id, snapshot)}
+            except Exception as e:
+                logger.warning(f"Could not cache SZ capture: {type(e).__name__}: {e}")
 
-    else:
+    if snapshot is None:
         raise HTTPException(
             status_code=400,
             detail="Provide sz_snapshot_job_id OR (sz_controller_id + zone_id)",
@@ -1662,8 +1823,10 @@ async def run_audit_endpoint(
 
     # ── R1 inventory: load existing or capture fresh ──
     r1_client = None
+    cached_r1: Optional[Dict[str, Any]] = None
     tenant_id = None
     if request.r1_snapshot_job_id:
+        await _require_owner("r1", request.r1_snapshot_job_id, current_user, db)
         r1_raw = await _get_r1_snapshot_raw(request.r1_snapshot_job_id)
         if not r1_raw:
             raise HTTPException(status_code=404, detail="R1 snapshot not found or expired")
@@ -1677,8 +1840,8 @@ async def run_audit_endpoint(
                 tenant_id = resolve_tenant_id(r1_controller, request.tenant_id) if r1_controller else request.tenant_id
             except Exception:
                 pass  # Non-critical — audit works without full details
+        data_sources["r1"] = {"cached": False, "source": "migration snapshot"}
     else:
-        # Capture fresh R1 snapshot
         if not request.r1_controller_id or not request.venue_id:
             raise HTTPException(
                 status_code=400,
@@ -1692,30 +1855,83 @@ async def run_audit_endpoint(
         if r1_controller.controller_subtype == "MSP" and not tenant_id:
             raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 
-        r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
-        try:
-            r1_inventory = await capture_venue_inventory(r1_client, tenant_id, request.venue_id)
-        except Exception as e:
-            logger.exception(f"R1 snapshot failed during audit: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to capture R1 inventory: {e}")
+        # Capture cache: everything the R1 side needs, so a cached run makes no R1 calls
+        bundle, r1_meta = (None, None)
+        if request.use_cache and not request.r1_refresh:
+            bundle, r1_meta = await audit_cache.load_r1(request.r1_controller_id, tenant_id, request.venue_id)
+        if bundle:
+            r1_inventory = R1VenueInventory.model_validate(bundle["inventory"])
+            r1_job_id = f"cache:{audit_cache.r1_key(request.r1_controller_id, tenant_id, request.venue_id)}"
+            cached_r1 = bundle
+            data_sources["r1"] = {"cached": True, **(r1_meta or {})}
+        else:
+            r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
+            try:
+                r1_inventory = await capture_venue_inventory(r1_client, tenant_id, request.venue_id)
+            except Exception as e:
+                logger.exception(f"R1 snapshot failed during audit: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to capture R1 inventory: {e}")
+            r1_job_id = str(uuid.uuid4())
+            await _record_owner("r1", r1_job_id, current_user.id)
+            await _save_r1_snapshot(r1_job_id, r1_inventory)
 
-        r1_job_id = str(uuid.uuid4())
-        await _save_r1_snapshot(r1_job_id, r1_inventory)
-
-    # ── Fetch full R1 network details for deep field comparison ──
     r1_network_details: Dict[str, Dict] = {}
-    if r1_client is not None:
-        for net in r1_inventory.wifi_networks:
-            net_id = net.get("id")
-            if net_id:
+    auth_facts: Optional[Dict[str, Any]] = None
+    r1_venue_settings: Optional[Dict[str, Any]] = None
+
+    if cached_r1 is not None:
+        r1_network_details = cached_r1.get("network_details") or {}
+        auth_facts = cached_r1.get("auth_facts")
+        r1_venue_settings = cached_r1.get("venue_settings")
+    elif r1_client is not None:
+        # ── Full R1 network details for deep field comparison ──
+        # Concurrent and off the event loop: the R1 client is synchronous,
+        # and 600+ sequential GETs both took minutes and blocked the server.
+        sem = asyncio.Semaphore(8)
+
+        async def detail(net_id: str):
+            async with sem:
                 try:
-                    full_detail = await r1_client.networks.get_wifi_network_by_id(
-                        net_id, tenant_id
+                    d = await asyncio.to_thread(
+                        r1_client.get, f"/wifiNetworks/{net_id}",
+                        **({"override_tenant_id": tenant_id} if r1_client.ec_type == "MSP" and tenant_id else {}),
                     )
-                    if full_detail:
-                        r1_network_details[net_id] = full_detail
+                    if d.status_code == 200:
+                        r1_network_details[net_id] = d.json()
                 except Exception as e:
                     logger.debug(f"Could not fetch full detail for R1 network {net_id}: {e}")
+
+        await asyncio.gather(*(detail(n["id"]) for n in r1_inventory.wifi_networks if n.get("id")))
+
+        # ── Auth-path facts: external RADIUS links, DPSK pools, counts ──
+        try:
+            auth_facts = await collect_auth_facts(
+                r1_client, tenant_id,
+                networks=r1_inventory.wifi_networks,
+                identity_groups=r1_inventory.identity_groups,
+            )
+        except Exception as e:
+            logger.exception(f"Auth-path probe failed during audit: {e}")
+
+        # ── Venue-level Wi-Fi settings (as the EC tenant for MSP) ──
+        try:
+            r1_venue_settings = await fetch_r1_venue_settings(r1_client, tenant_id, r1_inventory.venue_id)
+        except Exception as e:
+            logger.exception(f"Venue settings read failed during audit: {e}")
+
+        if not request.r1_snapshot_job_id:
+            data_sources["r1"] = {"cached": False, "captured_at": datetime.utcnow().isoformat() + "Z"}
+            if request.use_cache:
+                try:
+                    data_sources["r1"] = {"cached": False, **await audit_cache.save_r1(
+                        request.r1_controller_id, tenant_id, request.venue_id, {
+                            "inventory": r1_inventory.model_dump(mode="json"),
+                            "network_details": r1_network_details,
+                            "auth_facts": auth_facts,
+                            "venue_settings": r1_venue_settings,
+                        })}
+                except Exception as e:
+                    logger.warning(f"Could not cache R1 capture: {type(e).__name__}: {e}")
 
     # ── Run audit ──
     report = run_migration_audit(
@@ -1724,6 +1940,39 @@ async def run_audit_endpoint(
         sz_snapshot_job_id=sz_job_id,
         r1_snapshot_job_id=r1_job_id,
         r1_network_details=r1_network_details,
+        auth_facts=auth_facts,
+        r1_venue_settings=r1_venue_settings,
     )
+    report.data_sources = data_sources
+    if auth_facts is None:
+        report.warnings.append(
+            "Authentication paths were not audited (no live R1 connection for this run)"
+        )
 
-    return report.model_dump()
+    # ── Credential gate: nothing that is a passphrase or secret leaves ──
+    secrets = collect_secrets(
+        [w.raw for w in snapshot.wlans],
+        [w.encryption for w in snapshot.wlans],
+        [r.raw for r in snapshot.referenced_objects.values()],
+        snapshot.zone.raw,          # mesh passphrase, AP login password
+        r1_network_details,
+        r1_inventory.wifi_networks,
+    )
+    body, withheld = scrub_report(report.model_dump(mode="json"), secrets)
+    if withheld:
+        body["warnings"].append(
+            f"{withheld} value(s) withheld from this report because they matched a "
+            "passphrase or shared secret"
+        )
+    try:
+        assert_clean(body, secrets)
+    except CredentialLeakError as e:
+        # The message names the check, never the value.
+        logger.error(f"Audit report withheld by credential gate: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Audit report withheld: it still contained credential material after "
+                   "scrubbing. This is a bug in the audit, not in your configuration.",
+        )
+
+    return body

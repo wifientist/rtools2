@@ -185,8 +185,14 @@ class R1Client:
             self._authenticate()
             return bool(self.token) and self.token != stale_token
 
-    def _request(self, method, path, payload=None, params=None, override_tenant_id=None):
-        """General request wrapper."""
+    def _request(self, method, path, payload=None, params=None, override_tenant_id=None, accept=None):
+        """
+        General request wrapper.
+
+        accept: a versioned media type (e.g. "application/vnd.ruckus.v1.1+json").
+        Several R1 endpoints only return newer fields under v1.1, and their
+        plain application/json mapping was announced to move on 06/30/2026.
+        """
         url = f"https://{self.host}{path}"
         verbose = os.environ.get('R1_VERBOSE', '').lower() in ('1', 'true', 'yes')
 
@@ -194,6 +200,8 @@ class R1Client:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         }
+        if accept:
+            headers["Accept"] = accept
         if override_tenant_id:
             headers["x-rks-tenantid"] = override_tenant_id
 
@@ -245,8 +253,8 @@ class R1Client:
             return response
 
     # Basic HTTP verbs
-    def get(self, path, params=None, override_tenant_id=None):
-        return self._request("get", path, params=params, override_tenant_id=override_tenant_id)
+    def get(self, path, params=None, override_tenant_id=None, accept=None):
+        return self._request("get", path, params=params, override_tenant_id=override_tenant_id, accept=accept)
 
     def post(self, path, payload=None, params=None, override_tenant_id=None):
         return self._request("post", path, payload=payload, params=params, override_tenant_id=override_tenant_id)

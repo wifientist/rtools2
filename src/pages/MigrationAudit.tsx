@@ -4,16 +4,19 @@ import { useAuth } from '@/context/AuthContext';
 import {
   AlertCircle, Server, Target, ArrowRight, Loader2, SearchCheck,
   CheckCircle, AlertTriangle, XCircle, Plus, Ban,
-  ChevronDown, ChevronRight, Wifi, Shield, Key, Users, History, Zap,
+  ChevronDown, ChevronRight, Wifi, Shield, Key, Users, Search,
 } from 'lucide-react';
-import { apiFetch, apiPost } from '@/utils/api';
-import SmartZoneDomainSelector from '@/components/SmartZoneDomainSelector';
-import SmartZoneZoneSelector from '@/components/SmartZoneZoneSelector';
+import { apiPost } from '@/utils/api';
+import SzZonePicker from '@/components/migration-audit/SzZonePicker';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
+import { Scorecard, VenueSettingsSection, MatchingSection, OverviewTable } from '@/components/migration-audit/AlignmentSections';
+import BroadcastSection from '@/components/migration-audit/BroadcastSection';
+import CachePanel, { ago } from '@/components/migration-audit/CachePanel';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
   FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
+  AuthPathAudit, AuthPath, RadiusServerCheck,
 } from '@/types/migrationAudit';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -28,48 +31,44 @@ const STATUS_CONFIG: Record<AuditStatus, { label: string; color: string; bg: str
   unsupported: { label: 'Unsupported', color: 'text-gray-500',   bg: 'bg-gray-50 border-gray-200',    icon: Ban },
 };
 
-// ── Session type ─────────────────────────────────────────────────
-
-interface SessionInfo {
-  id: number;
-  status: string;
-  sz_controller_id: number | null;
-  sz_zone_id: string | null;
-  sz_zone_name: string | null;
-  r1_controller_id: number | null;
-  r1_tenant_id: string | null;
-  r1_venue_id: string | null;
-  r1_venue_name: string | null;
-  extraction_job_id: string | null;
-  wlan_count: number | null;
-  updated_at: string;
-}
-
 // ── Page Component ───────────────────────────────────────────────
-
-type AuditMode = 'fresh' | 'sessions';
 
 export default function MigrationAudit() {
   const {
-    activeControllerId, activeControllerName, activeControllerType,
-    secondaryControllerId, secondaryControllerName, secondaryControllerType,
-    secondaryControllerSubtype, controllers,
+    activeControllerId: authActiveId, activeControllerName: authActiveName,
+    activeControllerType: authActiveType, activeControllerSubtype: authActiveSubtype,
+    secondaryControllerId: authSecondaryId, secondaryControllerName: authSecondaryName,
+    secondaryControllerType: authSecondaryType, secondaryControllerSubtype: authSecondarySubtype,
+    controllers,
   } = useAuth();
 
-  const [searchParams] = useSearchParams();
-  const [mode, setMode] = useState<AuditMode>('fresh');
+  // The audit only needs one SZ and one R1 controller among the two selected,
+  // in either slot -- other tools want R1 as the active controller.
+  const slots = [
+    { id: authActiveId, name: authActiveName, type: authActiveType, subtype: authActiveSubtype },
+    { id: authSecondaryId, name: authSecondaryName, type: authSecondaryType, subtype: authSecondarySubtype },
+  ];
+  const szSlot = slots.find(s => s.id && s.type === 'SmartZone');
+  const r1Slot = slots.find(s => s.id && s.type === 'RuckusONE');
+  const activeControllerId = szSlot?.id ?? null;          // SZ controller (either slot)
+  const activeControllerName = szSlot?.name ?? null;
+  const secondaryControllerId = r1Slot?.id ?? null;       // R1 controller (either slot)
+  const secondaryControllerName = r1Slot?.name ?? null;
+  const secondaryControllerSubtype = r1Slot?.subtype ?? null;
 
-  // Fresh audit inputs
-  const [domainId, setDomainId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  // One search box; the zone and venue pickers both follow it
+  const [siteSearch, setSiteSearch] = useState('');
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [zoneName, setZoneName] = useState<string | null>(null);
   const [ecId, setEcId] = useState<string | null>(null);
   const [venueId, setVenueId] = useState<string | null>(null);
   const [venueName, setVenueName] = useState<string | null>(null);
 
-  // Session list
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
+  // Capture cache: refresh one or both sides instead of re-using the cache
+  const [refreshSz, setRefreshSz] = useState(false);
+  const [refreshR1, setRefreshR1] = useState(false);
+  const [cacheReload, setCacheReload] = useState(0);
 
   // Execution
   const [running, setRunning] = useState(false);
@@ -77,8 +76,8 @@ export default function MigrationAudit() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<AuditStatus | null>(null);
 
-  const szReady = activeControllerId && activeControllerType === 'SmartZone';
-  const r1Ready = secondaryControllerId && secondaryControllerType === 'RuckusONE';
+  const szReady = !!szSlot;
+  const r1Ready = !!r1Slot;
   const isMSP = secondaryControllerSubtype === 'MSP';
   const secondaryController = controllers?.find((c: any) => c.id === secondaryControllerId);
   const defaultTenantId = isMSP ? null : (secondaryController?.r1_tenant_id || null);
@@ -86,30 +85,6 @@ export default function MigrationAudit() {
 
   // Fresh audit ready check
   const freshReady = szReady && r1Ready && zoneId && venueId && (!isMSP || ecId);
-
-  // ── Fetch sessions on mount ──
-  useEffect(() => {
-    if (szReady && r1Ready) {
-      fetchSessions();
-    }
-  }, [activeControllerId, secondaryControllerId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchSessions = async () => {
-    setSessionsLoading(true);
-    try {
-      const res = await apiFetch(
-        `${API_URL}/sz-migration/sessions?status=completed&sz_controller_id=${activeControllerId}&r1_controller_id=${secondaryControllerId}&limit=10`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-      }
-    } catch {
-      // Non-critical
-    } finally {
-      setSessionsLoading(false);
-    }
-  };
 
   // ── URL param quick-launch ──
   useEffect(() => {
@@ -158,6 +133,10 @@ export default function MigrationAudit() {
     }
     body.r1_controller_id = secondaryControllerId;
     body.venue_id = params.venueId;
+    // Capture cache: re-use each side's capture unless asked to refresh it
+    body.use_cache = true;
+    body.sz_refresh = refreshSz;
+    body.r1_refresh = refreshR1;
     if (params.tenantId) {
       body.tenant_id = params.tenantId;
     } else if (effectiveTenantId) {
@@ -167,6 +146,10 @@ export default function MigrationAudit() {
     try {
       const data = await apiPost<MigrationAuditReport>(`${API_URL}/sz-migration/audit`, body);
       setReport(data);
+      // A refresh happened (or nothing was cached): show the new capture's age, untick refresh
+      setRefreshSz(false);
+      setRefreshR1(false);
+      setCacheReload(k => k + 1);
     } catch (e: any) {
       // If snapshot expired (404) and we have a zone_id fallback, retry with inline extraction
       if (body.sz_snapshot_job_id && params.zoneId && e.message?.includes('404')) {
@@ -198,17 +181,6 @@ export default function MigrationAudit() {
     });
   };
 
-  // ── Session audit handler ──
-  const handleSessionAudit = (session: SessionInfo) => {
-    runAudit({
-      szSnapshotJobId: session.extraction_job_id || undefined,
-      szControllerId: session.sz_controller_id || undefined,
-      zoneId: session.sz_zone_id || undefined,
-      venueId: session.r1_venue_id || undefined,
-      tenantId: session.r1_tenant_id,
-    });
-  };
-
   return (
     <div className="p-4 max-w-6xl mx-auto">
       {/* Header */}
@@ -230,7 +202,7 @@ export default function MigrationAudit() {
             <div>
               <p className="text-red-800 font-semibold text-sm">Controller Setup Required</p>
               <p className="text-red-600 text-sm mt-1">
-                Set <strong>Primary</strong> to SmartZone and <strong>Secondary</strong> to RuckusONE.
+                Select one SmartZone and one RuckusONE controller, as primary and secondary in either order.
               </p>
             </div>
           </div>
@@ -251,181 +223,111 @@ export default function MigrationAudit() {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 mb-4">
-            <button
-              onClick={() => setMode('fresh')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-sm font-medium border border-b-0 transition ${
-                mode === 'fresh'
-                  ? 'bg-white text-indigo-700 border-gray-200'
-                  : 'bg-gray-100 text-gray-500 border-transparent hover:text-gray-700'
-              }`}
-            >
-              <Zap size={14} /> Fresh Audit
-            </button>
-            <button
-              onClick={() => setMode('sessions')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-sm font-medium border border-b-0 transition ${
-                mode === 'sessions'
-                  ? 'bg-white text-indigo-700 border-gray-200'
-                  : 'bg-gray-100 text-gray-500 border-transparent hover:text-gray-700'
-              }`}
-            >
-              <History size={14} /> From Session
-              {sessions.length > 0 && (
-                <span className="bg-gray-200 text-gray-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {sessions.length}
-                </span>
-              )}
-            </button>
+          <div className="relative mb-3">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={siteSearch}
+              onChange={e => setSiteSearch(e.target.value)}
+              placeholder="Find a site — type part of the zone / venue name (e.g. kessler)"
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              autoFocus
+            />
           </div>
 
-          {/* Fresh Audit Tab */}
-          {mode === 'fresh' && (
-            <div className="bg-white border border-gray-200 rounded-lg rounded-tl-none p-4 mb-6">
-              <div className="space-y-5">
-                {/* SZ Source */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Server size={14} className="text-blue-600" /> SZ Source
-                  </h3>
-                  <div className="space-y-3">
-                    <SmartZoneDomainSelector
-                      onDomainSelect={(id) => {
-                        setDomainId(id);
-                        setZoneId(null);
-                        setZoneName(null);
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <div className="space-y-5">
+              {/* SZ Source */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                  <Server size={14} className="text-blue-600" /> SZ Source
+                </h3>
+                <div className="space-y-3">
+                  <SzZonePicker
+                    controllerId={activeControllerId}
+                    filter={siteSearch}
+                    selectedZoneId={zoneId}
+                    onZoneSelect={(id, name) => {
+                      setZoneId(id);
+                      setZoneName(name);
+                    }}
+                    disabled={running}
+                  />
+                  {zoneName && (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
+                      Zone: <span className="font-medium text-gray-700">{zoneName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* R1 Destination */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
+                  <Target size={14} className="text-green-600" /> R1 Destination
+                </h3>
+                <div className="space-y-3">
+                  {isMSP && (
+                    <SingleEcSelector
+                      controllerId={secondaryControllerId}
+                      onEcSelect={(id) => {
+                        setEcId(id);
+                        setVenueId(null);
+                        setVenueName(null);
                       }}
-                      disabled={running}
+                      selectedEcId={ecId}
+                      filter={siteSearch}
                     />
-                    {domainId && (
-                      <SmartZoneZoneSelector
-                        domainId={domainId}
-                        onZoneSelect={(id, name) => {
-                          setZoneId(id);
-                          setZoneName(name);
-                        }}
-                        disabled={running}
-                      />
-                    )}
-                    {zoneName && (
-                      <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
-                        Zone: <span className="font-medium text-gray-700">{zoneName}</span>
-                      </div>
-                    )}
-                  </div>
+                  )}
+                  {(!isMSP || ecId) && (
+                    <SingleVenueSelector
+                      controllerId={secondaryControllerId}
+                      tenantId={effectiveTenantId}
+                      onVenueSelect={(id, venue) => {
+                        setVenueId(id);
+                        setVenueName(venue?.name || venue?.venueName || id);
+                      }}
+                      selectedVenueId={venueId}
+                      filter={siteSearch}
+                    />
+                  )}
+                  {venueName && (
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
+                      Venue: <span className="font-medium text-gray-700">{venueName}</span>
+                    </div>
+                  )}
                 </div>
-
-                {/* R1 Destination */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Target size={14} className="text-green-600" /> R1 Destination
-                  </h3>
-                  <div className="space-y-3">
-                    {isMSP && (
-                      <SingleEcSelector
-                        controllerId={secondaryControllerId}
-                        onEcSelect={(id) => {
-                          setEcId(id);
-                          setVenueId(null);
-                          setVenueName(null);
-                        }}
-                        selectedEcId={ecId}
-                      />
-                    )}
-                    {(!isMSP || ecId) && (
-                      <SingleVenueSelector
-                        controllerId={secondaryControllerId}
-                        tenantId={effectiveTenantId}
-                        onVenueSelect={(id, venue) => {
-                          setVenueId(id);
-                          setVenueName(venue?.name || venue?.venueName || id);
-                        }}
-                        selectedVenueId={venueId}
-                      />
-                    )}
-                    {venueName && (
-                      <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
-                        Venue: <span className="font-medium text-gray-700">{venueName}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex items-center gap-3 pt-3 border-t border-gray-100">
-                <button
-                  onClick={handleFreshAudit}
-                  disabled={!freshReady || running}
-                  className="px-5 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-                >
-                  {running ? <Loader2 size={14} className="animate-spin" /> : <SearchCheck size={14} />}
-                  {running ? 'Running Audit...' : 'Run Audit'}
-                </button>
-                {error && (
-                  <span className="text-sm text-red-600 flex items-center gap-1">
-                    <AlertCircle size={14} /> {error}
-                  </span>
-                )}
               </div>
             </div>
-          )}
 
-          {/* From Session Tab */}
-          {mode === 'sessions' && (
-            <div className="bg-white border border-gray-200 rounded-lg rounded-tl-none p-4 mb-6">
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
-                  <Loader2 size={16} className="animate-spin" /> Loading sessions...
-                </div>
-              ) : sessions.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">
-                  No completed migration sessions for this controller pair.
-                </div>
-              ) : (
-                <div className="overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500 text-xs border-b">
-                        <th className="py-2 px-3">SZ Zone</th>
-                        <th className="py-2 px-3">R1 Venue</th>
-                        <th className="py-2 px-3">WLANs</th>
-                        <th className="py-2 px-3">Date</th>
-                        <th className="py-2 px-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {sessions.map(s => (
-                        <tr key={s.id} className="hover:bg-gray-50">
-                          <td className="py-2.5 px-3 font-medium">{s.sz_zone_name || '—'}</td>
-                          <td className="py-2.5 px-3">{s.r1_venue_name || '—'}</td>
-                          <td className="py-2.5 px-3 text-gray-500">{s.wlan_count ?? '—'}</td>
-                          <td className="py-2.5 px-3 text-gray-400 text-xs">
-                            {s.updated_at ? new Date(s.updated_at).toLocaleDateString() : '—'}
-                          </td>
-                          <td className="py-2.5 px-3">
-                            <button
-                              onClick={() => handleSessionAudit(s)}
-                              disabled={running}
-                              className="px-3 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1"
-                            >
-                              {running ? <Loader2 size={10} className="animate-spin" /> : <SearchCheck size={10} />}
-                              Audit
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+            <CachePanel
+              szControllerId={activeControllerId}
+              zoneId={zoneId}
+              r1ControllerId={secondaryControllerId}
+              venueId={venueId}
+              tenantId={effectiveTenantId}
+              refreshSz={refreshSz}
+              refreshR1={refreshR1}
+              onRefreshSz={setRefreshSz}
+              onRefreshR1={setRefreshR1}
+              reloadKey={cacheReload}
+            />
+
+            <div className="mt-4 flex items-center gap-3 pt-3 border-t border-gray-100">
+              <button
+                onClick={handleFreshAudit}
+                disabled={!freshReady || running}
+                className="px-5 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
+              >
+                {running ? <Loader2 size={14} className="animate-spin" /> : <SearchCheck size={14} />}
+                {running ? 'Running Audit...' : 'Run Audit'}
+              </button>
               {error && (
-                <div className="mt-3 text-sm text-red-600 flex items-center gap-1">
+                <span className="text-sm text-red-600 flex items-center gap-1">
                   <AlertCircle size={14} /> {error}
-                </div>
+                </span>
               )}
             </div>
-          )}
+          </div>
 
           {/* Loading overlay */}
           {running && !report && (
@@ -476,6 +378,15 @@ function AuditResults({
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
               Audited {new Date(report.audit_timestamp).toLocaleString()}
+              {(['sz', 'r1'] as const).map(side => {
+                const d = report.data_sources?.[side];
+                if (!d) return null;
+                return (
+                  <span key={side} className={d.cached ? 'text-amber-700' : ''}>
+                    {' · '}{side.toUpperCase()}: {d.cached ? `cached data from ${ago(d.age_seconds)}` : d.source ?? 'read live'}
+                  </span>
+                );
+              })}
             </p>
           </div>
           <div className="text-right text-sm text-gray-500">
@@ -483,6 +394,25 @@ function AuditResults({
           </div>
         </div>
       </div>
+
+      {/* Top summary: the headline counts, SZ beside R1 */}
+      {report.overview && report.overview.length > 0 && (
+        <OverviewTable rows={report.overview} szName={report.sz_zone_name} r1Name={report.r1_venue_name} />
+      )}
+
+      {/* Scorecard: how aligned is this site, category by category */}
+      {report.scorecard && report.scorecard.length > 0 && <Scorecard categories={report.scorecard} />}
+
+      {/* Zone ↔ Venue settings */}
+      {report.venue_settings && <VenueSettingsSection audit={report.venue_settings} />}
+
+      {/* Pairings the rest of the report rests on */}
+      {report.matching && <MatchingSection matching={report.matching} />}
+
+      {/* Which SSIDs each AP broadcasts, through each controller's hierarchy */}
+      {report.broadcast && <BroadcastSection audit={report.broadcast} />}
+
+      <h3 className="text-sm font-semibold text-gray-700 pt-2">Per-WLAN detail</h3>
 
       {/* Summary cards (clickable filters) */}
       <div className="grid grid-cols-5 gap-3">
@@ -514,6 +444,11 @@ function AuditResults({
         extraNetworks={report.extra_r1_networks}
         statusFilter={statusFilter}
       />
+
+      {/* Authentication paths (RADIUS / DPSK-backed WLANs) */}
+      {(report.auth_paths ?? []).length > 0 && (
+        <AuthPathSection items={report.auth_paths} summary={s} />
+      )}
 
       {/* AP Group coverage */}
       {report.ap_group_activations.length > 0 && (
@@ -668,7 +603,7 @@ function NetworkRow({ item }: { item: NetworkAuditItem }) {
 
   const hasFieldComparisons = item.field_comparisons && item.field_comparisons.length > 0;
   const mismatchCount = hasFieldComparisons
-    ? item.field_comparisons.filter(fc => !fc.match && !fc.sz_only).length
+    ? item.field_comparisons.filter(fc => fieldStatus(fc) === 'differs').length
     : 0;
 
   return (
@@ -683,6 +618,16 @@ function NetworkRow({ item }: { item: NetworkAuditItem }) {
         <span className="text-gray-400 w-32 truncate">{item.sz_ssid}</span>
         <span className="text-gray-500 w-28 text-xs">{item.sz_auth_type}</span>
         <span className="text-gray-500 w-16 text-xs">{item.expected_r1_type}</span>
+        {/* Default VLAN on the WLAN itself -- worth seeing without expanding */}
+        <span
+          className={`w-28 text-xs tabular-nums ${
+            item.actual_r1_id && item.sz_vlan_id != null && item.actual_r1_vlan != null &&
+            Number(item.sz_vlan_id) !== Number(item.actual_r1_vlan) ? 'text-red-700 font-semibold' : 'text-gray-500'
+          }`}
+          title="Default VLAN: SZ → R1"
+        >
+          VLAN {item.sz_vlan_id ?? '—'} → {item.actual_r1_id ? (item.actual_r1_vlan ?? '—') : '—'}
+        </span>
         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${cfg.bg} ${cfg.color}`}>
           {cfg.label.toUpperCase()}
         </span>
@@ -784,11 +729,11 @@ function FieldComparisonAccordion({
     <div className="space-y-1">
       {sortedSections.map(section => {
         const fields = grouped.get(section) || [];
-        const sectionMismatches = fields.filter(f => !f.match && !f.sz_only).length;
+        const sectionMismatches = fields.filter(f => fieldStatus(f) === 'differs').length;
 
-        // In mismatch-only mode, skip sections with no mismatches
+        // In mismatch-only mode, show real differences plus rows needing a look
         const visibleFields = mismatchOnly
-          ? fields.filter(f => !f.match && !f.sz_only)
+          ? fields.filter(f => ['differs', 'review'].includes(fieldStatus(f)))
           : fields;
 
         if (visibleFields.length === 0) return null;
@@ -847,17 +792,18 @@ function FieldSection({
               <th className="py-1 px-3 w-48 font-medium">Field</th>
               <th className="py-1 px-3 font-medium">SZ Value</th>
               <th className="py-1 px-3 font-medium">R1 Value</th>
+              <th className="py-1 px-3 font-medium w-40">Result</th>
             </tr>
           </thead>
           <tbody>
             {fields.map((fc, i) => {
-              const szDisplay = formatFieldValue(fc.sz_value);
-              const r1Display = fc.sz_only ? '—' : formatFieldValue(fc.r1_value);
-              const rowClass = fc.sz_only
-                ? 'text-gray-400 italic'
-                : !fc.match
-                  ? 'bg-amber-50'
-                  : '';
+              const status = fieldStatus(fc);
+              const st = FIELD_STATUS[status];
+              // Both sides in one vocabulary; raw values on hover
+              const szDisplay = fc.sz_display ?? formatFieldValue(fc.sz_value);
+              const r1Display = fc.sz_only ? '—' : (fc.r1_display ?? formatFieldValue(fc.r1_value));
+              const rowClass = status === 'sz_only' ? 'text-gray-400 italic'
+                : status === 'differs' ? 'bg-amber-50' : '';
 
               return (
                 <tr key={i} className={`border-b border-gray-50 ${rowClass}`}>
@@ -865,9 +811,16 @@ function FieldSection({
                     {fc.label}
                     {fc.sz_only && <span className="ml-1 text-[9px] text-gray-400">(SZ only)</span>}
                   </td>
-                  <td className="py-1 px-3 font-mono text-[11px]">{szDisplay}</td>
-                  <td className={`py-1 px-3 font-mono text-[11px] ${!fc.match && !fc.sz_only ? 'text-amber-800 font-semibold' : ''}`}>
-                    {r1Display}
+                  <td className="py-1 px-3 font-mono text-[11px]" title={`SZ reports: ${formatFieldValue(fc.sz_value)}`}>
+                    {szDisplay ?? '—'}
+                  </td>
+                  <td className={`py-1 px-3 font-mono text-[11px] ${status === 'differs' ? 'text-amber-800 font-semibold' : ''}`}
+                    title={fc.sz_only ? '' : `R1 reports: ${formatFieldValue(fc.r1_value)}`}>
+                    {r1Display ?? '—'}
+                  </td>
+                  <td className={`py-1 px-3 text-[11px] ${st.cls}`}>
+                    {st.label}
+                    {fc.note && <div className="text-[10px] text-gray-400">{fc.note}</div>}
                   </td>
                 </tr>
               );
@@ -877,6 +830,23 @@ function FieldSection({
       )}
     </div>
   );
+}
+
+type FieldStatus = 'match' | 'differs' | 'default' | 'review' | 'sz_only';
+
+const FIELD_STATUS: Record<FieldStatus, { label: string; cls: string }> = {
+  match:   { label: 'Same',               cls: 'text-green-700' },
+  differs: { label: 'Differs',            cls: 'text-red-700 font-semibold' },
+  default: { label: 'Default both sides', cls: 'text-gray-400' },
+  review:  { label: 'Review',             cls: 'text-purple-700' },
+  sz_only: { label: 'No R1 equivalent',   cls: 'text-gray-400' },
+};
+
+// Older reports (before per-field status) only carry match / sz_only.
+function fieldStatus(fc: FieldComparisonItem): FieldStatus {
+  if (fc.status) return fc.status;
+  if (fc.sz_only) return 'sz_only';
+  return fc.match ? 'match' : 'differs';
 }
 
 function formatFieldValue(value: any): string {
@@ -898,7 +868,9 @@ function APGroupCoverage({
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-700">AP Group SSID Coverage</h3>
+        <h3 className="text-sm font-semibold text-gray-700">
+          AP Group SSID Coverage <span className="font-normal text-gray-400 text-xs">(SZ AP Group level — ignores per-AP overrides; see "What each AP broadcasts")</span>
+        </h3>
         <span className={`text-xs font-bold ${coveragePercent === 100 ? 'text-green-600' : 'text-amber-600'}`}>
           {coveragePercent}% covered
         </span>
@@ -983,5 +955,202 @@ function ResourceCoverageSection({ coverage }: { coverage: ResourceCoverage[] })
         })}
       </div>
     </div>
+  );
+}
+
+// ── Authentication Paths ─────────────────────────────────────────
+// External RADIUS (kept on Cloudpath etc.) vs R1-internal DPSK. Counts only:
+// the backend never sends a passphrase or shared secret, and this view has
+// no field that could show one.
+
+const PATH_CONFIG: Record<AuthPath, { label: string; cls: string }> = {
+  external: { label: 'External RADIUS', cls: 'bg-blue-100 text-blue-700' },
+  internal: { label: 'R1 DPSK',         cls: 'bg-orange-100 text-orange-700' },
+  hybrid:   { label: 'Hybrid',          cls: 'bg-purple-100 text-purple-700' },
+  none:     { label: 'Nothing linked',  cls: 'bg-red-100 text-red-700' },
+};
+
+const BACKEND_LABELS: Record<AuthPathAudit['sz_backend'], string> = {
+  external_radius: 'SZ → external RADIUS',
+  external_dpsk: 'SZ → external DPSK',
+  sz_dpsk: 'SZ internal DPSK',
+};
+
+const ISSUE_STYLE: Record<string, string> = {
+  error: 'text-red-700',
+  warning: 'text-amber-700',
+  info: 'text-gray-500',
+};
+
+function AuthPathSection({
+  items,
+  summary,
+}: {
+  items: AuthPathAudit[];
+  summary: MigrationAuditReport['summary'];
+}) {
+  const counts: Array<[AuthPath, number]> = [
+    ['external', summary.auth_external_count],
+    ['internal', summary.auth_internal_count],
+    ['hybrid', summary.auth_hybrid_count],
+    ['none', summary.auth_none_count],
+  ];
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold text-gray-700">Authentication Paths</h3>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {counts.filter(([, n]) => n > 0).map(([p, n]) => (
+            <span key={p} className={`text-xs px-2 py-0.5 rounded font-medium ${PATH_CONFIG[p].cls}`}>
+              {PATH_CONFIG[p].label}: {n}
+            </span>
+          ))}
+          {summary.auth_error_count > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-100 text-red-700">
+              {summary.auth_error_count} error{summary.auth_error_count === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {items.map(item => <AuthPathRow key={item.sz_wlan_id} item={item} />)}
+      </div>
+    </div>
+  );
+}
+
+function AuthPathRow({ item }: { item: AuthPathAudit }) {
+  const hasProblems = item.issues.some(i => i.severity !== 'info');
+  const [open, setOpen] = useState(hasProblems);
+  const cfg = STATUS_CONFIG[item.status];
+  const StatusIcon = cfg.icon;
+  const auth = item.radius.find(r => r.role === 'authentication');
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-left hover:bg-gray-50"
+      >
+        {open ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+        <StatusIcon size={14} className={cfg.color} />
+        <span className="font-medium w-40 truncate" title={item.sz_wlan_name}>{item.sz_wlan_name}</span>
+        <span className="text-xs text-gray-500 w-36 truncate">{BACKEND_LABELS[item.sz_backend]}</span>
+        <ArrowRight size={12} className="text-gray-300" />
+        <span className={`text-xs px-2 py-0.5 rounded font-medium ${PATH_CONFIG[item.path].cls}`}>
+          {PATH_CONFIG[item.path].label}
+        </span>
+        <span className="text-xs text-gray-500 ml-auto flex items-center gap-3">
+          {(item.path === 'internal' || item.path === 'hybrid') && (
+            <>
+              <span className="flex items-center gap-1" title="Passphrases in the linked DPSK pool(s)">
+                <Key size={11} /> {item.passphrase_total ?? '?'}
+              </span>
+              <span className="flex items-center gap-1" title="Identities in the pool's identity group(s)">
+                <Users size={11} /> {item.identity_total ?? '?'}
+              </span>
+            </>
+          )}
+          {(item.path === 'external' || item.path === 'hybrid') && auth && (
+            <span className="flex items-center gap-1" title="Authentication server">
+              <Shield size={11} /> {auth.r1_primary ?? '—'}
+            </span>
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-10 pb-3 space-y-3">
+          {item.radius.length > 0 && (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-400 text-left">
+                  <th className="font-medium py-1 w-28">Role</th>
+                  <th className="font-medium py-1">SZ</th>
+                  <th className="font-medium py-1">R1 profile</th>
+                  <th className="font-medium py-1 w-32">Shared secret</th>
+                </tr>
+              </thead>
+              <tbody>
+                {item.radius.map(r => <RadiusRow key={r.role} r={r} />)}
+              </tbody>
+            </table>
+          )}
+
+          {item.pools.length > 0 && (
+            <div className="space-y-1.5">
+              {item.pools.map(p => (
+                <div key={p.id} className="text-xs border border-gray-100 rounded p-2">
+                  <div className="flex items-center gap-2">
+                    <Key size={11} className="text-orange-600" />
+                    <span className="font-medium">{p.name || p.id}</span>
+                    <span className="text-gray-500 ml-auto">
+                      {p.passphrase_count ?? '?'} passphrases
+                    </span>
+                  </div>
+                  {p.identity_groups.length === 0 ? (
+                    <div className="text-red-600 mt-1 ml-5">No identity group</div>
+                  ) : p.identity_groups.map(g => (
+                    <div key={g.id} className="flex items-center gap-2 mt-1 ml-5 text-gray-600">
+                      <Users size={11} />
+                      <span>{g.name || g.id}</span>
+                      <span className="text-gray-500 ml-auto">{g.identity_count ?? '?'} identities</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {item.issues.length > 0 && (
+            <div className="space-y-1">
+              {item.issues.map((i, idx) => (
+                <div key={idx} className={`text-xs flex items-start gap-1.5 ${ISSUE_STYLE[i.severity]}`}>
+                  {i.severity === 'error' ? <XCircle size={11} className="mt-0.5 flex-shrink-0" />
+                    : i.severity === 'warning' ? <AlertTriangle size={11} className="mt-0.5 flex-shrink-0" />
+                    : <AlertCircle size={11} className="mt-0.5 flex-shrink-0" />}
+                  <span>{i.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ServerCell({ primary, secondary, match }: { primary: string | null; secondary: string | null; match?: boolean | null }) {
+  return (
+    <div className={match === false ? 'text-red-600' : 'text-gray-700'}>
+      <div>{primary ?? '—'}</div>
+      {secondary && <div className="text-gray-400">{secondary}</div>}
+    </div>
+  );
+}
+
+function RadiusRow({ r }: { r: RadiusServerCheck }) {
+  const mismatch = r.primary_match === false || r.secondary_match === false;
+  return (
+    <tr className="border-t border-gray-100 align-top">
+      <td className="py-1.5 capitalize text-gray-600">{r.role}</td>
+      <td className="py-1.5">
+        {r.sz_service_name && <div className="text-gray-400">{r.sz_service_name}</div>}
+        <ServerCell primary={r.sz_primary} secondary={r.sz_secondary} />
+      </td>
+      <td className="py-1.5">
+        {r.r1_profile_name && <div className="text-gray-400">{r.r1_profile_name}</div>}
+        <ServerCell primary={r.r1_primary} secondary={r.r1_secondary} match={mismatch ? false : null} />
+      </td>
+      <td className="py-1.5">
+        {r.placeholder_secret === true ? (
+          <span className="text-red-600 font-medium">Placeholder</span>
+        ) : r.placeholder_secret === false ? (
+          <span className="text-green-600">Set</span>
+        ) : (
+          <span className="text-gray-400">Not checked</span>
+        )}
+      </td>
+    </tr>
   );
 }

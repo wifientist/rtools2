@@ -226,6 +226,14 @@ class SZMigrationSnapshot(BaseModel):
     wlan_groups: List[SZWLANGroup] = Field(default_factory=list)
     ap_groups: List[SZAPGroupEnriched] = Field(default_factory=list)
     aps: List[Dict[str, Any]] = Field(default_factory=list, description="Raw AP data")
+    # Per-AP radio config from GET /aps/{mac} -- the ONLY place per-AP WLAN Group
+    # overrides appear (query/ap reports null groups and configOverride=False
+    # even for overridden APs). Keyed by the AP's MAC as SZ reports it:
+    #   {"dual5g": bool|None,
+    #    "radios": {"radio24g": {"wlan_group_id": str|None, "service_enabled": bool|None}, ...},
+    #    "error": str (only when the detail call failed)}
+    # wlan_group_id None = no AP-level override (inherit AP Group, then zone).
+    ap_radio_config: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     referenced_objects: Dict[str, SZReferencedObject] = Field(
         default_factory=dict,
         description="Chased references keyed by 'ref_type:id'"

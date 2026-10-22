@@ -89,6 +89,28 @@ async def get_zones(
         raise HTTPException(status_code=500, detail=f"Failed to fetch zones: {str(e)}")
 
 
+@router.get("/zones/all")
+async def get_all_zones(
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
+) -> Dict[str, Any]:
+    """
+    Get every zone across all domains, each tagged with _domain_id/_domain_name,
+    so a zone can be found by name without picking its domain first.
+    """
+    try:
+        async with sz_client:
+            zones = await sz_client.zones.get_all_zones_with_domains()
+            return {
+                "status": "success",
+                "data": zones,
+                "count": len(zones)
+            }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch zones: {str(e)}")
+
+
 @router.get("/zones/{zone_id}/aps")
 async def get_zone_aps(
     zone_id: str,

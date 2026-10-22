@@ -19,6 +19,7 @@ field routing:
   wlan.advancedCustomization.{field}                     → default advancedCustomization
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple, Union
@@ -498,22 +499,148 @@ def _reconcile_rates(result: dict, sz_raw: dict, dropped: Optional[List[Dict[str
 # Audit: Compare SZ vs R1 field-by-field
 # ═══════════════════════════════════════════════════════════════════════════
 
+# R1 field type and default (from the 08122026 spec), for every mapped R1
+# path where the type or default matters. When R1 omits a field it is at
+# its default, so the SZ value can still be compared; booleans are compared
+# as on/off whatever each controller calls them.
+R1_FIELD_INFO: Dict[str, Tuple[str, Any]] = {
+    "wlan.managementFrameProtection": ("string", "Disabled"),
+    "wlan.advancedCustomization.enableFastRoaming": ("boolean", False),
+    "wlan.advancedCustomization.mobilityDomainId": ("integer", 1),
+    "wlan.advancedCustomization.enableGtkRekey": ("boolean", True),
+    "wlan.advancedCustomization.enableAntiSpoofing": ("boolean", False),
+    "wlan.advancedCustomization.hideSsid": ("boolean", False),
+    "wlan.vlanId": ("integer", 1),
+    "wlan.advancedCustomization.enableAaaVlanOverride": ("boolean", True),
+    "wlan.macAddressAuthentication": ("boolean", False),
+    "wlan.advancedCustomization.radiusOptions.nasIdType": ("string", "BSSID"),
+    "wlan.advancedCustomization.radiusOptions.calledStationIdType": ("string", "BSSID"),
+    "wlan.advancedCustomization.radiusOptions.nasRequestTimeoutSec": ("integer", 3),
+    "wlan.advancedCustomization.radiusOptions.nasMaxRetry": ("integer", 2),
+    "wlan.advancedCustomization.radiusOptions.singleSessionIdAccounting": ("boolean", False),
+    "wlan.advancedCustomization.maxClientsOnWlanPerRadio": ("integer", 100),
+    "wlan.advancedCustomization.clientInactivityTimeout": ("integer", 120),
+    "wlan.advancedCustomization.clientIsolation": ("boolean", False),
+    "wlan.advancedCustomization.clientLoadBalancingEnable": ("boolean", True),
+    "wlan.advancedCustomization.enableTransientClientManagement": ("boolean", False),
+    "wlan.advancedCustomization.wifi6Enabled": ("boolean", True),
+    "wlan.advancedCustomization.radioCustomization.phyTypeConstraint": ("string", "OFDM"),
+    "wlan.advancedCustomization.enableBandBalancing": ("boolean", False),
+    "wlan.advancedCustomization.radioCustomization.bssMinimumPhyRate": ("string", "default"),
+    "wlan.advancedCustomization.radioCustomization.managementFrameMinimumPhyRate": ("string", "6"),
+    "wlan.advancedCustomization.multiLinkOperationEnabled": ("boolean", False),
+    "wlan.advancedCustomization.userUplinkRateLimiting": ("integer", 0),
+    "wlan.advancedCustomization.userDownlinkRateLimiting": ("integer", 0),
+    "wlan.advancedCustomization.totalUplinkRateLimiting": ("integer", 0),
+    "wlan.advancedCustomization.totalDownlinkRateLimiting": ("integer", 0),
+    "wlan.advancedCustomization.enableMulticastDownlinkRateLimiting": ("boolean", False),
+    "wlan.advancedCustomization.dhcpOption82Enabled": ("boolean", False),
+    "wlan.advancedCustomization.dhcpOption82MacFormat": ("string", "COLON"),
+    "wlan.advancedCustomization.forceMobileDeviceDhcp": ("boolean", False),
+    "wlan.advancedCustomization.arpRequestRateLimit": ("integer", 15),
+    "wlan.advancedCustomization.dhcpRequestRateLimit": ("integer", 15),
+    "wlan.advancedCustomization.joinRSSIThreshold": ("integer", -85),
+    "wlan.advancedCustomization.joinWaitTime": ("integer", 30),
+    "wlan.advancedCustomization.joinExpireTime": ("integer", 300),
+    "wlan.advancedCustomization.joinWaitThreshold": ("integer", 10),
+    "wlan.advancedCustomization.proxyARP": ("boolean", False),
+    "wlan.advancedCustomization.enableAdditionalRegulatoryDomains": ("boolean", True),
+    "wlan.advancedCustomization.enableNeighborReport": ("boolean", True),
+    "wlan.advancedCustomization.enableOptimizedConnectivityExperience": ("boolean", False),
+    "wlan.advancedCustomization.applicationVisibilityEnabled": ("boolean", False),
+    "wlan.advancedCustomization.enableAirtimeDecongestion": ("boolean", False),
+    "wlan.advancedCustomization.bssPriority": ("string", "HIGH"),
+    "wlan.advancedCustomization.multicastFilterEnabled": ("boolean", False),
+    "wlan.advancedCustomization.wifiCallingEnabled": ("boolean", False),
+}
+# R1 flags whose default is ON: if R1 omits the flag, the feature is on.
+_TOGGLE_DEFAULT_ON = {
+    "wlan.advancedCustomization.enableArpRequestRateLimit": True,
+    "wlan.advancedCustomization.enableDhcpRequestRateLimit": True,
+    "wlan.advancedCustomization.enableJoinRSSIThreshold": False,
+}
+
+_TRUE = {"true", "yes", "on", "enabled", "enable", "1"}
+_FALSE = {"false", "no", "off", "disabled", "disable", "0", "none"}
+
+
+def as_bool(v: Any) -> Optional[bool]:
+    """True/False for anything either controller uses for on/off; None if it isn't one."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v != 0
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in _TRUE:
+            return True
+        if s in _FALSE:
+            return False
+    return None
+
+
+def security_family(v: Any) -> Optional[str]:
+    """
+    The encryption protocol alone. R1's wlanSecurity folds in the auth type
+    (WPA2Personal / WPA2Enterprise); the network type is compared separately.
+    """
+    if v is None:
+        return None
+    s = str(v).replace("_", "").replace("-", "").lower()
+    for suffix in ("personal", "enterprise"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+    return {"wpa2": "WPA2", "wpa3": "WPA3", "wpa23mixed": "WPA2/WPA3", "wpamixed": "WPA", "wpa": "WPA",
+            "none": "Open", "open": "Open", "owe": "OWE", "owetransition": "OWE transition",
+            "wep64": "WEP", "wep128": "WEP", "wep": "WEP"}.get(s, str(v))
+
+
+def _norm_string(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    s = s[1:] if s.startswith("_") else s          # spec defaults like "_default", "_6"
+    return s.replace(" mbps", "").replace("mbps", "").upper()
+
+
 @dataclass
 class FieldComparison:
     section: str
     label: str
-    sz_value: Any = None
-    r1_value: Any = None
-    match: bool = True
+    sz_value: Any = None          # raw, as SZ reports it
+    r1_value: Any = None          # raw, as R1 reports it
+    match: bool = True            # status in (match, default)
     sz_only: bool = False
+    # match | differs | default (both unset/at default) | review (SZ unset, R1 not at default) | sz_only
+    status: str = "match"
+    sz_display: Optional[str] = None   # both sides in one vocabulary, for display
+    r1_display: Optional[str] = None
+    note: str = ""
+
+
+def _display(v: Any, kind: str) -> Optional[str]:
+    if v is None:
+        return None
+    if kind == "boolean":
+        b = as_bool(v)
+        return "On" if b else "Off" if b is False else str(v)
+    if kind == "security":
+        return security_family(v)
+    if isinstance(v, (list, dict)):
+        return json.dumps(v)
+    return str(v)
 
 
 def compare_fields(sz_raw: dict, r1_network: dict) -> List[FieldComparison]:
     """
-    Compare SZ WLAN raw data against an R1 network object field-by-field.
+    Compare SZ WLAN raw data against an R1 network object, field by field.
 
-    Returns a list of FieldComparison objects for every mapped field,
-    indicating whether the values match (after transform normalization).
+    Both sides are put into one vocabulary first -- on/off for booleans
+    (Yes/true/Enabled/1 alike), the protocol family for security mode,
+    case and "mbps" for enums -- so only real differences count. A field R1
+    omits is at R1's default; a field SZ omits is unknown, so it only
+    counts as aligned when R1 is at its default ("default"), otherwise it's
+    flagged for review rather than called a mismatch.
     """
     comparisons: List[FieldComparison] = []
 
@@ -524,70 +651,80 @@ def compare_fields(sz_raw: dict, r1_network: dict) -> List[FieldComparison]:
         sz_value = get_nested(sz_raw, mapping.sz_path)
 
         if mapping.sz_only or not mapping.r1_path:
-            # SZ-only field — include for informational display
             comparisons.append(FieldComparison(
-                section=mapping.section,
-                label=mapping.label,
-                sz_value=sz_value,
-                r1_value=None,
-                match=True,  # No mismatch possible — it's SZ-only
-                sz_only=True,
+                section=mapping.section, label=mapping.label,
+                sz_value=sz_value, sz_display=_display(sz_value, "string"),
+                match=True, sz_only=True, status="sz_only",
             ))
             continue
 
-        r1_value = get_nested(r1_network, mapping.r1_path)
+        r1_raw = get_nested(r1_network, mapping.r1_path)
+        kind, r1_default = R1_FIELD_INFO.get(mapping.r1_path, ("string", None))
+        if mapping.r1_path == "wlan.wlanSecurity":
+            kind = "security"
+        fc = FieldComparison(section=mapping.section, label=mapping.label, sz_value=sz_value, r1_value=r1_raw)
 
-        # Normalize the SZ value using the transform for comparison
-        sz_normalized = _apply_transform(sz_value, mapping.transform)
+        # ── SZ "0 = off" fields with an R1 enable flag ─────────────────
+        if mapping.r1_toggle:
+            flag = get_nested(r1_network, mapping.r1_toggle)
+            r1_on = _TOGGLE_DEFAULT_ON.get(mapping.r1_toggle, False) if flag is None else bool(flag)
+            r1_val = r1_raw if r1_raw is not None else r1_default
+            fc.r1_display = f"On ({r1_val})" if r1_on else "Off"
+            if sz_value is None:
+                fc.sz_display = None
+                fc.status = "default" if not r1_on or r1_raw is None else "review"
+            else:
+                sz_off = sz_value in mapping.off_values
+                fc.sz_display = "Off" if sz_off else f"On ({_apply_transform(sz_value, mapping.transform)})"
+                if sz_off or not r1_on:
+                    fc.status = "match" if (sz_off and not r1_on) else "differs"
+                else:
+                    fc.status = "match" if _same(_apply_transform(sz_value, mapping.transform), r1_val, "integer") else "differs"
+            fc.match = fc.status in ("match", "default")
+            comparisons.append(fc)
+            continue
 
-        if mapping.r1_toggle and sz_value in mapping.off_values:
-            # SZ "off" is a value; R1 "off" is the flag, whatever value sits beside it.
-            match = get_nested(r1_network, mapping.r1_toggle) is False
+        # ── Everything else ───────────────────────────────────────────
+        sz_norm = _apply_transform(sz_value, mapping.transform)
+        r1_effective = r1_raw if r1_raw is not None else r1_default
+        if kind == "boolean" and sz_norm is not None and as_bool(sz_norm) is None and as_bool(sz_value) is not None:
+            sz_norm = sz_value
+        fc.sz_display = _display(sz_norm, kind)
+        fc.r1_display = _display(r1_effective, kind)
+        if r1_raw is None and r1_default is not None:
+            fc.note = "R1 default"
+
+        if sz_value is None:
+            if r1_effective is None:
+                fc.status = "default"
+            elif r1_default is not None and _same(r1_effective, r1_default, kind):
+                fc.status = "default"
+                fc.note = "SZ doesn't report it; R1 is at its default"
+            else:
+                fc.status = "review"
+                fc.note = "SZ doesn't report it; R1 is set to a non-default value"
+        elif r1_effective is None:
+            fc.status = "review"
+            fc.note = "R1 doesn't report it"
         else:
-            match = _values_match(sz_normalized, r1_value)
-
-        comparisons.append(FieldComparison(
-            section=mapping.section,
-            label=mapping.label,
-            sz_value=sz_value,
-            r1_value=r1_value,
-            match=match,
-            sz_only=False,
-        ))
+            fc.status = "match" if _same(sz_norm, r1_effective, kind) else "differs"
+        fc.match = fc.status in ("match", "default")
+        comparisons.append(fc)
 
     return comparisons
 
 
-def _values_match(a: Any, b: Any) -> bool:
-    """
-    Compare two values with loose type coercion.
-
-    Handles common mismatches like:
-    - int vs str: 100 == "100"
-    - bool vs str: True == "true"
-    - None vs absent: both treated as None
-    """
-    if a is None and b is None:
-        return True
-    if a is None or b is None:
-        return False
-
-    # Direct equality
+def _same(a: Any, b: Any, kind: str) -> bool:
+    if kind == "boolean":
+        ba, bb = as_bool(a), as_bool(b)
+        if ba is not None and bb is not None:
+            return ba == bb
+    if kind == "security":
+        return security_family(a) == security_family(b)
     if a == b:
         return True
-
-    # String comparison (case-insensitive)
     try:
-        if str(a).lower() == str(b).lower():
-            return True
-    except (ValueError, TypeError):
+        return float(a) == float(b)
+    except (TypeError, ValueError):
         pass
-
-    # Numeric comparison
-    try:
-        if float(a) == float(b):
-            return True
-    except (ValueError, TypeError):
-        pass
-
-    return False
+    return _norm_string(a) == _norm_string(b)

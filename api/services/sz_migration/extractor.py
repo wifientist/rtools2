@@ -214,6 +214,9 @@ async def extract_zone_snapshot(
 
     progress("aps", f"Extracted {len(all_aps_raw)} APs")
 
+    # ── Step 5b: Per-AP radio config (WLAN Group overrides) ──────────
+    ap_radio_config = await _fetch_ap_radio_config(sz_client, all_aps_raw, progress, warnings)
+
     # ── Step 6: Chase references ─────────────────────────────────────
     progress("references", "Scanning WLANs for foreign key references...")
 
@@ -295,6 +298,7 @@ async def extract_zone_snapshot(
         wlan_groups=wlan_groups,
         ap_groups=ap_groups,
         aps=all_aps_raw,
+        ap_radio_config=ap_radio_config,
         referenced_objects=referenced_objects,
         extraction_metadata=extraction_metadata,
         warnings=warnings,
@@ -303,3 +307,57 @@ async def extract_zone_snapshot(
     progress("complete", f"Extraction complete in {elapsed}s", snapshot.summary())
 
     return snapshot
+
+
+_AP_BANDS = ("radio24g", "radio5g", "radio5gLower", "radio5gUpper", "radio6g")
+AP_DETAIL_CONCURRENCY = 8
+
+
+async def _fetch_ap_radio_config(sz_client, aps_raw, progress, warnings) -> Dict[str, Dict[str, Any]]:
+    """
+    Per-AP WLAN Group overrides, one GET /aps/{mac} per AP.
+
+    Needed for every AP, not just flagged ones: on a live vSZ, query/ap
+    returned null wlanGroup* and configOverride=False for an AP whose 5 GHz
+    radio was overridden. Only the radio WLAN-group/service fields are kept.
+    """
+    macs = [ap.get("apMac") or ap.get("mac") for ap in aps_raw]
+    macs = [m for m in macs if m]
+    if not macs:
+        return {}
+    progress("ap_radio", f"Reading per-AP radio config for {len(macs)} APs...")
+    sem = asyncio.Semaphore(AP_DETAIL_CONCURRENCY)
+    out: Dict[str, Dict[str, Any]] = {}
+    done = 0
+
+    async def one(mac: str):
+        nonlocal done
+        async with sem:
+            try:
+                d = await sz_client.aps.get_ap_details(mac)
+                rc = (d or {}).get("radioConfig") or {}
+                out[mac] = {
+                    "dual5g": rc.get("dual5gEnabled"),
+                    "radios": {
+                        b: {"wlan_group_id": (rc.get(b) or {}).get("wlanGroupId"),
+                            "service_enabled": (rc.get(b) or {}).get("wlanServiceEnabled")}
+                        for b in _AP_BANDS if rc.get(b) is not None
+                    },
+                }
+            except Exception as e:
+                out[mac] = {"error": f"{type(e).__name__}: {e}"[:200], "radios": {}}
+        done += 1
+        if done % 50 == 0 or done == len(macs):
+            progress("ap_radio", f"Per-AP radio config: {done}/{len(macs)}")
+
+    await asyncio.gather(*(one(m) for m in macs))
+    failed = [m for m, v in out.items() if v.get("error")]
+    if failed:
+        warnings.append(SZExtractionWarning(
+            phase="ap_radio",
+            message=f"Could not read radio config for {len(failed)} AP(s); their per-AP overrides are unknown",
+            details={"macs": failed[:20]},
+        ))
+    overridden = sum(1 for v in out.values() if any(r.get("wlan_group_id") for r in v.get("radios", {}).values()))
+    progress("ap_radio", f"Per-AP radio config read: {overridden} AP(s) carry a WLAN Group override")
+    return out

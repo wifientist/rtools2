@@ -66,6 +66,10 @@ async def capture_venue_inventory(
     try:
         networks_response = await r1_client.networks.get_wifi_networks(tenant_id)
         all_networks = networks_response.get("data", [])
+        # Slim summary of the whole tenant: no settings, nothing credential-bearing.
+        tenant_networks = [
+            {k: n.get(k) for k in ("id", "name", "ssid", "nwSubType")} for n in all_networks
+        ]
 
         # Filter to networks active in this venue via venueApGroups
         venue_networks = []
@@ -83,20 +87,22 @@ async def capture_venue_inventory(
     except Exception as e:
         logger.warning(f"Failed to fetch WiFi networks: {e}")
         venue_networks = []
+        tenant_networks = []
         progress("networks", f"Failed to fetch networks: {e}")
 
     # ── AP groups ────────────────────────────────────────────────────
     progress("ap_groups", "Fetching AP groups...")
     try:
-        ap_groups_response = await r1_client.venues.query_ap_groups(
+        # Paged to completion: a single query returns only R1's default page
+        # (25), which left most APs in groups the capture never saw.
+        ap_groups = await r1_client.venues.list_ap_groups_in_venue(
             tenant_id,
-            venue_id=venue_id,
+            venue_id,
             # isDefault: the venue's default group has an empty name, so it
             # can only be recognised by this flag.
             fields=['id', 'name', 'venueId', 'venueName', 'description', 'aps',
                     'wifiNetworks', 'isDefault'],
         )
-        ap_groups = ap_groups_response.get("data", []) if isinstance(ap_groups_response, dict) else []
         progress("ap_groups", f"Found {len(ap_groups)} AP groups")
     except Exception as e:
         logger.warning(f"Failed to fetch AP groups: {e}")
@@ -128,8 +134,16 @@ async def capture_venue_inventory(
     # ── Identity groups (tenant-level) ───────────────────────────────
     progress("identity_groups", "Fetching identity groups...")
     try:
-        ig_response = await r1_client.identity.query_identity_groups(tenant_id=tenant_id)
-        identity_groups = ig_response.get("data", []) if isinstance(ig_response, dict) else []
+        ig_response = await r1_client.identity.query_identity_groups(
+            tenant_id=tenant_id, page=0, size=1000
+        )
+        # Spring Data page: rows are under "content", not "data". Reading
+        # "data" here left this list empty, so every identity group looked
+        # missing to the audit.
+        identity_groups = (
+            ig_response.get("content", ig_response.get("data", []))
+            if isinstance(ig_response, dict) else []
+        )
         progress("identity_groups", f"Found {len(identity_groups)} identity groups")
     except Exception as e:
         logger.warning(f"Failed to fetch identity groups: {e}")
@@ -158,6 +172,7 @@ async def capture_venue_inventory(
         tenant_id=tenant_id,
         venue=venue_detail,
         wifi_networks=venue_networks,
+        tenant_networks=tenant_networks,
         ap_groups=ap_groups,
         aps=aps,
         dpsk_pools=dpsk_pools,

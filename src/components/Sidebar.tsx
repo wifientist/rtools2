@@ -77,6 +77,7 @@ const Sidebar = () => {
       items: [
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/wlan-activator", icon: <Radio size={20} />, label: "WLAN Activator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/wlan-vlan", icon: <Layers size={20} />, label: "WLAN VLAN", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
@@ -92,7 +93,6 @@ const Sidebar = () => {
         { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, requiresDanger: true },
         { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
-        { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/dfs-blacklist", icon: <Radio size={20} />, label: "DFS Blacklist", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/data-studio-export", icon: <Download size={20} />, label: "Data Studio Export", requiresAuth: true, rolesAllowed: ["super"], requiresAlpha: true },
         { to: "/wiredwiz", icon: <Cable size={20} />, label: "WiredWiz", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },

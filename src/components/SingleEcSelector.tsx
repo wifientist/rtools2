@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { matchesSnippet } from "@/utils/textMatch";
 import { useSingleEc } from "@/hooks/useSingleEc";
 import {
   useReactTable,
@@ -13,11 +14,20 @@ interface SingleEcSelectorProps {
   controllerId: number | null;
   onEcSelect: (ecId: string | null, ec: any) => void;
   selectedEcId?: string | null;
+  // Search text inherited from the page; narrows the list when it matches
+  // anything, otherwise the full list stays visible.
+  filter?: string;
 }
 
-export default function SingleEcSelector({ controllerId, onEcSelect, selectedEcId }: SingleEcSelectorProps) {
+export default function SingleEcSelector({ controllerId, onEcSelect, selectedEcId, filter }: SingleEcSelectorProps) {
   const { ecData, loading, error } = useSingleEc(controllerId);
   const [globalFilter, setGlobalFilter] = useState("");
+
+  useEffect(() => {
+    if (filter === undefined) return;
+    const q = filter.trim();
+    setGlobalFilter(q && ecData.some((r: any) => matchesSnippet(Object.values(r).join(" "), q)) ? q : "");
+  }, [filter, ecData]);
 
   const columnHelper = createColumnHelper<any>();
 
@@ -63,10 +73,7 @@ export default function SingleEcSelector({ controllerId, onEcSelect, selectedEcI
       globalFilter
     },
     globalFilterFn: (row, columnId, filterValue) => {
-      const searchString = Object.values(row.original)
-        .join(" ")
-        .toLowerCase();
-      return searchString.includes(filterValue.toLowerCase());
+      return matchesSnippet(Object.values(row.original).join(" "), filterValue);
     },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),

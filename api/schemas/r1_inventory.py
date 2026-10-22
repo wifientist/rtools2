@@ -21,6 +21,13 @@ class R1VenueInventory(BaseModel):
         default_factory=list,
         description="All WiFi networks active in this venue (name, SSID, type, id, venueApGroups)"
     )
+    tenant_networks: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Every network in the tenant reduced to id/name/ssid/nwSubType -- so the "
+            "audit can tell \"exists but is not activated here\" from \"missing\""
+        ),
+    )
     ap_groups: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="All AP groups in this venue"

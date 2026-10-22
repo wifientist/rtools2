@@ -360,6 +360,37 @@ class DpskService:
             )
         return self.client.safe_json(response)
 
+    async def count_passphrases(self, pool_id: str, tenant_id: str = None):
+        """
+        How many passphrases a pool holds, and nothing else.
+
+        Asks for a one-row page and reads totalCount. That one row carries a
+        live passphrase, so it is dropped here rather than returned, and the
+        body is parsed locally because safe_json logs it on a parse failure.
+        Returns None if the count could not be read.
+        """
+        body = {"page": 1, "pageSize": 1}
+        endpoint = f"/dpskServices/{pool_id}/passphrases/query"
+        try:
+            if self.client.ec_type == "MSP" and tenant_id:
+                response = await asyncio.to_thread(
+                    self.client.post, endpoint, payload=body, override_tenant_id=tenant_id,
+                )
+            else:
+                response = await asyncio.to_thread(self.client.post, endpoint, payload=body)
+        except Exception:
+            logger.warning(f"Could not count passphrases in pool {pool_id}")
+            return None
+        if not response.ok:
+            logger.warning(f"Could not count passphrases in pool {pool_id}: HTTP {response.status_code}")
+            return None
+        try:
+            total = (response.json() or {}).get("totalCount")
+        except (ValueError, AttributeError):
+            logger.warning(f"Passphrase count for pool {pool_id} returned unparseable JSON")
+            return None
+        return total if isinstance(total, int) else None
+
     async def get_passphrase(
         self,
         pool_id: str,
