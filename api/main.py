@@ -145,6 +145,9 @@ from routers.ap_regroup import v2_endpoints as ap_regroup_v2
 app.include_router(ap_regroup_v2.router, tags=["AP Regroup V2"])
 from routers.wlan_activator import v2_endpoints as wlan_activator_v2
 app.include_router(wlan_activator_v2.router, tags=["WLAN Activator V2"])
+# WLAN VLAN — copy SZ WLAN default VLANs onto R1 networks (beta-gated)
+from routers.wlan_vlan.router import router as wlan_vlan_router
+app.include_router(wlan_vlan_router, tags=["WLAN VLAN"])
 
 app.include_router(status.router)
 app.include_router(opt43.router)
