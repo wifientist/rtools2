@@ -148,6 +148,9 @@ app.include_router(wlan_activator_v2.router, tags=["WLAN Activator V2"])
 # WLAN VLAN — copy SZ WLAN default VLANs onto R1 networks (beta-gated)
 from routers.wlan_vlan.router import router as wlan_vlan_router
 app.include_router(wlan_vlan_router, tags=["WLAN VLAN"])
+# WLAN Grabber — create in R1 the SZ WLANs it does not have yet (beta-gated)
+from routers.wlan_grabber.router import router as wlan_grabber_router
+app.include_router(wlan_grabber_router, tags=["WLAN Grabber"])
 
 app.include_router(status.router)
 app.include_router(opt43.router)
