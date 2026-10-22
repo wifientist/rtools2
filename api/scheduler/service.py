@@ -246,9 +246,9 @@ class SchedulerService:
         Register a new scheduled job.
 
         Args:
-            job_id: Unique identifier (e.g., "orchestrator_123_sync")
+            job_id: Unique identifier (e.g., "redis_index_cleanup")
             name: Human-readable name for display
-            callable_path: Import path to function (e.g., "api.routers.orchestrator.sync_engine:run_sync")
+            callable_path: Import path to function (e.g., "jobs.redis_cleanup_job:run_cleanup")
             trigger_type: "interval", "cron", or "date"
             trigger_config: Trigger-specific config (e.g., {"minutes": 30})
             callable_kwargs: Arguments to pass to the callable

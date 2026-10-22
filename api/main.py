@@ -27,16 +27,13 @@ from routers.cloudpath.v2_endpoints import router as cloudpath_v2_router
 from routers.workflows_router import router as workflows_router
 from routers.workflows_v2_router import router as workflows_v2_router
 from routers.cleanup_v2_router import router as cleanup_v2_router
-from routers.orchestrator import orchestrator_router, webhook_router
 from routers.scheduler_router import router as scheduler_router
 from routers.fileshare import router as fileshare_router
 from routers.migration_dashboard import router as migration_dashboard_router
 from routers.sz_migration.router import router as sz_migration_router
-from routers.ap_pop_swap import router as pop_swap_router
 from routers.bulk_ap_tagging import router as bulk_ap_tagging_router
 from routers.wiredwiz import router as wiredwiz_router
 from routers.data_studio_export import router as data_studio_export_router
-from routers.dfs_blacklist import router as dfs_blacklist_router
 from routers.maps import router as maps_router
 from routers.pisr import router as pisr_router
 from routers.topology import router as topology_router
@@ -87,20 +84,16 @@ async def lifespan(app: FastAPI):
     from jobs.redis_cleanup_job import ensure_registered as ensure_redis_cleanup
     from jobs.signup_attempt_cleanup_job import ensure_registered as ensure_signup_cleanup
     from jobs.report_dispatcher_job import ensure_registered as ensure_report_dispatcher
-    from routers.ap_pop_swap.background_poller import ensure_registered as ensure_pop_swap_poller
     from jobs.data_studio_export_job import ensure_registered as ensure_data_studio_export
     from jobs.fileshare_cleanup_job import ensure_registered as ensure_fileshare_cleanup
-    from jobs.dfs_blacklist_job import ensure_registered as ensure_dfs_blacklist
     from jobs.stranded_job_reaper import ensure_registered as ensure_stranded_reaper
     await ensure_stranded_reaper(scheduler)
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
     await ensure_signup_cleanup(scheduler)
     await ensure_report_dispatcher(scheduler)
-    await ensure_pop_swap_poller(scheduler)
     await ensure_data_studio_export(scheduler)
     await ensure_fileshare_cleanup(scheduler)
-    await ensure_dfs_blacklist(scheduler)
 
     yield
 
@@ -230,10 +223,6 @@ app.include_router(cloudpath_router, tags=["Cloudpath Import"])
 # Cloudpath DPSK V2 Router - V2 workflow engine with plan/confirm flow
 app.include_router(cloudpath_v2_router, tags=["Cloudpath Import V2"])
 
-# DPSK Orchestrator Routers - sync per-unit pools to site-wide pool
-app.include_router(orchestrator_router, tags=["DPSK Orchestrators"])
-app.include_router(webhook_router, tags=["Orchestrator Webhooks"])
-
 # Scheduler Admin Router - super admin only
 app.include_router(scheduler_router, tags=["Scheduler Admin"])
 
@@ -246,9 +235,6 @@ app.include_router(migration_dashboard_router, tags=["Migration Dashboard"])
 # SZ→R1 Full Configuration Migration (alpha-gated)
 app.include_router(sz_migration_router, tags=["SZ Migration"])
 
-# Pop and Swap — AP replacement tool
-app.include_router(pop_swap_router, tags=["Pop and Swap"])
-
 app.include_router(bulk_ap_tagging_router, tags=["Bulk AP Tagging"])
 
 # WiredWiz - read-only switch crawler / loop hunter
@@ -260,9 +246,6 @@ app.include_router(topology_router, tags=["Topology"])
 
 # Data Studio Export — automated R1 Data Studio CSV exports
 app.include_router(data_studio_export_router, tags=["Data Studio Export"])
-
-# DFS Blacklist — SmartZone DFS channel monitoring (alpha-gated)
-app.include_router(dfs_blacklist_router, tags=["DFS Blacklist"])
 
 # Maps — floor plan overlays for live client / RSSI data
 app.include_router(maps_router, tags=["Maps"])

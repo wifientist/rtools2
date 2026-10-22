@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, RefreshCcw, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, ArrowLeftRight, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -89,11 +89,8 @@ const Sidebar = () => {
         { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/bulk-ap-tagging", icon: <Tag size={20} />, label: "Bulk AP Tagging", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/pop-swap", icon: <ArrowLeftRight size={20} />, label: "Pop and Swap", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, requiresDanger: true },
-        { to: "/dpsk-orchestrator", icon: <RefreshCcw size={20} />, label: "DPSK Orchestrator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
-        { to: "/dfs-blacklist", icon: <Radio size={20} />, label: "DFS Blacklist", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/data-studio-export", icon: <Download size={20} />, label: "Data Studio Export", requiresAuth: true, rolesAllowed: ["super"], requiresAlpha: true },
         { to: "/wiredwiz", icon: <Cable size={20} />, label: "WiredWiz", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/topology", icon: <Network size={20} />, label: "Topology", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },

@@ -43,17 +43,14 @@ import WlanActivator from "@/pages/WlanActivator";
 import WlanVlan from "@/pages/WlanVlan";
 import WlanGrabber from "@/pages/WlanGrabber";
 import ApgCleanup from "@/pages/ApgCleanup";
-import DPSKOrchestrator from "@/pages/DPSKOrchestrator";
 import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
 import MigrationAudit from "@/pages/MigrationAudit";
 import JobMonitor from "@/pages/JobMonitor";
 import JobList from "@/pages/JobList";
 import SZAudit from "@/pages/SZAudit";
-import APPopAndSwap from "@/pages/APPopAndSwap";
 import BulkAPTagging from "@/pages/BulkAPTagging";
 import DangerZone from "@/pages/DangerZone";
 import DataStudioExport from "@/pages/DataStudioExport";
-import DfsBlacklist from "@/pages/DfsBlacklist";
 import Maps from "@/pages/Maps";
 import WiredWiz from "@/pages/WiredWiz";
 // Lazy, unlike every other page here: React Flow + dagre are ~2 MB, and users
@@ -93,13 +90,11 @@ const App = () => {
           <Route path="/ap-rename" element={<ProtectedRoute element={<APRename />} />} />
           <Route path="/bulk-wlan" element={<ProtectedRoute element={<BulkWlanEdit />} />} />
           <Route path="/bulk-wlan-delete" element={<BetaRoute element={<BulkWlanDelete />} />} />
-          <Route path="/pop-swap" element={<AlphaRoute element={<APPopAndSwap />} />} />
           <Route path="/bulk-ap-tagging" element={<BetaRoute element={<BulkAPTagging />} />} />
           <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />
           {/* AP Regroup folded into APG Cleanup (2026-10-22); page kept in src/pages/APRegroup.tsx */}
           <Route path="/ap-regroup" element={<Navigate to="/apg-cleanup" />} />
           <Route path="/wlan-activator" element={<BetaRoute element={<WlanActivator />} />} />
-          <Route path="/dpsk-orchestrator" element={<BetaRoute element={<DPSKOrchestrator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />
           <Route path="/danger-zone" element={<DangerRoute element={<DangerZone />} />} />
@@ -116,7 +111,6 @@ const App = () => {
           <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
           <Route path="/apg-cleanup" element={<BetaRoute element={<ApgCleanup />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
-          <Route path="/dfs-blacklist" element={<AlphaRoute element={<DfsBlacklist />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
           <Route path="/wiredwiz" element={<AlphaRoute element={<WiredWiz />} />} />
           <Route

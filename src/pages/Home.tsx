@@ -174,14 +174,6 @@ const Home = () => {
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-5">
-            <h3 className="text-lg font-semibold text-green-900 mb-2">🔃 AP Pop & Swap <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">ALPHA</span></h3>
-            <p className="text-sm text-green-800">
-              Decommission old APs and swap them with new ones while preserving the AP name,
-              group assignment, and captured settings.
-            </p>
-          </div>
-
-          <div className="bg-green-50 border border-green-200 rounded-lg p-5">
             <h3 className="text-lg font-semibold text-green-900 mb-2">📈 Data Studio Export <span className="text-xs bg-green-200 text-green-900 px-1.5 py-0.5 rounded">ALPHA</span></h3>
             <p className="text-sm text-green-800">
               Configure automated export of Data Studio reports to S3 on a scheduled interval
