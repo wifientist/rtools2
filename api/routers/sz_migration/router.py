@@ -46,7 +46,7 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_user
-from decorators import require_alpha
+from decorators import require_alpha, require_beta
 from models.user import User
 from models.controller import Controller
 from models.sz_migration_session import SZMigrationSession
@@ -1479,7 +1479,7 @@ def create_session(
 
 
 @router.get("/sessions", response_model=List[SessionResponse])
-@require_alpha()
+@require_beta()
 def list_sessions(
     status: Optional[str] = None,
     sz_controller_id: Optional[int] = None,
@@ -1693,7 +1693,7 @@ class AuditRequest(BaseModel):
 
 
 @router.get("/audit-cache")
-@require_alpha()
+@require_beta()
 async def get_audit_cache_status(
     sz_controller_id: Optional[int] = None,
     zone_id: Optional[str] = None,
@@ -1714,7 +1714,7 @@ async def get_audit_cache_status(
 
 
 @router.delete("/audit-cache")
-@require_alpha()
+@require_beta()
 async def clear_audit_cache(
     side: Literal["sz", "r1", "both"] = "both",
     sz_controller_id: Optional[int] = None,
@@ -1737,7 +1737,7 @@ async def clear_audit_cache(
 
 
 @router.post("/audit")
-@require_alpha()
+@require_beta()
 async def run_audit_endpoint(
     request: AuditRequest,
     current_user: User = Depends(get_current_user),

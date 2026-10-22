@@ -111,7 +111,7 @@ const App = () => {
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />
           <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
           <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
-          <Route path="/migration-audit" element={<AlphaRoute element={<MigrationAudit />} />} />
+          <Route path="/migration-audit" element={<BetaRoute element={<MigrationAudit />} />} />
           <Route path="/wlan-vlan" element={<BetaRoute element={<WlanVlan />} />} />
           <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
           <Route path="/apg-cleanup" element={<BetaRoute element={<ApgCleanup />} />} />
