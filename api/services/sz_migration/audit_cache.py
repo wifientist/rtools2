@@ -43,7 +43,7 @@ TTL_SECONDS = 7 * 24 * 3600
 
 # Bump when a capture's shape changes so old ones read as stale.
 SZ_CAPTURE_VERSION = 3   # 2: per-AP radio config (ap_radio_config); 3: passphrase fingerprints
-R1_CAPTURE_VERSION = 2   # 2: passphrase fingerprints
+R1_CAPTURE_VERSION = 3   # 2: passphrase fingerprints; 3: all AP Groups (was first 25)
 
 
 def sz_key(controller_id: int, zone_id: str) -> str:
