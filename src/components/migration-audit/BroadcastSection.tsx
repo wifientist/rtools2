@@ -83,7 +83,7 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
             <thead className="sticky top-0 bg-white"><tr className="text-gray-500 text-left border-b">
               <th className="px-4 py-2 font-medium">AP</th>
               <th className="px-2 py-2 font-medium">SZ SSIDs <span className="font-normal text-gray-400">· from which WLAN Group</span></th>
-              <th className="px-2 py-2 font-medium">R1 group → SSIDs</th>
+              <th className="px-2 py-2 font-medium">R1 SSIDs <span className="font-normal text-gray-400">· AP Group</span></th>
               <th className="px-2 py-2 font-medium">Missing in R1</th>
               <th className="px-2 py-2 font-medium">Extra in R1</th>
               <th className="px-4 py-2 font-medium">Result</th>
@@ -104,8 +104,8 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
                       )}
                     </td>
                     <td className="px-2 py-1.5">
-                      <div className="text-gray-500">{a.r1_ap_group ?? '—'}</div>
                       <List items={a.r1_ssids.map(s => (a.r1_via_all_ap_groups ?? []).includes(s) ? `${s}  (All AP Groups)` : s)} />
+                      <div className="text-[11px] text-gray-400 mt-0.5">AP Group: {a.r1_ap_group ?? (a.status === 'pending' ? 'not in R1 yet' : '—')}</div>
                     </td>
                     <td className="px-2 py-1.5"><List items={a.missing_in_r1} cls="text-red-600" /></td>
                     <td className="px-2 py-1.5"><List items={a.extra_in_r1} cls="text-purple-700" /></td>
