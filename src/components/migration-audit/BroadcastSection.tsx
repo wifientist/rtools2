@@ -82,7 +82,7 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-white"><tr className="text-gray-500 text-left border-b">
               <th className="px-4 py-2 font-medium">AP</th>
-              <th className="px-2 py-2 font-medium">SZ: SSIDs (why)</th>
+              <th className="px-2 py-2 font-medium">SZ SSIDs <span className="font-normal text-gray-400">· from which WLAN Group</span></th>
               <th className="px-2 py-2 font-medium">R1 group → SSIDs</th>
               <th className="px-2 py-2 font-medium">Missing in R1</th>
               <th className="px-2 py-2 font-medium">Extra in R1</th>

@@ -134,7 +134,7 @@ def r1_activation(inv: R1VenueInventory, net: Dict[str, Any]) -> Dict[str, Any]:
             return {"all": True, "groups": [], "ap_count": len(inv.aps)}
         ids: Set[str] = set(vag.get("apGroupIds") or [])
         ids |= {x.get("apGroupId") for x in vag.get("apGroups") or [] if x.get("apGroupId")}
-        groups = sorted(((names.get(i, i), counts.get(i, 0)) for i in ids), key=lambda t: t[0])
+        groups = sorted(((names.get(i, "(AP Group not in capture)"), counts.get(i, 0)) for i in ids), key=lambda t: t[0])
         return {"all": False, "groups": groups, "ap_count": sum(c for _, c in groups)}
     return {"all": False, "groups": [], "ap_count": 0}
 

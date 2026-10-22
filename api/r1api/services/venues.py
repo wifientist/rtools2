@@ -731,7 +731,7 @@ class VenueService:
 
     # ========== AP Group Methods ==========
 
-    async def list_ap_groups_in_venue(self, tenant_id: str, venue_id: str) -> list:
+    async def list_ap_groups_in_venue(self, tenant_id: str, venue_id: str, fields: list = None) -> list:
         """
         EVERY AP Group in a venue, paged to completion.
 
@@ -740,7 +740,8 @@ class VenueService:
         that default silently returned a partial list, so a group that exists
         looked absent -- and the tools created a second one.
 
-        Returns a list of group dicts (id, name, venueId).
+        Returns a list of group dicts (id, name, venueId unless `fields` says
+        otherwise).
         """
         groups: list = []
         page, page_size, max_pages = 1, 100, 100
@@ -749,7 +750,7 @@ class VenueService:
             resp = await self.query_ap_groups(
                 tenant_id=tenant_id,
                 venue_id=venue_id,
-                fields=['id', 'name', 'venueId'],
+                fields=fields or ['id', 'name', 'venueId'],
                 page=page,
                 limit=page_size,
             )
