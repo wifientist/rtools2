@@ -14,10 +14,14 @@ interface SmartZoneZoneSelectorProps {
   domainId: string;
   onZoneSelect: (zoneId: string | null, zoneName: string | null) => void;
   disabled?: boolean;
+  // Which SZ controller to read. Defaults to the active one; pages that let
+  // SZ be either the active or the secondary controller pass it explicitly.
+  controllerId?: number | null;
 }
 
-const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false }: SmartZoneZoneSelectorProps) => {
-  const { activeControllerId } = useAuth();
+const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false, controllerId }: SmartZoneZoneSelectorProps) => {
+  const { activeControllerId: authControllerId } = useAuth();
+  const activeControllerId = controllerId ?? authControllerId;
   const [zones, setZones] = useState<Zone[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
