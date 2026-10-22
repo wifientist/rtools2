@@ -151,6 +151,9 @@ app.include_router(wlan_vlan_router, tags=["WLAN VLAN"])
 # WLAN Grabber — create in R1 the SZ WLANs it does not have yet (beta-gated)
 from routers.wlan_grabber.router import router as wlan_grabber_router
 app.include_router(wlan_grabber_router, tags=["WLAN Grabber"])
+# APG Cleanup — AP Groups: inspect, rename, delete, move APs in (beta-gated; replaces AP Regroup)
+from routers.apg_cleanup.router import router as apg_cleanup_router
+app.include_router(apg_cleanup_router, tags=["APG Cleanup"])
 
 app.include_router(status.router)
 app.include_router(opt43.router)
