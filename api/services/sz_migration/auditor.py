@@ -25,7 +25,7 @@ from services.sz_migration.resolver import resolve_wlan_activations
 from services.sz_migration.mapper import map_all_wlans
 from services.sz_migration.field_mappings import compare_fields
 from services.sz_migration.audit_matching import build_matching
-from services.sz_migration.audit_scorecard import build_scorecard
+from services.sz_migration.audit_scorecard import build_overview, build_scorecard
 from services.sz_migration.venue_settings import compare_venue_settings
 from services.sz_migration.broadcast_model import build_broadcast_audit
 from services.sz_migration.passphrase_check import PSK_AUTH_TYPES, compare_passphrases
@@ -321,6 +321,7 @@ def run_audit(
         audit_timestamp=datetime.now(timezone.utc).isoformat(),
         summary=summary,
         matching=matching,
+        overview=build_overview(snapshot, r1_inventory, matching),
         venue_settings=venue_settings,
         broadcast=broadcast,
         scorecard=build_scorecard(

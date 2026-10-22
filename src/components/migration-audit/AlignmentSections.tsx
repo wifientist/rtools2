@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, CheckCircle, AlertTriangle, XCircle, Clock, Hand, CircleDashed } from 'lucide-react';
 import type {
-  AlignmentCategory, CategoryStatus, AuditMatching, VenueSettingsAudit, SettingStatus, MatchMethod,
+  AlignmentCategory, CategoryStatus, AuditMatching, VenueSettingsAudit, SettingStatus, MatchMethod, OverviewRow,
 } from '@/types/migrationAudit';
 
 // ── Scorecard ────────────────────────────────────────────────────
@@ -336,6 +336,52 @@ export function MatchingSection({ matching }: { matching: AuditMatching }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Top summary: SZ left, R1 right ──────────────────────────────
+
+export function OverviewTable({ rows, szName, r1Name }: { rows: OverviewRow[]; szName: string; r1Name: string }) {
+  const mark: Record<OverviewRow['status'], { sym: string; cls: string; title: string }> = {
+    match:   { sym: '=', cls: 'text-green-700', title: 'Same on both sides' },
+    differs: { sym: '≠', cls: 'text-amber-700 font-bold', title: 'Different — worth a look' },
+    info:    { sym: '~', cls: 'text-gray-400', title: 'Not one-to-one by design' },
+  };
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-gray-500 border-b bg-gray-50">
+            <th className="px-4 py-2 text-left font-medium">Summary</th>
+            <th className="px-4 py-2 text-right font-medium">SmartZone<div className="font-normal text-gray-400 truncate">{szName}</div></th>
+            <th className="px-2 py-2 w-8" />
+            <th className="px-4 py-2 text-left font-medium">RuckusONE<div className="font-normal text-gray-400 truncate">{r1Name}</div></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => {
+            const m = mark[r.status] ?? mark.info;
+            return (
+              <tr key={r.label} className="border-b border-gray-100 align-top">
+                <td className="px-4 py-2.5 font-medium text-gray-800">
+                  {r.label}
+                  {r.note && <div className="text-[11px] font-normal text-gray-500">{r.note}</div>}
+                </td>
+                <td className="px-4 py-2.5 text-right">
+                  <div className="text-lg font-semibold tabular-nums">{fmt(r.sz_value)}</div>
+                  <div className="text-[11px] text-gray-400">{r.sz_note}</div>
+                </td>
+                <td className={`px-2 py-2.5 text-center text-lg ${m.cls}`} title={m.title}>{m.sym}</td>
+                <td className="px-4 py-2.5">
+                  <div className="text-lg font-semibold tabular-nums">{fmt(r.r1_value)}</div>
+                  <div className="text-[11px] text-gray-400">{r.r1_note}</div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

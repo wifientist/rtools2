@@ -160,6 +160,20 @@ def main():
     default_cov = next(a for a in report.ap_group_activations if a.sz_ap_group_name == "default")
     failures += check("AP Group coverage finds the R1 default group", default_cov.r1_ap_group_found)
 
+    # 10. top-of-report overview
+    ov = {r.label: r for r in report.overview}
+    failures += check("overview rows in order", [r.label for r in report.overview] ==
+                      ["APs", "WLANs", "AP Groups", "Default AP Group — APs"], str(list(ov)))
+    failures += check("APs 4 vs 3", (ov["APs"].sz_value, ov["APs"].r1_value, ov["APs"].status) == (4, 3, "differs"))
+    failures += check("WLANs 6 vs 5, one more not activated here",
+                      (ov["WLANs"].sz_value, ov["WLANs"].r1_value) == (6, 5) and "1 more" in ov["WLANs"].note)
+    failures += check("AP Groups not one-to-one -> info",
+                      (ov["AP Groups"].sz_value, ov["AP Groups"].r1_value, ov["AP Groups"].status) == (4, 3, "info")
+                      and ov["AP Groups"].sz_note == "3 with APs")
+    d = ov["Default AP Group — APs"]
+    failures += check("default groups: SZ 'default' 2 APs vs R1 unnamed default 1 AP",
+                      (d.sz_value, d.r1_value) == (2, 1) and "unnamed" in d.r1_note, str(d))
+
     # 9. scorecard
     sc = {c.key: c for c in report.scorecard}
     failures += check("scorecard has every category in order",

@@ -142,6 +142,14 @@ async def main():
     failures += check("-14 dB is unmappable", st("Radio 6 GHz", "Transmit power") == "unmappable")
     failures += check("80+80 width is unmappable", st("Radio 6 GHz", "Channel width") == "unmappable")
     failures += check("rogue: SZ off, R1 off -> match", st("Rogue detection", "Rogue detection enabled") == "match")
+    import copy
+    z2 = copy.deepcopy(ZONE)
+    z2["radioConfig"]["radio6g"].pop("afcEnabled")
+    r1b = copy.deepcopy(R1)
+    r1b["radio"]["radioParams6G"]["enableAfc"] = False
+    afc = {(r.section, r.label): r for r in compare_venue_settings(z2, VENUE, r1b).rows}[("Radio 6 GHz", "AFC")]
+    failures += check("AFC not set on SZ vs 'no' in R1 -> match (off both)",
+                      afc.status == "match" and afc.sz_value is False and "Not set on SZ" in afc.note, str(afc))
     # 3
     failures += check("absent SZ CAC = off; R1 5 GHz on -> differs, 2.4 off -> match",
                       st("Client admission control", "5 GHz enabled") == "differs"

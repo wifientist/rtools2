@@ -188,6 +188,16 @@ class _Rows:
                 section=section, label=label, sz_value=sz.split(":", 1)[1], r1_value=r1,
                 status="unmappable", note=note or "R1 has no equivalent for this SZ value"))
             return
+        # On/off settings: a side that doesn't report the setting has it off
+        # (SZ omits disabled features; R1 omits defaults that are false), so
+        # "—" vs "no" is the same thing, not a difference.
+        if (isinstance(sz, bool) or isinstance(r1, bool)) and \
+                all(v is None or isinstance(v, bool) for v in (sz, r1)):
+            if sz is None and not note:
+                note = "Not set on SZ — off"
+            elif r1 is None and not note:
+                note = "Not set in R1 — off"
+            sz, r1 = bool(sz), bool(r1)
         same = equal(sz, r1) if equal else sz == r1
         self.rows.append(SettingComparison(section=section, label=label, sz_value=sz, r1_value=r1,
                                            status="match" if same else "differs", note=note))

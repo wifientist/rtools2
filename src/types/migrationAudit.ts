@@ -101,6 +101,7 @@ export interface MigrationAuditReport {
   ap_group_activations: APGroupActivationAudit[];
   resource_coverage: ResourceCoverage[];
   auth_paths: AuthPathAudit[];
+  overview?: OverviewRow[];
   scorecard?: AlignmentCategory[];
   matching?: AuditMatching;
   venue_settings?: VenueSettingsAudit | null;
@@ -288,4 +289,16 @@ export interface BroadcastAudit {
   groups: BroadcastGroup[];
   counts: Record<string, number>;
   notes: string[];
+}
+
+// ── Top-of-report summary ─────────────────────────────────────────
+
+export interface OverviewRow {
+  label: string;
+  sz_value: any;
+  r1_value: any;
+  status: 'match' | 'differs' | 'info';
+  sz_note: string;
+  r1_note: string;
+  note: string;
 }

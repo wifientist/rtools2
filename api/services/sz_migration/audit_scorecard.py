@@ -15,13 +15,14 @@ Pure: builds from pieces the auditor already computed.
 from typing import Any, Dict, List, Optional, Set
 
 from schemas.migration_audit import (
-    AlignmentCategory, APGroupActivationAudit, AuditMatching, AuthPath, AuthPathAudit,
+    AlignmentCategory, APGroupActivationAudit, AuditMatching, AuthPath, AuthPathAudit, OverviewRow,
     NetworkAuditItem, VenueSettingsAudit, BroadcastAudit,
 )
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
 
 SZ_DEFAULT_WLAN_GROUP = "default"
+SZ_DEFAULT_AP_GROUP = "default"
 # Key WLAN settings for the scorecard row; the detail table shows everything.
 _KEY_FIELD_LABELS = {"VLAN ID": "VLAN", "Security Mode": "Security", "Mgmt Frame Protection": "MFP"}
 _KEY_DIFF_FIELDS = {"ssid": "SSID", "network_type": "Type", "vlan_id": "VLAN", "passphrase": "Passphrase"}
@@ -351,3 +352,53 @@ def build_scorecard(
         _wlan_config(network_items),
         _passphrases(auth_items),
     ]
+
+
+def build_overview(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
+                   matching: AuditMatching) -> List[OverviewRow]:
+    """
+    The top-of-report summary: the headline counts, SZ beside R1.
+
+    Counts are shown as-is; unequal ones are "differs" (worth a look, not an
+    error) or "info" where the two sides aren't one-to-one by design -- R1
+    usually has more AP Groups, because SZ's per-AP overrides become groups.
+    """
+    def same(a, b):
+        return "match" if a == b else "differs"
+
+    r1_groups_with_aps = {a.get("apGroupId") for a in inv.aps if a.get("apGroupId")}
+    rows = [
+        OverviewRow(label="APs", sz_value=len(snapshot.aps), r1_value=len(inv.aps),
+                    status=same(len(snapshot.aps), len(inv.aps)),
+                    sz_note="in the zone", r1_note="in the venue"),
+    ]
+
+    not_active = matching.counts.get("wlans_not_activated", 0)
+    rows.append(OverviewRow(
+        label="WLANs", sz_value=len(snapshot.wlans), r1_value=len(inv.wifi_networks),
+        status=same(len(snapshot.wlans), len(inv.wifi_networks)),
+        sz_note="in the zone", r1_note="activated in the venue",
+        note=f"{not_active} more exist in R1 but aren't activated here" if not_active else "",
+    ))
+
+    sz_with_aps = sum(1 for g in snapshot.ap_groups if (g.ap_count or 0) > 0)
+    rows.append(OverviewRow(
+        label="AP Groups", sz_value=len(snapshot.ap_groups), r1_value=len(inv.ap_groups),
+        status="match" if len(snapshot.ap_groups) == len(inv.ap_groups) else "info",
+        sz_note=f"{sz_with_aps} with APs", r1_note=f"{len(r1_groups_with_aps)} with APs",
+        note="" if len(snapshot.ap_groups) == len(inv.ap_groups) else
+             "Not one-to-one: SZ per-AP WLAN Group overrides usually become R1 AP Groups",
+    ))
+
+    sz_default = next((g for g in snapshot.ap_groups if g.name == SZ_DEFAULT_AP_GROUP), None)
+    r1_default = inv.default_ap_group()
+    sz_n = (sz_default.ap_count or 0) if sz_default else None
+    r1_n = sum(1 for a in inv.aps if r1_default and a.get("apGroupId") == r1_default.get("id")) if r1_default else None
+    rows.append(OverviewRow(
+        label="Default AP Group — APs", sz_value=sz_n, r1_value=r1_n,
+        status=same(sz_n, r1_n) if sz_n is not None and r1_n is not None else "info",
+        sz_note="group 'default'" if sz_default else "no group named 'default'",
+        r1_note=(f"group '{r1_default.get('name')}'" if r1_default and r1_default.get("name")
+                 else "the venue's default group (unnamed)" if r1_default else "no default group found"),
+    ))
+    return rows

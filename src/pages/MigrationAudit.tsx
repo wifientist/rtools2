@@ -11,7 +11,7 @@ import SmartZoneDomainSelector from '@/components/SmartZoneDomainSelector';
 import SmartZoneZoneSelector from '@/components/SmartZoneZoneSelector';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
-import { Scorecard, VenueSettingsSection, MatchingSection } from '@/components/migration-audit/AlignmentSections';
+import { Scorecard, VenueSettingsSection, MatchingSection, OverviewTable } from '@/components/migration-audit/AlignmentSections';
 import BroadcastSection from '@/components/migration-audit/BroadcastSection';
 import CachePanel, { ago } from '@/components/migration-audit/CachePanel';
 import type {
@@ -540,6 +540,11 @@ function AuditResults({
           </div>
         </div>
       </div>
+
+      {/* Top summary: the headline counts, SZ beside R1 */}
+      {report.overview && report.overview.length > 0 && (
+        <OverviewTable rows={report.overview} szName={report.sz_zone_name} r1Name={report.r1_venue_name} />
+      )}
 
       {/* Scorecard: how aligned is this site, category by category */}
       {report.scorecard && report.scorecard.length > 0 && <Scorecard categories={report.scorecard} />}

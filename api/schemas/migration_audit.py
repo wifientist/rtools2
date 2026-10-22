@@ -318,6 +318,18 @@ class BroadcastAudit(BaseModel):
     notes: List[str] = Field(default_factory=list)
 
 
+class OverviewRow(BaseModel):
+    """One line of the top-of-report summary: SZ on the left, R1 on the right."""
+    label: str
+    sz_value: Optional[Any] = None
+    r1_value: Optional[Any] = None
+    # match | differs | info (not comparable one-to-one)
+    status: str = "match"
+    sz_note: str = ""
+    r1_note: str = ""
+    note: str = ""
+
+
 class AlignmentCategory(BaseModel):
     """
     One row of the end-of-run scorecard: SZ vs R1 for one category.
@@ -369,6 +381,7 @@ class MigrationAuditReport(BaseModel):
 
     # Results
     summary: AuditSummary
+    overview: List[OverviewRow] = Field(default_factory=list)
     scorecard: List[AlignmentCategory] = Field(default_factory=list)
     matching: AuditMatching = Field(default_factory=AuditMatching)
     venue_settings: Optional[VenueSettingsAudit] = None   # None: no live R1 read this run
