@@ -42,12 +42,23 @@ function MigrateSzToR1() {
     activeControllerId,
     activeControllerName,
     activeControllerType,
+    activeControllerSubtype,
     secondaryControllerId,
     secondaryControllerName,
     secondaryControllerType,
     secondaryControllerSubtype,
     controllers
   } = useAuth();
+
+  // The move is always SZ → R1, so the SZ and R1 can sit in either slot.
+  const slots = [
+    { id: activeControllerId, name: activeControllerName, type: activeControllerType, subtype: activeControllerSubtype },
+    { id: secondaryControllerId, name: secondaryControllerName, type: secondaryControllerType, subtype: secondaryControllerSubtype },
+  ];
+  const szSlot = slots.find(s => s.id && s.type === "SmartZone");
+  const r1Slot = slots.find(s => s.id && s.type === "RuckusONE");
+  const szId = szSlot?.id ?? null;
+  const r1Id = r1Slot?.id ?? null;
 
   // SmartZone (source) state
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
@@ -119,7 +130,7 @@ function MigrateSzToR1() {
   };
 
   const handleSelectAPClick = () => {
-    if (!selectedZoneId || !activeControllerId) {
+    if (!selectedZoneId || !szId) {
       alert("Please select a wireless zone first");
       return;
     }
@@ -137,7 +148,7 @@ function MigrateSzToR1() {
   };
 
   const handleSelectSwitchClick = () => {
-    if (!selectedDomainId || !activeControllerId) {
+    if (!selectedDomainId || !szId) {
       alert("Please select a domain first");
       return;
     }
@@ -160,13 +171,13 @@ function MigrateSzToR1() {
       return;
     }
 
-    if (!secondaryControllerId) {
+    if (!r1Id) {
       alert("Please select a destination RuckusONE controller");
       return;
     }
 
     // Check if EC selection is required (MSP) and if it's selected
-    if (secondaryControllerSubtype === "MSP" && !destEcId) {
+    if (needsEcSelection && !destEcId) {
       alert("Please select a destination EC");
       return;
     }
@@ -186,8 +197,8 @@ function MigrateSzToR1() {
 
     try {
       const payload = {
-        source_controller_id: activeControllerId,
-        dest_controller_id: secondaryControllerId,
+        source_controller_id: szId,
+        dest_controller_id: r1Id,
         dest_tenant_id: effectiveTenantId, // Include tenant ID for MSP or EC
         dest_venue_id: destVenueId,
         dest_ap_group: destApGroup || "Default",
@@ -257,27 +268,25 @@ function MigrateSzToR1() {
     }
   };
 
-  // Validate controller types
-  const isActiveSmartZone = activeControllerType === "SmartZone";
-  const isSecondaryRuckusOne = secondaryControllerType === "RuckusONE";
-  const controllersValid = isActiveSmartZone && isSecondaryRuckusOne;
+  // Validate controller types: one SmartZone and one RuckusONE, either slot
+  const controllersValid = !!szId && !!r1Id;
 
   // Determine if we need to show EC selector (MSP) or go straight to venue (EC)
-  const needsEcSelection = secondaryControllerSubtype === "MSP";
+  const needsEcSelection = r1Slot?.subtype === "MSP";
 
   // For MSP controllers: use the selected EC ID
   // For EC controllers: use the controller's r1_tenant_id from the database
-  const secondaryController = controllers.find(c => c.id === secondaryControllerId);
+  const r1Controller = controllers.find(c => c.id === r1Id);
   const effectiveTenantId = needsEcSelection
     ? destEcId
-    : (secondaryController?.r1_tenant_id || null);
+    : (r1Controller?.r1_tenant_id || null);
 
-  const isReadyToSelectDevices = selectedDomainId && activeControllerId && controllersValid;
+  const isReadyToSelectDevices = selectedDomainId && szId && controllersValid;
   const hasDevicesSelected = selectedAPs.length > 0 || selectedSwitches.length > 0;
   const isReadyToMigrate = isReadyToSelectDevices &&
     hasDevicesSelected &&
     destVenueId &&
-    secondaryControllerId &&
+    r1Id &&
     (!needsEcSelection || destEcId); // EC must be selected if needed
 
   // Check license availability when devices are selected
@@ -285,7 +294,7 @@ function MigrateSzToR1() {
     const checkLicenses = async () => {
       // Only check if we have devices selected and destination controller configured
       const totalDevices = selectedAPs.length + selectedSwitches.length;
-      if (totalDevices === 0 || !secondaryControllerId) {
+      if (totalDevices === 0 || !r1Id) {
         setLicenseCheck(null);
         setLicenseCheckError(null);
         return;
@@ -303,7 +312,7 @@ function MigrateSzToR1() {
 
       try {
         const payload = {
-          controller_id: secondaryControllerId,
+          controller_id: r1Id,
           tenant_id: effectiveTenantId,
           ap_count: totalDevices, // Total APs + Switches
         };
@@ -333,14 +342,14 @@ function MigrateSzToR1() {
     };
 
     checkLicenses();
-  }, [selectedAPs, selectedSwitches, secondaryControllerId, effectiveTenantId, destEcId, needsEcSelection]);
+  }, [selectedAPs, selectedSwitches, r1Id, effectiveTenantId, destEcId, needsEcSelection]);
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="mb-8">
-        <h2 className="text-3xl font-bold mb-2">SmartZone to RuckusONE Migration</h2>
+        <h2 className="text-3xl font-bold mb-2">Move SmartZone to RuckusONE</h2>
         <p className="text-gray-600">
-          Migrate Access Points and/or Switches from SmartZone to RuckusONE
+          Move Access Points and/or Switches from SmartZone to RuckusONE
         </p>
       </div>
 
@@ -354,26 +363,26 @@ function MigrateSzToR1() {
                 Invalid Controller Configuration
               </h3>
               <p className="text-red-800 mb-3">
-                This migration tool requires your <strong>Active Controller</strong> to be a <strong>SmartZone</strong> controller
-                and your <strong>Secondary Controller</strong> to be a <strong>RuckusONE</strong> controller.
+                This tool needs one <strong>SmartZone</strong> and one <strong>RuckusONE</strong> controller selected,
+                as Active and Secondary in either order. Hardware always moves SmartZone → RuckusONE.
               </p>
               <div className="bg-white rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Active Controller:</span>
-                  <span className={`font-semibold ${isActiveSmartZone ? 'text-green-600' : 'text-red-600'}`}>
-                    {activeControllerType || 'Not selected'} {isActiveSmartZone ? '✓' : '✗'}
+                  <span className="text-gray-700">SmartZone:</span>
+                  <span className={`font-semibold ${szSlot ? 'text-green-600' : 'text-red-600'}`}>
+                    {szSlot?.name || 'Not selected'} {szSlot ? '✓' : '✗'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Secondary Controller:</span>
-                  <span className={`font-semibold ${isSecondaryRuckusOne ? 'text-green-600' : 'text-red-600'}`}>
-                    {secondaryControllerType || 'Not selected'} {isSecondaryRuckusOne ? '✓' : '✗'}
+                  <span className="text-gray-700">RuckusONE:</span>
+                  <span className={`font-semibold ${r1Slot ? 'text-green-600' : 'text-red-600'}`}>
+                    {r1Slot?.name || 'Not selected'} {r1Slot ? '✓' : '✗'}
                   </span>
                 </div>
               </div>
               <p className="text-sm text-red-700 mt-3">
                 Please go to the <a href="/controllers" className="underline font-semibold">Controllers</a> page
-                to select the correct controllers for this migration.
+                to select the correct controllers for this move.
               </p>
             </div>
           </div>
@@ -387,7 +396,7 @@ function MigrateSzToR1() {
             <Server className="w-6 h-6 text-blue-600" />
             <div>
               <div className="font-semibold text-blue-900">SmartZone</div>
-              <div className="text-sm text-blue-700">{activeControllerName || "Not selected"}</div>
+              <div className="text-sm text-blue-700">{szSlot?.name || "Not selected"}</div>
             </div>
           </div>
 
@@ -397,7 +406,7 @@ function MigrateSzToR1() {
             <Target className="w-6 h-6 text-green-600" />
             <div>
               <div className="font-semibold text-green-900">RuckusONE</div>
-              <div className="text-sm text-green-700">{secondaryControllerName || "Not selected"}</div>
+              <div className="text-sm text-green-700">{r1Slot?.name || "Not selected"}</div>
             </div>
           </div>
         </div>
@@ -412,8 +421,9 @@ function MigrateSzToR1() {
           <h3 className="text-xl font-semibold">Select Source Domain</h3>
         </div>
         <SmartZoneDomainSelector
+          controllerId={szId}
           onDomainSelect={handleDomainSelect}
-          disabled={!activeControllerId}
+          disabled={!szId}
         />
       </div>
 
@@ -428,9 +438,10 @@ function MigrateSzToR1() {
           </div>
 
           <SmartZoneZoneSelector
+            controllerId={szId}
             domainId={selectedDomainId}
             onZoneSelect={handleZoneSelect}
-            disabled={!activeControllerId}
+            disabled={!szId}
           />
         </div>
       )}
@@ -518,7 +529,7 @@ function MigrateSzToR1() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <SingleEcSelector
-              controllerId={secondaryControllerId}
+              controllerId={r1Id}
               onEcSelect={handleEcSelect}
               selectedEcId={destEcId}
             />
@@ -538,7 +549,7 @@ function MigrateSzToR1() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <SingleVenueSelector
-              controllerId={secondaryControllerId}
+              controllerId={r1Id}
               tenantId={effectiveTenantId}
               onVenueSelect={handleVenueSelect}
               onApGroupChange={handleApGroupChange}
@@ -688,9 +699,9 @@ function MigrateSzToR1() {
       )}
 
       {/* AP Selection Modal */}
-      {showAPSelect && activeControllerId && selectedZoneId && (
+      {showAPSelect && szId && selectedZoneId && (
         <SzApSelect
-          controllerId={activeControllerId}
+          controllerId={szId}
           zoneId={selectedZoneId}
           onClose={handleAPSelectClose}
           onConfirm={handleAPSelectConfirm}
@@ -698,9 +709,9 @@ function MigrateSzToR1() {
       )}
 
       {/* Switch Selection Modal */}
-      {showSwitchSelect && activeControllerId && selectedDomainId && (
+      {showSwitchSelect && szId && selectedDomainId && (
         <SzSwitchSelect
-          controllerId={activeControllerId}
+          controllerId={szId}
           domainId={selectedDomainId}
           onClose={handleSwitchSelectClose}
           onConfirm={handleSwitchSelectConfirm}
