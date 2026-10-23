@@ -396,7 +396,9 @@ def test_activation():
 def test_graph():
     print("\n4. Graph")
     deps = {p.id: p.depends_on for p in WlanActivatorWorkflow.phases}
-    check("activate after create", deps["activate_wlans"] == ["create_ap_group"])
+    # Plus link_dpsk_pools directly: create_ap_group is pre-completed for existing groups,
+    # and the scheduler checks direct dependencies only.
+    check("activate after create", deps["activate_wlans"] == ["create_ap_group", "link_dpsk_pools"])
     check("assign after activate", deps["assign_aps"] == ["activate_wlans"])
     from workflow.workflows import get_workflow
     from workflow.phases.registry import get_phase_class

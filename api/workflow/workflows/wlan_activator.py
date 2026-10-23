@@ -15,6 +15,8 @@ reused unchanged.
 
 Flow:
     validate_wlan_activator (global)
+      └── link_dpsk_pools (global)  links the chosen pool to DPSK networks
+        │                           that have none; skipped otherwise
         └── create_ap_group (per AP Group)
                 └── activate_wlans (per AP Group)
                         └── assign_aps (per AP Group)
@@ -55,7 +57,24 @@ WlanActivatorWorkflow = Workflow(
                 "unresolved_wlans",
                 "ap_groups_to_create",
                 "ap_groups_to_reuse",
+                "dpsk_links_to_make",
+                "dpsk_link_names",
             ],
+            api_calls_per_unit=0,
+        ),
+        Phase(
+            id="link_dpsk_pools",
+            name="Link DPSK Pools",
+            description=(
+                "Link the chosen DPSK pool to each DPSK network that has none "
+                "(R1 refuses to activate those, WIFI-20300). Skipped when none."
+            ),
+            executor="link_dpsk_pools",
+            depends_on=["validate_wlan_activator"],
+            per_unit=False,
+            critical=True,
+            inputs=["dpsk_links_to_make", "dpsk_link_names"],
+            outputs=["dpsk_links_made", "dpsk_links_failed"],
             api_calls_per_unit=0,
         ),
         Phase(
@@ -63,7 +82,7 @@ WlanActivatorWorkflow = Workflow(
             name="Create AP Groups",
             description="Create each AP Group that does not already exist.",
             executor="create_ap_group",
-            depends_on=["validate_wlan_activator"],
+            depends_on=["link_dpsk_pools"],
             per_unit=True,
             critical=True,
             inputs=["unit_id", "unit_number", "ap_group_name", "ap_group_id"],
@@ -81,7 +100,11 @@ WlanActivatorWorkflow = Workflow(
                 "activation, never All AP Groups), verified by read-back."
             ),
             executor="activate_wlans",
-            depends_on=["create_ap_group"],
+            # link_dpsk_pools directly, not only through create_ap_group: an
+            # AP Group that already exists has create_ap_group pre-completed,
+            # and the scheduler checks direct dependencies only -- activation
+            # then raced the link (R1 WIFI-20300, 2026-10-23).
+            depends_on=["create_ap_group", "link_dpsk_pools"],
             per_unit=True,
             critical=True,
             inputs=["unit_id", "unit_number", "ap_group_id", "ap_group_name", "wlans"],

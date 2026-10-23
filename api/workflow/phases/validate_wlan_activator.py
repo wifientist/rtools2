@@ -22,14 +22,16 @@ property-wide WLAN keeps its 6 GHz); a network bound nowhere yet gets 2.4 +
 
 Checks that block the plan (errors), because R1 would refuse the activation:
   * a group would carry more than 15 SSIDs (R1's per-AP-Group limit);
-  * a DPSK WLAN has no DPSK service linked (WIFI-20300).
+  * a DPSK WLAN has no DPSK service linked (WIFI-20300) -- unless the user
+    chose a pool for those (options.dpsk_link_pool_id): then the link is
+    planned and the link_dpsk_pools phase makes it before activation.
 Rows whose AP or WLAN can't be resolved are skipped with a warning.
 """
 
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +66,8 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
     class Inputs(BaseModel):
         activations: List[Dict[str, Any]] = Field(default_factory=list)
         options: Dict[str, Any] = Field(default_factory=dict)
+        # A job option: the engine passes job options as top-level inputs, not under `options`.
+        dpsk_link_pool_id: Optional[str] = None
 
     class Outputs(BaseModel):
         unit_mappings: Dict[str, UnitMapping] = Field(default_factory=dict)
@@ -73,6 +77,8 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
         unresolved_wlans: List[Dict[str, str]] = Field(default_factory=list)
         ap_groups_to_create: List[str] = Field(default_factory=list)
         ap_groups_to_reuse: List[str] = Field(default_factory=list)
+        dpsk_links_to_make: Dict[str, str] = Field(default_factory=dict)   # network id -> pool id
+        dpsk_link_names: Dict[str, str] = Field(default_factory=dict)
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         rows = []
@@ -221,6 +227,8 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
 
         # ---- DPSK services for networks that still need step 1 ---------
         dpsk_pool: Dict[str, str] = {}
+        dpsk_links: Dict[str, str] = {}          # unlinked network id -> chosen pool
+        dpsk_link_names: Dict[str, str] = {}
         need_pool = [
             n for ws in wlans_by_group.values() for n in ws.values()
             if is_dpsk(n) and venue_state(n, self.venue_id)[0] != "specific"
@@ -241,13 +249,36 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
                         logger.warning(f"DPSK service lookup failed for {n.get('name')}: {e}")
 
             await asyncio.gather(*(fetch_pool(n) for n in need_pool))
-            no_pool = sorted(n.get("name") or n["id"] for n in need_pool if n["id"] not in dpsk_pool)
+            unlinked = [n for n in need_pool if n["id"] not in dpsk_pool]
+            link_pool = inputs.dpsk_link_pool_id or (inputs.options or {}).get("dpsk_link_pool_id")
+            if unlinked and link_pool:
+                pool_name = None
+                try:
+                    pool = await self.r1_client.dpsk.get_dpsk_pool(link_pool, self.tenant_id)
+                    pool_name = (pool or {}).get("name") if (pool or {}).get("id") else None
+                except Exception as e:
+                    logger.warning(f"DPSK pool {link_pool} lookup failed: {e}")
+                if pool_name:
+                    for n in unlinked:
+                        dpsk_links[n["id"]] = link_pool
+                        dpsk_link_names[n["id"]] = n.get("name") or n["id"]
+                        dpsk_pool[n["id"]] = link_pool
+                    unlinked = []
+                    await self.emit(f"{len(dpsk_links)} DPSK network(s) will be linked to pool '{pool_name}'")
+                else:
+                    conflicts.append(ConflictDetail(
+                        resource_type="dpsk_pool", resource_name=link_pool,
+                        description="The DPSK pool chosen for unlinked DPSK networks was not found in this tenant.",
+                        severity="error",
+                    ))
+            no_pool = sorted(n.get("name") or n["id"] for n in unlinked)
             for name in no_pool:
                 conflicts.append(ConflictDetail(
                     resource_type="wlan", resource_name=name,
                     description=(
                         "DPSK network with no DPSK service linked; R1 refuses to activate it "
-                        "(WIFI-20300). Link a DPSK service to it first."
+                        "(WIFI-20300). Pick a pool under 'DPSK WLANs with no DPSK pool linked' "
+                        "and plan again, or link one in R1."
                     ),
                     severity="error",
                 ))
@@ -384,6 +415,12 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             action="update", resource_type="access_points", name=f"{len(group_of_serial)} APs moved",
             notes=[f"{len(unmatched)} rows matched no AP in this venue"] if unmatched else [],
         ))
+        if dpsk_links:
+            actions.append(ResourceAction(
+                action="update", resource_type="dpsk_links",
+                name=f"{len(dpsk_links)} DPSK network(s) get their missing DPSK pool linked",
+                notes=[_sample(sorted(dpsk_link_names.values()))],
+            ))
         actions.append(ResourceAction(
             action="create", resource_type="wlan_activations",
             name=f"{activations - vlan_updates} WLAN activations on AP Groups",
@@ -420,6 +457,8 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             unresolved_wlans=[{"wlan": w, "reason": r} for w, r in sorted(unresolved.items())],
             ap_groups_to_create=to_create,
             ap_groups_to_reuse=to_reuse,
+            dpsk_links_to_make=dpsk_links,
+            dpsk_link_names=dpsk_link_names,
             validation_result=ValidationResult(
                 valid=bool(unit_mappings) and not errors,
                 conflicts=conflicts,

@@ -30,6 +30,7 @@ from models.user import User
 from redis_client import get_redis_client
 from routers.per_unit_ssid.per_unit_ssid_router import validate_controller_access
 from routers.tenant_scope import resolve_tenant_id
+from services.dpsk_pool_context import list_dpsk_pools, venue_pool_suggestion
 from services.wlan_activator import (
     DEFAULT_GROUP_PATTERN, DEFAULT_WLAN_PATTERN, build_suggestions, detect_property_suffix,
 )
@@ -62,6 +63,9 @@ class WlanActivatorRequest(BaseModel):
     # ap_identifier matches by serial OR name and may be blank (activate only);
     # wlan matches a network by name, then SSID.
     activations: List[Dict[str, str]] = Field(default_factory=list)
+    # A pool for DPSK networks that have none linked (R1 will not activate them).
+    # None: such networks block the plan, as before.
+    dpsk_link_pool_id: Optional[str] = None
 
 
 class V2PlanResponse(BaseModel):
@@ -190,7 +194,7 @@ async def create_plan(
         tenant_id=tenant_id,
         controller_id=request.controller_id,
         user_id=current_user.id,
-        options={},
+        options={'dpsk_link_pool_id': request.dpsk_link_pool_id} if request.dpsk_link_pool_id else {},
         input_data={'activations': request.activations},
     )
     background_tasks.add_task(run_v2_validation_background, job.id, request.controller_id)
@@ -285,6 +289,37 @@ async def get_workflow_graph(job_id: str, current_user: User = Depends(get_curre
         edges=graph_data["edges"],
         levels={str(k): v for k, v in graph.compute_levels().items()},
     )
+
+
+# ==================== DPSK pools (read-only) ====================
+
+@router.get("/{controller_id}/venue/{venue_id}/dpsk-pools")
+async def dpsk_pools(
+    controller_id: int,
+    venue_id: str,
+    tenant_id: Optional[str] = Query(None, description="Tenant ID (required for MSP)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    The tenant's DPSK pools and the one the venue's DPSK networks use, for
+    linking DPSK networks that have none. Read-only.
+    """
+    controller = validate_controller_access(controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail=f"Controller must be RuckusONE, got {controller.controller_type}")
+    effective_tenant_id = resolve_tenant_id(controller, tenant_id)
+    r1_client = create_r1_client_from_controller(controller_id, db)
+    try:
+        venue = await r1_client.venues.get_venue(effective_tenant_id, venue_id)
+        net_resp = await r1_client.networks.get_wifi_networks(effective_tenant_id, venue_id=venue_id)
+        networks = net_resp.get("data", []) if isinstance(net_resp, dict) else net_resp
+        pools = await list_dpsk_pools(r1_client, effective_tenant_id)
+        suggestion = await venue_pool_suggestion(
+            r1_client, effective_tenant_id, venue_id, (venue or {}).get("name"), networks)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to read DPSK pools from R1: {e}")
+    return {"pools": pools, "suggestion": suggestion}
 
 
 # ==================== Suggest (read-only) ====================
