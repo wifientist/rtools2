@@ -7,6 +7,8 @@ One R1 venue's AP Groups: membership, WLAN mapping, rename and delete.
 - POST /apg-cleanup/delete    -> delete the chosen groups
 - POST /apg-cleanup/rename    -> rename groups; dry_run returns the checked
                                  before/after without writing
+- POST /apg-cleanup/ap-names  -> rename APs (dropping the serial from their
+                                 names); dry_run likewise
 - POST /apg-cleanup/move      -> move APs into groups (creating missing ones);
                                  dry_run likewise. AP Regroup's job, inline.
 
@@ -42,7 +44,7 @@ from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
 from routers.tenant_scope import resolve_tenant_id
-from services.apg_cleanup import build_inventory, check_delete, plan_moves, plan_renames
+from services.apg_cleanup import build_inventory, check_delete, plan_ap_renames, plan_moves, plan_renames
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,16 @@ class Move(BaseModel):
 class MoveRequest(VenueRequest):
     moves: List[Move] = Field(..., min_length=1, max_length=MAX_MOVES)
     allow_create: bool = True
+    dry_run: bool = False
+
+
+class ApName(BaseModel):
+    serial: str
+    new_name: str
+
+
+class ApNameRequest(VenueRequest):
+    renames: List[ApName] = Field(..., min_length=1, max_length=MAX_MOVES)
     dry_run: bool = False
 
 
@@ -437,3 +449,99 @@ async def move_aps(
     counts = {s: sum(1 for r in results if r["status"] == s) for s in statuses}
     counts["groups_created"] = len(created)
     return {"dry_run": False, "results": results, "counts": counts}
+
+
+@router.post("/ap-names")
+@require_beta()
+async def rename_aps(
+    request: ApNameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Rename APs -- the page uses it to drop the serial from AP names. Checked
+    against the venue's APs as R1 has them now; with dry_run, only the check.
+
+    PUT /venues/{v}/aps/{serial} with {serialNumber, name}, as AP Rename
+    sends it. Submitted together, waited on together, then every AP is read
+    back: renamed, unconfirmed (taken, not visible yet) or failed. An AP
+    whose group changed on the way is reported -- the body carries no
+    apGroupId, and it must not move.
+    """
+    controller = _check_controller(request.controller_id, current_user, db)
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
+    r1_client = create_r1_client_from_controller(request.controller_id, db)
+    venue_id = request.venue_id
+
+    async def read_aps() -> List[Dict[str, Any]]:
+        return (await r1_client.venues.get_aps_by_tenant_venue(tenant_id, venue_id)).get("data") or []
+
+    try:
+        aps = await read_aps()
+    except Exception as e:
+        logger.exception(f"[APG Cleanup] R1 AP read failed for venue {venue_id}")
+        raise HTTPException(status_code=502, detail=f"Failed to read the venue's APs from R1: {_api_error(e)}")
+
+    plan = plan_ap_renames(aps, [r.model_dump() for r in request.renames])
+    if request.dry_run:
+        return {"dry_run": True, **plan}
+
+    group_before = {a.get("serialNumber"): a.get("apGroupId") for a in aps}
+    rows = [dict(r) for r in plan["rows"]]
+    sem = asyncio.Semaphore(MOVE_CONCURRENCY)
+    request_of: Dict[str, str] = {}
+
+    async def submit(r: Dict[str, Any]):
+        async with sem:
+            try:
+                resp = await asyncio.to_thread(
+                    _call, r1_client, "put", f"/venues/{venue_id}/aps/{r['serial']}", tenant_id,
+                    payload={"serialNumber": r["serial"], "name": r["new_name"]})
+                if resp.status_code not in (200, 201, 202):
+                    resp.raise_for_status()
+                body = resp.json() if resp.content else {}
+                if body.get("requestId"):
+                    request_of[r["serial"]] = body["requestId"]
+                r["status"] = "submitted"
+            except Exception as e:
+                r.update(status="failed", error=_api_error(e))
+                logger.error(f"[APG Cleanup] Rename of AP {r['old_name']} -> {r['new_name']} refused: {e}")
+
+    await asyncio.gather(*[submit(r) for r in rows if r["status"] == "ok"])
+
+    task_results: Dict[str, Dict[str, Any]] = {}
+    if request_of:
+        try:
+            task_results = await r1_client.await_task_completion_bulk(
+                list(request_of.values()), override_tenant_id=tenant_id,
+                global_timeout_seconds=MOVE_WAIT_SECONDS,
+            ) or {}
+        except Exception as e:
+            logger.warning(f"[APG Cleanup] Waiting on {len(request_of)} AP rename tasks stopped early: {e}")
+
+    try:
+        now = {a.get("serialNumber"): a for a in await read_aps()}
+    except Exception as e:
+        logger.warning(f"[APG Cleanup] Could not re-read APs after renaming: {e}")
+        now = {}
+    for r in rows:
+        if r["status"] != "submitted":
+            continue
+        ap = now.get(r["serial"]) or {}
+        task = task_results.get(request_of.get(r["serial"], ""), {})
+        if ap.get("name") == r["new_name"]:
+            if ap.get("apGroupId") != group_before.get(r["serial"]):
+                r.update(status="renamed_group_changed",
+                         error="Renamed, but R1 now shows the AP in a different AP Group")
+                logger.error(f"[APG Cleanup] AP {r['serial']} changed group on rename")
+            else:
+                r["status"] = "renamed"
+                logger.info(f"[APG Cleanup] Renamed AP {r['serial']}: {r['old_name']} -> {r['new_name']}")
+        elif task and not task.get("success") and "timeout" not in str(task.get("error", "")).lower():
+            r.update(status="failed", error=task.get("error"))
+        else:
+            r.update(status="unconfirmed", error="Submitted; R1 does not show the new name yet — re-read in a minute")
+
+    statuses = ("renamed", "renamed_group_changed", "unchanged", "unconfirmed", "failed", "blocked")
+    counts = {st: sum(1 for r in rows if r["status"] == st) for st in statuses}
+    return {"dry_run": False, "results": rows, "counts": counts}

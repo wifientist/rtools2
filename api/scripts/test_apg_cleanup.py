@@ -27,6 +27,9 @@ WHAT THIS GUARDS
      by two APs is refused), group by id or name, a case variant reused,
      a missing group created once, invalid names and a group named
      "default" refused as targets, an AP already there is "already".
+  8. AP names carrying their serial: the serial, its delimiter and any
+     brackets are stripped; matching uses the stripped name; renames obey
+     R1's AP name rule (2-32) and never leave two APs with one name.
 
 Usage:
     docker compose exec backend python scripts/test_apg_cleanup.py
@@ -39,7 +42,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.apg_cleanup import build_inventory, check_delete, plan_moves, plan_renames, suggest_group
+from services.apg_cleanup import (build_inventory, check_delete, plan_ap_renames, plan_moves,
+                                  plan_renames, strip_serial, suggest_group)
 
 FAILS = 0
 VENUE = "v1"
@@ -257,6 +261,42 @@ out, r = mv([{"ap": "S1", "group_id": "zzz"}])
 check("unknown group id refused", r[0]["status"] == "blocked")
 out, r = mv([{"ap": "S2", "group_id": "g0"}])
 check("into R1's real default is allowed", r[0]["status"] == "ok")
+
+
+print("\n8. AP names carrying their serial")
+SER = "411839006684"
+for name, want in [(f"COM1_{SER}", "COM1"), (f"8000-101_{SER}", "8000-101"), (f"{SER}-1113", "1113"),
+                   (f"Lobby ({SER})", "Lobby"), (f"A_{SER}_B", "A_B"), (f"Hall - {SER}", "Hall"),
+                   (f"com1_{SER.upper()}", "com1"), (SER, None), ("1222 NEW", None), ("Lobby_12", None)]:
+    check(f"strip {name!r} -> {want!r}", strip_serial(name, SER if name != "Lobby_12" else "12") == want,
+          strip_serial(name, SER))
+
+groups8 = [group("g0", "", default=True), group("u1113", "1113@Site"), group("c1", "COM1@Site")]
+aps8 = [{**ap(SER, "g0"), "name": f"1113_{SER}"}, {**ap("222222222222", "c1"), "name": "COM1_222222222222"},
+        {**ap("333333333333", "g0"), "name": "333333333333"}, {**ap("444444444444", "c1"), "name": "COM1"}]
+inv8 = build_inventory(groups8, aps8, [], {}, VENUE)
+d8 = {a["serial"]: a for a in inv8["default_aps"]}
+check("matching ignores the serial in the name", d8[SER]["suggested_group_id"] == "u1113", d8[SER])
+sn = {r["serial"]: r for r in inv8["serial_named"]}
+check("serial-named APs listed (not one named only its serial)", set(sn) == {SER, "222222222222"}, list(sn))
+check("proposal ok", sn[SER]["status"] == "ok" and sn[SER]["new_name"] == "1113" and sn[SER]["group_name"] == "(default)")
+check("proposal colliding with another AP's name blocked",
+      sn["222222222222"]["status"] == "blocked" and "COM1" in sn["222222222222"]["error"], sn["222222222222"])
+check("summary counts them", inv8["summary"]["serial_named"] == 2)
+
+pr = lambda rs: {r["serial"]: r for r in plan_ap_renames(aps8, rs)["rows"]}
+r = pr([{"serial": SER, "new_name": "x"}])
+check("AP name too short refused", r[SER]["status"] == "blocked")
+r = pr([{"serial": SER, "new_name": "y" * 33}])
+check("AP name over 32 refused", r[SER]["status"] == "blocked")
+r = pr([{"serial": SER, "new_name": f"1113_{SER}"}])
+check("same name -> unchanged", r[SER]["status"] == "unchanged")
+r = pr([{"serial": SER, "new_name": "Unit"}, {"serial": "333333333333", "new_name": "unit"}])
+check("two APs onto one name both refused", r[SER]["status"] == r["333333333333"]["status"] == "blocked")
+r = pr([{"serial": "444444444444", "new_name": "COM1-old"}, {"serial": "222222222222", "new_name": "COM1"}])
+check("taking a name another AP is vacating is ok", r["222222222222"]["status"] == "ok", r)
+r = pr([{"serial": "nope", "new_name": "Fine"}])
+check("unknown serial refused", r["nope"]["status"] == "blocked")
 
 
 print(f"\n{'FAILED: ' + str(FAILS) if FAILS else 'All passed'}")
