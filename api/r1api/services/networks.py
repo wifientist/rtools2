@@ -1010,6 +1010,55 @@ class NetworksService:
             )
         return self.client.safe_json(response)
 
+    async def create_wifi_network_from_payload(
+        self,
+        tenant_id: str,
+        payload: dict,
+        wait_for_completion: bool = True,
+    ):
+        """
+        POST /wifiNetworks with a payload the caller built (e.g. a guest
+        network copied from another), then find it by name for its id.
+        """
+        if self.client.ec_type == "MSP":
+            response = self.client.post("/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
+        else:
+            response = self.client.post("/wifiNetworks", payload=payload)
+
+        if response.status_code not in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
+            logger.error(f"Failed to create network: {response.status_code} - {response.text}")
+            response.raise_for_status()
+            return None
+        result = response.json() if response.content else {"status": "accepted"}
+        if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion and result.get("requestId"):
+            await self.client.await_task_completion(result["requestId"], override_tenant_id=tenant_id)
+            created = await self.find_wifi_network_by_name(tenant_id, None, payload.get("name"))
+            if created:
+                return created
+            logger.warning(f"Task completed but could not find created network '{payload.get('name')}'")
+        return result
+
+    async def update_radius_settings_on_network(
+        self,
+        network_id: str,
+        settings: dict,
+        tenant_id: str = None,
+        wait_for_completion: bool = True,
+    ):
+        """PUT /wifiNetworks/{id}/radiusServerProfileSettings (enableAuthProxy, enableAccountingProxy, ...)."""
+        endpoint = f"/wifiNetworks/{network_id}/radiusServerProfileSettings"
+        if self.client.ec_type == "MSP" and tenant_id:
+            response = await asyncio.to_thread(
+                self.client.put, endpoint, payload=settings, override_tenant_id=tenant_id)
+        else:
+            response = await asyncio.to_thread(self.client.put, endpoint, payload=settings)
+        if response.status_code not in [R1StatusCode.OK, R1StatusCode.ACCEPTED]:
+            response.raise_for_status()
+        result = response.json() if response.content else {}
+        if response.status_code == R1StatusCode.ACCEPTED and wait_for_completion and result.get("requestId"):
+            await self.client.await_task_completion(result["requestId"], override_tenant_id=tenant_id)
+        return result
+
     async def get_radius_settings_on_network(
         self,
         network_id: str,

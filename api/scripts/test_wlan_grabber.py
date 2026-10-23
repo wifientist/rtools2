@@ -161,5 +161,94 @@ check("build_spec default psk carries passphrase", build_spec(sz("p", "P"))["pas
 check("build_spec refuses open as dpsk",
       any("cannot be created as" in b for b in build_spec(sz("o", "O", method="None", passphrase=None), "dpsk")["blockers"]))
 
+print("\n8. WISPr")
+from services.wlan_grabber import build_wispr_payload, wispr_key_sources, wispr_radius_settings
+KEY = "AbCdEf0123456789"
+hs = sz("g", "Guest Net", method="None", passphrase=None, vlan=1004, bypassCNA=False,
+        type="Hotspot", portalServiceProfile={"id": "hp1", "name": "guest"},
+        authServiceOrProfile={"id": "rs", "name": "radius2", "throughController": True})
+portal = {"id": "hp1", "name": "guest", "portalType": "External",
+          "portalUrl": "http://captive-portal.example/captive_guest.html",
+          "redirect": {"url": "http://captive-portal.example/redirect.html"},
+          "walledGardens": ["*.xfinity.com", "*.comcast.net"],
+          "userSession": {"timeoutInMin": 1440, "gracePeriodInMin": 60}}
+r = by_id(build_rows([hs], [], portals={"hp1": portal}))["g"]
+check("Hotspot -> wispr default, open offered", list(r["modes"]) == ["wispr", "open"] and r["status"] == CREATE, r)
+facts = r["modes"]["wispr"]["portal"]
+check("RADIUS auth from the SZ auth service, proxied as SZ",
+      facts["auth_type"] == "RADIUS" and facts["auth_proxy"] is True, facts)
+check("provider = SZ portal name", facts["provider"] == "guest")
+aa = by_id(build_rows([{**hs, "authServiceOrProfile": None}], [], portals={"hp1": portal}))["g"]
+check("no SZ auth service -> Always Accept", aa["modes"]["wispr"]["portal"]["auth_type"] == "ALWAYS_ACCEPT")
+r = by_id(build_rows([hs], [], portals={"hp1": {**portal, "portalType": "Internal"}}))["g"]
+check("internal portal -> wispr blocked", r["modes"]["wispr"]["blockers"] and not r["modes"]["open"]["blockers"])
+r = by_id(build_rows([hs], []))["g"]
+check("unread portal -> wispr blocked", r["modes"]["wispr"]["blockers"])
+plain = by_id(build_rows([sz("o", "Open1", method="None", passphrase=None)], []))["o"]
+check("plain open has no wispr", list(plain["modes"]) == ["open"])
+
+spec = build_spec(hs, "wispr", {"hp1": portal})
+body = build_wispr_payload(spec, integration_key=KEY)
+gp, wp = body["guestPortal"], body["guestPortal"]["wisprPage"]
+check("type guest, SZ name/SSID/VLAN", body["type"] == "guest" and body["name"] == "Guest Net"
+      and body["wlan"]["ssid"] == "Guest Net" and body["wlan"]["vlanId"] == 1004)
+check("URLs from SZ", wp["captivePortalUrl"].endswith("captive_guest.html")
+      and gp["externalPortalUrl"].endswith("captive_guest.html") and gp["redirectUrl"].endswith("redirect.html"))
+check("provider from SZ, custom", wp["externalProviderName"] == "guest" and wp["customExternalProvider"] is True)
+check("key set on both fields", wp["integrationKey"] == KEY and gp["externalPortalKey"] == KEY)
+check("RADIUS auth type", wp["authType"] == "RADIUS")
+check("walled garden + sessions from SZ", gp["walledGardens"] == ["*.xfinity.com", "*.comcast.net"]
+      and gp["userSessionTimeout"] == 1440 and gp["userSessionGracePeriod"] == 60)
+check("defaults: encrypt MAC/IP on, DHCP off, bypass from SZ",
+      wp["encryptMacIpEnabled"] is True and body["enableDhcp"] is False and body["wlan"]["bypassCNA"] is False)
+body = build_wispr_payload(spec, integration_key=KEY, encrypt_mac_ip=False, enable_dhcp=True)
+check("run-wide toggles honoured", body["guestPortal"]["wisprPage"]["encryptMacIpEnabled"] is False and body["enableDhcp"])
+check("no description by default", "description" not in body)
+check("RADIUS proxy settings follow SZ", wispr_radius_settings(spec) == {"enableAuthProxy": True})
+
+check("plain Hotspot -> no MAC bypass", body["wlan"]["bypassCPUsingMacAddressAuthentication"] is False)
+mb = {**hs, "type": "Hotspot_MacByPass"}
+mspec = build_spec(mb, "wispr", {"hp1": portal})
+check("Hotspot_MacByPass -> MAC bypass on",
+      build_wispr_payload(mspec, KEY)["wlan"]["bypassCPUsingMacAddressAuthentication"] is True and not mspec["blockers"])
+check("MAC bypass without an auth service -> blocked",
+      build_spec({**mb, "authServiceOrProfile": None}, "wispr", {"hp1": portal})["blockers"])
+
+SIGN = "SzSign0123456789"
+signed = {**portal, "signatureSigningKey": SIGN}
+rows = build_rows([hs], [], portals={"hp1": signed})
+check("SZ signing key never in rows", SIGN not in json.dumps(rows)
+      and rows["rows"][0]["modes"]["wispr"]["portal"]["has_signing_key"] is True)
+sspec = build_spec(hs, "wispr", {"hp1": signed})
+check("SZ signing key carried server-side", sspec["wispr_key"] == SIGN)
+body = build_wispr_payload(sspec, integration_key=sspec["wispr_key"])
+check("SZ key -> integration key, MAC/IP encrypted",
+      body["guestPortal"]["wisprPage"]["integrationKey"] == SIGN and body["guestPortal"]["wisprPage"]["encryptMacIpEnabled"])
+nokey = build_wispr_payload(build_spec(hs, "wispr", {"hp1": portal}))
+check("no SZ key -> no integration key, not encrypted",
+      "integrationKey" not in nokey["guestPortal"]["wisprPage"]
+      and nokey["guestPortal"]["wisprPage"]["encryptMacIpEnabled"] is False)
+odd = build_spec(hs, "wispr", {"hp1": {**portal, "signatureSigningKey": "short"}})
+check("SZ key R1 cannot take -> caution, not copied", odd["wispr_key"] is None and odd["cautions"])
+
+from services.wlan_grabber import wispr_r1_check, wispr_r1_norms
+r1nets = [{"type": "guest", "guestPortal": {"guestNetworkType": "WISPr", "walledGardens": ["*.xfinity.com", "*.comcast.net"],
+           "wisprPage": {"captivePortalUrl": "http://p/captive_bigsouth.html", "externalProviderName": "guest",
+                         "authType": "ALWAYS_ACCEPT", "encryptMacIpEnabled": True, "integrationKey": KEY}}}] * 3
+norms = wispr_r1_norms(r1nets)
+notes = wispr_r1_check(rows["rows"][0]["modes"]["wispr"]["portal"], norms)
+joined = " | ".join(notes)
+check("R1 check flags URL and auth differences", "portal URL" in joined and "auth" in joined, notes)
+check("R1 check quiet where SZ matches", "provider" not in joined and "walled garden" not in joined, notes)
+check("R1 check never carries a key", KEY not in joined)
+
+def guest(nid, key):
+    return {"id": nid, "name": f"N{nid}", "type": "guest",
+            "guestPortal": {"guestNetworkType": "WISPr", "wisprPage": {"integrationKey": key}}}
+sources = wispr_key_sources([guest("1", KEY), guest("2", KEY), guest("3", "ZZZZZZZZZZZZZZZZ"), guest("4", None)])
+check("key sources grouped, most used first", [x["count"] for x in sources] == [2, 1], sources)
+check("keys labelled, never returned", sources[0]["key_group"] == "key A"
+      and KEY not in json.dumps(sources) and "ZZZZ" not in json.dumps(sources))
+
 print(f"\n{'FAILED: ' + str(FAILS) if FAILS else 'All passed'}\n")
 sys.exit(1 if FAILS else 0)
