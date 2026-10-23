@@ -335,6 +335,8 @@ async def suggest_mapping(
         None, description="Fills {property}; defaults to the @suffix the venue's WLANs share, else the venue name"),
     extra_wlans: Optional[List[str]] = Query(None, description="Property-wide WLANs every group carries"),
     detect_extras: bool = Query(True, description="With no extra_wlans: detect them (true) or use none"),
+    companion_patterns: Optional[List[str]] = Query(
+        None, description="More per-unit WLAN patterns, e.g. iot@{unit}; off unless given"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -373,6 +375,7 @@ async def suggest_mapping(
         aps, groups, networks, venue_id=venue_id,
         wlan_pattern=wlan_pattern, group_pattern=group_pattern, property_name=prop,
         extra_wlans=extra_wlans if extra_wlans else (None if detect_extras else []),
+        companion_patterns=[p for p in (companion_patterns or []) if p.strip()],
     )
     return {
         "venue_id": venue_id,

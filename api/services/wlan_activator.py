@@ -40,29 +40,64 @@ _BAND_RADIO = {"2.4": "2.4-GHz", "5": "5-GHz", "6": "6-GHz"}
 
 
 def split_band(unit: str) -> Tuple[str, Optional[str]]:
-    """("907-2.4") -> ("907", "2.4"); a unit with no band suffix -> (unit, None)."""
+    """
+    ("907-2.4") -> ("907", "2.4"); no band-looking suffix -> (unit, None).
+
+    Only the SHAPE: "1400-5" also splits to ("1400", "5"), though at most
+    properties that is unit 1400-5. Use band_units / network_band, which
+    decide whether the suffix really is a band.
+    """
     m = _BAND_SUFFIX.search(unit or "")
     if m and m.start() > 0:
         return unit[:m.start()], m.group(1)
     return unit, None
 
 
-def network_band(network: Dict[str, Any]) -> Optional[str]:
-    """The band a network's name/SSID says it is for, before any "@suffix"."""
+def band_units(raw_units: Iterable[str]) -> Dict[str, Tuple[str, Optional[str]]]:
+    """
+    raw unit -> (base unit, band or None), deciding which suffixes are bands.
+
+    "-2.4" is always a band. "-5" / "-6" are only a band when the same base
+    also has a "-2.4" variant (907-2.4 + 907-5); otherwise they are part of
+    the unit's own name. At a property whose units run 1400-1 .. 1400-12,
+    reading 1400-5 as "unit 1400, 5 GHz" would merge two units and pin one
+    of them to a single radio.
+    """
+    raw = list(raw_units)
+    split = {u: split_band(u) for u in raw}
+    has_24 = {base for base, band in split.values() if band == "2.4"}
+    return {
+        u: (base, band) if band == "2.4" or (band and base in has_24) else (u, None)
+        for u, (base, band) in split.items()
+    }
+
+
+def network_band(network: Dict[str, Any], ssids: Optional[Set[str]] = None) -> Optional[str]:
+    """
+    The band a network's SSID/name says it is for, from the part before "@".
+
+    Same rule as band_units: "-2.4" always; "-5" / "-6" only when `ssids`
+    (the tenant's SSIDs) holds the matching "-2.4" sibling.
+    """
     for value in (network.get("ssid"), network.get("name")):
-        base = (value or "").split("@", 1)[0].strip()
-        band = split_band(base)[1]
-        if band:
+        left, at, right = (value or "").partition("@")
+        base, band = split_band(left.strip())
+        if band == "2.4":
+            return band
+        if band and ssids and any(
+            split_band(s.partition("@")[0].strip()) == (base, "2.4") and s.partition("@")[2] == right
+            for s in ssids
+        ):
             return band
     return None
 
 
-def radio_types_for(network: Dict[str, Any]) -> List[str]:
+def radio_types_for(network: Dict[str, Any], ssids: Optional[Set[str]] = None) -> List[str]:
     """
-    Radios to activate on: a band-named WLAN ("907-2.4") on that band only;
-    otherwise 2.4 + 5, plus 6 GHz for WPA3/OWE networks.
+    Radios to activate on: a band WLAN ("907-2.4") on that band only (see
+    network_band); otherwise 2.4 + 5, plus 6 GHz for WPA3/OWE networks.
     """
-    band = network_band(network)
+    band = network_band(network, ssids)
     if band:
         return [_BAND_RADIO[band]]
     security = str(network.get("securityProtocol") or "").upper()
@@ -125,42 +160,88 @@ def resolve_network(
 # Suggesting a mapping
 # ============================================================================
 
+_PLACEHOLDER = re.compile(r"\{(\w+)\}|\*")
+
+
 def pattern_regex(pattern: str, property_name: str = "") -> Optional[re.Pattern]:
     """
-    "{unit}@{property}" -> a full-match regex capturing the unit.
+    A WLAN pattern -> a full-match regex.
 
-    Literal parts match case-insensitively; returns None when the pattern has
-    no {unit} to capture.
+        {unit}        the unit (required)
+        {property}    filled in from property_name
+        {anything}    another captured field, e.g. {building}
+        *             a wildcard, also captured
+
+    "Manor_{building}-{unit}@{property}" and "Manor_*-{unit}@{property}" both
+    read "Manor_East-221@Penn_state" as building East, unit 221. Extra
+    fields are part of the unit's identity (see match_unit), so East-221 and
+    West-221 stay two units. Literal parts match case-insensitively; returns
+    None when the pattern has no {unit}.
     """
     pattern = (pattern or "").replace("{property}", property_name or "")
     if UNIT not in pattern:
         return None
-    before, _, after = pattern.partition(UNIT)
-    return re.compile(
-        f"^{re.escape(before)}(?P<unit>.+?){re.escape(after)}$", re.IGNORECASE
-    )
+    out, pos, seen, wild = ["^"], 0, set(), 0
+    for m in _PLACEHOLDER.finditer(pattern):
+        out.append(re.escape(pattern[pos:m.start()]))
+        pos = m.end()
+        if m.group(0) == "*":
+            wild += 1
+            out.append(f"(?P<w{wild}>.+?)")
+            continue
+        name = "unit" if m.group(1) == "unit" else f"f_{m.group(1)}"
+        out.append(f"(?P={name})" if name in seen else f"(?P<{name}>.+?)")
+        seen.add(name)
+    out.append(re.escape(pattern[pos:]) + "$")
+    return re.compile("".join(out), re.IGNORECASE)
 
 
-def units_from_networks(
+def match_unit(m: re.Match) -> Tuple[str, Dict[str, str]]:
+    """
+    (unit key, fields) for a pattern match.
+
+    With only {unit}, the key is the unit itself -- exactly as before. With
+    extra fields, the key is the stretch of the SSID from the first field to
+    the last ("East-221"), which keeps units unique when only a field tells
+    them apart. fields maps "unit" and each extra field ("building", "*1",
+    "*2" for wildcards) to its value.
+    """
+    fields: Dict[str, str] = {}
+    spans = []
+    for gname, value in m.groupdict().items():
+        if value is None:
+            continue
+        key = "unit" if gname == "unit" else ("*" + gname[1:] if gname.startswith("w") else gname[2:])
+        fields[key] = value.strip()
+        spans.append(m.span(gname))
+    if len(fields) == 1:
+        return fields.get("unit", ""), fields
+    start, end = min(a for a, _ in spans), max(b for _, b in spans)
+    return m.string[start:end].strip(), fields
+
+
+def units_with_fields(
     networks: Iterable[Dict[str, Any]],
     wlan_pattern: str,
     property_name: str = "",
-) -> Tuple[Dict[str, Dict], Dict[str, List[str]]]:
+) -> Tuple[Dict[str, Dict], Dict[str, Dict[str, str]], Dict[str, List[str]]]:
     """
-    unit -> network for every network whose name (or SSID) fits the pattern.
-
-    Returns (units, ambiguous): a unit claimed by more than one network goes
+    (unit -> network, unit -> fields, ambiguous) for every network whose name
+    (or SSID) fits the pattern. A unit claimed by more than one network goes
     to `ambiguous` (unit -> network names) instead of being picked from.
     """
     rx = pattern_regex(wlan_pattern, property_name)
     if rx is None:
-        return {}, {}
+        return {}, {}, {}
     claims: Dict[str, Dict[str, Dict]] = {}
+    fields: Dict[str, Dict[str, str]] = {}
     for n in networks:
         for value in (n.get("name"), n.get("ssid")):
             m = rx.match(value or "")
             if m and m.group("unit").strip():
-                claims.setdefault(m.group("unit").strip(), {})[n.get("id")] = n
+                key, f = match_unit(m)
+                claims.setdefault(key, {})[n.get("id")] = n
+                fields.setdefault(key, f)
                 break
     units: Dict[str, Dict] = {}
     ambiguous: Dict[str, List[str]] = {}
@@ -169,7 +250,22 @@ def units_from_networks(
             units[unit] = next(iter(nets.values()))
         else:
             ambiguous[unit] = sorted(x.get("name") or "" for x in nets.values())
+    return units, {u: fields[u] for u in units}, ambiguous
+
+
+def units_from_networks(
+    networks: Iterable[Dict[str, Any]],
+    wlan_pattern: str,
+    property_name: str = "",
+) -> Tuple[Dict[str, Dict], Dict[str, List[str]]]:
+    """unit -> network (and ambiguous units), see units_with_fields."""
+    units, _, ambiguous = units_with_fields(networks, wlan_pattern, property_name)
     return units, ambiguous
+
+
+def _norm_sep(text: str) -> str:
+    """Underscores and runs of whitespace as one space: SSIDs say Manor_East, AP Groups say Manor East."""
+    return re.sub(r"[_\s]+", " ", text or "").strip()
 
 
 def _token_in(unit: str, text: str) -> bool:
@@ -181,7 +277,9 @@ def _token_in(unit: str, text: str) -> bool:
     a letter (same at the end). "101" is in "101-R550", "Unit101" and
     "R550 @101", but not in "1101" or "1015".
     """
-    u, t = unit.lower(), text.lower()
+    u, t = _norm_sep(unit).lower(), _norm_sep(text).lower()
+    if not u:
+        return False
     start = 0
     while True:
         i = t.find(u, start)
@@ -201,18 +299,27 @@ def _token_in(unit: str, text: str) -> bool:
         start = i + 1
 
 
-def unit_for_name(name: str, units: Iterable[str]) -> Tuple[Optional[str], List[str]]:
+def _tokens_in(tokens: List[str], text: str) -> bool:
+    return bool(tokens) and all(_token_in(t, text) for t in tokens)
+
+
+def unit_for_name(name: str, units: Any) -> Tuple[Optional[str], List[str]]:
     """
     The unit an AP name contains: the longest one found as a token.
+
+    `units` is either unit names, or unit -> tokens when a unit is more
+    than its number ("East-221" -> ["East", "221"]): then every token must
+    be in the name ("221 Manor East"), and the length is their total.
 
     Returns (unit, []) or (None, tied_units) when two different units of the
     same length both appear -- reported, not guessed.
     """
-    found = [u for u in units if _token_in(u, name or "")]
+    tokens = units if isinstance(units, dict) else {u: [u] for u in units}
+    found = {u: sum(len(t) for t in ts) for u, ts in tokens.items() if _tokens_in(ts, name or "")}
     if not found:
         return None, []
-    longest = max(len(u) for u in found)
-    top = sorted(u for u in found if len(u) == longest)
+    longest = max(found.values())
+    top = sorted(u for u, n in found.items() if n == longest)
     if len(top) > 1:
         return None, top
     return top[0], []
@@ -221,7 +328,7 @@ def unit_for_name(name: str, units: Iterable[str]) -> Tuple[Optional[str], List[
 def detect_property_suffix(networks: Iterable[Dict[str, Any]], venue_id: str) -> str:
     """
     The "@suffix" most of this venue's active WLANs share, e.g.
-    "Promenade_jersey_village" -- the {property} the unit WLANs use, which
+    "Maple_court" -- the {property} the unit WLANs use, which
     need not be the venue's name. "" when fewer than two agree.
     """
     tally: Dict[str, int] = {}
@@ -273,6 +380,151 @@ def detect_property_wlans(
     return sorted(out, key=lambda w: (-w["groups_bound"], w["name"]))
 
 
+def units_by_property(networks: Iterable[Dict[str, Any]]) -> Dict[str, Set[str]]:
+    """Every "<unit>@<property>" SSID in the tenant: property -> its units."""
+    out: Dict[str, Set[str]] = {}
+    for n in networks:
+        left, at, right = (n.get("ssid") or n.get("name") or "").partition("@")
+        if at and left.strip() and right.strip():
+            out.setdefault(right.strip(), set()).add(left.strip())
+    return out
+
+
+def owning_property(family_units: Set[str], by_property: Dict[str, Set[str]]) -> Optional[str]:
+    """
+    The property whose units best match a companion family's units (Jaccard),
+    or None on a tie. A family of iot@<unit> WLANs active nowhere
+    carries no property in its name; unit numbers repeat across a tenant's
+    properties (1201 can exist at two of them), so it belongs
+    to the property whose unit list it actually mirrors.
+    """
+    scores = sorted(
+        (
+            (len(family_units & us) / len(family_units | us), prop)
+            for prop, us in by_property.items()
+            if family_units & us
+        ),
+        reverse=True,
+    )
+    if not scores or (len(scores) > 1 and scores[0][0] == scores[1][0]):
+        return None
+    return scores[0][1]
+
+
+def _family(networks: Iterable[Dict[str, Any]], rx: re.Pattern, exclude_ids: Set[str]) -> Dict[str, Dict[str, Dict]]:
+    """unit -> {network id: network} for networks matching a companion regex (SSID first)."""
+    claims: Dict[str, Dict[str, Dict]] = {}
+    for n in networks:
+        if n.get("id") in exclude_ids:
+            continue
+        for value in (n.get("ssid"), n.get("name")):
+            m = rx.match(value or "")
+            if m and m.group("unit").strip():
+                claims.setdefault(match_unit(m)[0], {})[n.get("id")] = n
+                break
+    return claims
+
+
+def companion_belongs_here(
+    n: Dict[str, Any], venue_id: str, family_owner: Optional[str], property_name: str,
+) -> bool:
+    """Active here -> yes; active only elsewhere -> no; active nowhere -> if this property owns the family."""
+    state, _ = venue_state(n, venue_id)
+    if state != "not_found":
+        return True
+    if any(v.get("venueId") for v in n.get("venueApGroups") or []):
+        return False
+    return bool(family_owner) and family_owner == property_name
+
+
+def detect_companion_patterns(
+    networks: List[Dict[str, Any]],
+    units: Set[str],
+    exclude_ids: Set[str],
+    venue_id: str = "",
+    property_name: str = "",
+    share: float = 0.25,
+) -> List[Dict[str, Any]]:
+    """
+    "<prefix>@{unit}" patterns that this property's units also have, e.g.
+    iot@1001 next to 1001@Maple_court.
+
+    Only suggested, never applied: the page offers each one and the
+    operator turns it on. A prefix counts when, of the WLANs that belong to
+    THIS property (companion_belongs_here), it covers at least `share` of
+    the units (and two or more).
+    """
+    if not units:
+        return []
+    prefixes: Set[str] = set()
+    for n in networks:
+        if n.get("id") in exclude_ids:
+            continue
+        left, at, right = (n.get("ssid") or n.get("name") or "").rpartition("@")
+        if at and left.strip() and right.strip() in units and left.strip() not in units:
+            prefixes.add(left.strip())
+    by_property = units_by_property(networks)
+    out = []
+    for prefix in prefixes:
+        pattern = f"{prefix}@{UNIT}"
+        chosen, _ = companion_networks(networks, pattern, units, venue_id, property_name, exclude_ids, by_property)
+        if len(chosen) >= 2 and len(chosen) >= share * len(units):
+            out.append({"pattern": pattern, "units_matched": len(chosen), "units_total": len(units)})
+    return sorted(out, key=lambda c: (-c["units_matched"], c["pattern"]))
+
+
+def companion_networks(
+    networks: Iterable[Dict[str, Any]],
+    pattern: str,
+    units: Set[str],
+    venue_id: str,
+    property_name: str = "",
+    exclude_ids: Optional[Set[str]] = None,
+    by_property: Optional[Dict[str, Set[str]]] = None,
+) -> Tuple[Dict[str, Dict], Dict[str, List[str]]]:
+    """
+    unit -> the network a companion pattern ("iot@{unit}") means
+    for this property, for units the property actually has.
+
+    The SSID is matched first, then the name. WLANs are tenant-level, so an
+    SSID like iot@1400-10 can exist several times -- R1 keeps names
+    unique by suffixing ("iot@1400-10_Maple"). And the unit
+    number itself repeats across the tenant's properties. So a network
+    only counts here when companion_belongs_here says so (active here, or
+    active nowhere and this property owns the family), and of those the
+    pick is: the one active in this venue; the only candidate; the one
+    whose name mentions the property. Anything else is returned as
+    ambiguous (unit -> candidate names), never guessed.
+    """
+    rx = pattern_regex(pattern, property_name)
+    if rx is None:
+        return {}, {}
+    family = _family(networks, rx, exclude_ids or set())
+    owner = owning_property(set(family), by_property if by_property is not None else units_by_property(networks))
+    claims: Dict[str, Dict[str, Dict]] = {}
+    for unit, nets in family.items():
+        if unit not in units:
+            continue
+        mine = {nid: n for nid, n in nets.items() if companion_belongs_here(n, venue_id, owner, property_name)}
+        if mine:
+            claims[unit] = mine
+
+    prop_tokens = [t for t in re.split(r"[\W_]+", (property_name or "").casefold()) if len(t) >= 3]
+    chosen: Dict[str, Dict] = {}
+    ambiguous: Dict[str, List[str]] = {}
+    for unit, nets in claims.items():
+        cands = list(nets.values())
+        here = [n for n in cands if venue_state(n, venue_id)[0] != "not_found"]
+        named = [n for n in cands if prop_tokens and prop_tokens[0] in (n.get("name") or "").casefold()]
+        for pick in (here, cands, named):
+            if len(pick) == 1:
+                chosen[unit] = pick[0]
+                break
+        else:
+            ambiguous[unit] = sorted(n.get("name") or n.get("id", "?") for n in cands)
+    return chosen, ambiguous
+
+
 def build_suggestions(
     aps: List[Dict[str, Any]],
     groups: List[Dict[str, Any]],
@@ -282,6 +534,7 @@ def build_suggestions(
     group_pattern: str = DEFAULT_GROUP_PATTERN,
     property_name: str = "",
     extra_wlans: Optional[List[str]] = None,
+    companion_patterns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Per UNIT: its WLANs, its AP Group, its APs, and what is still missing.
@@ -309,26 +562,78 @@ def build_suggestions(
 
     Every group also carries `extra_wlans` (property-wide WLANs); when None,
     the ones bound to most of the venue's groups are detected and used.
+
+    `companion_patterns` ("iot@{unit}") add more per-unit WLANs:
+    each matching network joins its unit, for the units wlan_pattern found,
+    and is expected on the unit's group like its own WLAN. Off unless given;
+    patterns that would apply are only suggested (detected_companions).
     """
-    raw_units, ambiguous_units = units_from_networks(networks, wlan_pattern, property_name)
+    raw_units, raw_fields, ambiguous_units = units_with_fields(networks, wlan_pattern, property_name)
     group_pattern = group_pattern or DEFAULT_GROUP_PATTERN
     if UNIT not in group_pattern:
         group_pattern = DEFAULT_GROUP_PATTERN
+    unit_fields: Dict[str, Dict[str, str]] = {}
 
     def group_name(unit: str) -> str:
-        return group_pattern.replace(UNIT, unit)
+        """
+        group_pattern filled from the unit's fields: {unit}, {building}...,
+        {*} for the first wildcard. A pattern that leaves out a field the
+        unit needs to be unique ("{unit}" for East-221 / West-221) names
+        the group by the whole unit key instead, so two units never share
+        a new group.
+        """
+        f = unit_fields.get(unit) or {"unit": unit}
+        extra = [k for k in f if k != "unit"]
+        rendered = group_pattern.replace("{*}", "{*1}")
+        if any("{" + k + "}" not in rendered for k in extra):
+            return group_pattern.replace(UNIT, unit)
+        for k, v in f.items():
+            # SSIDs say Manor_West, this venue's groups say Manor West: a
+            # captured field follows the venue's own convention.
+            if k != "unit" and groups_use_spaces:
+                v = v.replace("_", " ")
+            rendered = rendered.replace("{" + k + "}", v)
+        return rendered
+
+    def unit_tokens(unit: str) -> List[str]:
+        """What an AP name must contain to be this unit's: every field."""
+        return [v for v in (unit_fields.get(unit) or {"unit": unit}).values() if v]
 
     group_names = {g.get("id"): g.get("name") or "" for g in groups}
     group_ids = {name: gid for gid, name in group_names.items() if name}
     group_by_fold = {name.casefold(): name for name in group_ids}
+    group_by_norm = {_norm_sep(name).casefold(): name for name in group_ids}
+    groups_use_spaces = sum(" " in g for g in group_ids) > sum("_" in g for g in group_ids)
 
     # base unit -> its networks, the base WLAN first, then band variants
+    bands = band_units(raw_units)
     unit_nets: Dict[str, List[Dict]] = {}
-    for raw in sorted(raw_units, key=lambda u: (split_band(u)[1] is not None, u)):
-        base, _ = split_band(raw)
+    for raw in sorted(raw_units, key=lambda u: (bands[u][1] is not None, u)):
+        base, band = bands[raw]
         unit_nets.setdefault(base, []).append(raw_units[raw])
+        if base not in unit_fields:
+            f = dict(raw_fields.get(raw) or {"unit": raw})
+            if band:
+                f["unit"] = split_band(f.get("unit", ""))[0]
+            unit_fields[base] = f
 
     unit_net_ids = {n.get("id") for nets in unit_nets.values() for n in nets}
+
+    # Companion per-unit WLANs (iot@{unit}), only when asked for.
+    companion_ambiguous: List[Dict[str, Any]] = []
+    for pattern in companion_patterns or []:
+        chosen, ambiguous = companion_networks(
+            networks, pattern, set(unit_nets), venue_id, property_name, unit_net_ids)
+        for unit, n in chosen.items():
+            unit_nets[unit].append(n)
+            unit_net_ids.add(n.get("id"))
+        companion_ambiguous += [
+            {"pattern": pattern, "unit": u, "networks": names} for u, names in sorted(ambiguous.items())
+        ]
+    detected_companions = [
+        c for c in detect_companion_patterns(networks, set(unit_nets), unit_net_ids, venue_id, property_name)
+        if c["pattern"] not in (companion_patterns or [])
+    ]
     detected = detect_property_wlans(networks, venue_id, set(group_ids.values()), unit_net_ids)
     by_name, _ = index_networks(networks)
     extra_names = [w["name"] for w in detected] if extra_wlans is None else list(extra_wlans)
@@ -343,7 +648,9 @@ def build_suggestions(
     for unit, nets in unit_nets.items():
         active = sorted({group_names.get(g, "") for g in bound_groups(nets[0])} - {""})
         wanted = group_name(unit)
-        named = [g for g in group_ids if _token_in(unit, g)]
+        # "221 Manor_East" from the pattern is the existing "221 Manor East".
+        wanted = group_by_norm.get(_norm_sep(wanted).casefold(), wanted)
+        named = [g for g in group_ids if _tokens_in(unit_tokens(unit), g)]
         if active:
             unit_group[unit] = (active, "" if active == [wanted] else "its WLAN is active there")
         elif wanted in group_ids:
@@ -363,9 +670,10 @@ def build_suggestions(
         current = group_names.get(current_id, "")
         entry = {"ap_serial": ap_serial(ap), "ap_name": name, "current_ap_group": current,
                  "current_ap_group_id": current_id}
-        unit, tied = unit_for_name(name, unit_nets)
-        if not unit and not tied and current in unit_by_group:
-            unit = unit_by_group[current]
+        unit, tied = unit_for_name(name, {u: unit_tokens(u) for u in unit_nets})
+        if not unit and current in unit_by_group and (not tied or unit_by_group[current] in tied):
+            # No name match, or a tie the AP's own group settles.
+            unit, tied = unit_by_group[current], []
         if unit:
             unit_aps[unit].append(entry)
             continue
@@ -459,6 +767,9 @@ def build_suggestions(
         ],
         "property_wlans": detected,
         "extra_wlans": [n.get("name") for n in extras],
+        "companion_patterns": list(companion_patterns or []),
+        "detected_companions": detected_companions,
+        "companion_ambiguous": companion_ambiguous,
         "unknown_extra_wlans": [n for n in extra_names if n not in by_name],
         "counts": counts,
     }
