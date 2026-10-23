@@ -206,6 +206,28 @@ function WlanActivator() {
   const [ecName, setEcName] = useState<string | null>(null);
   const effectiveTenantId = needsEcSelection ? ecId : activeController?.r1_tenant_id || null;
 
+  // DPSK networks with no DPSK service linked: R1 will not activate them. The
+  // pool chosen here is linked to them before activation ("" = don't; they block the plan).
+  const [dpskPools, setDpskPools] = useState<{ id: string; name: string }[]>([]);
+  const [dpskSuggestion, setDpskSuggestion] = useState<{ pool_id: string; pool_name: string; reason: string } | null>(null);
+  const [dpskLinkPool, setDpskLinkPool] = useState("");
+  useEffect(() => {
+    setDpskPools([]);
+    setDpskSuggestion(null);
+    setDpskLinkPool("");
+    if (!venueId || !activeControllerId) return;
+    const qs = effectiveTenantId ? `?tenant_id=${encodeURIComponent(effectiveTenantId)}` : "";
+    apiFetch(`${API_BASE_URL}/wlan-activator/v2/${activeControllerId}/venue/${venueId}/dpsk-pools${qs}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setDpskPools(data.pools || []);
+        setDpskSuggestion(data.suggestion || null);
+        setDpskLinkPool(data.suggestion?.pool_id || "");
+      })
+      .catch(() => {});
+  }, [venueId, activeControllerId, effectiveTenantId]);
+
   useEffect(() => {
     setVenueId(null);
     setVenueName(null);
@@ -410,6 +432,7 @@ function WlanActivator() {
           venue_id: venueId,
           tenant_id: effectiveTenantId,
           activations: planRows,
+          dpsk_link_pool_id: dpskLinkPool || null,
         }),
       });
       if (!res.ok) {
@@ -736,6 +759,29 @@ function WlanActivator() {
           <p className="text-xs text-blue-700 mt-2">
             The plan step checks each row against R1. Anything already in place, including its VLAN, is skipped. It
             also flags DPSK WLANs with no DPSK service and groups that would go over 15 SSIDs.
+          </p>
+        </div>
+      )}
+
+      {venueId && dpskPools.length > 0 && (
+        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm">
+          <label className="flex flex-wrap items-center gap-2 text-gray-700">
+            <span className="font-medium">DPSK WLANs with no DPSK pool linked:</span>
+            <select className="px-2 py-1 border border-gray-300 rounded text-sm"
+              value={dpskLinkPool} onChange={(e) => setDpskLinkPool(e.target.value)}>
+              <option value="">don&apos;t link (they block the plan)</option>
+              {dpskPools.map((p) => (
+                <option key={p.id} value={p.id}>
+                  link pool {p.name}{dpskSuggestion?.pool_id === p.id ? " (used in this venue)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-gray-500 mt-1">
+            {dpskSuggestion
+              ? `Suggested: ${dpskSuggestion.pool_name} — ${dpskSuggestion.reason}. `
+              : "No DPSK network in this venue has a pool to suggest from. "}
+            Only networks with no pool at all are linked, once, before anything is activated.
           </p>
         </div>
       )}
