@@ -118,6 +118,7 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
         except Exception as e:
             raise RuntimeError(f"Could not list WiFi networks: {e}")
         nets_by_name, nets_by_ssid = index_networks(networks)
+        tenant_ssids = set(nets_by_ssid)
 
         await self.emit(
             f"Venue has {len(all_venue_aps)} APs and {len(existing_groups)} AP Groups; "
@@ -353,7 +354,7 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
                     "name": n.get("name") or "",
                     "ssid": n.get("ssid") or "",
                     "dpsk_pool_id": dpsk_pool.get(n["id"]),
-                    "radio_types": radios.get(n["id"]) or radio_types_for(n),
+                    "radio_types": radios.get(n["id"]) or radio_types_for(n, tenant_ssids),
                     "vlan": vlan,
                 })
             activations += len(wlans)

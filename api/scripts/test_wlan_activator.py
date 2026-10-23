@@ -22,6 +22,16 @@ WHAT THIS GUARDS
      step 1 goes to /settings; a network already on the venue skips step 1;
      the DPSK pool and radios ride along; read-back failure fails the unit.
   4. Graph: create_ap_group -> activate_wlans -> assign_aps.
+  6. Companions + unit names that look like bands: 1400-5 stays a unit
+     unless 1400-2.4 exists; iot@{unit} joins units only when
+     asked; a duplicate SSID resolves to the copy active in the venue; a
+     family active nowhere belongs to the property whose units it mirrors
+     (unit numbers repeat across a tenant), and is only offered there.
+  7. Pattern fields: {building} and * are captured and part of the unit
+     (North-221 and South-221 stay two units); an AP must contain every
+     field; the AP Group pattern can use them; underscores and spaces
+     match each other; a group pattern that drops a field names new groups
+     by the whole unit; plain {unit} patterns behave as before.
   5. Done/todo + VLANs: property-wide WLANs (bound to most groups) are
      detected and expected on every group; a row is done only when the AP
      is in its group and every WLAN is bound; an AP named like a group goes
@@ -126,8 +136,9 @@ def test_suggestions():
     other = {a["ap_name"]: a for a in s["other_aps"]}
     check("no unit -> no_match", other["Lobby"]["status"] == "no_match")
     check("two units -> ambiguous", other["101-102 shared"]["status"] == "ambiguous")
-    check("band WLAN radios = its band", radio_types_for(networks[5]) == ["2.4-GHz"]
-          and radio_types_for(networks[6]) == ["5-GHz"])
+    ssids = {n["ssid"] for n in networks}
+    check("band WLAN radios = its band", radio_types_for(networks[5], ssids) == ["2.4-GHz"]
+          and radio_types_for(networks[6], ssids) == ["5-GHz"])
     s2 = build_suggestions(aps, groups, networks, venue_id="v", group_pattern="Unit-{unit}", property_name="Fieldhouse")
     check("group pattern applied", {u["unit"]: u for u in s2["units"]}["102"]["ap_groups"] == ["Unit-102"])
 
@@ -502,11 +513,109 @@ def test_done_and_vlans():
         check("VLAN read-back failure fails the unit", "wanted 99" in str(e), str(e))
 
 
+# ============================================================================
+# 6. Companion per-unit WLANs, band-looking unit names
+# ============================================================================
+
+def test_companions():
+    print("\n6. Companions and band-looking units")
+    from services.wlan_activator import band_units, companion_networks, units_by_property
+    b = band_units(["1400-1", "1400-5", "1400-6", "907", "907-2.4", "907-5", "12-2.4"])
+    check("1400-5 stays a unit (no 1400-2.4)", b["1400-5"] == ("1400-5", None) and b["1400-6"] == ("1400-6", None))
+    check("907-5 is a band (907-2.4 exists)", b["907-5"] == ("907", "5") and b["907-2.4"] == ("907", "2.4"))
+    check("-2.4 is always a band", b["12-2.4"] == ("12", "2.4"))
+    check("1400-5@P radios are not narrowed", radio_types_for(net("x", "1400-5@P"), {"1400-5@P", "1400-1@P"}) == ["2.4-GHz", "5-GHz"])
+
+    here = lambda g: [{"venueId": "v", "isAllApGroups": False, "apGroupIds": [g]}]
+    elsewhere = [{"venueId": "other", "isAllApGroups": False, "apGroupIds": ["gz"]}]
+    groups = [{"id": f"g{u}", "name": u} for u in ("1400-1", "1400-5", "1400-6")]
+    networks = [
+        net("u1", "1400-1@MapleCourt", vags=here("g1400-1")),
+        net("u5", "1400-5@MapleCourt", vags=here("g1400-5")),
+        net("u6", "1400-6@MapleCourt", vags=here("g1400-6")),
+        net("x1", "iot@1400-1", vags=here("g1400-1")),
+        net("x1dup", "iot@1400-1_MapleCourt", ssid="iot@1400-1"),       # duplicate, active nowhere
+        net("x5", "iot@1400-5"),                                                  # not active yet
+        net("x6", "iot@1400-6", vags=elsewhere),                                  # another venue's
+        # another property sharing unit numbers, with a smaller overlap
+        net("o1", "1400-1@Other"), net("o9", "1400-9@Other"),
+    ]
+    aps = [{"serialNumber": f"S{u}", "name": u, "apGroupId": f"g{u}"} for u in ("1400-1", "1400-5", "1400-6")]
+    base = build_suggestions(aps, groups, networks, venue_id="v", property_name="MapleCourt")
+    U = {u["unit"]: u for u in base["units"]}
+    check("units keep their dash numbers", set(U) == {"1400-1", "1400-5", "1400-6"}, sorted(U))
+    check("default: companions not applied", all(len(u["wlans"]) == 1 for u in U.values()) and all(u["done"] for u in U.values()))
+    check("companion pattern detected (offered only)",
+          [c["pattern"] for c in base["detected_companions"]] == ["iot@{unit}"], base["detected_companions"])
+
+    s2 = build_suggestions(aps, groups, networks, venue_id="v", property_name="MapleCourt",
+                           companion_patterns=["iot@{unit}"])
+    U = {u["unit"]: u for u in s2["units"]}
+    check("companion joins its unit", U["1400-1"]["wlans"] == ["1400-1@MapleCourt", "iot@1400-1"], U["1400-1"]["wlans"])
+    check("duplicate SSID -> the copy active here", "iot@1400-1_MapleCourt" not in U["1400-1"]["wlans"])
+    check("unit missing its companion is todo", U["1400-5"]["todo"] == ["activate iot@1400-5"], U["1400-5"]["todo"])
+    check("companion active in another venue is not ours", U["1400-6"]["wlans"] == ["1400-6@MapleCourt"] and U["1400-6"]["done"])
+    check("companion not offered again once used", s2["detected_companions"] == [])
+
+    bp = units_by_property(networks)
+    mine, _ = companion_networks(networks, "iot@{unit}", bp["MapleCourt"], "nowhere", "MapleCourt", None, bp)
+    theirs, _ = companion_networks(networks, "iot@{unit}", bp["Other"], "nowhere", "Other", None, bp)
+    check("unactivated family -> property whose units it mirrors", "1400-5" in mine and theirs == {}, (sorted(mine), theirs))
+
+
+# ============================================================================
+# 7. Pattern fields and wildcards
+# ============================================================================
+
+def test_pattern_fields():
+    print("\n7. Pattern fields and wildcards")
+    from services.wlan_activator import pattern_regex, match_unit
+    m = pattern_regex("Bldg_{building}-{unit}@{property}", "Campus").match("Bldg_North-221@Campus")
+    check("named field captured", match_unit(m) == ("North-221", {"building": "North", "unit": "221"}), match_unit(m))
+    m = pattern_regex("Bldg_*-{unit}@{property}", "Campus").match("BLDG_South-7@campus")
+    check("wildcard captured, case-insensitive", match_unit(m) == ("South-7", {"*1": "South", "unit": "7"}), match_unit(m))
+    m = pattern_regex("{unit}@{property}", "Campus").match("101@Campus")
+    check("plain {unit}: key is the unit", match_unit(m) == ("101", {"unit": "101"}))
+    check("literal regex chars stay literal", pattern_regex("a.b+{unit}", "").match("axb+1") is None)
+
+    groups = [{"id": "gN", "name": "221 Bldg North"}, {"id": "gS1", "name": "5 Bldg South"}]
+    aps = [{"serialNumber": "A", "name": "221 Bldg North", "apGroupId": "gN"},
+           {"serialNumber": "B", "name": "221 Bldg South", "apGroupId": ""},
+           {"serialNumber": "C", "name": "5 Bldg South", "apGroupId": "gS1"}]
+    networks = [net("n", "Bldg_North-221@Campus"), net("s", "Bldg_South-221@Campus"), net("s5", "Bldg_South-5@Campus")]
+
+    def run(wp, gp):
+        r = build_suggestions(aps, groups, networks, venue_id="v", wlan_pattern=wp, group_pattern=gp,
+                              property_name="Campus", extra_wlans=[])
+        return {u["unit"]: u for u in r["units"]}, r
+
+    U, r = run("Bldg_{building}-{unit}@{property}", "{unit} Bldg {building}")
+    check("same number, two buildings -> two units", set(U) == {"North-221", "South-221", "South-5"}, sorted(U))
+    check("AP needs every field", [a["ap_name"] for a in U["North-221"]["aps"]] == ["221 Bldg North"]
+          and [a["ap_name"] for a in U["South-221"]["aps"]] == ["221 Bldg South"])
+    check("existing group found from the fields", U["North-221"]["ap_groups"] == ["221 Bldg North"] and U["North-221"]["group_exists"])
+    check("new group named from the fields", U["South-221"]["ap_groups"] == ["221 Bldg South"] and not U["South-221"]["group_exists"])
+    U2, _ = run("Bldg_*-{unit}@{property}", "{unit} Bldg {*}")
+    check("wildcard works the same", U2["South-5"]["ap_groups"] == ["5 Bldg South"] and U2["South-5"]["done"] is False)
+    U3, _ = run("Bldg_{building}-{unit}@{property}", "{unit}")
+    check("group pattern dropping a field -> group by unit key", U3["South-221"]["ap_groups"] == ["South-221"], U3["South-221"])
+    check("...but an existing group is still found", U3["North-221"]["ap_groups"] == ["221 Bldg North"])
+
+    # Underscore in the SSID, space in the venue.
+    U4, _ = run("{building}-{unit}@{property}", "{unit} {building}")
+    check("underscore field matches spaced AP/group", U4["Bldg_North-221"]["ap_groups"] == ["221 Bldg North"]
+          and [a["ap_name"] for a in U4["Bldg_North-221"]["aps"]] == ["221 Bldg North"])
+    check("new group follows the venue's spaces", U4["Bldg_South-221"]["ap_groups"] == ["221 Bldg South"],
+          U4["Bldg_South-221"]["ap_groups"])
+
+
 if __name__ == "__main__":
     test_suggestions()
     test_plan()
     test_activation()
     test_graph()
     test_done_and_vlans()
+    test_companions()
+    test_pattern_fields()
     print(f"\n{'ALL PASS' if not FAILS else f'{FAILS} FAILURE(S)'}")
     sys.exit(1 if FAILS else 0)

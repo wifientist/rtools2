@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import SingleVenueSelector from "@/components/SingleVenueSelector";
 import MspEcPicker from "@/components/MspEcPicker";
@@ -62,6 +63,9 @@ interface SuggestResult {
   property_wlans: { name: string; ssid: string; groups_bound: number; vlan: number | null }[];
   extra_wlans: string[];
   unknown_extra_wlans: string[];
+  companion_patterns: string[];
+  detected_companions: { pattern: string; units_matched: number; units_total: number }[];
+  companion_ambiguous: { pattern: string; unit: string; networks: string[] }[];
   counts: Record<string, number>;
 }
 
@@ -190,6 +194,9 @@ function WlanActivator() {
   // Property-wide WLANs every group in the list also gets.
   const [extraWlans, setExtraWlans] = useState<string[]>([]);
   const [extraInput, setExtraInput] = useState("");
+  // More per-unit WLAN patterns ("iot@{unit}"); empty = default behaviour.
+  const [companionText, setCompanionText] = useState("");
+  const companionList = (text: string) => text.split(",").map((p) => p.trim()).filter(Boolean);
   const [applyExtras, setApplyExtras] = useState(true);
 
   const [error, setError] = useState("");
@@ -313,7 +320,7 @@ function WlanActivator() {
   }, [planRows]);
 
   // `property` / `extras` undefined: let the backend detect them.
-  const loadSuggestions = async (property?: string, extras?: string[]) => {
+  const loadSuggestions = async (property?: string, extras?: string[], companions: string[] = []) => {
     if (!activeControllerId || !venueId) return;
     setError("");
     setLoadingSuggest(true);
@@ -325,6 +332,7 @@ function WlanActivator() {
         if (extras.length) extras.forEach((w) => qs.append("extra_wlans", w));
         else qs.set("detect_extras", "false");
       }
+      companions.forEach((c) => qs.append("companion_patterns", c));
       const res = await apiFetch(
         `${API_BASE_URL}/wlan-activator/v2/${activeControllerId}/venue/${venueId}/suggest?${qs}`,
       );
@@ -347,12 +355,19 @@ function WlanActivator() {
   useEffect(() => {
     setSuggest(null);
     setExtraWlans([]);
+    setCompanionText("");
     if (!venueId || !activeControllerId) return;
     loadSuggestions(undefined, undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId, activeControllerId, effectiveTenantId]);
 
-  const resuggest = () => loadSuggestions(propertyName, extraWlans);
+  const resuggest = () => loadSuggestions(propertyName, extraWlans, companionList(companionText));
+
+  const useCompanion = (pattern: string) => {
+    const next = Array.from(new Set([...companionList(companionText), pattern]));
+    setCompanionText(next.join(", "));
+    loadSuggestions(propertyName, extraWlans, next);
+  };
 
   const toggleExtra = (name: string) =>
     setExtraWlans((cur) => (cur.includes(name) ? cur.filter((w) => w !== name) : [...cur, name]));
@@ -519,6 +534,16 @@ function WlanActivator() {
                 onChange={(e) => setGroupPattern(e.target.value)} disabled={loadingSuggest} />
             </label>
           </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Patterns can capture more than the unit: <span className="font-mono">{"{building}"}</span> (any name in
+            braces) or <span className="font-mono">*</span>. For example,{" "}
+            <span className="font-mono">Bldg_{"{building}"}-{"{unit}"}@{"{property}"}</span> reads{" "}
+            <span className="font-mono">Bldg_North-221@Campus</span> as building North, unit 221. Units with the same
+            number in different buildings stay separate. An AP must contain every captured part (
+            <span className="font-mono">221 Bldg North</span> works). The AP Group pattern can use the same fields
+            (<span className="font-mono">{"{unit} Bldg {building}"}</span>, or <span className="font-mono">{"{*}"}</span>{" "}
+            for the first <span className="font-mono">*</span>). Underscores and spaces count as the same character.
+          </p>
 
           {/* Property-wide WLANs */}
           {suggest && (
@@ -551,6 +576,50 @@ function WlanActivator() {
               </div>
               {suggest.unknown_extra_wlans.length > 0 && (
                 <p className="text-xs text-amber-700 mt-1">Not found: {suggest.unknown_extra_wlans.join(", ")}</p>
+              )}
+            </div>
+          )}
+
+          {/* More per-unit WLANs: off unless set */}
+          {suggest && (
+            <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded">
+              <div className="text-xs font-medium text-gray-700 mb-1">
+                More per-unit WLANs <span className="font-normal text-gray-500">— optional, e.g. iot@{"{unit}"}</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                A WLAN that fits one of these patterns joins its unit and is expected on the unit's AP Group, next to
+                the unit's own WLAN. Only units this property has count. Because WLANs are tenant-wide, an SSID is only
+                taken when it is active in this venue, or active nowhere and its whole family matches this property's
+                units.
+              </p>
+              <div className="flex gap-2">
+                <input className={`${inputCls} flex-1`} value={companionText}
+                  placeholder="pattern, pattern…  (leave empty for the usual behaviour)"
+                  onChange={(e) => setCompanionText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") resuggest(); }} />
+              </div>
+              {suggest.detected_companions.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-gray-600">Detected:</span>
+                  {suggest.detected_companions.map((c) => (
+                    <button key={c.pattern} onClick={() => useCompanion(c.pattern)} disabled={loadingSuggest}
+                      className="px-2 py-1 rounded border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 font-mono">
+                      {c.pattern} <span className="font-sans text-gray-500">({c.units_matched}/{c.units_total} units) use</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {suggest.companion_patterns.length > 0 && (
+                <p className="text-xs text-green-800 mt-2">
+                  Using {suggest.companion_patterns.join(", ")}.
+                </p>
+              )}
+              {suggest.companion_ambiguous.length > 0 && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Not sure which WLAN is this property's, so left out:{" "}
+                  {suggest.companion_ambiguous.slice(0, 5).map((a) => `${a.unit} (${a.networks.join(" / ")})`).join("; ")}
+                  {suggest.companion_ambiguous.length > 5 && ` …+${suggest.companion_ambiguous.length - 5}`}
+                </p>
               )}
             </div>
           )}
@@ -591,6 +660,21 @@ function WlanActivator() {
                   <span className="text-gray-500"> · {suggest.counts.other_aps} APs tied to no unit</span>
                 )}
               </div>
+              {(() => {
+                // Far fewer unit WLANs than AP Groups: the WLANs probably
+                // still live on SmartZone and were never created in R1.
+                const namedGroups = suggest.ap_groups.filter((g) => g).length;
+                if (namedGroups < 5 || suggest.counts.units >= namedGroups / 2) return null;
+                return (
+                  <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800">
+                    This venue has <strong>{namedGroups} AP Groups</strong> but only{" "}
+                    <strong>{suggest.counts.units}</strong> unit WLAN{suggest.counts.units === 1 ? "" : "s"} in R1.
+                    The WLANs may not have been created in R1 yet. Perhaps you should{" "}
+                    <Link to="/wlan-grabber" className="underline font-medium">grab them with the WLAN Grabber</Link>{" "}
+                    first, then come back here to activate them.
+                  </div>
+                );
+              })()}
               {suggest.counts.units === 0 && (
                 <p className="text-amber-700 mb-1">
                   No WLAN name or SSID fits "{wlanPattern.replace("{property}", suggest.property_name)}". Check the
@@ -610,7 +694,11 @@ function WlanActivator() {
                 <button className={tabCls("all")} onClick={() => setView("all")}>All ({suggest.counts.units})</button>
               </div>
               {visibleUnits.length === 0 ? (
-                <p className="text-gray-500 p-2">{view === "todo" ? "Every unit is in place." : "No units."}</p>
+                <p className="text-gray-500 p-2">
+                  {suggest.counts.units === 0
+                    ? "No units found, so there is nothing to check yet."
+                    : view === "todo" ? "Every unit is in place." : "No units."}
+                </p>
               ) : (
                 <div className="max-h-80 overflow-y-auto border border-gray-200 rounded bg-white">
                   <table className="min-w-full">
