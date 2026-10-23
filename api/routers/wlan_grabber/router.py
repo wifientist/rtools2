@@ -3,33 +3,40 @@ WLAN Grabber Router
 
 Create in R1 the WLANs of one SZ zone that the R1 tenant does not have yet:
 
-- POST /wlan-grabber/preview -> read both sides; one row per SZ WLAN, the
-  RADIUS services the Enterprise ones use, and the tenant's DPSK pools
+- POST /wlan-grabber/preview          -> read both sides; one row per SZ WLAN,
+  the RADIUS services the Enterprise ones use, the tenant's DPSK pools
   (read-only)
-- POST /wlan-grabber/apply   -> create the chosen networks
+- POST /wlan-grabber/v2/plan           -> re-read the chosen WLANs, start a
+  WlanGrabberWorkflow job and validate it
+- GET  /wlan-grabber/v2/{id}/plan      -> plan results
+- POST /wlan-grabber/v2/{id}/confirm   -> confirm and run
+- GET  /wlan-grabber/v2/{id}/graph     -> workflow graph
 
 Networks are created tenant-wide and left unactivated (WLAN Activator does
 that). The optional venue is context only: the DPSK pool its DPSK networks
 are tied to is suggested as the shared pool for new DPSK networks.
 
 DPSK pool: one shared pool for every DPSK network (an existing R1 pool, or
-a new one created here together with its identity group), and any row may
-name another pool or none instead.
+a new one created with its identity group), and any row may name another
+pool or none instead.
 
-Rows, statuses and notes: services/wlan_grabber.py.
+Rows, statuses and notes: services/wlan_grabber.py. Phases:
+workflow/phases/wlan_grabber.py.
 
-Apply re-reads each chosen WLAN from SZ: the passphrase never goes to the
-browser, so it cannot come back from it either. A RADIUS shared secret is
-typed by the user, used for one create call, and never stored or returned;
-R1 profile rows are reduced by r1_profile_summary before they leave.
+Secrets: the passphrase never goes to the browser -- the plan re-reads each
+chosen WLAN from SZ. It and any typed RADIUS secret go to their own Redis
+hash with a TTL (never into the job, whose options and input are stored and
+shown); the phase that uses one deletes it. R1 profile rows are reduced by
+r1_profile_summary before they leave.
 """
 
 import asyncio
 import logging
+import re
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy.orm import Session
 
@@ -38,19 +45,31 @@ from clients.sz_client_deps import create_sz_client_from_controller, validate_co
 from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
+from r1api.constants import DpskPassphraseFormat
+from redis_client import get_redis_client
 from routers.tenant_scope import resolve_tenant_id
+from services.dpsk_pool_context import list_dpsk_pools, venue_pool_suggestion
 from services.sz_migration.radius_choices import r1_profile_summary, sz_server_details
 from services.wlan_grabber import (
-    EXISTS, build_rows, build_spec, dpsk_pool_suggestion, radius_services,
+    EXISTS, SZ_HOTSPOT_TYPES, build_rows, build_spec, is_wispr_network,
+    radius_services, wispr_key_sources, wispr_r1_check, wispr_r1_norms,
 )
-from r1api.constants import DpskPassphraseFormat
+from workflow.events import WorkflowEventPublisher
+from workflow.phases.wlan_grabber import SECRET_KEY, SECRET_TTL
+from workflow.v2.activity_tracker import ActivityTracker
+from workflow.v2.brain import WorkflowBrain
+from workflow.v2.failsafe import fail_job
+from workflow.v2.graph import DependencyGraph
+from workflow.v2.models import JobStatus
+from workflow.v2.state_manager import RedisStateManagerV2
+from workflow.workflows.wlan_grabber import WlanGrabberWorkflow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wlan-grabber", tags=["WLAN Grabber"])
 
 READ_CONCURRENCY = 10
-WRITE_CONCURRENCY = 3
+VALIDATE_PHASE = "validate_wlan_grabber"
 
 
 # ==================== Models ====================
@@ -81,7 +100,7 @@ class RadiusDecision(BaseModel):
 
 class WlanChoice(BaseModel):
     sz_wlan_id: str
-    r1_type: Optional[Literal["psk", "open", "aaa", "dpsk"]] = None   # None = its default mode
+    r1_type: Optional[Literal["psk", "open", "aaa", "dpsk", "wispr"]] = None   # None = its default mode
     # DPSK only: None = the shared pool, "none" = no pool, else an R1 pool id.
     dpsk_pool: Optional[str] = None
 
@@ -90,6 +109,7 @@ class SharedPool(BaseModel):
     """The DPSK pool every DPSK network uses unless its row says otherwise."""
     mode: Literal["existing", "new", "none"]
     pool_id: Optional[str] = None
+    pool_name: Optional[str] = None     # display only, for an existing pool
     name: Optional[str] = Field(None, min_length=2, max_length=64)
     passphrase_format: str = DpskPassphraseFormat.KEYBOARD_FRIENDLY
     passphrase_length: int = Field(12, ge=8, le=64)
@@ -106,14 +126,40 @@ class SharedPool(BaseModel):
         return self
 
 
-class ApplyRequest(BaseModel):
+class WisprChoice(BaseModel):
+    """
+    The integration key: by default each WLAN's SZ signature signing key
+    ("sz"; none = no key, MAC/IP not encrypted). Overrides: copy it from an
+    R1 WISPr network ("network") or type it ("typed", write-only).
+    encrypt_mac_ip None = encrypt exactly when there is a key.
+    """
+    key_source: Literal["sz", "network", "typed"] = "sz"
+    key_network_id: Optional[str] = None
+    integration_key: Optional[SecretStr] = None
+    encrypt_mac_ip: Optional[bool] = None
+    enable_dhcp: bool = False
+
+    @model_validator(mode="after")
+    def _consistent(self):
+        if self.key_source == "network" and not self.key_network_id:
+            raise ValueError("'network' needs key_network_id")
+        if self.key_source == "typed":
+            key = self.integration_key.get_secret_value() if self.integration_key else ""
+            if not re.fullmatch(r"[a-zA-Z0-9]{16}", key):
+                raise ValueError("The integration key must be 16 letters or digits")
+        return self
+
+
+class PlanRequest(BaseModel):
     sz_controller_id: int
     zone_id: str
     r1_controller_id: int
     tenant_id: Optional[str] = None
+    venue_id: Optional[str] = None      # context only; recorded on the job
     wlans: List[WlanChoice] = Field(..., min_length=1)
     radius: Dict[str, RadiusDecision] = Field(default_factory=dict)
     dpsk_pool: SharedPool = Field(default_factory=lambda: SharedPool(mode="none"))
+    wispr: Optional[WisprChoice] = None
     # Off by default: the R1 network is created with no description.
     add_description: bool = False
 
@@ -173,61 +219,39 @@ async def _sz_service_refs(sz_client, services: Dict[str, str]) -> Dict[str, Dic
     return dict(await asyncio.gather(*[one(s, r) for s, r in services.items()]))
 
 
-async def _dpsk_pools(r1_client, tenant_id: str) -> List[Dict[str, Any]]:
-    pools: List[Dict[str, Any]] = []
-    page = 1
-    while True:
-        resp = await r1_client.dpsk.query_dpsk_pools(tenant_id=tenant_id, page=page, limit=100)
-        rows = _rows_of(resp)
-        pools.extend(rows)
-        total = resp.get("totalCount", len(pools)) if isinstance(resp, dict) else len(pools)
-        if not rows or len(pools) >= total or page > 50:
-            return [{"id": p["id"], "name": p.get("name")} for p in pools if p.get("id")]
-        page += 1
+def _hotspot_portal_ids(raws: List[Dict[str, Any]]) -> List[str]:
+    return sorted({(r.get("portalServiceProfile") or {}).get("id") for r in raws
+                   if r.get("type") in SZ_HOTSPOT_TYPES} - {None})
 
 
-async def _create_pool(r1_client, tenant_id: str, spec: "SharedPool"):
-    """
-    The new shared DPSK pool and its identity group (same name), as
-    Config Migration's create_dpsk_pools does it. A pool by that name
-    already in R1 is linked unchanged. Returns (pool_id, already_existed).
-    """
-    def find(resp):
-        for p in _rows_of(resp):
-            if p.get("name") == spec.name and p.get("id"):
-                return p["id"]
-        return None
+async def _sz_portals(sz_client, zone_id: str, portal_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """SZ hotspot (WISPr) portal profiles by id; a failed read is {"_error": ...}."""
+    async def one(pid):
+        try:
+            return pid, await sz_client._request(
+                "GET", f"/{sz_client.api_version}/rkszones/{zone_id}/portals/hotspot/{pid}")
+        except Exception as e:
+            logger.warning(f"[WLAN Grabber] Could not read SZ hotspot portal {pid}: {e}")
+            return pid, {"id": pid, "_error": str(e)}
 
-    found = find(await r1_client.dpsk.query_dpsk_pools(
-        tenant_id=tenant_id, search_string=spec.name, page=1, limit=100))
-    if found:
-        return found, True
+    return dict(await asyncio.gather(*[one(p) for p in portal_ids]))
 
-    group = await r1_client.identity.create_identity_group(
-        tenant_id=tenant_id, name=spec.name,
-    )
-    group_id = (group or {}).get("id")
-    if not group_id:
-        raise RuntimeError(f"Identity group '{spec.name}' was not created (no id returned)")
 
-    pool = await r1_client.dpsk.create_dpsk_pool(
-        identity_group_id=group_id, name=spec.name, tenant_id=tenant_id,
-        passphrase_length=spec.passphrase_length, passphrase_format=spec.passphrase_format,
-        # 0 = unlimited: create_dpsk_pool then omits deviceCountLimit.
-        max_devices_per_passphrase=spec.devices_per_passphrase or 0,
-        word_count=4 if spec.passphrase_format == DpskPassphraseFormat.DICTIONARY_WORDS else None,
-    )
-    if (pool or {}).get("requestId"):
-        await r1_client.await_task_completion(request_id=pool["requestId"], override_tenant_id=tenant_id)
-    if (pool or {}).get("id"):
-        logger.info(f"[WLAN Grabber] Created DPSK pool '{spec.name}' ({pool['id']})")
-        return pool["id"], False
-    found = find(await r1_client.dpsk.query_dpsk_pools(
-        tenant_id=tenant_id, search_string=spec.name, page=1, limit=100))
-    if not found:
-        raise RuntimeError(f"DPSK pool '{spec.name}' was created but could not be found")
-    logger.info(f"[WLAN Grabber] Created DPSK pool '{spec.name}' ({found})")
-    return found, False
+async def _wispr_r1_context(r1_client, tenant_id: str, tenant_networks: List[Dict[str, Any]]):
+    """The tenant's WISPr networks: key sources (no key leaves) and how most are set up."""
+    sem = asyncio.Semaphore(READ_CONCURRENCY)
+
+    async def full(n):
+        async with sem:
+            try:
+                return await r1_client.networks.get_wifi_network_by_id(n["id"], tenant_id)
+            except Exception as e:
+                logger.warning(f"[WLAN Grabber] Could not read guest network {n['id']}: {e}")
+                return None
+
+    fulls = [f for f in await asyncio.gather(*[full(n) for n in tenant_networks if is_wispr_network(n)]) if f]
+    return wispr_key_sources(fulls), wispr_r1_norms(fulls)
+
 
 
 # ==================== Endpoints ====================
@@ -260,38 +284,26 @@ async def preview(
     dpsk_suggestion = None
     warnings: List[str] = []
     try:
-        dpsk_pools = await _dpsk_pools(r1_client, tenant_id)
+        dpsk_pools = await list_dpsk_pools(r1_client, tenant_id)
     except Exception as e:
         logger.warning(f"[WLAN Grabber] Could not list DPSK pools: {e}")
         warnings.append("Could not list R1 DPSK pools; DPSK networks can only be created without one")
 
     if request.venue_id:
-        venue_dpsk = [
-            n for n in tenant_networks
-            if str(n.get("nwSubType") or "").lower() == "dpsk"
-            and request.venue_id in {v.get("venueId") for v in n.get("venueApGroups") or []}
-        ]
-        links: Dict[str, List[Dict[str, Any]]] = {}
-
-        async def pools_on(nid: str):
-            async with sem:
-                try:
-                    links[nid] = _rows_of(await r1_client.networks.get_dpsk_services_on_network(nid, tenant_id))
-                except Exception as e:
-                    logger.warning(f"[WLAN Grabber] Could not read DPSK pools on {nid}: {e}")
-
-        await asyncio.gather(*[pools_on(n["id"]) for n in venue_dpsk])
-        dpsk_suggestion = dpsk_pool_suggestion(links, (venue or {}).get("name") or "this venue")
+        dpsk_suggestion = await venue_pool_suggestion(
+            r1_client, tenant_id, request.venue_id, (venue or {}).get("name"), tenant_networks)
 
     # ── SZ: the list carries no security or VLAN, so detail each WLAN ──
     sz_client = create_sz_client_from_controller(request.sz_controller_id, db)
     try:
         async with sz_client:
             zone, sz_wlans = await _sz_wlans(sz_client, request.zone_id)
-            result = build_rows(sz_wlans, tenant_networks, request.venue_id)
+            portals = await _sz_portals(sz_client, request.zone_id, _hotspot_portal_ids(sz_wlans))
+            result = build_rows(sz_wlans, tenant_networks, request.venue_id, portals)
             needed: Dict[str, str] = {}
             for r in result["rows"]:
-                if "aaa" in r["modes"] and r["status"] != EXISTS and not r["modes"]["aaa"]["blockers"]:
+                if r["status"] != EXISTS and any(
+                        m in r["modes"] and not r["modes"][m]["blockers"] for m in ("aaa", "wispr")):
                     if r["auth_service_id"]:
                         needed.setdefault(r["auth_service_id"], "auth")
                     if r["accounting_service_id"]:
@@ -313,11 +325,27 @@ async def preview(
             logger.warning(f"[WLAN Grabber] Could not list RADIUS profiles: {type(e).__name__}")
             warnings.append("Could not list R1 RADIUS profiles; 'Use existing' is unavailable")
 
+    key_sources: List[Dict[str, Any]] = []
+    r1_norms: Dict[str, Any] = {}
+    if any("wispr" in r["modes"] and r["status"] != EXISTS for r in result["rows"]):
+        try:
+            key_sources, r1_norms = await _wispr_r1_context(r1_client, tenant_id, tenant_networks)
+        except Exception as e:
+            logger.warning(f"[WLAN Grabber] Could not read the tenant's WISPr networks: {e}")
+            warnings.append("Could not read the tenant's WISPr networks to compare SZ against")
+        # Compare, never copy: each WISPr option notes where SZ differs from the tenant's norm.
+        for r in result["rows"]:
+            opt = r["modes"].get("wispr")
+            if opt and opt.get("portal"):
+                opt["notes"].extend(wispr_r1_check(opt["portal"], r1_norms))
+
     return {
         "zone_id": request.zone_id,
         "zone_name": (zone or {}).get("name") or "",
         "venue_name": (venue or {}).get("name") if venue else None,
         **result,
+        "wispr_key_sources": key_sources,
+        "wispr_r1": r1_norms,
         "radius_services": radius_services(result["rows"], refs, r1_profiles),
         "r1_radius_profiles": r1_profiles,
         "dpsk_pools": dpsk_pools,
@@ -326,14 +354,119 @@ async def preview(
     }
 
 
-@router.post("/apply")
+class SecretCheckRequest(BaseModel):
+    r1_controller_id: int
+    tenant_id: Optional[str] = None
+    r1_profile_id: str
+    shared_secret: SecretStr
+
+
+@router.post("/radius/check-secret")
 @require_beta()
-async def apply(
-    request: ApplyRequest,
+async def check_radius_secret(
+    request: SecretCheckRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create the chosen networks. One result per WLAN, one per RADIUS profile created."""
+    """
+    Does an R1 RADIUS profile carry this shared secret (e.g. the one typed
+    from SZ, which SZ never returns)? A verdict only: matches true/false, or
+    null when the profile could not be read. The secret is not stored or logged.
+    """
+    r1_controller = _check_controller(request.r1_controller_id, "RuckusONE", current_user, db)
+    tenant_id = resolve_tenant_id(r1_controller, request.tenant_id)
+    r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
+    matches = await r1_client.radius_profiles.shared_secret_equals(
+        request.r1_profile_id, request.shared_secret.get_secret_value(), tenant_id)
+    return {"r1_profile_id": request.r1_profile_id, "matches": matches}
+
+
+# ==================== Workflow (plan / confirm) ====================
+
+class V2PlanResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+
+
+class V2PlanResult(BaseModel):
+    job_id: str
+    status: str
+    valid: bool = False
+    unit_count: int = 0
+    summary: Dict[str, Any] = {}
+    conflicts: list = []
+    estimated_api_calls: int = 0
+    actions: list = []
+    networks_existing: List[str] = []
+    wlans_skipped: List[Dict[str, str]] = []
+
+
+def _brain(r1_client, state_manager, redis_client, tenant_id) -> WorkflowBrain:
+    return WorkflowBrain(
+        state_manager=state_manager,
+        activity_tracker=ActivityTracker(r1_client, state_manager, tenant_id=tenant_id),
+        event_publisher=WorkflowEventPublisher(redis_client),
+        r1_client=r1_client,
+    )
+
+
+async def _run_validation(job_id: str, controller_id: int):
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        redis_client = await get_redis_client()
+        state_manager = RedisStateManagerV2(redis_client)
+        job = await state_manager.get_job(job_id)
+        if not job:
+            logger.error(f"[WLAN Grabber] Job {job_id} not found in Redis")
+            return
+        r1_client = create_r1_client_from_controller(controller_id, db)
+        await _brain(r1_client, state_manager, redis_client, job.tenant_id).run_validation(job)
+        logger.info(f"[WLAN Grabber] Validation complete for job {job_id} (status={job.status.value})")
+    except Exception as e:
+        logger.exception(f"[WLAN Grabber] Validation failed for job {job_id}: {e}")
+    finally:
+        db.close()
+
+
+async def _run_execution(job_id: str, controller_id: int):
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        redis_client = await get_redis_client()
+        state_manager = RedisStateManagerV2(redis_client)
+        job = await state_manager.get_job(job_id)
+        if not job:
+            logger.error(f"[WLAN Grabber] Job {job_id} not found in Redis")
+            return
+        r1_client = create_r1_client_from_controller(controller_id, db)
+        brain = _brain(r1_client, state_manager, redis_client, job.tenant_id)
+        await brain.tracker.start()
+        await brain.execute_workflow(job)
+        await brain.tracker.stop()
+        logger.info(f"[WLAN Grabber] Execution complete for job {job_id} (status={job.status.value})")
+    except Exception as e:
+        logger.exception(f"[WLAN Grabber] Execution failed for job {job_id}: {e}")
+        await fail_job(None, job_id, e, source="WLAN Grabber")
+    finally:
+        # Whatever ran, nothing secret outlives the job.
+        try:
+            await (await get_redis_client()).delete(SECRET_KEY.format(job_id=job_id))
+        except Exception:
+            logger.warning(f"[WLAN Grabber] Could not clear secrets for job {job_id}")
+        db.close()
+
+
+@router.post("/v2/plan", response_model=V2PlanResponse)
+@require_beta()
+async def create_plan(
+    request: PlanRequest,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Re-read the chosen WLANs from SZ and start a job to validate. Nothing is created yet."""
     _check_controller(request.sz_controller_id, "SmartZone", current_user, db)
     r1_controller = _check_controller(request.r1_controller_id, "RuckusONE", current_user, db)
     tenant_id = resolve_tenant_id(r1_controller, request.tenant_id)
@@ -346,10 +479,12 @@ async def apply(
     try:
         async with sz_client:
             _, raws = await _sz_wlans(sz_client, request.zone_id, list(choices))
+            wispr_raws = [r for wid, r in zip(choices, raws) if choices[wid].r1_type == "wispr"]
+            portals = await _sz_portals(sz_client, request.zone_id, _hotspot_portal_ids(wispr_raws))
             # _sz_wlans keeps the order of the ids it was given.
-            specs = [build_spec(raw, choices[wid].r1_type) for wid, raw in zip(choices, raws)]
+            specs = [build_spec(raw, choices[wid].r1_type, portals) for wid, raw in zip(choices, raws)]
             to_create = {
-                sid: role for s in specs if s["r1_type"] == "aaa" and not s["blockers"]
+                sid: role for s in specs if s["r1_type"] in ("aaa", "wispr") and not s["blockers"]
                 for sid, role in ((s["auth_service_id"], "auth"), (s["accounting_service_id"], "acct"))
                 if sid and (request.radius.get(sid) and request.radius[sid].action == "create")
             }
@@ -358,145 +493,127 @@ async def apply(
         logger.exception(f"[WLAN Grabber] SZ re-read failed for zone {request.zone_id}")
         raise HTTPException(status_code=502, detail=f"Failed to read the zone from SmartZone: {e}")
 
-    r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
+    # ── Secrets out of the specs; the rest becomes the job's input ──
+    secrets: Dict[str, str] = {}
+    wlans = []
+    sz_keys = not request.wispr or request.wispr.key_source == "sz"
+    for spec in specs:
+        passphrase = spec.pop("passphrase", None)
+        if passphrase:
+            secrets[f"psk:{spec['sz_wlan_id']}"] = passphrase
+        sz_key = spec.pop("wispr_key", None)
+        if sz_key and sz_keys:
+            secrets[f"wispr_key:{spec['sz_wlan_id']}"] = sz_key
+        wlans.append({"spec": spec, "dpsk_pool": choices[spec["sz_wlan_id"]].dpsk_pool})
+    passphrase = sz_key = None
 
-    # ── RADIUS profiles first: SZ service id -> R1 profile id ──
-    profile_for: Dict[str, str] = {}
-    radius_results: List[Dict[str, Any]] = []
     snapshot = SimpleNamespace(referenced_objects={
         k: SimpleNamespace(name=(v or {}).get("name"), raw=v or {}) for k, v in refs.items()
     })
+    radius: Dict[str, Dict[str, Any]] = {}
     for sid, d in request.radius.items():
-        if d.action == "existing":
-            profile_for[sid] = d.r1_profile_id
-        elif d.action == "create" and sid in to_create:
+        entry: Dict[str, Any] = {"action": d.action, "r1_profile_id": d.r1_profile_id}
+        if d.action == "create" and sid in to_create:
             details = sz_server_details(snapshot, sid)
-            out = {"sz_service_id": sid, "name": details["name"]}
-            try:
-                if details["error"] or not details["primary"]:
-                    radius_results.append({**out, "status": "failed",
-                                           "error": "SZ service has no server address"})
-                    continue
-                existing = await asyncio.to_thread(
-                    r1_client.radius_profiles.find_radius_profile_by_name, tenant_id, details["name"])
-                if existing and existing.get("id"):
-                    profile_for[sid] = existing["id"]
-                    radius_results.append({**out, "status": "exists",
-                                           "error": "Linked the existing profile; its secret was left unchanged"})
-                    continue
-                secret = d.shared_secret.get_secret_value()
-                primary, secondary = details["primary"], details["secondary"]
-                created = await r1_client.radius_profiles.create_radius_profile(
-                    tenant_id=tenant_id, name=details["name"],
-                    primary_ip=primary["ip"], primary_port=primary["port"], primary_secret=secret,
-                    secondary_ip=secondary["ip"] if secondary else None,
-                    secondary_port=secondary["port"] if secondary else 1812,
-                    secondary_secret=secret if secondary else "",
-                    profile_type=details["role"],
-                )
-                secret = None
-                if not (created or {}).get("id"):
-                    raise RuntimeError("R1 returned no profile id")
-                profile_for[sid] = created["id"]
-                radius_results.append({**out, "status": "created"})
-                logger.info(f"[WLAN Grabber] Created RADIUS profile '{details['name']}'")
-            except Exception as e:
-                logger.error(f"[WLAN Grabber] RADIUS profile '{details['name']}' failed: {_api_error(e)}")
-                radius_results.append({**out, "status": "failed", "error": _api_error(e)})
+            entry.update(name=details["name"], primary=details["primary"],
+                         secondary=details["secondary"], role=details["role"])
+            secrets[f"radius:{sid}"] = d.shared_secret.get_secret_value()
+        radius[sid] = entry
+    if request.wispr and request.wispr.key_source == "typed":
+        secrets["wispr_key"] = request.wispr.integration_key.get_secret_value()
 
-    # ── The shared DPSK pool, created once if it is new and some row uses it ──
-    def pool_choice(spec):
-        return choices[spec["sz_wlan_id"]].dpsk_pool
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+    brain = WorkflowBrain(
+        state_manager=state_manager,
+        activity_tracker=ActivityTracker(None, state_manager, tenant_id=tenant_id),
+    )
+    job = await brain.create_job(
+        workflow=WlanGrabberWorkflow,
+        venue_id=request.venue_id or "",
+        tenant_id=tenant_id,
+        controller_id=request.r1_controller_id,
+        user_id=current_user.id,
+        options={"add_description": request.add_description},
+        input_data={
+            "wlans": wlans,
+            "radius": radius,
+            "dpsk_pool": request.dpsk_pool.model_dump(),
+            "wispr": request.wispr.model_dump(exclude={"integration_key"}) if request.wispr else {},
+            "sz_controller_id": request.sz_controller_id,
+            "zone_id": request.zone_id,
+        },
+    )
+    secrets = {k: v for k, v in secrets.items() if v}
+    if secrets:
+        key = SECRET_KEY.format(job_id=job.id)
+        await redis_client.hset(key, mapping=secrets)
+        await redis_client.expire(key, SECRET_TTL)
+    secrets = None
+    background_tasks.add_task(_run_validation, job.id, request.r1_controller_id)
 
-    shared = request.dpsk_pool
-    shared_pool_id: Optional[str] = shared.pool_id if shared.mode == "existing" else None
-    pool_result: Optional[Dict[str, Any]] = None
-    wants_shared = any(s["r1_type"] == "dpsk" and not s["blockers"] and pool_choice(s) is None for s in specs)
-    if shared.mode == "new" and wants_shared:
-        pool_result = {"name": shared.name}
-        try:
-            shared_pool_id, existed = await _create_pool(r1_client, tenant_id, shared)
-            pool_result["status"] = "exists" if existed else "created"
-            if existed:
-                pool_result["error"] = "A pool by this name already exists — linked it unchanged"
-        except Exception as e:
-            logger.error(f"[WLAN Grabber] DPSK pool '{shared.name}' failed: {_api_error(e)}")
-            pool_result.update(status="failed", error=_api_error(e))
+    logger.info(f"[WLAN Grabber] Plan job {job.id}: {len(wlans)} WLANs from zone {request.zone_id}")
+    return V2PlanResponse(
+        job_id=job.id, status="VALIDATING",
+        message=f"Checking {len(wlans)} WLANs. Poll GET /wlan-grabber/v2/{job.id}/plan for results.",
+    )
 
-    # ── Networks ──
-    sem = asyncio.Semaphore(WRITE_CONCURRENCY)
 
-    async def create_one(spec: Dict[str, Any]) -> Dict[str, Any]:
-        name, r1_type = spec["sz_name"], spec["r1_type"]
-        out: Dict[str, Any] = {"sz_wlan_id": spec["sz_wlan_id"], "name": name, "type": r1_type, "warnings": []}
-        if spec["blockers"]:
-            return {**out, "status": "failed", "error": "; ".join(spec["blockers"])}
-        auth_profile = profile_for.get(spec["auth_service_id"]) if r1_type == "aaa" else None
-        if r1_type == "aaa" and not auth_profile:
-            return {**out, "status": "failed",
-                    "error": "Its RADIUS authentication service is not mapped to an R1 profile"}
+@router.get("/v2/{job_id}/plan", response_model=V2PlanResult)
+async def get_plan(job_id: str, current_user: User = Depends(get_current_user)):
+    """The plan; poll after POST /v2/plan until status is AWAITING_CONFIRMATION."""
+    job = await RedisStateManagerV2(await get_redis_client()).get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-        async with sem:
-            try:
-                existing = await r1_client.networks.find_wifi_network_by_name(tenant_id, None, name)
-                if existing and existing.get("id"):
-                    return {**out, "status": "exists", "network_id": existing["id"]}
+    result = V2PlanResult(job_id=job_id, status=job.status.value, unit_count=len(job.units))
+    if job.status == JobStatus.VALIDATING:
+        return result
+    if job.status == JobStatus.FAILED:
+        result.conflicts = [{"description": e} for e in job.errors]
+        return result
+    if job.validation_result:
+        vr = job.validation_result
+        result.valid = vr.valid
+        result.summary = vr.summary.model_dump() if vr.summary else {}
+        result.conflicts = [c.model_dump() for c in vr.conflicts]
+        result.estimated_api_calls = vr.summary.total_api_calls if vr.summary else 0
+        result.actions = [
+            {**a.model_dump(), "details": "; ".join(a.notes) if a.notes else None}
+            for a in vr.actions
+        ]
+        outputs = job.global_phase_results.get(VALIDATE_PHASE, {}) or {}
+        result.networks_existing = outputs.get("networks_existing", []) or []
+        result.wlans_skipped = outputs.get("wlans_skipped", []) or []
+    return result
 
-                common = dict(
-                    tenant_id=tenant_id, venue_id=None, name=name, ssid=spec["sz_ssid"],
-                    vlan_id=spec["vlan_id"], description=f"Migrated from SZ: {name}" if request.add_description else None,
-                    advanced_customization=spec["advanced"] or None,
-                )
-                if r1_type == "psk":
-                    network = await r1_client.networks.create_wifi_network(
-                        passphrase=spec["passphrase"], security_type=spec["security"], **common)
-                elif r1_type == "open":
-                    network = await r1_client.networks.create_open_wifi_network(**common)
-                elif r1_type == "aaa":
-                    network = await r1_client.networks.create_aaa_wifi_network(
-                        security_type=spec["security"], **common)
-                elif r1_type == "dpsk":
-                    network = await r1_client.networks.create_dpsk_wifi_network(**common)
-                else:
-                    return {**out, "status": "failed", "error": f"Unsupported type {r1_type}"}
-                net_id = (network or {}).get("id")
-                if not net_id:
-                    return {**out, "status": "failed", "error": "R1 accepted the create but the network was not found"}
-                out["network_id"] = net_id
-                logger.info(f"[WLAN Grabber] Created {r1_type} network '{name}' ({net_id})")
-            except Exception as e:
-                logger.error(f"[WLAN Grabber] Create '{name}' failed: {_api_error(e)}")
-                return {**out, "status": "failed", "error": _api_error(e)}
 
-            # Links: the network exists now, so a failure here is a warning, not a failed row.
-            links = []
-            if r1_type == "aaa":
-                links.append(("RADIUS authentication", r1_client.radius_profiles.link_radius_to_network,
-                              auth_profile))
-                acct = profile_for.get(spec["accounting_service_id"])
-                if acct and acct != auth_profile:
-                    links.append(("RADIUS accounting", r1_client.radius_profiles.link_radius_to_network, acct))
-            for label, fn, pid in links:
-                try:
-                    await fn(network_id=net_id, radius_profile_id=pid, tenant_id=tenant_id)
-                except Exception as e:
-                    out["warnings"].append(f"{label} profile not linked: {_api_error(e)}")
-            if r1_type == "dpsk":
-                choice = pool_choice(spec)
-                pool_id = shared_pool_id if choice is None else (None if choice == "none" else choice)
-                if choice is None and shared.mode == "new" and not pool_id:
-                    out["warnings"].append("Shared DPSK pool was not created — no pool linked")
-                elif pool_id:
-                    try:
-                        await r1_client.networks.activate_dpsk_service_on_network(
-                            tenant_id=tenant_id, network_id=net_id, dpsk_service_id=pool_id)
-                    except Exception as e:
-                        out["warnings"].append(f"DPSK pool not linked: {_api_error(e)}")
-                else:
-                    out["warnings"].append("No DPSK pool linked — R1 will not activate it until one is")
-            return {**out, "status": "created"}
+@router.post("/v2/{job_id}/confirm")
+async def confirm_plan(
+    job_id: str,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    current_user: User = Depends(get_current_user),
+):
+    """Confirm and run. Job must be AWAITING_CONFIRMATION with a valid plan."""
+    job = await RedisStateManagerV2(await get_redis_client()).get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if job.status != JobStatus.AWAITING_CONFIRMATION:
+        raise HTTPException(status_code=400,
+                            detail=f"Job is in '{job.status.value}' state. Expected AWAITING_CONFIRMATION.")
+    if job.validation_result and not job.validation_result.valid:
+        raise HTTPException(status_code=400, detail="The plan has blocking issues - fix the list and re-plan")
+    background_tasks.add_task(_run_execution, job.id, job.controller_id)
+    return {"job_id": job.id, "status": "RUNNING",
+            "message": f"Creating {len(job.units)} networks. Poll /jobs/{job.id}/status for progress."}
 
-    results = await asyncio.gather(*[create_one(s) for s in specs])
-    counts = {s: sum(1 for r in results if r["status"] == s) for s in ("created", "exists", "failed")}
-    return {"results": results, "radius_results": radius_results, "pool_result": pool_result,
-            "counts": counts}
+
+@router.get("/v2/{job_id}/graph")
+async def get_workflow_graph(job_id: str, current_user: User = Depends(get_current_user)):
+    job = await RedisStateManagerV2(await get_redis_client()).get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    graph = DependencyGraph(job.phase_definitions)
+    data = graph.to_graph_data()
+    return {"workflow_name": job.workflow_name, "nodes": data["nodes"], "edges": data["edges"],
+            "levels": {str(k): v for k, v in graph.compute_levels().items()}}

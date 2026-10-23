@@ -111,6 +111,7 @@ import workflow.phases.validate_lan_ports  # noqa: F401
 import workflow.phases.validate_ap_regroup  # noqa: F401
 import workflow.phases.validate_wlan_activator  # noqa: F401
 import workflow.phases.activate_wlans  # noqa: F401
+import workflow.phases.wlan_grabber  # noqa: F401
 
 # Cloudpath Import phases
 import workflow.phases.cloudpath.validate  # noqa: F401
@@ -158,6 +159,10 @@ register_workflow(APRegroupWorkflow)
 # WLAN Activator Workflow (standalone)
 from workflow.workflows.wlan_activator import WlanActivatorWorkflow  # noqa: F401
 register_workflow(WlanActivatorWorkflow)
+
+# WLAN Grabber Workflow (standalone)
+from workflow.workflows.wlan_grabber import WlanGrabberWorkflow  # noqa: F401
+register_workflow(WlanGrabberWorkflow)
 
 # Cloudpath Import Workflow
 from workflow.workflows.cloudpath_import import CloudpathImportWorkflow  # noqa: F401
