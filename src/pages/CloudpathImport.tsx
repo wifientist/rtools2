@@ -93,6 +93,97 @@ interface AuditData {
  * groups are the part that makes it work, and they belong next to its name
  * rather than in a separate table you have to cross-reference.
  */
+interface R1NamesData {
+  dpsk_service_names: string[];
+  identity_group_names: string[];
+  policy_set_names: string[];
+}
+
+// Case, punctuation and spacing differences don't make a different name to a
+// person, but they do to the import's exact-name lookup.
+const normalizeName = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+function bigrams(s: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2));
+  return out;
+}
+
+/** 0..1: how alike two names read. Containment counts as close. */
+function nameSimilarity(a: string, b: string): number {
+  const na = normalizeName(a), nb = normalizeName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  const ca = na.replace(/ /g, ""), cb = nb.replace(/ /g, "");
+  if (ca.includes(cb) || cb.includes(ca)) return 0.9;
+  // Dice coefficient over character bigrams
+  const ba = bigrams(ca), bb = bigrams(cb);
+  const pool = new Map<string, number>();
+  ba.forEach((g) => pool.set(g, (pool.get(g) || 0) + 1));
+  let shared = 0;
+  bb.forEach((g) => {
+    const n = pool.get(g) || 0;
+    if (n > 0) { shared++; pool.set(g, n - 1); }
+  });
+  return ba.length + bb.length ? (2 * shared) / (ba.length + bb.length) : 0;
+}
+
+// 0.7, not lower: "Lofts at Main" scores 0.64 against "Lofts at Mercer" -- a
+// different property whose pool must not be offered as this one's.
+const SIMILARITY_THRESHOLD = 0.7;
+const MAX_SUGGESTIONS = 3;
+
+/**
+ * "Use R1 value" buttons under a name field, for the tenant's existing names
+ * that read like what is typed. When the field already holds an existing
+ * name exactly, says so instead -- the import will reuse that object.
+ */
+function R1NameSuggestions({
+  current, names, loading, onUse, disabled,
+}: {
+  current: string;
+  names: string[];
+  loading: boolean;
+  onUse: (name: string) => void;
+  disabled?: boolean;
+}) {
+  if (loading) {
+    return <p className="mt-1 text-xs text-gray-400">Checking R1 for existing names…</p>;
+  }
+  const typed = current.trim();
+  if (!typed || names.length === 0) return null;
+  if (names.includes(typed)) {
+    return (
+      <p className="mt-1 text-xs text-green-700">
+        Exists in R1 — the import will reuse it.
+      </p>
+    );
+  }
+  const similar = names
+    .map((n) => ({ n, score: nameSimilarity(typed, n) }))
+    .filter((x) => x.score >= SIMILARITY_THRESHOLD)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, MAX_SUGGESTIONS);
+  if (similar.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-amber-700">Similar name in R1:</span>
+      {similar.map(({ n }) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onUse(n)}
+          disabled={disabled}
+          className="px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+        >
+          Use R1 value "{n}"
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function VenueAuditSsidLine({ ssid }: { ssid: VenueAuditSsid }) {
   return (
     <div className="text-sm">
@@ -239,6 +330,10 @@ interface ScenarioDetection {
   passphrases_without_unit: number;   // no unit SSID at all
   excluded_junk_ssids: string[];      // "undefined@Property" etc — not created
   skipped_usernames: number;          // not an account number — not imported
+  // The skipped entries themselves, for spotting a false positive. Built and
+  // shown only in the browser from the file already loaded here -- the backend
+  // reports just the count so these names never reach the job log.
+  skipped_username_entries: { name: string; ssids: string[] }[];
   property_name: string;              // the part after '@' on the unit SSIDs
 }
 
@@ -555,6 +650,9 @@ function CloudpathImport() {
   const [expiredDpskHandling, setExpiredDpskHandling] = useState<"no_expiration" | "renew" | "skip">("no_expiration");
   const [identityGroupName, setIdentityGroupName] = useState("");
   const [dpskServiceName, setDpskServiceName] = useState("");
+  const [r1Names, setR1Names] = useState<R1NamesData | null>(null);
+  const [r1NamesLoading, setR1NamesLoading] = useState(false);
+  const [r1NamesError, setR1NamesError] = useState("");
 
   // Passphrase generation. "" = translate whatever Cloudpath exported.
   const [passphraseFormat, setPassphraseFormat] = useState<PassphraseFormat>("");
@@ -703,6 +801,37 @@ function CloudpathImport() {
     setEcName(null);
   }, [activeControllerId]);
 
+  // The tenant's existing DPSK service, identity group and policy set names,
+  // matched against the name fields as they are typed. Using one is enough:
+  // the import reuses an existing service, group or set given its exact name.
+  useEffect(() => {
+    setR1Names(null);
+    setR1NamesError("");
+    if (!activeControllerId || (needsEcSelection && !ecId)) return;
+    let cancelled = false;
+    setR1NamesLoading(true);
+    apiFetch(`${API_BASE_URL}/cloudpath-import/r1-names`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        controller_id: activeControllerId,
+        tenant_id: effectiveTenantId,
+      }),
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await responseErrorMessage(response, "R1 name lookup failed"));
+        const data: R1NamesData = await response.json();
+        if (!cancelled) setR1Names(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setR1NamesError(`Could not read existing R1 names: ${err.message}`);
+      })
+      .finally(() => {
+        if (!cancelled) setR1NamesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [activeControllerId, needsEcSelection, ecId, effectiveTenantId]);
+
   // Compute unique DPSK pools from identity export data for filtering
   const uniqueIdentityPools = useMemo(() => {
     if (!identityExportData) return [];
@@ -769,10 +898,16 @@ function CloudpathImport() {
     // Only "4021" or "4021_tier" usernames import; anything else is likely an
     // unconverted email (PII) and is dropped. Mirrors is_importable_username
     // in dpsk_usernames.py -- keep the two in step.
-    const importableUsername = /^\d+(?:_[A-Za-z0-9-]+)?$/;
+    const importableUsername = /^\d+(?:_[A-Za-z0-9][A-Za-z0-9!-]*)?$/;
     const rawDpsks: any[] = data.dpsks || [];
     const dpsks = rawDpsks.filter((d) => importableUsername.test(d.name || ''));
     const skippedUsernames = rawDpsks.length - dpsks.length;
+    const skippedUsernameEntries = rawDpsks
+      .filter((d) => !importableUsername.test(d.name || ''))
+      .map((d) => ({
+        name: String(d.name ?? ''),
+        ssids: Array.isArray(d.ssidList) ? d.ssidList : [],
+      }));
     // Split on the LAST '@': everything before it is the unit, everything
     // after is the property. Mirrors unit_ssid.py on the backend -- keep the
     // two in step. The old /^(\d+)@(.+)$/ required an all-digit unit, so a
@@ -950,6 +1085,7 @@ function CloudpathImport() {
       unit_ssid_counts: unitSsidCounts,
       excluded_junk_ssids: Array.from(junkSsids).sort(),
       skipped_usernames: skippedUsernames,
+      skipped_username_entries: skippedUsernameEntries,
       // Most common property token across the unit SSIDs. Used to prefill the
       // AP Group postfix so the seeded list and the "Update AP list" button
       // agree — otherwise the default produced "unit@Property" while the
@@ -2027,10 +2163,40 @@ function CloudpathImport() {
                     </div>
                     <div className="mt-1">
                       Only usernames that are all digits, or digits_tier
-                      (e.g. 4021_ultrafast), are imported. Anything else is
+                      (e.g. 4021_ultrafast, 4021_Blast!), are imported. Anything else is
                       likely an email that was never converted, so it is left
                       out to keep personal data out of RuckusONE.
                     </div>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer hover:text-red-900 select-none">
+                        Show the {scenarioDetection.skipped_usernames} skipped
+                        username(s)
+                      </summary>
+                      <div className="mt-2 max-h-64 overflow-y-auto border border-red-200 rounded bg-white">
+                        <table className="min-w-full text-xs">
+                          <thead className="bg-red-50 sticky top-0">
+                            <tr>
+                              <th className="px-2 py-1 text-left font-medium text-red-900">Username</th>
+                              <th className="px-2 py-1 text-left font-medium text-red-900">SSIDs</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-red-100">
+                            {scenarioDetection.skipped_username_entries.map((r, i) => (
+                              <tr key={i}>
+                                {/* Quoted so stray whitespace -- a common
+                                    false positive -- is visible */}
+                                <td className="px-2 py-1 font-mono text-gray-900 whitespace-pre">
+                                  {r.name ? `"${r.name}"` : <span className="italic text-gray-400">(empty)</span>}
+                                </td>
+                                <td className="px-2 py-1 font-mono text-gray-600 break-all">
+                                  {r.ssids.join(', ') || '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
                   </div>
                 )}
 
@@ -2111,6 +2277,16 @@ function CloudpathImport() {
             <p className="mt-1 text-xs text-gray-500">
               Optional: Custom name for the identity group (default: 'Cloudpath Import')
             </p>
+            <R1NameSuggestions
+              current={identityGroupName}
+              names={r1Names?.identity_group_names || []}
+              loading={r1NamesLoading}
+              onUse={setIdentityGroupName}
+              disabled={processing}
+            />
+            {r1NamesError && (
+              <p className="mt-1 text-xs text-amber-700">{r1NamesError}</p>
+            )}
           </div>
 
           {/* DPSK Service Name */}
@@ -2132,6 +2308,13 @@ function CloudpathImport() {
             <p className="mt-1 text-xs text-gray-500">
               Optional: Custom name for the DPSK service/pool (default: uses Identity Group Name)
             </p>
+            <R1NameSuggestions
+              current={dpskServiceName}
+              names={r1Names?.dpsk_service_names || []}
+              loading={r1NamesLoading}
+              onUse={setDpskServiceName}
+              disabled={processing}
+            />
             {/* Show pool context info */}
             {poolMetadata && (
               <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
@@ -2640,6 +2823,13 @@ function CloudpathImport() {
                 <p className="mt-1 text-xs text-gray-500">
                   Optional: Name for the policy set (defaults to venue name or "Adaptive Policies")
                 </p>
+                <R1NameSuggestions
+                  current={policySetName || venueName || ""}
+                  names={r1Names?.policy_set_names || []}
+                  loading={r1NamesLoading}
+                  onUse={setPolicySetName}
+                  disabled={processing}
+                />
               </div>
             )}
 
