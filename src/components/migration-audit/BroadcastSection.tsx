@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { BroadcastAudit, ApBroadcast } from '@/types/migrationAudit';
+import BroadcastCsv from './BroadcastCsv';
 
 type Tab = 'aps' | 'ssids' | 'groups';
 const RENDER_CAP = 300;
@@ -22,6 +23,7 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
   const [tab, setTab] = useState<Tab>('aps');
   const [query, setQuery] = useState('');
   const [onlyIssues, setOnlyIssues] = useState(true);
+  const [showCsv, setShowCsv] = useState(false);
   const q = query.trim().toLowerCase();
   const c = audit.counts;
 
@@ -59,6 +61,10 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
               {label}
             </button>
           ))}
+          <button onClick={() => setShowCsv(v => !v)}
+            className={`ml-auto text-xs px-2.5 py-1 rounded border ${showCsv ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-gray-300 text-gray-600 hover:bg-white'}`}>
+            {showCsv ? 'Hide CSV' : 'CSV'}
+          </button>
         </div>
         <div className="flex items-center gap-3 flex-wrap text-xs">
           <input
@@ -76,6 +82,8 @@ export default function BroadcastSection({ audit }: { audit: BroadcastAudit }) {
         </div>
         {audit.notes.map((n, i) => <div key={i} className="text-[11px] text-gray-500">• {n}</div>)}
       </div>
+
+      {showCsv && <BroadcastCsv audit={audit} />}
 
       <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
         {tab === 'aps' && (
