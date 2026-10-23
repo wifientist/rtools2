@@ -38,6 +38,10 @@ match is ambiguous and suggests nothing. Seen live 2026-10-22: 106 of a
 venue's 121 default-group APs were unit replacements named for an empty
 unit group.
 
+AP names that carry the AP's own serial ("COM1_411839006684") are matched
+by the name without it, and can be renamed to drop it (plan_ap_renames):
+the serial, the delimiter joining it, and any brackets around it go.
+
 APs are moved (plan_moves) by serial or name into a group by id or name,
 creating a missing group -- the AP Regroup CSV, folded in here.
 
@@ -64,6 +68,34 @@ STATUSES = (DEFAULT, NAMED_DEFAULT, IN_USE, AWAITING_AP, MAPPED, UNUSED)
 NAME_RE = re.compile(r"(?=^((?!(`|\$\()).){2,64}$)^(\S.*\S)$")
 
 SSID_LIMIT = 15  # R1: 15 SSIDs per AP Group
+
+# R1's pattern for an AP name (Wi-Fi_Services_ApV1.name): 2-32 printable
+# ASCII characters, no backtick or $(, no leading/trailing space.
+AP_NAME_RE = re.compile(r"(?=^((?!`|\$\()[ -_a-~]){2,32}$)^(\S.*\S)$")
+
+_DELIMS = r"[\s_\-.:|/#]*"
+
+
+def strip_serial(name: str, serial: str) -> Optional[str]:
+    """
+    The AP name without its serial: "COM1_411839006684" -> "COM1",
+    "411839006684-1113" -> "1113", "Lobby (411839006684)" -> "Lobby",
+    "A_411839006684_B" -> "A_B". None when the name does not carry the
+    serial, or when nothing would be left of it.
+    """
+    name, serial = (name or "").strip(), (serial or "").strip()
+    if len(serial) < 6 or serial.casefold() not in name.casefold():
+        return None
+    m = re.search(f"({_DELIMS})[\\(\\[]?\\s*{re.escape(serial)}\\s*[\\)\\]]?({_DELIMS})", name, re.I)
+    left, right = name[:m.start()], name[m.end():]
+    if left and right:
+        # Keep one delimiter between the two halves: the one that was on the left, else the right.
+        joiner = (m.group(1).strip() or m.group(2).strip() or " ")[:1]
+        new = left + joiner + right
+    else:
+        new = left or right
+    new = new.strip(" _-.:|/#")
+    return new or None
 
 
 def scheduler_state(settings: Optional[Dict[str, Any]]) -> str:
@@ -139,6 +171,7 @@ def build_inventory(
     for ap in aps:
         serial = ap.get("serialNumber") or ap.get("serial")
         entry = {"serial": serial, "name": ap.get("name") or serial,
+                 "clean_name": strip_serial(ap.get("name"), serial),
                  "status": ap.get("status"), "model": ap.get("model")}
         gid = ap.get("apGroupId")
         if gid in members:
@@ -185,7 +218,8 @@ def build_inventory(
     awaiting: Dict[str, List[str]] = {}
     held = [(gid, a) for gid in holding for a in members.get(gid, [])]
     for held_in, a in sorted(held, key=lambda x: (x[1]["name"] or "").casefold()):
-        s = suggest_group(a["name"], groups_by_key)
+        # The name without its serial, when it carries one: "1113_312072009063" matches "1113@Site".
+        s = suggest_group(a["clean_name"] or a["name"], groups_by_key)
         entry = {**a, "group_id": held_in, "group_name": group_name.get(held_in), "match": s["match"], "suggested_group_id": None, "suggested_group_name": None,
                  "suggested_group_aps": 0, "candidates": s.get("candidates") or []}
         if s["match"] == "one":
@@ -266,6 +300,17 @@ def build_inventory(
         })
 
     rows.sort(key=lambda r: (not r["is_default"], r["name"].casefold()))
+
+    # ── AP names carrying the AP's serial, with the name it would become ──
+    carrying = [ap for ap in aps if (ap.get("name") or "") != (ap.get("serialNumber") or "")
+                and strip_serial(ap.get("name"), ap.get("serialNumber"))]
+    checked = plan_ap_renames(aps, [{"serial": ap["serialNumber"],
+                                     "new_name": strip_serial(ap.get("name"), ap["serialNumber"])}
+                                    for ap in carrying])
+    serial_named = [{**r, "group_name": group_name.get(ap_group_of.get(r["serial"]))}
+                    for r in checked["rows"]]
+    serial_named.sort(key=lambda r: (r["old_name"] or "").casefold())
+
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in STATUSES}
     return {
         "groups": rows,
@@ -279,8 +324,10 @@ def build_inventory(
             "over_ssid_limit": sum(1 for r in rows if len(r["wlans"]) > SSID_LIMIT),
             "default_aps": len(default_aps),
             "default_aps_matched": sum(1 for a in default_aps if a["match"] == "one"),
+            "serial_named": len(serial_named),
         },
         "default_aps": default_aps,
+        "serial_named": serial_named,
         "stray_aps": stray_aps,
     }
 
@@ -479,3 +526,52 @@ def plan_moves(
             r["to_group_name"] = to_create[r["to_group_name"].casefold()]
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("ok", "already", "blocked")}
     return {"rows": rows, "groups_to_create": sorted(to_create.values()), "counts": counts}
+
+
+def plan_ap_renames(aps: List[Dict[str, Any]], renames: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Check AP renames ({serial, new_name}) against the venue's APs.
+
+    R1's AP name rule, and no two APs in the venue ending up with the same
+    name (case-insensitively; R1 may also hold names unique more widely --
+    a clash outside the venue comes back as a write error). Rows: ok /
+    unchanged / blocked.
+    """
+    by_serial = {a.get("serialNumber"): a for a in aps if a.get("serialNumber")}
+    rows = []
+    seen = set()
+    for r in renames:
+        serial, new = r.get("serial"), r.get("new_name")
+        ap = by_serial.get(serial)
+        row = {"serial": serial, "old_name": (ap or {}).get("name"), "new_name": new,
+               "status": "ok", "error": None}
+        rows.append(row)
+        if serial in seen:
+            row.update(status="blocked", error="AP appears more than once")
+        elif ap is None:
+            row.update(status="blocked", error="No AP in this venue with that serial")
+        elif not new:
+            row.update(status="blocked", error="The name is only the serial — nothing would be left")
+        elif new == ap.get("name"):
+            row["status"] = "unchanged"
+        elif not isinstance(new, str) or not AP_NAME_RE.match(new):
+            row.update(status="blocked", error="Not a valid R1 AP name (2–32 printable characters, "
+                                               "no leading/trailing space, no ` or $( )")
+        seen.add(serial)
+
+    renaming = {r["serial"]: r["new_name"] for r in rows if r["status"] == "ok"}
+    final: Dict[str, List[str]] = {}
+    for a in aps:
+        if a.get("serialNumber"):
+            name = renaming.get(a["serialNumber"], a.get("name") or a["serialNumber"])
+            final.setdefault(name.casefold(), []).append(a["serialNumber"])
+    for r in rows:
+        if r["status"] != "ok":
+            continue
+        others = [x for x in final[r["new_name"].casefold()] if x != r["serial"]]
+        if others:
+            other = by_serial[others[0]]
+            r.update(status="blocked", error=f"AP {other.get('name')} ({others[0]}) would have the same name")
+
+    counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("ok", "unchanged", "blocked")}
+    return {"rows": rows, "counts": counts}
