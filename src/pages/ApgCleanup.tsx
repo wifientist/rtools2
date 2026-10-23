@@ -84,14 +84,20 @@ const STATUS: Record<GroupStatus, { label: string; cls: string }> = {
   default: { label: 'Default', cls: 'text-gray-600 bg-gray-50 border-gray-200' },
   named_default: { label: 'Named "default"', cls: 'text-purple-700 bg-purple-50 border-purple-200' },
   in_use:  { label: 'In use',  cls: 'text-green-700 bg-green-50 border-green-200' },
-  awaiting_ap: { label: 'Awaiting AP', cls: 'text-sky-700 bg-sky-50 border-sky-200' },
-  mapped:  { label: 'Empty, mapped', cls: 'text-amber-700 bg-amber-50 border-amber-200' },
-  unused:  { label: 'Unused',  cls: 'text-red-700 bg-red-50 border-red-200' },
+  awaiting_ap: { label: 'Empty — AP in default group', cls: 'text-sky-700 bg-sky-50 border-sky-200' },
+  mapped:  { label: 'Empty — WLANs mapped', cls: 'text-amber-700 bg-amber-50 border-amber-200' },
+  unused:  { label: 'Empty — no WLANs',  cls: 'text-red-700 bg-red-50 border-red-200' },
 };
 
 const WLAN_STATE: Record<WlanState, string> = {
   active: 'text-green-700', off: 'text-gray-400 line-through', scheduled: 'text-indigo-600', unknown: 'text-amber-600',
 };
+
+type Filter = GroupStatus | 'all' | 'empty';
+
+/** A group with no AP, whatever else is true of it (R1's implicit default aside). */
+const isEmpty = (g: Group) => !g.is_default && g.ap_count === 0;
+const emptyCount = (inv: Inventory) => inv.groups.filter(isEmpty).length;
 
 const deletable = (g: Group) =>
   g.status === 'mapped' || g.status === 'unused' || (g.status === 'named_default' && g.ap_count === 0);
@@ -141,7 +147,7 @@ export default function ApgCleanup() {
   const [inv, setInv] = useState<Inventory | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<GroupStatus | 'all'>('all');
+  const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -206,7 +212,8 @@ export default function ApgCleanup() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (inv?.groups || []).filter(g =>
-      (filter === 'all' || g.status === filter) && (!q || g.name.toLowerCase().includes(q)));
+      (filter === 'all' || (filter === 'empty' ? isEmpty(g) : g.status === filter))
+      && (!q || g.name.toLowerCase().includes(q)));
   }, [inv, filter, search]);
 
   const selGroups = (inv?.groups || []).filter(g => selected.has(g.id));
@@ -545,10 +552,15 @@ export default function ApgCleanup() {
               <div className="bg-white border border-gray-200 rounded-lg">
                 <div className="flex flex-wrap items-center gap-2 p-3 border-b border-gray-100">
                   <span className="text-sm font-medium text-gray-700 mr-1">{inv.venue_name}</span>
-                  {(['all', ...Object.keys(STATUS)] as (GroupStatus | 'all')[]).map(s => (
+                  {(['all', 'empty', ...Object.keys(STATUS)] as Filter[]).map(s => (
                     <button key={s} onClick={() => setFilter(s)}
-                      className={`text-xs px-2 py-0.5 rounded border ${s === 'all' ? 'border-gray-200 text-gray-600' : STATUS[s].cls} ${filter === s ? 'ring-2 ring-indigo-300' : ''}`}>
-                      {s === 'all' ? `All: ${inv.groups.length}` : `${STATUS[s].label}: ${inv.counts[s] ?? 0}`}
+                      className={`text-xs px-2 py-0.5 rounded border ${
+                        s === 'all' ? 'border-gray-200 text-gray-600'
+                        : s === 'empty' ? 'border-rose-300 text-rose-800 bg-rose-50 font-semibold'
+                        : STATUS[s].cls} ${filter === s ? 'ring-2 ring-indigo-300' : ''}`}>
+                      {s === 'all' ? `All: ${inv.groups.length}`
+                        : s === 'empty' ? `Empty (0 APs): ${emptyCount(inv)}`
+                        : `${STATUS[s].label}: ${inv.counts[s] ?? 0}`}
                     </button>
                   ))}
                   <div className="relative">
@@ -728,14 +740,25 @@ function SummaryTiles({ inv }: { inv: Inventory }) {
     ['WLANs in venue', s.networks],
     ['Venue-wide WLANs', s.all_group_networks],
     ['WLANs switched off', s.networks_off, s.networks_off ? 'text-gray-500' : undefined],
-    ['Unused groups', inv.counts.unused ?? 0, inv.counts.unused ? 'text-red-700' : undefined],
-    ['Empty but mapped', inv.counts.mapped ?? 0, inv.counts.mapped ? 'text-amber-700' : undefined],
     ['Over 15 SSIDs', s.over_ssid_limit, s.over_ssid_limit ? 'text-red-700' : undefined],
     ['APs in default group', s.default_aps, s.default_aps ? 'text-sky-700' : undefined],
-    ['Awaiting their AP', inv.counts.awaiting_ap ?? 0, inv.counts.awaiting_ap ? 'text-sky-700' : undefined],
   ];
+  const empty = emptyCount(inv);
+  // R1's implicit default group is not one anybody made, so it is not counted against the APs.
+  const made = inv.groups.filter(g => !g.is_default).length;
+  tiles.splice(2, 0, ['Empty groups (0 APs)', empty, empty ? 'text-rose-700' : undefined]);
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2 mb-4">
+    <>
+    {made > s.aps && (
+      <div className="mb-3 flex items-start gap-2 text-sm text-rose-800 bg-rose-50 border border-rose-200 rounded-lg p-3">
+        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          <span className="font-semibold">{made} AP Groups for {plural(s.aps, 'AP')}</span> — {empty} of them have no AP.
+          {' '}Fine if APs are still being added; otherwise they are cleanup candidates. Use the <span className="font-medium">Empty (0 APs)</span> filter below.
+        </div>
+      </div>
+    )}
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
       {tiles.map(([label, n, cls]) => (
         <div key={label} className="bg-white border border-gray-200 rounded-lg p-2">
           <div className={`text-xl font-semibold ${cls || 'text-gray-800'}`}>{n}</div>
@@ -743,6 +766,7 @@ function SummaryTiles({ inv }: { inv: Inventory }) {
         </div>
       ))}
     </div>
+    </>
   );
 }
 
@@ -1131,10 +1155,11 @@ function OutcomePanel({ outcome, onClose }: { outcome: Outcome; onClose: () => v
   const rows: [string, number, number | null][] = [
     ['AP Groups', before.summary.groups, after?.summary.groups ?? null],
     ['In use', before.counts.in_use ?? 0, after ? after.counts.in_use ?? 0 : null],
-    ['Empty but mapped', before.counts.mapped ?? 0, after ? after.counts.mapped ?? 0 : null],
-    ['Unused', before.counts.unused ?? 0, after ? after.counts.unused ?? 0 : null],
+    ['Empty (0 APs)', emptyCount(before), after ? emptyCount(after) : null],
+    ['↳ AP in default group', before.counts.awaiting_ap ?? 0, after ? after.counts.awaiting_ap ?? 0 : null],
+    ['↳ WLANs mapped', before.counts.mapped ?? 0, after ? after.counts.mapped ?? 0 : null],
+    ['↳ no WLANs', before.counts.unused ?? 0, after ? after.counts.unused ?? 0 : null],
     ['Named "default"', before.counts.named_default ?? 0, after ? after.counts.named_default ?? 0 : null],
-    ['Awaiting AP', before.counts.awaiting_ap ?? 0, after ? after.counts.awaiting_ap ?? 0 : null],
     ['APs', before.summary.aps, after?.summary.aps ?? null],
   ];
   return (
