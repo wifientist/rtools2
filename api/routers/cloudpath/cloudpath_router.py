@@ -11,11 +11,12 @@ Endpoints:
 - POST /cleanup - Start cleanup workflow (uses V2)
 """
 
+import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Set
 from pydantic import BaseModel, Field
 
 from dependencies import get_db, get_current_user
@@ -332,6 +333,91 @@ async def audit_venue_dpsk(
     except Exception as e:
         logger.exception(f"Venue audit failed: {e}")
         raise HTTPException(status_code=500, detail=f"Venue audit failed: {e}")
+
+
+class R1NamesRequest(BaseModel):
+    controller_id: int = Field(..., description="RuckusONE controller ID")
+    tenant_id: Optional[str] = Field(None, description="Tenant/EC ID (required for MSP)")
+
+
+class R1NamesResponse(BaseModel):
+    dpsk_service_names: List[str] = Field(default_factory=list)
+    identity_group_names: List[str] = Field(default_factory=list)
+    policy_set_names: List[str] = Field(default_factory=list)
+
+
+# Stops a misbehaving paginator from looping forever; 20 pages is thousands
+# of objects, far past any real tenant.
+_MAX_NAME_PAGES = 20
+
+
+async def _all_names(fetch_page, first_page: int, page_size: int) -> List[str]:
+    """Every 'name' across a paginated R1 query, sorted and de-duplicated."""
+    names: Set[str] = set()
+    for page in range(first_page, first_page + _MAX_NAME_PAGES):
+        response = await fetch_page(page, page_size)
+        rows = (
+            response.get('data', response.get('content', []))
+            if isinstance(response, dict) else (response or [])
+        )
+        names.update(r['name'] for r in rows if isinstance(r, dict) and r.get('name'))
+        if len(rows) < page_size:
+            break
+    return sorted(names)
+
+
+@router.post("/r1-names", response_model=R1NamesResponse)
+async def r1_names_for_tenant(
+    request: R1NamesRequest = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Names of the tenant's DPSK services, identity groups and policy sets.
+
+    Feeds the "Use R1 value" suggestions beside the import's name fields,
+    which pick the ones similar to what is typed. The import already reuses
+    an existing service, group or set when given its exact name, so the name
+    is all the page needs. Reports only.
+    """
+    controller = validate_controller_access(request.controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
+
+    r1_client = create_r1_client_from_controller(controller.id, db)
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
+
+    try:
+        # /dpskServices/query is 1-indexed (page=0 is a bare 500); the other
+        # two are 0-indexed. /identityGroups/query ignores searchString, so
+        # listing everything is the only option there anyway.
+        pools, groups, sets = await asyncio.gather(
+            _all_names(
+                lambda p, n: r1_client.dpsk.query_dpsk_pools(
+                    tenant_id=tenant_id, page=p, limit=n),
+                first_page=1, page_size=100,
+            ),
+            _all_names(
+                lambda p, n: r1_client.identity.query_identity_groups(
+                    tenant_id=tenant_id, page=p, size=n),
+                first_page=0, page_size=500,
+            ),
+            _all_names(
+                lambda p, n: r1_client.policy_sets.query_policy_sets(
+                    tenant_id=tenant_id, page=p, limit=n),
+                first_page=0, page_size=100,
+            ),
+        )
+        return R1NamesResponse(
+            dpsk_service_names=pools,
+            identity_group_names=groups,
+            policy_set_names=sets,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"R1 name lookup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"R1 name lookup failed: {e}")
 
 
 @router.post("/audit-identities", response_model=IdentityAuditResponse)
