@@ -111,6 +111,7 @@ import workflow.phases.validate_lan_ports  # noqa: F401
 import workflow.phases.validate_ap_regroup  # noqa: F401
 import workflow.phases.validate_wlan_activator  # noqa: F401
 import workflow.phases.activate_wlans  # noqa: F401
+import workflow.phases.link_dpsk_pools  # noqa: F401
 import workflow.phases.wlan_grabber  # noqa: F401
 
 # Cloudpath Import phases
