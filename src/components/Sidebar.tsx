@@ -75,8 +75,8 @@ const Sidebar = () => {
       label: "Helpers",
       icon: <Wrench size={18} />,
       items: [
-        { to: "/migrate", icon: <RedoDot size={20} />, label: "Migrate R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
-        { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Migrate SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/migrate", icon: <RedoDot size={20} />, label: "Move R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Move SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/wlan-activator", icon: <Radio size={20} />, label: "WLAN Activator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },

@@ -170,9 +170,9 @@ function MigrateR1ToR1() {
     return (
         <div className="p-4 max-w-6xl mx-auto">
             <div className="mb-8">
-                <h2 className="text-3xl font-bold mb-2">RuckusONE to RuckusONE Migration</h2>
+                <h2 className="text-3xl font-bold mb-2">Move RuckusONE to RuckusONE</h2>
                 <p className="text-gray-600">
-                    Migrate Access Points between RuckusONE controllers in 3 simple steps
+                    Move Access Points between RuckusONE controllers in 3 simple steps
                 </p>
             </div>
 
