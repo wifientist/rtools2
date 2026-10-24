@@ -514,17 +514,21 @@ function NetworkAuditTable({
   extraNetworks: MigrationAuditReport['extra_r1_networks'];
   statusFilter: AuditStatus | null;
 }) {
-  const filtered = statusFilter === 'extra'
+  const [pskIssuesOnly, setPskIssuesOnly] = useState(false);
+  const pskCompared = networks.filter(n => n.passphrase_check).length;
+  const pskIssues = networks.filter(n => PASSPHRASE_ISSUES.has(n.passphrase_check ?? '')).length;
+  const byStatus = statusFilter === 'extra'
     ? [] // Extra networks shown separately
     : statusFilter
       ? networks.filter(n => n.status === statusFilter)
       : networks;
+  const filtered = pskIssuesOnly ? byStatus.filter(n => PASSPHRASE_ISSUES.has(n.passphrase_check ?? '')) : byStatus;
 
   const showExtra = !statusFilter || statusFilter === 'extra';
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b bg-gray-50">
+      <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-4 flex-wrap">
         <h3 className="text-sm font-semibold text-gray-700">
           Network Comparison
           {statusFilter && statusFilter !== 'extra' && (
@@ -533,6 +537,12 @@ function NetworkAuditTable({
             </span>
           )}
         </h3>
+        {pskCompared > 0 && (
+          <label className="flex items-center gap-1.5 text-xs text-gray-600">
+            <input type="checkbox" checked={pskIssuesOnly} onChange={e => setPskIssuesOnly(e.target.checked)} />
+            PSK passphrase issues only ({pskIssues} of {pskCompared} PSK)
+          </label>
+        )}
       </div>
 
       {/* SZ WLAN rows */}
@@ -595,6 +605,17 @@ const SECTION_ORDER = [
 
 // ── Network Row (expandable with deep field accordion) ───────────
 
+// PSK only: the server compares keyed fingerprints and sends a verdict, never
+// a value. DPSK networks have no single passphrase and never get one.
+const PASSPHRASE_BADGE: Record<NonNullable<NetworkAuditItem['passphrase_check']>, { label: string; cls: string }> = {
+  match:         { label: 'PSK match',      cls: 'bg-green-50 text-green-700 border-green-200' },
+  differs:       { label: 'PSK differs',    cls: 'bg-red-50 text-red-700 border-red-200' },
+  missing_in_r1: { label: 'PSK not in R1',  cls: 'bg-red-50 text-red-700 border-red-200' },
+  missing_in_sz: { label: 'PSK not on SZ',  cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  unknown:       { label: 'PSK unknown',    cls: 'bg-gray-50 text-gray-500 border-gray-200' },
+};
+const PASSPHRASE_ISSUES = new Set(['differs', 'missing_in_r1', 'missing_in_sz']);
+
 function NetworkRow({ item }: { item: NetworkAuditItem }) {
   const [expanded, setExpanded] = useState(false);
   const [mismatchOnly, setMismatchOnly] = useState(false);
@@ -627,6 +648,16 @@ function NetworkRow({ item }: { item: NetworkAuditItem }) {
           title="Default VLAN: SZ → R1"
         >
           VLAN {item.sz_vlan_id ?? '—'} → {item.actual_r1_id ? (item.actual_r1_vlan ?? '—') : '—'}
+        </span>
+        <span className="w-24">
+          {item.passphrase_check && (
+            <span
+              className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold whitespace-nowrap ${PASSPHRASE_BADGE[item.passphrase_check].cls}`}
+              title={item.passphrase_note || 'SZ and R1 passphrases compared on the server; values are never sent'}
+            >
+              {PASSPHRASE_BADGE[item.passphrase_check].label}
+            </span>
+          )}
         </span>
         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${cfg.bg} ${cfg.color}`}>
           {cfg.label.toUpperCase()}
