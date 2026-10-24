@@ -696,6 +696,10 @@ function CloudpathImport() {
   // link back to the source export, so losing it silently is worse than the
   // extra API call per identity. Matches the backend default.
   const [skipIdentityDescriptions, setSkipIdentityDescriptions] = useState(false);
+  const [addsOnly, setAddsOnly] = useState(false);
+  // Set once the user ticks or unticks Adds Only themselves; from then on
+  // the prior-import detection below leaves their choice alone.
+  const addsOnlyTouchedRef = useRef(false);
 
   // Access Policy Options
   const [enableAccessPolicies, setEnableAccessPolicies] = useState(true);
@@ -831,6 +835,28 @@ function CloudpathImport() {
       });
     return () => { cancelled = true; };
   }, [activeControllerId, needsEcSelection, ecId, effectiveTenantId]);
+
+  // The R1 resource that says this property was imported before: the exact
+  // identity group (or, with policies on, policy set) this run would reuse.
+  // Exact names only -- that is what validate reuses; a fuzzy suggestion is
+  // a different resource until the user picks it.
+  const priorImportMatch = useMemo(() => {
+    if (!r1Names) return null;
+    const idg = identityGroupName.trim();
+    if (idg && r1Names.identity_group_names.includes(idg)) {
+      return `identity group "${idg}"`;
+    }
+    const ps = policySetName.trim();
+    if (enableAccessPolicies && ps && r1Names.policy_set_names.includes(ps)) {
+      return `policy set "${ps}"`;
+    }
+    return null;
+  }, [r1Names, identityGroupName, policySetName, enableAccessPolicies]);
+
+  // Default Adds Only from that, until the user decides for themselves.
+  useEffect(() => {
+    if (!addsOnlyTouchedRef.current) setAddsOnly(priorImportMatch !== null);
+  }, [priorImportMatch]);
 
   // Compute unique DPSK pools from identity export data for filtering
   const uniqueIdentityPools = useMemo(() => {
@@ -1305,6 +1331,8 @@ function CloudpathImport() {
     apGroupPostfixTouchedRef.current = false;
     setSkipIdentityDescriptions(false);
     setEnableAccessPolicies(true);
+    setAddsOnly(false);
+    addsOnlyTouchedRef.current = false;
 
     // AP assignments — unit numbers from the old property match nothing here
     setApAssignmentMode("skip");
@@ -1487,6 +1515,7 @@ function CloudpathImport() {
             ap_assignments: isPerUnitMode(ssidMode) ? apAssignments : [],
             // Identity description options
             skip_identity_descriptions: skipIdentityDescriptions,
+            adds_only: addsOnly,
             // Access policy options
             enable_access_policies: enableAccessPolicies,
             policy_set_name: policySetName.trim() || null,
@@ -2832,6 +2861,40 @@ function CloudpathImport() {
                 />
               </div>
             )}
+
+            {/* Adds Only */}
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={addsOnly}
+                onChange={(e) => {
+                  addsOnlyTouchedRef.current = true;
+                  setAddsOnly(e.target.checked);
+                }}
+                disabled={processing}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 mt-0.5"
+              />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-gray-900">Adds Only</span>
+                <p className="text-xs text-gray-500">
+                  For re-running a newer export. Imports only residents RuckusONE does not have;
+                  anyone already there is left exactly as it is. Matched by Cloudpath GUID, then
+                  by account number with or without its tier suffix. Nothing is ever deleted.
+                </p>
+                {priorImportMatch && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    RuckusONE already has the {priorImportMatch} this import would use, so this
+                    looks like a re-run{addsOnly ? " — ticked by default" : ""}.
+                  </p>
+                )}
+                {addsOnly && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    Counts on this page come from the file alone. The plan, after you click
+                    Import, is where RuckusONE is checked and the new-vs-existing split is shown.
+                  </p>
+                )}
+              </div>
+            </label>
 
             {/* Skip Identity Descriptions */}
             <label className="flex items-start gap-3">

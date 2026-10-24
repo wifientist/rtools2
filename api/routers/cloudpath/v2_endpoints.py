@@ -102,6 +102,8 @@ class V2PlanResult(BaseModel):
     passphrase_count: int = 0
     estimated_api_calls: int = 0
     actions: list = []
+    # Shown as a banner above everything else in the plan modal.
+    headline: str = ""
 
 
 class V2ConfirmResponse(BaseModel):
@@ -419,6 +421,18 @@ async def get_plan(
     result.passphrase_count = sum(
         1 for d in input_passphrases if is_importable_username(d.get('name', ''))
     )
+    # Adds only drops every resident R1 already has; the file count would
+    # announce a full import.
+    if job.input_data.get('options', {}).get('adds_only') and job.validation_result:
+        s = job.validation_result.summary
+        result.passphrase_count = s.passphrases_to_create
+        untouched = len(input_passphrases) - s.skipped_nonnumeric_usernames - s.passphrases_to_create
+        result.headline = (
+            f"Adds only: {s.passphrases_to_create} new resident(s) will be "
+            f"imported. {untouched} already in RuckusONE will not be touched."
+            + (f" {s.skipped_nonnumeric_usernames} entr(ies) skipped: username "
+               f"is not an account number." if s.skipped_nonnumeric_usernames else "")
+        )
 
     # Build descriptive message based on scenario
     scenario_names = {

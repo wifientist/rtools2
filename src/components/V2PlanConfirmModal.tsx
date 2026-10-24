@@ -51,6 +51,9 @@ interface PlanResult {
   estimated_api_calls: number;
   actions: ActionItem[];
   ap_match_summary?: Record<string, any>;
+  // One-line verdict a workflow wants read before anything else (e.g. the
+  // Cloudpath adds-only split). Absent for workflows that set none.
+  headline?: string;
 }
 
 interface V2PlanConfirmModalProps {
@@ -291,6 +294,12 @@ const V2PlanConfirmModal = ({
                   </div>
                 </div>
               </div>
+
+              {plan.headline && (
+                <div className="bg-blue-50 border border-blue-300 rounded-lg p-4 text-sm font-medium text-blue-900">
+                  {plan.headline}
+                </div>
+              )}
 
               {/* AP Match Summary (for port config workflows) */}
               {apMatch && Object.keys(apMatch).length > 0 ? (
