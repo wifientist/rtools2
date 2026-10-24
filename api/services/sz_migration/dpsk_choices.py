@@ -26,6 +26,7 @@ Nothing here touches passphrases: a new pool starts empty, and filling it is
 the Cloudpath import's job.
 """
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from r1api.constants import DpskPassphraseFormat
@@ -50,14 +51,19 @@ DEFAULT_SETTINGS = {
 
 
 def default_plan(zone_name: str, dpsk_wlan_ids: List[str]) -> Dict[str, Any]:
-    """One shared new pool + new identity group for every DPSK WLAN."""
-    base = "".join(c if c.isalnum() or c in "-_" else "-" for c in zone_name).strip("-") or "migrated"
+    """
+    One shared new pool + new identity group for every DPSK WLAN, both named
+    after the zone as is ("Murabella Apartments" -> "Murabella_Apartments"):
+    underscores, no -dpsk / -identities suffix.
+    """
+    base = re.sub(r"_+", "_", "".join(c if c.isalnum() or c in "-_" else "_" for c in zone_name)).strip("_") \
+        or "migrated"
     return {
         "pools": {
             "shared": {
                 "mode": "new",
-                "name": f"{base}-dpsk",
-                "identity_group": {"mode": "new", "name": f"{base}-identities"},
+                "name": base,
+                "identity_group": {"mode": "new", "name": base},
                 **DEFAULT_SETTINGS,
             }
         },

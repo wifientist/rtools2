@@ -10,9 +10,11 @@ const STEPS: Step[] = [
   { number: 1, label: 'Source', color: 'blue' },
   { number: 2, label: 'Extract', color: 'blue' },
   { number: 3, label: 'Destination', color: 'indigo' },
-  { number: 4, label: 'Review', color: 'purple' },
-  { number: 5, label: 'Execute', color: 'orange' },
-  { number: 6, label: 'Results', color: 'green' },
+  { number: 4, label: 'Venue Config', color: 'indigo' },
+  { number: 5, label: 'WLANs', color: 'purple' },
+  { number: 6, label: 'Create WLANs', color: 'orange' },
+  { number: 7, label: 'AP Mapping', color: 'orange' },
+  { number: 8, label: 'Results', color: 'green' },
 ];
 
 interface WizardStepperProps {

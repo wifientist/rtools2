@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 
 FP_PREFIX = "hmac-sha256:"
 
-PSK_AUTH_TYPES = {"WPA2-PSK", "WPA3-SAE", "WPA-PSK", "WPA3"}
+PSK_AUTH_TYPES = {"WPA2-PSK", "WPA3-SAE", "WPA-PSK", "WPA3", "WPA2-PSK + Portal"}
 
 
 def _key() -> bytes:

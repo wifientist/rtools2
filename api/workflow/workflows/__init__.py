@@ -172,3 +172,14 @@ register_workflow(CloudpathImportWorkflow)
 # SZ → R1 Migration Workflow
 from workflow.workflows.sz_to_r1_migration import SZtoR1MigrationWorkflow  # noqa: F401
 register_workflow(SZtoR1MigrationWorkflow)
+
+# SZ → R1 Migration, stage: Venue Configuration
+import workflow.phases.sz_migration.venue_config  # noqa: F401
+import workflow.phases.sz_migration.apply_venue_settings  # noqa: F401
+from workflow.workflows.sz_venue_config import SZVenueConfigWorkflow  # noqa: F401
+register_workflow(SZVenueConfigWorkflow)
+
+# SZ → R1 Migration, stage: AP Mapping
+import workflow.phases.sz_migration.ap_mapping  # noqa: F401
+from workflow.workflows.sz_ap_mapping import SZApMappingWorkflow  # noqa: F401
+register_workflow(SZApMappingWorkflow)

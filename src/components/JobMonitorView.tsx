@@ -83,6 +83,9 @@ interface ParallelProgress {
 interface JobStatus {
   job_id: string;
   status: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
   progress: Progress;
   current_phase?: {
     id: string;
@@ -125,8 +128,23 @@ interface JobMonitorViewProps {
   onJobComplete?: (result: JobResult) => void;
 }
 
+// 75s -> "1:15", 3725s -> "1:02:05"
+function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
 const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, onJobComplete }: JobMonitorViewProps) => {
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  // Running timer: ticks while the job runs, frozen at its duration after.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (jobStatus?.completed_at) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [jobStatus?.completed_at]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
@@ -798,6 +816,11 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     );
   }
 
+  const startedIso = jobStatus.started_at || jobStatus.created_at;
+  const elapsedMs = startedIso
+    ? Math.max(0, (jobStatus.completed_at ? Date.parse(jobStatus.completed_at) : now) - Date.parse(startedIso))
+    : null;
+
   return (
     <div className="p-6">
       {/* Header with optional full page link */}
@@ -816,6 +839,14 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
       {/* Job Overview */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
+        {elapsedMs !== null && (
+          <div className="flex justify-end -mt-2 mb-2">
+            <span className={`font-mono text-sm px-2 py-0.5 rounded ${jobStatus.completed_at ? 'bg-gray-100 text-gray-700' : 'bg-blue-50 text-blue-700'}`}
+                  title={jobStatus.completed_at ? 'Total run time' : 'Running for'}>
+              ⏱ {formatElapsed(elapsedMs)}{jobStatus.completed_at ? ' total' : ''}
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <p className="text-sm text-gray-500">Job ID</p>

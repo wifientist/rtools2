@@ -988,13 +988,18 @@ class WorkflowBrain:
             if unit.current_phase is not None:
                 busy[unit.current_phase] = busy.get(unit.current_phase, 0) + 1
                 continue
-            done = set(unit.completed_phases) | set(unit.failed_phases) | settled
+            completed = set(unit.completed_phases) | settled
+            failed = set(unit.failed_phases)
+            done = completed | failed
             for phase in job.phase_definitions:
                 if not phase.per_unit or phase.id in done:
                     continue
-                unmet = sorted(graph.get_dependencies(phase.id) - done)
+                deps = graph.get_dependencies(phase.id)
+                blocked_by = sorted(deps & failed)
+                unmet = sorted(deps - done)
                 key = (
-                    f"unit phase '{phase.id}' waiting on {unmet}" if unmet
+                    f"unit phase '{phase.id}' blocked by failed {blocked_by}" if blocked_by
+                    else f"unit phase '{phase.id}' waiting on {unmet}" if unmet
                     else f"unit phase '{phase.id}' ready but never scheduled"
                 )
                 blocked[key] = blocked.get(key, 0) + 1
@@ -1647,8 +1652,10 @@ class WorkflowBrain:
             error_msg = str(e)
             logger.error(f"Job {job.id}: Global phase {phase_id} failed: {error_msg}")
 
+            # Kept with the phase, not only in the log: the step that ran the
+            # job shows why it stopped.
             await self.state.update_global_phase_status(
-                job.id, phase_id, PhaseStatus.FAILED
+                job.id, phase_id, PhaseStatus.FAILED, {"error": error_msg[:1000]}
             )
 
             return PhaseResult(
@@ -1815,7 +1822,7 @@ class WorkflowBrain:
                         continue  # Critical failure - unit is done
                 continue
 
-            completed_and_failed = set(unit.completed_phases) | set(unit.failed_phases)
+            completed = set(unit.completed_phases)
 
             # Check if we should skip any phases
             for phase_def in job.phase_definitions:
@@ -1823,15 +1830,22 @@ class WorkflowBrain:
                     try:
                         should_skip = safe_eval(phase_def.skip_if, {"options": job.options})
                         if should_skip:
-                            completed_and_failed.add(phase_def.id)
+                            completed.add(phase_def.id)
                     except Exception:
                         pass
 
+            completed_and_failed = completed | set(unit.failed_phases)
             remaining = per_unit_phase_ids - completed_and_failed
             if remaining:
-                # Check if remaining phases are blocked by failed dependencies
+                # Check if remaining phases are blocked by failed dependencies.
+                # A FAILED dependency blocks; it does not satisfy -- the
+                # scheduler (_find_ready_work) never starts a phase whose
+                # dependency failed. Counting it as satisfied here read a
+                # blocked phase as still runnable, so a unit that failed a
+                # non-critical phase (configure_dpsk at R1's DPSK network cap)
+                # kept the job open until the stall detector failed all of it.
                 # Include global_completed since per-unit phases can depend on global phases
-                all_satisfied = completed_and_failed | global_completed
+                all_satisfied = completed | global_completed
                 all_blocked = True
                 for phase_id in remaining:
                     deps = graph.get_dependencies(phase_id)

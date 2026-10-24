@@ -185,20 +185,24 @@ class R1Client:
             self._authenticate()
             return bool(self.token) and self.token != stale_token
 
-    def _request(self, method, path, payload=None, params=None, override_tenant_id=None, accept=None):
+    def _request(self, method, path, payload=None, params=None, override_tenant_id=None, accept=None,
+                 content_type=None):
         """
         General request wrapper.
 
         accept: a versioned media type (e.g. "application/vnd.ruckus.v1.1+json").
         Several R1 endpoints only return newer fields under v1.1, and their
         plain application/json mapping was announced to move on 06/30/2026.
+
+        content_type: the same for a request body -- R1 picks the schema a
+        write is read with from it, so a v1.1 body needs a v1.1 Content-Type.
         """
         url = f"https://{self.host}{path}"
         verbose = os.environ.get('R1_VERBOSE', '').lower() in ('1', 'true', 'yes')
 
         headers = {
             "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
+            "Content-Type": content_type or "application/json",
         }
         if accept:
             headers["Accept"] = accept
@@ -259,8 +263,9 @@ class R1Client:
     def post(self, path, payload=None, params=None, override_tenant_id=None):
         return self._request("post", path, payload=payload, params=params, override_tenant_id=override_tenant_id)
 
-    def put(self, path, payload=None, override_tenant_id=None):
-        return self._request("put", path, payload=payload, override_tenant_id=override_tenant_id)
+    def put(self, path, payload=None, override_tenant_id=None, content_type=None):
+        return self._request("put", path, payload=payload, override_tenant_id=override_tenant_id,
+                             accept=content_type, content_type=content_type)
 
     def delete(self, path, payload=None, override_tenant_id=None):
         return self._request("delete", path, payload=payload, override_tenant_id=override_tenant_id)

@@ -6,6 +6,8 @@ import ArtifactsBar from '@/components/sz-config-migration/ArtifactsBar';
 import Step1SourceSelection from '@/components/sz-config-migration/Step1SourceSelection';
 import Step2Extraction from '@/components/sz-config-migration/Step2Extraction';
 import Step3Destination from '@/components/sz-config-migration/Step3Destination';
+import StepVenueConfig from '@/components/sz-config-migration/StepVenueConfig';
+import StepApMapping from '@/components/sz-config-migration/StepApMapping';
 import Step4Review from '@/components/sz-config-migration/Step4Review';
 import Step5Execute from '@/components/sz-config-migration/Step5Execute';
 import Step6Results from '@/components/sz-config-migration/Step6Results';
@@ -31,9 +33,11 @@ const STEP_LABELS: Record<number, string> = {
   1: 'Source Selection',
   2: 'Extraction',
   3: 'Destination',
-  4: 'Review',
-  5: 'Execute',
-  6: 'Results',
+  4: 'Venue Config',
+  5: 'WLANs',
+  6: 'Create WLANs',
+  7: 'AP Mapping',
+  8: 'Results',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -47,15 +51,26 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function MigrateSzToR1Config() {
   const {
-    activeControllerId,
-    activeControllerName,
-    activeControllerType,
-    secondaryControllerId,
-    secondaryControllerName,
-    secondaryControllerType,
-    secondaryControllerSubtype,
+    activeControllerId: authActiveId, activeControllerName: authActiveName,
+    activeControllerType: authActiveType, activeControllerSubtype: authActiveSubtype,
+    secondaryControllerId: authSecondaryId, secondaryControllerName: authSecondaryName,
+    secondaryControllerType: authSecondaryType, secondaryControllerSubtype: authSecondarySubtype,
     controllers,
   } = useAuth();
+
+  // One SmartZone (source) and one RuckusONE (destination) among the two
+  // selected controllers, in either slot -- as on Migration Audit.
+  const slots = [
+    { id: authActiveId, name: authActiveName, type: authActiveType, subtype: authActiveSubtype },
+    { id: authSecondaryId, name: authSecondaryName, type: authSecondaryType, subtype: authSecondarySubtype },
+  ];
+  const szSlot = slots.find(s => s.id && s.type === 'SmartZone');
+  const r1Slot = slots.find(s => s.id && s.type === 'RuckusONE');
+  const activeControllerId = szSlot?.id ?? null;          // SZ controller (either slot)
+  const activeControllerName = szSlot?.name ?? null;
+  const secondaryControllerId = r1Slot?.id ?? null;       // R1 controller (either slot)
+  const secondaryControllerName = r1Slot?.name ?? null;
+  const secondaryControllerSubtype = r1Slot?.subtype ?? null;
 
   // Check for saved state before initializing reducer
   const savedState = useMemo(() => loadWizardState(), []);
@@ -66,8 +81,8 @@ export default function MigrateSzToR1Config() {
   const [showHistory, setShowHistory] = useState(false);
 
   // Controller validation
-  const szReady = activeControllerId && activeControllerType === 'SmartZone';
-  const r1Ready = secondaryControllerId && secondaryControllerType === 'RuckusONE';
+  const szReady = !!szSlot;
+  const r1Ready = !!r1Slot;
   const isMSP = secondaryControllerSubtype === 'MSP';
 
   // For EC controllers: use the controller's r1_tenant_id from the database
@@ -192,8 +207,8 @@ export default function MigrateSzToR1Config() {
             <div>
               <p className="text-red-800 font-semibold text-sm">Controller Setup Required</p>
               <p className="text-red-600 text-sm mt-1">
-                Set your <strong>Primary controller</strong> to a SmartZone and{' '}
-                <strong>Secondary controller</strong> to a RuckusONE on the Controllers page.
+                Select one <strong>SmartZone</strong> (source) and one <strong>RuckusONE</strong> (destination)
+                as your primary and secondary controllers, in either order.
               </p>
             </div>
           </div>
@@ -305,20 +320,28 @@ export default function MigrateSzToR1Config() {
           )}
 
           {state.currentStep === 4 && (
+            <StepVenueConfig state={state} dispatch={dispatch} />
+          )}
+
+          {state.currentStep === 5 && (
             <Step4Review
               state={state}
               dispatch={dispatch}
             />
           )}
 
-          {state.currentStep === 5 && (
+          {state.currentStep === 6 && (
             <Step5Execute
               state={state}
               dispatch={dispatch}
             />
           )}
 
-          {state.currentStep === 6 && (
+          {state.currentStep === 7 && (
+            <StepApMapping state={state} dispatch={dispatch} />
+          )}
+
+          {state.currentStep === 8 && (
             <Step6Results
               state={state}
               dispatch={dispatch}

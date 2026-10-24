@@ -4,14 +4,15 @@ SZ → R1 Migration: Activate SSIDs (Per-WLAN)
 Activates each WLAN's network on the R1 AP Groups the plan chose, with the
 radios SZ actually broadcast it on.
 
-Mechanism: the Cloudpath import's direct AP-group activation
-(venues.activate_ssid_for_ap_group_direct) -- three ordered, non-deprecated
-PUTs that never put the network on All AP Groups. POST /networkActivations,
-used here before, is deprecated past its removal date.
+Mechanism: services.r1_activation (shared with AP Mapping) -- the direct
+AP-group activation, venue association once for every target group, then
+steps 2-3 per group. POST /networkActivations, used here before, is
+deprecated past its removal date.
 
-One network, several groups: the venue association (step 1) is made ONCE
-with every target group in it; each group then gets steps 2-3. Re-sending
-step 1 per group may replace the group list rather than extend it.
+WLANs the plan put on All AP Groups (property-wide) take the venue-wide
+activation instead (venues.activate_ssid_on_venue) and must read back as
+isAllApGroups. A network already bound to specific groups is not silently
+widened -- that's a different broadcast than the plan showed.
 
 Truth comes from a read-back of /wifiNetworks/query venueApGroups, not from
 the activities: the network must end up on every target group and not on
@@ -27,6 +28,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
+from services import r1_activation
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
 
@@ -57,9 +59,17 @@ class ActivateSSIDsPhase(PhaseExecutor):
         if not inputs.network_id:
             raise RuntimeError(f"[{wlan_name}] No network id — the network was not created")
 
+        mode = plan_extra.get("activation_mode", "ap_groups")
+        if mode == "none":
+            await self.emit(f"[{wlan_name}] Migrated without activation (no SZ AP broadcasts it)")
+            return self.Outputs(activated=True)
+        if mode == "all_ap_groups":
+            return await self._activate_all_ap_groups(inputs, plan_extra, wlan_name)
+
         targets = await self._targets(plan_extra.get("activations", []), wlan_name)
         if not targets:
-            await self.emit(f"[{wlan_name}] Not broadcast on any AP Group with APs — nothing to activate")
+            await self.emit(f"[{wlan_name}] No R1 AP Group to activate on (its groups were not chosen "
+                            "for creation) — network created, not activated")
             return self.Outputs(activated=True)
 
         state, bound = await self._venue_state(inputs.network_id)
@@ -76,36 +86,17 @@ class ActivateSSIDsPhase(PhaseExecutor):
             return self.Outputs(activated=True, activations_attempted=len(targets), already_active=already)
 
         await self.emit(f"[{wlan_name}] Activating on {len(todo)} AP Group(s)...")
-        # The DPSK pool rides along on step 1 so R1 registers the association fully.
-        dpsk_pool_id = inputs.dpsk_pool_id or None
-        step1_groups = [
-            {"apGroupId": t["id"], "radioTypes": t["radio_types"], "radio": "Both"} for t in todo
-        ]
-        errors: List[str] = []
-        for i, t in enumerate(todo):
-            try:
-                await self.r1_client.venues.activate_ssid_for_ap_group_direct(
-                    tenant_id=self.tenant_id,
-                    venue_id=self.venue_id,
-                    wifi_network_id=inputs.network_id,
-                    ap_group_id=t["id"],
-                    radio_types=t["radio_types"],
-                    vlan_id=None,                     # inherit the network VLAN (no "custom" override)
-                    dpsk_service_id=dpsk_pool_id,
-                    already_activated=state == "specific",
-                    # Step 1 only once, carrying every group not yet bound.
-                    step1_ap_groups=step1_groups if i == 0 else None,
-                    skip_step1=i > 0 or state == "specific",
-                )
-                await self.emit(
-                    f"[{wlan_name}] Activated on '{t['name']}' ({', '.join(t['radio_types'])})"
-                )
-            except Exception as e:
-                errors.append(f"'{t['name']}': {e}")
-                await self.emit(f"[{wlan_name}] Activation on '{t['name']}' reported: {e}", "warning")
+        errors = await r1_activation.activate_on_groups(
+            self.r1_client, self.tenant_id, self.venue_id, inputs.network_id, todo, state,
+            dpsk_pool_id=inputs.dpsk_pool_id or None, emit=self.emit, label=f"[{wlan_name}] ",
+        )
 
-        # The activities are not the truth -- R1's own record is.
-        state, bound = await self._venue_state(inputs.network_id)
+        # The activities are not the truth -- R1's own record is, once its
+        # query index has caught up.
+        want = {t["id"] for t in targets}
+        state, bound = await r1_activation.settled_state(
+            self.r1_client, self.tenant_id, self.venue_id, inputs.network_id,
+            lambda st, b: st == "venue_wide" or want <= b)
         missing = [t["name"] for t in targets if t["id"] not in bound]
         if state == "venue_wide":
             raise RuntimeError(f"[{wlan_name}] Ended up on All AP Groups instead of specific groups")
@@ -120,6 +111,40 @@ class ActivateSSIDsPhase(PhaseExecutor):
             activations_succeeded=len(todo),
             already_active=already,
         )
+
+    async def _activate_all_ap_groups(self, inputs: "ActivateSSIDsPhase.Inputs",
+                                      plan_extra: Dict[str, Any], wlan_name: str) -> "ActivateSSIDsPhase.Outputs":
+        state, bound = await self._venue_state(inputs.network_id)
+        if state == "venue_wide":
+            await self.emit(f"[{wlan_name}] Already on All AP Groups")
+            return self.Outputs(activated=True, activations_attempted=1, already_active=1)
+        if state == "specific":
+            raise RuntimeError(
+                f"[{wlan_name}] Network is already on {len(bound)} specific AP Group(s) in this venue; "
+                "the plan puts it on All AP Groups — remove those activations in R1, then re-run"
+            )
+
+        radio_types = plan_extra.get("all_ap_radio_types") or ["2.4-GHz", "5-GHz"]
+        await self.emit(f"[{wlan_name}] Activating on All AP Groups ({', '.join(radio_types)})...")
+        use_tracker = self.context.activity_tracker is not None
+        result = await r1_activation.activate_all_ap_groups(
+            self.r1_client, self.tenant_id, self.venue_id, inputs.network_id, radio_types,
+            dpsk_pool_id=inputs.dpsk_pool_id or None, wait_for_completion=not use_tracker,
+        )
+        request_id = result.get("requestId") if isinstance(result, dict) else None
+        if use_tracker and request_id:
+            activity = await self.fire_and_wait(request_id)
+            if not activity.success:
+                raise RuntimeError(f"[{wlan_name}] All AP Groups activation failed: {activity.error}")
+
+        state, _ = await r1_activation.settled_state(
+            self.r1_client, self.tenant_id, self.venue_id, inputs.network_id,
+            lambda st, b: st == "venue_wide")
+        if state != "venue_wide":
+            raise RuntimeError(f"[{wlan_name}] Not on All AP Groups after activation (R1 still reports '{state}' "
+                               "after ~45s)")
+        await self.emit(f"[{wlan_name}] Active on All AP Groups", "success")
+        return self.Outputs(activated=True, activations_attempted=1, activations_succeeded=1)
 
     async def _targets(self, activations: List[Dict[str, Any]], wlan_name: str) -> List[Dict[str, Any]]:
         """De-duplicated {id, name, radio_types} per R1 AP Group; created groups resolved by name."""
@@ -142,13 +167,4 @@ class ActivateSSIDsPhase(PhaseExecutor):
 
     async def _venue_state(self, network_id: str) -> Tuple[str, Set[str]]:
         """('not_found' | 'specific' | 'venue_wide', bound AP Group ids) for this venue."""
-        network = await self.r1_client.networks.query_wifi_network_by_id(network_id, self.tenant_id)
-        for vag in (network or {}).get("venueApGroups") or []:
-            if vag.get("venueId") != self.venue_id:
-                continue
-            if vag.get("isAllApGroups"):
-                return "venue_wide", set()
-            ids = set(vag.get("apGroupIds") or [])
-            ids |= {g.get("apGroupId") for g in vag.get("apGroups") or [] if g.get("apGroupId")}
-            return "specific", ids
-        return "not_found", set()
+        return await r1_activation.venue_state(self.r1_client, self.tenant_id, self.venue_id, network_id)

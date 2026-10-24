@@ -68,7 +68,11 @@ async def capture_venue_inventory(
         all_networks = networks_response.get("data", [])
         # Slim summary of the whole tenant: no settings, nothing credential-bearing.
         tenant_networks = [
-            {k: n.get(k) for k in ("id", "name", "ssid", "nwSubType")} for n in all_networks
+            {**{k: n.get(k) for k in ("id", "name", "ssid", "nwSubType")},
+             # where it's activated -- tells an earlier run's network (here or
+             # nowhere) from another property's of the same name
+             "venueIds": sorted({v.get("venueId") for v in n.get("venueApGroups") or [] if v.get("venueId")})}
+            for n in all_networks
         ]
 
         # Filter to networks active in this venue via venueApGroups

@@ -217,6 +217,9 @@ async def extract_zone_snapshot(
     # ── Step 5b: Per-AP radio config (WLAN Group overrides) ──────────
     ap_radio_config = await _fetch_ap_radio_config(sz_client, all_aps_raw, progress, warnings)
 
+    # ── Step 5c: Zone per-AP-model settings (PoE, LAN ports, LED...) ──
+    zone_ap_models = await _fetch_zone_ap_models(sz_client, zone_id, all_aps_raw, progress, warnings)
+
     # ── Step 6: Chase references ─────────────────────────────────────
     progress("references", "Scanning WLANs for foreign key references...")
 
@@ -231,6 +234,13 @@ async def extract_zone_snapshot(
     progress("references", f"Found {len(unique_refs)} unique references to chase")
 
     referenced_objects: Dict[str, SZReferencedObject] = {}
+    # A portal profile lives under /portals/hotspot (WISPr) or /portals/guest
+    # depending on the WLAN that uses it; the generic lookup only tries guest,
+    # so a Hotspot WLAN's portal came back as an error and migrated as plain Open.
+    hotspot_portals = {
+        ((w.raw or {}).get("portalServiceProfile") or {}).get("id")
+        for w in wlans if (w.raw or {}).get("type") in HOTSPOT_WLAN_TYPES
+    }
 
     if unique_refs:
         for i, (key, (ref_type, ref_id)) in enumerate(unique_refs.items()):
@@ -239,6 +249,8 @@ async def extract_zone_snapshot(
                     raw = await sz_client.aaa.get_auth_service(ref_id)
                 elif ref_type == "accounting_service":
                     raw = await sz_client.aaa.get_accounting_service(ref_id)
+                elif ref_type == "portal_service_profile":
+                    raw = await _get_portal(sz_client, zone_id, ref_id, ref_id in hotspot_portals)
                 else:
                     raw = await sz_client.policies.get_referenced_object(zone_id, ref_type, ref_id)
 
@@ -299,6 +311,7 @@ async def extract_zone_snapshot(
         ap_groups=ap_groups,
         aps=all_aps_raw,
         ap_radio_config=ap_radio_config,
+        zone_ap_models=zone_ap_models,
         referenced_objects=referenced_objects,
         extraction_metadata=extraction_metadata,
         warnings=warnings,
@@ -311,6 +324,24 @@ async def extract_zone_snapshot(
 
 _AP_BANDS = ("radio24g", "radio5g", "radio5gLower", "radio5gUpper", "radio6g")
 AP_DETAIL_CONCURRENCY = 8
+
+
+HOTSPOT_WLAN_TYPES = ("Hotspot", "Hotspot_MacByPass")
+
+
+async def _get_portal(sz_client, zone_id: str, portal_id: str, hotspot: bool) -> Dict[str, Any]:
+    """The portal profile from the endpoint its WLAN type implies, else the other one."""
+    kinds = ("hotspot", "guest") if hotspot else ("guest", "hotspot")
+    last: Optional[Exception] = None
+    for kind in kinds:
+        try:
+            raw = await sz_client._request(
+                "GET", f"/{sz_client.api_version}/rkszones/{zone_id}/portals/{kind}/{portal_id}")
+            if raw:
+                return {**raw, "_portal_kind": kind}
+        except Exception as e:
+            last = e
+    raise last or RuntimeError(f"portal {portal_id} not found")
 
 
 async def _fetch_ap_radio_config(sz_client, aps_raw, progress, warnings) -> Dict[str, Dict[str, Any]]:
@@ -360,4 +391,47 @@ async def _fetch_ap_radio_config(sz_client, aps_raw, progress, warnings) -> Dict
         ))
     overridden = sum(1 for v in out.values() if any(r.get("wlan_group_id") for r in v.get("radios", {}).values()))
     progress("ap_radio", f"Per-AP radio config read: {overridden} AP(s) carry a WLAN Group override")
+    return out
+
+
+async def _fetch_zone_ap_models(sz_client, zone_id, aps_raw, progress, warnings) -> Dict[str, Dict[str, Any]]:
+    """
+    The zone's settings for each AP model it has (one GET per model), and the
+    zone Ethernet Port Profiles their LAN ports point at (one GET per
+    distinct profile). These are zone-level config -- they land on the R1
+    venue's per-model settings.
+    """
+    models = sorted({ap.get("model") for ap in aps_raw if ap.get("model")})
+    if not models:
+        return {}
+    progress("ap_models", f"Reading zone settings for {len(models)} AP model(s)...")
+    base = f"/{sz_client.api_version}/rkszones/{zone_id}"
+    out: Dict[str, Dict[str, Any]] = {}
+    profiles: Dict[str, Dict[str, Any]] = {}
+    for model in models:
+        try:
+            settings = await sz_client._request("GET", f"{base}/apmodel/{model}")
+            out[model] = {"settings": settings or {}, "eth_profiles": {}}
+        except Exception as e:
+            out[model] = {"settings": {}, "eth_profiles": {}, "error": f"{type(e).__name__}: {e}"[:200]}
+    for model, entry in out.items():
+        for port in entry["settings"].get("lanPorts") or []:
+            pid = (port.get("ethPortProfile") or {}).get("id")
+            if pid is None or pid in profiles:
+                continue
+            try:
+                profiles[pid] = await sz_client._request("GET", f"{base}/profile/ethernetPort/{pid}") or {}
+            except Exception as e:
+                profiles[pid] = {"error": f"{type(e).__name__}: {e}"[:200]}
+    for entry in out.values():
+        ids = {(p.get("ethPortProfile") or {}).get("id") for p in entry["settings"].get("lanPorts") or []}
+        entry["eth_profiles"] = {i: profiles[i] for i in ids if i in profiles}
+    failed = [m for m, e in out.items() if e.get("error")]
+    if failed:
+        warnings.append(SZExtractionWarning(
+            phase="ap_models",
+            message=f"Could not read zone settings for AP model(s): {', '.join(failed)}",
+            details={"models": failed},
+        ))
+    progress("ap_models", f"Zone AP model settings read: {', '.join(models)}")
     return out

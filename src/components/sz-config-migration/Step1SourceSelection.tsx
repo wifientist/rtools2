@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Wifi, Users, Radio, MonitorSpeaker, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Wifi, Users, Radio, MonitorSpeaker, Loader2, History } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import SmartZoneDomainSelector from '@/components/SmartZoneDomainSelector';
 import SmartZoneZoneSelector from '@/components/SmartZoneZoneSelector';
+import { toSnapshotSummary } from '@/types/szConfigMigration';
 import type { WizardState, WizardAction, CensusResult } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -16,6 +17,27 @@ interface Props {
 export default function Step1SourceSelection({ szControllerId, state, dispatch }: Props) {
   const [censusLoading, setCensusLoading] = useState(false);
   const [extractLoading, setExtractLoading] = useState(false);
+  // Earlier extractions of this zone still kept on the server (24 h): reuse one
+  // instead of reading SZ again.
+  const [recent, setRecent] = useState<Array<{ job_id: string; completed_at: string | null; snapshot_summary: Record<string, any> }>>([]);
+  const [keptHours, setKeptHours] = useState(24);
+
+  useEffect(() => {
+    setRecent([]);
+    if (!state.selectedZoneId) return;
+    let cancelled = false;
+    apiFetch(`${API_URL}/sz-migration/extractions?controller_id=${szControllerId}&zone_id=${encodeURIComponent(state.selectedZoneId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d && !cancelled) { setRecent(d.extractions || []); setKeptHours(d.kept_hours || 24); } })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [szControllerId, state.selectedZoneId]);
+
+  const ago = (iso: string | null) => {
+    if (!iso) return '?';
+    const m = Math.max(0, Math.round((Date.now() - new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime()) / 60000));
+    return m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ${m % 60} min ago`;
+  };
 
   const handleDomainSelect = (domainId: string | null, domainName: string | null) => {
     if (domainId && domainName) {
@@ -91,7 +113,7 @@ export default function Step1SourceSelection({ szControllerId, state, dispatch }
           <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">1</div>
           <h3 className="text-lg font-semibold">Select SmartZone Domain</h3>
         </div>
-        <SmartZoneDomainSelector onDomainSelect={handleDomainSelect} />
+        <SmartZoneDomainSelector onDomainSelect={handleDomainSelect} controllerId={szControllerId} />
       </div>
 
       {/* Step 2: Select Zone */}
@@ -104,7 +126,43 @@ export default function Step1SourceSelection({ szControllerId, state, dispatch }
           <SmartZoneZoneSelector
             domainId={state.selectedDomainId}
             onZoneSelect={handleZoneSelect}
+            controllerId={szControllerId}
           />
+        </div>
+      )}
+
+      {/* Reuse an earlier extraction */}
+      {state.selectedZoneId && recent.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <History size={18} className="text-blue-600" />
+            <h3 className="text-lg font-semibold">Recent extractions of this zone</h3>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            Your own extractions from the last {keptHours} hours. Using one skips the SZ read — the wizard works from
+            the zone as it was then, so re-extract if SZ has changed since.
+          </p>
+          <div className="divide-y divide-gray-100 border border-gray-200 rounded">
+            {recent.map(r => {
+              const sum = toSnapshotSummary(r.snapshot_summary || {});
+              return (
+                <div key={r.job_id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  <span className="font-medium">{ago(r.completed_at)}</span>
+                  <span className="text-xs text-gray-500">
+                    {sum.wlan_count} WLANs · {sum.wlan_group_count} WLAN Groups · {sum.ap_group_count} AP Groups · {sum.ap_count} APs
+                    {sum.warning_count > 0 && <span className="text-amber-700"> · {sum.warning_count} warning(s)</span>}
+                  </span>
+                  {r.job_id === state.extractionJobId && <span className="text-xs text-green-700 font-semibold">in use</span>}
+                  <button
+                    onClick={() => dispatch({ type: 'USE_EXTRACTION', jobId: r.job_id, summary: sum })}
+                    className="ml-auto px-3 py-1 border border-blue-300 text-blue-700 rounded hover:bg-blue-50 text-xs font-medium"
+                  >
+                    Use this — skip extraction
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

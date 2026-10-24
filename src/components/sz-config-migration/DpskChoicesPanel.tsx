@@ -64,8 +64,8 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
       ...pools,
       [`pool-${n}`]: {
         ...d,
-        name: `${d.name}-${n}`,
-        identity_group: { mode: 'new', name: `${d.identity_group?.name ?? 'identities'}-${n}` },
+        name: `${d.name}_${n}`,
+        identity_group: { mode: 'new', name: `${d.identity_group?.name ?? d.name}_${n}` },
       },
     }, assignments);
   };
@@ -81,75 +81,26 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
 
   return (
     <div className="space-y-4">
-      <div className="text-xs text-gray-600 flex items-start gap-1.5">
-        <Info size={12} className="mt-0.5 flex-shrink-0 text-blue-500" />
-        <span>
-          Every DPSK network needs a DPSK service (pool) with an identity group. WLANs that serve
-          the same people should share one. <strong>A new pool starts with no passphrases</strong> —
-          import them afterwards (e.g. with the Cloudpath import) before anyone can join.
-        </span>
-      </div>
-      {choices.error && (
-        <div className="text-xs text-amber-700 flex items-start gap-1.5">
-          <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> {choices.error}
-        </div>
-      )}
-
-      {/* WLAN → pool */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-3 py-2 bg-gray-50 text-xs flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-gray-700">Which DPSK service each WLAN uses</span>
-          {wlans.length > 1 && keys.length > 0 && (
-            <label className="ml-auto flex items-center gap-1.5 text-gray-600">
-              Set all {wlans.length} to
-              <select
-                className={input}
-                value=""
-                disabled={disabled}
-                onChange={e => e.target.value && onChange(
-                  pools, Object.fromEntries(wlans.map(w => [w.id, e.target.value])),
-                )}
-              >
-                <option value="">Choose…</option>
-                {keys.map(k => <option key={k} value={k}>{poolLabel(k, pools[k], choices)}</option>)}
-              </select>
-            </label>
-          )}
-        </div>
-        <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
-          {wlans.map(w => (
-            <div key={w.id} className="px-3 py-2 flex items-center gap-3 text-xs flex-wrap">
-              <span className="font-medium w-36 truncate" title={w.name}>{w.name}</span>
-              <span className="text-gray-400 w-40">
-                {w.source === 'converted' ? 'converted from RADIUS' : 'SZ DPSK'}
-              </span>
-              <select
-                className={`${input} flex-1 min-w-[12rem] max-w-sm`}
-                value={assignments[w.id] ?? ''}
-                disabled={disabled}
-                onChange={e => onChange(pools, { ...assignments, [w.id]: e.target.value })}
-              >
-                <option value="">Choose…</option>
-                {keys.map(k => <option key={k} value={k}>{poolLabel(k, pools[k], choices)}</option>)}
-              </select>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Pools */}
       {keys.map(key => {
         const spec = pools[key];
         const users = wlans.filter(w => assignments[w.id] === key).map(w => w.name);
         const existing = choices.r1_pools.find(p => p.id === spec.existing_pool_id);
         const ig = spec.identity_group ?? { mode: 'new' as const, name: '' };
+        // A "new" name R1 already has -- typically this migration's own earlier
+        // run. Offer it in place instead of only failing the plan.
+        const sameName = (a?: string | null, b?: string | null) =>
+          !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+        const poolClash = spec.mode === 'new' ? choices.r1_pools.find(p => sameName(p.name, spec.name)) : undefined;
+        const groupClash = spec.mode === 'new' && ig.mode === 'new'
+          ? choices.r1_identity_groups.find(g => sameName(g.name, ig.name)) : undefined;
         return (
           <div key={key} className="border border-orange-200 bg-orange-50 rounded-lg p-3 space-y-2.5">
             <div className="flex items-center gap-2">
               <Key size={14} className="text-orange-600" />
               <span className="font-semibold text-sm flex-1">{poolLabel(key, spec, choices)}</span>
               <span className="text-xs text-gray-500">
-                {users.length ? `Used by ${users.join(', ')}` : 'Not used by any WLAN'}
+                {users.length ? `${users.length} WLAN(s)` : 'Not used by any WLAN'}
               </span>
               {keys.length > 1 && (
                 <button
@@ -205,6 +156,43 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
                 )}
               </div>
             ) : (
+              <>
+              {(poolClash || groupClash) && (
+                <div className="ml-6 text-xs bg-amber-50 border border-amber-300 rounded px-3 py-2 space-y-1.5">
+                  {poolClash && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <AlertTriangle size={13} className="text-amber-600" />
+                      <span>
+                        R1 already has a DPSK pool named <b>{poolClash.name}</b>
+                        {' '}({poolClash.network_count ?? 0} network(s),{' '}
+                        {poolClash.identity_groups.map(g => g.name).join(', ') || 'no identity group'}) — likely an
+                        earlier run of this migration.
+                      </span>
+                      <button type="button" disabled={disabled}
+                              onClick={() => setPool(key, { mode: 'existing', existing_pool_id: poolClash.id })}
+                              className="px-2 py-0.5 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium">
+                        Use it
+                      </button>
+                    </div>
+                  )}
+                  {!poolClash && groupClash && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <AlertTriangle size={13} className="text-amber-600" />
+                      <span>
+                        R1 already has an identity group named <b>{groupClash.name}</b>
+                        {groupClash.dpsk_pool_id ? ' — it already belongs to a DPSK pool, so pick that pool above or rename' : ''}.
+                      </span>
+                      {!groupClash.dpsk_pool_id && (
+                        <button type="button" disabled={disabled}
+                                onClick={() => setPool(key, { identity_group: { mode: 'existing', id: groupClash.id } })}
+                                className="px-2 py-0.5 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium">
+                          Use it
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="pl-6 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs">
                 <label className="flex flex-col gap-0.5">
                   <span className="text-gray-600">Pool name</span>
@@ -221,7 +209,7 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
                       disabled={disabled}
                       onChange={e => setPool(key, {
                         identity_group: e.target.value === 'new'
-                          ? { mode: 'new', name: `${spec.name || 'migrated'}-identities` }
+                          ? { mode: 'new', name: spec.name || 'migrated' }
                           : { mode: 'existing', id: null },
                       })}
                     >
@@ -321,6 +309,21 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
                   </div>
                 </div>
               </div>
+              </>
+            )}
+
+            {/* Which WLANs use it: after the settings, collapsed when long */}
+            {users.length > 0 && (
+              users.length <= 6 ? (
+                <div className="pl-6 text-xs text-gray-500">Used by {users.join(', ')}</div>
+              ) : (
+                <details className="pl-6 text-xs text-gray-500">
+                  <summary className="cursor-pointer select-none">
+                    Used by {users.length} WLANs ({users.slice(0, 3).join(', ')}, …)
+                  </summary>
+                  <div className="mt-1 max-h-32 overflow-y-auto">{users.join(', ')}</div>
+                </details>
+              )
             )}
           </div>
         );
@@ -332,6 +335,63 @@ export default function DpskChoicesPanel({ choices, wlans, pools, assignments, o
       >
         <Plus size={12} /> Add another DPSK service
       </button>
+
+      <div className="text-xs text-gray-600 flex items-start gap-1.5">
+        <Info size={12} className="mt-0.5 flex-shrink-0 text-blue-500" />
+        <span>
+          Every DPSK network needs a DPSK service (pool) with an identity group. WLANs that serve
+          the same people should share one. <strong>A new pool starts with no passphrases</strong> —
+          import them afterwards (e.g. with the Cloudpath import) before anyone can join.
+        </span>
+      </div>
+      {choices.error && (
+        <div className="text-xs text-amber-700 flex items-start gap-1.5">
+          <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> {choices.error}
+        </div>
+      )}
+
+      {/* WLAN → pool */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="px-3 py-2 bg-gray-50 text-xs flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-gray-700">Which DPSK service each WLAN uses</span>
+          {wlans.length > 1 && keys.length > 0 && (
+            <label className="ml-auto flex items-center gap-1.5 text-gray-600">
+              Set all {wlans.length} to
+              <select
+                className={input}
+                value=""
+                disabled={disabled}
+                onChange={e => e.target.value && onChange(
+                  pools, Object.fromEntries(wlans.map(w => [w.id, e.target.value])),
+                )}
+              >
+                <option value="">Choose…</option>
+                {keys.map(k => <option key={k} value={k}>{poolLabel(k, pools[k], choices)}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+          {wlans.map(w => (
+            <div key={w.id} className="px-3 py-2 flex items-center gap-3 text-xs flex-wrap">
+              <span className="font-medium w-36 truncate" title={w.name}>{w.name}</span>
+              <span className="text-gray-400 w-40">
+                {w.source === 'converted' ? 'converted from RADIUS' : 'SZ DPSK'}
+              </span>
+              <select
+                className={`${input} flex-1 min-w-[12rem] max-w-sm`}
+                value={assignments[w.id] ?? ''}
+                disabled={disabled}
+                onChange={e => onChange(pools, { ...assignments, [w.id]: e.target.value })}
+              >
+                <option value="">Choose…</option>
+                {keys.map(k => <option key={k} value={k}>{poolLabel(k, pools[k], choices)}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
   );
 }

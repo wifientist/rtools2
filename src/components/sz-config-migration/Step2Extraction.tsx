@@ -10,7 +10,7 @@ interface Props {
   dispatch: React.Dispatch<WizardAction>;
 }
 
-const PHASE_ORDER = ['zone', 'wlans', 'wlan_groups', 'ap_groups', 'aps', 'references', 'complete'];
+const PHASE_ORDER = ['zone', 'wlans', 'wlan_groups', 'ap_groups', 'aps', 'ap_radio', 'ap_models', 'references', 'complete'];
 const PHASE_LABELS: Record<string, string> = {
   starting: 'Initializing',
   zone: 'Zone Details',
@@ -18,6 +18,8 @@ const PHASE_LABELS: Record<string, string> = {
   wlan_groups: 'WLAN Groups',
   ap_groups: 'AP Groups',
   aps: 'Access Points',
+  ap_radio: 'Per-AP Radio Config',
+  ap_models: 'AP Model Settings',
   references: 'Referenced Objects',
   complete: 'Complete',
 };
@@ -28,9 +30,10 @@ export default function Step2Extraction({ state, dispatch }: Props) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const eventsEndRef = useRef<HTMLDivElement>(null);
 
-  // On mount: if we have a job ID but no summary (e.g. page reload), poll for status
+  // On mount: if we have a job ID but no summary (e.g. page reload), ask the
+  // server -- a "running" one may have died with a server restart.
   useEffect(() => {
-    if (state.extractionJobId && !state.snapshotSummary && state.extractionStatus !== 'running') {
+    if (state.extractionJobId && !state.snapshotSummary) {
       pollStatus();
     }
   }, []);

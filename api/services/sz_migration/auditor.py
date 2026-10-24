@@ -43,6 +43,8 @@ R1_SUBTYPE_MAP: Dict[str, str] = {
     "open": "open",
     "aaa": "aaa",
     "dpsk": "dpsk",
+    "GUEST": "wispr",   # R1 guest (WISPr captive portal) network
+    "guest": "wispr",
 }
 
 
@@ -445,6 +447,8 @@ def _audit_resource_coverage(
 
 def sz_auth_backend(wlan, mapping) -> Optional[str]:
     """Where SZ sent this WLAN's authentication, or None if it is not RADIUS/DPSK."""
+    if wlan.auth_type == "External DPSK":
+        return "external_dpsk"
     if wlan.auth_type == "DPSK":
         return "external_dpsk" if (mapping and mapping.dpsk_type == "external") else "sz_dpsk"
     if wlan.auth_service_id or (mapping and mapping.r1_network_type == "aaa"):
@@ -684,6 +688,8 @@ def type_change_explained_by_path(backend: Optional[str], auth: Optional[AuthPat
     actual = str(auth.r1_network_type or "").lower()
     return (
         (auth.path == AuthPath.EXTERNAL and actual == "aaa")
+        # external DPSK kept external: an R1 DPSK network asking the RADIUS server
+        or (auth.path == AuthPath.EXTERNAL and actual == "dpsk" and backend == "external_dpsk")
         or (auth.path == AuthPath.INTERNAL and actual == "dpsk")
     )
 

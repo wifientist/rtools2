@@ -90,14 +90,19 @@ class _SzModel:
             radios = [r for r in radios if r not in ("radio5gLower", "radio5gUpper")]
         return radios
 
-    def broadcast(self, ap_raw: Dict[str, Any]) -> Tuple[Set[str], List[str], bool]:
-        """(SSIDs this AP broadcasts, source per radio, whether AP-level overrides were readable)."""
+    def wlan_bands(self, ap_raw: Dict[str, Any]) -> Tuple[Dict[str, Set[str]], List[str], bool, List[Tuple[str, str]]]:
+        """
+        (WLAN id -> the radio keys it is broadcast on at this AP, source per
+        radio, whether AP-level overrides were readable, (tier, WLAN Group id)
+        that won on each radio).
+        """
         mac = ap_raw.get("apMac") or ap_raw.get("mac")
         detail = self.s.ap_radio_config.get(mac) if mac else None
         known = bool(detail) and not detail.get("error")
         apg_id = ap_raw.get("apGroupId")
-        ssids: Set[str] = set()
+        wlans: Dict[str, Set[str]] = defaultdict(set)
         sources: List[str] = []
+        winners: List[Tuple[str, str]] = []
         for band in self.radios_for(ap_raw, detail):
             attr, label = _BANDS[band]
             r = ((detail or {}).get("radios") or {}).get(band) or {}
@@ -111,12 +116,20 @@ class _SzModel:
                 if gid:
                     g = self.group_by_id.get(gid)
                     sources.append(f"{label}: {tier} → {g.name if g else gid}")
+                    winners.append((tier, gid))
                     if g:
-                        ssids |= {self.ssid_by_wlan[m.id] for m in g.members if m.id in self.ssid_by_wlan}
+                        for m in g.members:
+                            if m.id in self.ssid_by_wlan:
+                                wlans[m.id].add(band)
                     break
             else:
                 sources.append(f"{label}: no WLAN Group")
-        return ssids, sources, known
+        return dict(wlans), sources, known, winners
+
+    def broadcast(self, ap_raw: Dict[str, Any]) -> Tuple[Set[str], List[str], bool]:
+        """(SSIDs this AP broadcasts, source per radio, whether AP-level overrides were readable)."""
+        wlans, sources, known, _ = self.wlan_bands(ap_raw)
+        return {self.ssid_by_wlan[w] for w in wlans}, sources, known
 
 
 # ═══════════════════════════════════════════════════════════════════════

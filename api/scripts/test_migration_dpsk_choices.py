@@ -38,7 +38,9 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from schemas.sz_migration import SZMigrationSnapshot, SZZoneSnapshot, SZWLANFull, SZReferencedObject
+from schemas.sz_migration import (
+    SZMigrationSnapshot, SZZoneSnapshot, SZWLANFull, SZReferencedObject, SZWLANGroup, SZWLANGroupMember,
+)
 from schemas.r1_inventory import R1VenueInventory
 from services.sz_migration.dpsk_choices import load_r1_dpsk, validate_dpsk_plan, default_plan
 from workflow.phases.phase_executor import PhaseContext
@@ -91,9 +93,13 @@ class FakeDpsk:
 class FakeNetworks:
     def __init__(self):
         self.linked = []
+        self.already = {}   # network id -> pool ids R1 reports linked
 
     async def activate_dpsk_service_on_network(self, tenant_id, network_id, dpsk_service_id):
         self.linked.append((network_id, dpsk_service_id))
+
+    async def get_dpsk_services_on_network(self, network_id, tenant_id=None):
+        return {"data": [{"id": p} for p in self.already.get(network_id, [])]}
 
 
 class FakeR1:
@@ -124,7 +130,16 @@ def ctx(r1, options, state=None):
                         state_manager=state, options=options)
 
 
-def snapshot():
+def broadcast_everywhere(snap):
+    """One AP broadcasting every WLAN via the zone's default WLAN Group, so
+    each WLAN is placed (WLANs no AP broadcasts aren't migrated)."""
+    snap.wlan_groups = [SZWLANGroup(id="wg", name="default", members=[
+        SZWLANGroupMember(id=w.id, name=w.name, ssid=w.ssid) for w in snap.wlans])]
+    snap.aps = [{"apMac": "aa:bb", "deviceName": "AP-1"}]
+    return snap
+
+
+def _snapshot():
     return SZMigrationSnapshot(
         zone=SZZoneSnapshot(id="z", name="Oak Park"),
         wlans=[
@@ -137,6 +152,10 @@ def snapshot():
             ref_type="auth_service", id="s-cp", name="cloudpath",
             raw={"name": "cloudpath", "primary": {"ip": "10.0.0.5", "port": 1812}})},
     )
+
+
+def snapshot():
+    return broadcast_everywhere(_snapshot())
 
 
 async def run_validate(options):
@@ -273,6 +292,13 @@ async def main():
     failures += check("configure_dpsk links the assigned pool and creates nothing",
                       r1.networks.linked == [("net-1", "pool-new-1")]
                       and not r1.dpsk.created and not r1.identity.created)
+    # a re-run: the network already carries that pool -> read, not re-linked
+    r1 = FakeR1()
+    r1.networks.already = {"net-1": ["pool-new-1"]}
+    phase = configure_mod.ConfigureDPSKPhase(ctx(r1, {}, FakeState(job, unit)))
+    out = await phase.execute(phase.Inputs(unit_id="w-res", unit_number="Resident", network_id="net-1"))
+    failures += check("re-run: pool already linked -> no link PUT, same result",
+                      r1.networks.linked == [] and out.dpsk_pool_id == "pool-new-1", str(r1.networks.linked))
 
     # 9. legacy
     out = await run_validate({})
@@ -284,7 +310,8 @@ async def main():
     failures += check("pool summaries carry no passphrase", ROW_PASSPHRASE not in json.dumps(pools))
     d = default_plan("Oak Park #2", ["w-res"])
     failures += check("default plan: one shared pool, safe names",
-                      d["pools"]["shared"]["name"] == "Oak-Park--2-dpsk" and d["assignments"] == {"w-res": "shared"},
+                      d["pools"]["shared"]["name"] == "Oak_Park_2"
+                      and d["pools"]["shared"]["identity_group"]["name"] == "Oak_Park_2" and d["assignments"] == {"w-res": "shared"},
                       str(d))
 
     print(f"\n{'FAILED' if failures else 'All checks passed'}"

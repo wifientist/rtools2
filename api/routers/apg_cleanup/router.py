@@ -44,6 +44,7 @@ from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
 from routers.tenant_scope import resolve_tenant_id
+from services import ap_group_ops
 from services.apg_cleanup import build_inventory, check_delete, plan_ap_renames, plan_moves, plan_renames
 
 logger = logging.getLogger(__name__)
@@ -114,24 +115,8 @@ def _check_controller(controller_id: int, user: User, db: Session):
     return controller
 
 
-def _api_error(e: Exception) -> str:
-    """The R1 error message, not the httpx wrapper around it."""
-    response = getattr(e, "response", None)
-    if response is not None:
-        try:
-            errors = response.json().get("errors") or []
-            if errors:
-                return "; ".join(err.get("message") or err.get("reason") or str(err) for err in errors)
-        except Exception:
-            pass
-    return str(e)
-
-
-def _call(r1_client, method: str, path: str, tenant_id: str, **kw):
-    fn = getattr(r1_client, method)
-    if r1_client.ec_type == "MSP":
-        return fn(path, override_tenant_id=tenant_id, **kw)
-    return fn(path, **kw)
+_api_error = ap_group_ops.api_error
+_call = ap_group_ops.r1_call
 
 
 async def _list_groups(r1_client, tenant_id: str, venue_id: str) -> List[Dict[str, Any]]:
@@ -373,18 +358,8 @@ async def move_aps(
     results: List[Dict[str, Any]] = [{**r, "status": r["status"]} for r in plan["rows"] if r["status"] != "ok"]
 
     # ── Missing groups, one at a time (each create re-finds the group by name) ──
-    created: Dict[str, str] = {}
-    create_errors: Dict[str, str] = {}
-    for name in plan["groups_to_create"]:
-        try:
-            group = await r1_client.venues.create_ap_group(tenant_id, venue_id, name, wait_for_completion=True)
-            if not (group or {}).get("id"):
-                raise RuntimeError("created, but R1 did not return it by name")
-            created[name.casefold()] = group["id"]
-            logger.info(f"[APG Cleanup] Created AP Group {name} ({group['id']}) in venue {venue_id}")
-        except Exception as e:
-            create_errors[name.casefold()] = _api_error(e)
-            logger.error(f"[APG Cleanup] Failed to create AP Group {name}: {e}")
+    created, create_errors, made = await ap_group_ops.ensure_groups(
+        r1_client, tenant_id, venue_id, plan["groups_to_create"])
     for r in rows:
         if r["create"]:
             key = r["to_group_name"].casefold()
@@ -392,62 +367,16 @@ async def move_aps(
             if not r["to_group_id"]:
                 r.update(status="failed", error=f"Could not create the group: {create_errors.get(key)}")
 
-    # ── Submit every move, then wait for R1's tasks together ──
-    sem = asyncio.Semaphore(MOVE_CONCURRENCY)
-    request_of: Dict[str, str] = {}
-
-    async def submit(r: Dict[str, Any]):
-        async with sem:
-            try:
-                resp = await asyncio.to_thread(
-                    _call, r1_client, "put",
-                    f"/venues/{venue_id}/apGroups/{r['to_group_id']}/aps/{r['serial']}", tenant_id)
-                if resp.status_code not in (200, 201, 202):
-                    resp.raise_for_status()
-                body = resp.json() if resp.content else {}
-                if body.get("requestId"):
-                    request_of[r["serial"]] = body["requestId"]
-                r["status"] = "submitted"
-            except Exception as e:
-                r.update(status="failed", error=_api_error(e))
-                logger.error(f"[APG Cleanup] Move of {r['ap_name']} -> {r['to_group_name']} refused: {e}")
-
+    # ── Submit every move, wait for R1's tasks together, confirm against R1 ──
     pending = [r for r in rows if r["status"] == "ok"]
-    await asyncio.gather(*[submit(r) for r in pending])
-
-    task_results: Dict[str, Dict[str, Any]] = {}
-    if request_of:
-        try:
-            task_results = await r1_client.await_task_completion_bulk(
-                list(request_of.values()), override_tenant_id=tenant_id,
-                global_timeout_seconds=MOVE_WAIT_SECONDS,
-            ) or {}
-        except Exception as e:
-            logger.warning(f"[APG Cleanup] Waiting on {len(request_of)} move tasks stopped early: {e}")
-
-    # ── Verify against R1, not against the task answers ──
-    try:
-        where = {a.get("serialNumber"): a.get("apGroupId") for a in await read_aps()}
-    except Exception as e:
-        logger.warning(f"[APG Cleanup] Could not re-read APs after moving: {e}")
-        where = {}
-    for r in rows:
-        if r["status"] == "submitted":
-            task = task_results.get(request_of.get(r["serial"], ""), {})
-            if where.get(r["serial"]) == r["to_group_id"]:
-                r["status"] = "moved"
-                logger.info(f"[APG Cleanup] Moved {r['ap_name']} ({r['serial']}): "
-                            f"{r['from_group']} -> {r['to_group_name']}")
-            elif task and not task.get("success") and "timeout" not in str(task.get("error", "")).lower():
-                r.update(status="failed", error=task.get("error"))
-            else:
-                r.update(status="unconfirmed",
-                         error="Submitted; R1 does not show it in the group yet — re-read in a minute")
-        results.append(r)
+    await ap_group_ops.place_aps(r1_client, tenant_id, venue_id, pending, read_aps,
+                                 concurrency=MOVE_CONCURRENCY, wait_seconds=MOVE_WAIT_SECONDS,
+                                 log_label="[APG Cleanup]")
+    results.extend(rows)
 
     statuses = ("moved", "already", "unconfirmed", "failed", "blocked")
     counts = {s: sum(1 for r in results if r["status"] == s) for s in statuses}
-    counts["groups_created"] = len(created)
+    counts["groups_created"] = len(made)
     return {"dry_run": False, "results": results, "counts": counts}
 
 

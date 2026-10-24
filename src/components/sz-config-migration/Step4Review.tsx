@@ -1,33 +1,94 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
-import ActivationMatrix from './ActivationMatrix';
+import { captureR1Snapshot } from './r1Snapshot';
+import WlanPlacement from './WlanPlacement';
 import NetworkSettingsReview from './NetworkSettingsReview';
 import DpskChoicesPanel, { type DpskWlan } from './DpskChoicesPanel';
 import RadiusMapping from './RadiusMapping';
 import MigrationBlueprint from './MigrationBlueprint';
+import AuthConversionPanel, { type ConvertibleWlan } from './AuthConversionPanel';
+import { fixSection } from './PlanDetails';
+import { CONVERTIBLE_TYPES } from '@/types/szConfigMigration';
 import type {
   WizardState, WizardAction, ResolverResult, TypeMapping, PlanResult,
-  RadiusChoices, RadiusDecision, WlanFallback, DpskChoices, DpskPoolSpec,
+  RadiusChoices, RadiusDecision, WlanFallback, DpskChoices, DpskPoolSpec, R1Layout, LayoutChoices,
 } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+const MISSING_SNAPSHOT =
+  "This migration's SZ extraction isn't available — it was interrupted (e.g. a server restart) or has " +
+  'expired after 24 hours. Go back to Extraction and run it again.';
 
 interface Props {
   state: WizardState;
   dispatch: React.Dispatch<WizardAction>;
 }
 
-type Section = 'activation' | 'blueprint' | 'networks' | 'dpsk' | 'radius' | 'summary';
+type Section = 'placement' | 'auth' | 'blueprint' | 'networks' | 'dpsk' | 'radius';
 
 export default function Step4Review({ state, dispatch }: Props) {
-  const [openSections, setOpenSections] = useState<Set<Section>>(new Set(['activation', 'summary']));
+  const [openSections, setOpenSections] = useState<Set<Section>>(new Set(['placement', 'auth']));
   const [resolving, setResolving] = useState(false);
   const [planning, setPlanning] = useState(false);
 
-  // Run resolve on mount if not already done
+  // The venue as R1 has it NOW: re-read on entering this step -- Create WLANs
+  // changes R1, and placement from the Destination-time snapshot showed groups
+  // that exist as still "to create".
+  const [r1Reading, setR1Reading] = useState(false);
+  const [r1ReadAt, setR1ReadAt] = useState<Date | null>(null);
+  const refreshR1 = async () => {
+    setR1Reading(true);
+    try {
+      await captureR1Snapshot(state, dispatch);
+      setR1ReadAt(new Date());
+    } catch (e: any) {
+      dispatch({ type: 'SET_ERROR', error: `Could not re-read the venue: ${e.message}` });
+    } finally {
+      setR1Reading(false);
+    }
+  };
+  useEffect(() => { refreshR1(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // R1 placement for the current choices, recomputed server-side on change.
+  const [layout, setLayout] = useState<R1Layout | null>(null);
+  const [layoutLoading, setLayoutLoading] = useState(false);
+  const layoutSeq = useRef(0);
   useEffect(() => {
-    if (!state.resolverResult && state.extractionJobId && !resolving) {
+    if (!state.extractionJobId) return;
+    const seq = ++layoutSeq.current;
+    const t = setTimeout(async () => {
+      setLayoutLoading(true);
+      try {
+        const res = await apiFetch(`${API_URL}/sz-migration/layout/${state.extractionJobId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ r1_snapshot_job_id: state.r1SnapshotJobId, choices: state.layoutChoices }),
+        });
+        if (res.status === 404) throw new Error(MISSING_SNAPSHOT);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `Placement failed: ${res.status}`);
+        }
+        const data: R1Layout = await res.json();
+        if (seq === layoutSeq.current) setLayout(data);
+      } catch (e: any) {
+        if (seq === layoutSeq.current) dispatch({ type: 'SET_ERROR', error: e.message });
+      } finally {
+        if (seq === layoutSeq.current) setLayoutLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [state.extractionJobId, state.r1SnapshotJobId, state.layoutChoices]);
+
+  const updateLayoutChoices = (choices: LayoutChoices) => dispatch({ type: 'SET_LAYOUT_CHOICES', choices });
+
+
+  // Type mappings are refreshed on every visit: they are cheap, and saved
+  // ones may predate a classification fix (external DPSK once read as Enterprise).
+  useEffect(() => {
+    if (state.extractionJobId && !resolving) {
       runResolve();
     }
   }, []);
@@ -46,20 +107,54 @@ export default function Step4Review({ state, dispatch }: Props) {
     }
   }, [state.resolverResult]);
 
-  const needsRadiusChoice = (radiusChoices?.services.length ?? 0) > 0;
+  // ── External auth → R1 DPSK ─────────────────────────────────────
+  // WLANs that authenticate against RADIUS may move onto R1's own DPSK
+  // service. Only WLANs that are migrated at all are offered.
+  const notMigrated = new Set((layout?.unbroadcast ?? []).filter(u => !u.included).map(u => u.id));
+  const serviceByWlan = new Map<string, string>();
+  for (const svc of radiusChoices?.services ?? []) {
+    for (const u of svc.used_by) if (u.role === 'authentication') serviceByWlan.set(u.wlan_id, svc.name);
+  }
+  const convertible: ConvertibleWlan[] = Object.entries(state.typeMappings ?? {})
+    .filter(([id, m]) => CONVERTIBLE_TYPES.includes(m.r1_network_type) && !notMigrated.has(id))
+    .map(([id, m]) => ({
+      id, name: m.wlan_name ?? id, ssid: m.wlan_name ?? id, szAuthType: m.sz_auth_type,
+      r1Type: m.r1_network_type, serviceName: serviceByWlan.get(id) ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const converted = new Set(convertible.filter(w => state.authConversions[w.id]).map(w => w.id));
+  const updateConversions = (c: Record<string, 'dpsk'>) => dispatch({ type: 'SET_AUTH_CONVERSIONS', conversions: c });
+
+  // RADIUS services still needed: used by a migrated WLAN that authenticates
+  // against RADIUS in R1 (not converted; not e.g. a portal WLAN made plain PSK).
+  // RADIUS users: Enterprise / external DPSK not converted, and WISPr guest
+  // networks (an SZ hotspot's RADIUS auth; Always Accept ones reference no service).
+  const usesRadius = (id: string) => !converted.has(id) && !notMigrated.has(id)
+    && [...CONVERTIBLE_TYPES, 'wispr'].includes(state.typeMappings?.[id]?.r1_network_type ?? '');
+  const radiusServices = (radiusChoices?.services ?? []).filter(svc => svc.used_by.some(u => usesRadius(u.wlan_id)));
+  const neededRadiusChoices: RadiusChoices | null = radiusChoices && { ...radiusChoices, services: radiusServices };
+  const needsRadiusChoice = radiusServices.length > 0;
+
+  // Mappings as they will be built: converted WLANs are R1 DPSK.
+  const effectiveMappings: Record<string, TypeMapping> | null = state.typeMappings && Object.fromEntries(
+    Object.entries(state.typeMappings).map(([id, m]) => [id, converted.has(id)
+      ? { ...m, r1_network_type: 'dpsk', converted: true,
+          notes: `Converted to R1 DPSK — SZ ${m.sz_auth_type} used RADIUS; R1's DPSK service replaces it` }
+      : m]),
+  );
 
   // Effective decisions: what was chosen, else the suggestion.
   const decisions: Record<string, RadiusDecision> = {};
-  for (const svc of radiusChoices?.services ?? []) {
+  for (const svc of radiusServices) {
     decisions[svc.id] = state.radiusDecisions?.[svc.id] ?? {
       action: svc.suggestion.action, r1_profile_id: svc.suggestion.r1_profile_id,
     };
   }
-  const decisionsComplete = (radiusChoices?.services ?? []).every(svc => {
+  const decisionsComplete = radiusServices.every(svc => {
     const d = decisions[svc.id];
     if (d.action === 'existing') return !!d.r1_profile_id;
     if (d.action === 'skip') {
-      return svc.used_by.filter(u => u.role === 'authentication')
+      return svc.used_by.filter(u => u.role === 'authentication' && usesRadius(u.wlan_id))
         .every(u => !!state.wlanFallbacks[u.wlan_id]);
     }
     return true;
@@ -69,12 +164,14 @@ export default function Step4Review({ state, dispatch }: Props) {
   // Which WLANs end up DPSK: native SZ DPSK, plus RADIUS WLANs converted
   // above -- minus any whose RADIUS service is dropped and the WLAN skipped.
   const radiusSkippedWlans = new Set(
-    (radiusChoices?.services ?? [])
+    radiusServices
       .filter(svc => decisions[svc.id]?.action === 'skip')
-      .flatMap(svc => svc.used_by.filter(u => u.role === 'authentication').map(u => u.wlan_id)),
+      .flatMap(svc => svc.used_by.filter(u => u.role === 'authentication' && usesRadius(u.wlan_id)).map(u => u.wlan_id)),
   );
   const dpskWlans: DpskWlan[] = Object.entries(state.typeMappings ?? {}).flatMap(([id, m]): DpskWlan[] => {
     const name = m.wlan_name ?? id;
+    if (notMigrated.has(id)) return [];
+    if (converted.has(id)) return [{ id, name, source: 'converted' as const }];
     if (radiusSkippedWlans.has(id)) {
       return state.wlanFallbacks[id] === 'dpsk' ? [{ id, name, source: 'converted' as const }] : [];
     }
@@ -103,14 +200,8 @@ export default function Step4Review({ state, dispatch }: Props) {
     return !!spec.name?.trim() && !!ig && (ig.mode === 'new' ? !!ig.name?.trim() : !!ig.id);
   }));
 
-  const needsReviewChoice = needsRadiusChoice || needsDpskChoice;
-
-  // Nothing to decide (no RADIUS, no DPSK): plan straight away, as before.
-  useEffect(() => {
-    if (radiusChoices && !needsReviewChoice && !state.planResult && !planning) {
-      runPlan();
-    }
-  }, [radiusChoices]);
+  // Placement always needs a look, so the plan is never built unasked.
+  const placementReady = !!layout && !layout.blocked && !layoutLoading;
 
   const loadDpskChoices = async () => {
     if (!state.extractionJobId || !state.r1ControllerId) return;
@@ -183,9 +274,11 @@ export default function Step4Review({ state, dispatch }: Props) {
     dispatch({ type: 'SET_ERROR', error: null });
 
     try {
-      const res = await apiFetch(`${API_URL}/sz-migration/resolve/${state.extractionJobId}`, {
+      const qs = state.r1SnapshotJobId ? `?r1_snapshot_job_id=${encodeURIComponent(state.r1SnapshotJobId)}` : '';
+      const res = await apiFetch(`${API_URL}/sz-migration/resolve/${state.extractionJobId}${qs}`, {
         method: 'POST',
       });
+      if (res.status === 404) throw new Error(MISSING_SNAPSHOT);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || `Resolve failed: ${res.status}`);
@@ -218,7 +311,11 @@ export default function Step4Review({ state, dispatch }: Props) {
           tenant_id: state.tenantId,
           venue_id: state.destVenueId,
           sz_snapshot_job_id: state.extractionJobId,
-          ...(needsRadiusChoice && {
+          layout_choices: state.layoutChoices,
+          auth_conversions: Object.fromEntries([...converted].map(id => [id, 'dpsk'])),
+          // Always sent (possibly empty): a service only converted WLANs used
+          // gets no decision, and so is not created.
+          ...({
             radius_decisions: Object.fromEntries(
               Object.entries(decisions).map(([sid, d]) => [sid, {
                 action: d.action,
@@ -260,6 +357,10 @@ export default function Step4Review({ state, dispatch }: Props) {
 
       if (result) {
         dispatch({ type: 'SET_PLAN', jobId, result });
+        // Valid: Execute shows the plan and confirms it. Not valid: the
+        // errors are at the top of this page, where the choices are fixed.
+        if (result.valid) dispatch({ type: 'SET_STEP', step: 6 });
+        else window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         throw new Error('Validation timed out after 2 minutes');
       }
@@ -279,9 +380,12 @@ export default function Step4Review({ state, dispatch }: Props) {
     });
   };
 
-  const loading = resolving || planning;
+  // Only the first type mapping blanks the page; a refresh or a plan build
+  // keeps the panels (and your scroll position) where they are.
+  const loading = resolving && !state.resolverResult;
   const plan = state.planResult;
-  const canProceed = plan?.valid && !state.resolverResult?.blocked;
+  const canProceed = plan?.valid;
+  const planErrors = plan && !plan.valid ? plan.conflicts.filter(c => c.severity === 'error') : [];
 
   return (
     <div className="space-y-4">
@@ -290,14 +394,29 @@ export default function Step4Review({ state, dispatch }: Props) {
         <div className="bg-white rounded-lg shadow p-8 flex flex-col items-center">
           <Loader2 size={32} className="text-blue-600 animate-spin mb-3" />
           <p className="text-gray-600 font-medium">
-            {resolving ? 'Resolving WLAN activations...' : 'Running validation...'}
+            Mapping WLAN security types...
           </p>
-          <p className="text-gray-400 text-sm mt-1">
-            {resolving
-              ? 'Mapping WLAN Groups to AP Groups and checking 15-SSID limits'
-              : 'Checking existing R1 resources and building execution plan'
-            }
-          </p>
+          <p className="text-gray-400 text-sm mt-1">Mapping SZ security types to R1 network types</p>
+        </div>
+      )}
+
+      {/* A plan that didn't validate: what to fix, and where */}
+      {planErrors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-red-800 mb-2">
+            <AlertCircle size={16} />
+            The plan has {planErrors.length} problem{planErrors.length === 1 ? '' : 's'} — fix them below, then build it again
+          </div>
+          <ul className="space-y-1 max-h-48 overflow-y-auto">
+            {planErrors.map((c, i) => (
+              <li key={i} className="text-xs text-red-700 flex gap-2">
+                {fixSection(c.resource_type) && (
+                  <span className="flex-shrink-0 font-semibold">[{fixSection(c.resource_type)}]</span>
+                )}
+                <span>{c.description}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -305,44 +424,61 @@ export default function Step4Review({ state, dispatch }: Props) {
       {!loading && state.resolverResult && (
         <>
           <AccordionPanel
-            title="Activation Matrix"
-            subtitle={`${state.resolverResult.ap_group_summaries.length} AP Groups, ${state.resolverResult.activations.length} activations`}
-            section="activation"
-            isOpen={openSections.has('activation')}
+            title="WLAN Placement"
+            subtitle={layout
+              ? `${layout.summary.all_ap_wlans} on All AP Groups · ${layout.summary.groups} AP Groups (${layout.summary.groups_existing} in R1, ${layout.summary.groups_to_create} to create, ${layout.summary.groups_pending} not created)`
+                + (r1Reading ? ' · reading R1…' : r1ReadAt ? ` · R1 read ${r1ReadAt.toLocaleTimeString()}` : '')
+              : layoutLoading || r1Reading ? 'Working out placement…' : ''}
+            section="placement"
+            isOpen={openSections.has('placement')}
             onToggle={toggleSection}
-            badge={state.resolverResult.blocked ? 'BLOCKED' : undefined}
-            badgeColor={state.resolverResult.blocked ? 'red' : undefined}
+            badge={layout?.blocked ? 'BLOCKED' : !plan ? 'CONFIRM' : undefined}
+            badgeColor={layout?.blocked ? 'red' : !plan ? 'amber' : undefined}
           >
-            <ActivationMatrix resolverResult={state.resolverResult} />
+            {layout ? (
+              <div className={layoutLoading || r1Reading ? 'opacity-60 pointer-events-none' : ''}>
+                <div className="flex items-center justify-end gap-2 mb-2 text-xs text-gray-500">
+                  <span>
+                    {r1Reading ? 'Reading the venue from R1…'
+                      : r1ReadAt ? `Matched against the venue as R1 had it at ${r1ReadAt.toLocaleTimeString()}`
+                      : 'Matched against the R1 snapshot from the Destination step'}
+                  </span>
+                  <button type="button" onClick={refreshR1} disabled={r1Reading || planning}
+                          className="px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">
+                    Refresh R1 state
+                  </button>
+                </div>
+                <WlanPlacement layout={layout} choices={state.layoutChoices}
+                               onChange={updateLayoutChoices} disabled={planning} />
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" /> Working out placement…
+              </div>
+            )}
           </AccordionPanel>
 
           {state.typeMappings && (
             <>
               <AccordionPanel
-                title="Migration Blueprint"
-                subtitle={`${Object.keys(state.typeMappings).length} WLANs — SZ → R1 mapping`}
-                section="blueprint"
-                isOpen={openSections.has('blueprint')}
+                title="Authentication"
+                subtitle={convertible.length
+                  ? `${convertible.length} RADIUS-backed WLAN${convertible.length === 1 ? '' : 's'} · ${converted.size} converted to R1 DPSK`
+                  : 'No RADIUS-backed WLANs'}
+                section="auth"
+                isOpen={openSections.has('auth')}
                 onToggle={toggleSection}
               >
-                <MigrationBlueprint state={state} />
-              </AccordionPanel>
-
-              <AccordionPanel
-                title="Network Settings"
-                subtitle={`${Object.keys(state.typeMappings).length} WLANs`}
-                section="networks"
-                isOpen={openSections.has('networks')}
-                onToggle={toggleSection}
-              >
-                <NetworkSettingsReview typeMappings={state.typeMappings} />
+                <AuthConversionPanel wlans={convertible} conversions={state.authConversions}
+                                     onChange={updateConversions} disabled={planning} />
               </AccordionPanel>
 
               <AccordionPanel
                 title="RADIUS Servers"
                 subtitle={
                   radiusChoices
-                    ? `${radiusChoices.services.length} used by this zone`
+                    ? `${radiusServices.length} needed${radiusChoices.services.length > radiusServices.length
+                        ? ` (${radiusChoices.services.length - radiusServices.length} not needed in R1)` : ''}`
                     : choicesLoading ? 'Loading…' : ''
                 }
                 section="radius"
@@ -351,10 +487,14 @@ export default function Step4Review({ state, dispatch }: Props) {
                 badge={needsRadiusChoice && !plan ? 'CHOOSE' : undefined}
                 badgeColor={needsRadiusChoice && !plan ? 'amber' : undefined}
               >
-                {radiusChoices ? (
+                {neededRadiusChoices && !needsRadiusChoice ? (
+                  <div className="text-sm text-gray-500 italic">
+                    No RADIUS server is needed: no migrated WLAN keeps external authentication.
+                  </div>
+                ) : neededRadiusChoices ? (
                   <div className="space-y-3">
                     <RadiusMapping
-                      choices={radiusChoices}
+                      choices={neededRadiusChoices}
                       decisions={decisions}
                       fallbacks={state.wlanFallbacks}
                       secretSet={secretSet}
@@ -405,114 +545,54 @@ export default function Step4Review({ state, dispatch }: Props) {
                 )}
               </AccordionPanel>
 
-              {needsReviewChoice && !plan && (
+              <AccordionPanel
+                title="Migration Blueprint"
+                subtitle={`${Object.keys(state.typeMappings).length} WLANs — SZ → R1 mapping`}
+                section="blueprint"
+                isOpen={openSections.has('blueprint')}
+                onToggle={toggleSection}
+              >
+                <MigrationBlueprint state={{ ...state, typeMappings: effectiveMappings }} layout={layout} />
+              </AccordionPanel>
+
+              <AccordionPanel
+                title="Network Settings"
+                subtitle={`${Object.keys(state.typeMappings).length} WLANs`}
+                section="networks"
+                isOpen={openSections.has('networks')}
+                onToggle={toggleSection}
+              >
+                <NetworkSettingsReview typeMappings={effectiveMappings ?? {}} />
+              </AccordionPanel>
+
+              {!canProceed && (
                 <div className="flex justify-end items-center gap-3">
                   {(!decisionsComplete || !dpskComplete) && (
                     <span className="text-xs text-amber-700">
                       Finish the choices marked CHOOSE above
                     </span>
                   )}
+                  {layout?.blocked && (
+                    <span className="text-xs text-red-700">Placement is over R1's 15-SSID limit — adjust it above</span>
+                  )}
                   <button
                     onClick={runPlan}
-                    disabled={!decisionsComplete || !dpskComplete || planning}
+                    disabled={!decisionsComplete || !dpskComplete || !placementReady || planning}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 text-sm font-semibold flex items-center gap-2"
                   >
                     {planning && <Loader2 size={14} className="animate-spin" />}
-                    Build plan with these choices
+                    {planning ? 'Building and validating plan…' : plan ? 'Build plan again' : 'Build plan with these choices'}
                   </button>
                 </div>
               )}
             </>
           )}
 
-          {/* Plan Summary */}
-          {plan && (
-            <AccordionPanel
-              title="Migration Summary"
-              subtitle={plan.valid ? 'Ready to execute' : 'Validation issues'}
-              section="summary"
-              isOpen={openSections.has('summary')}
-              onToggle={toggleSection}
-              badge={plan.valid ? 'VALID' : 'INVALID'}
-              badgeColor={plan.valid ? 'green' : 'red'}
-            >
-              <div className="space-y-4">
-                {/* Summary stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatCard label="Units (WLANs)" value={plan.unit_count} color="blue" />
-                  <StatCard label="API Calls Est." value={plan.estimated_api_calls} color="purple" />
-                  <StatCard
-                    label="To Create"
-                    value={plan.actions.filter(a => a.action === 'create').length}
-                    color="blue"
-                  />
-                  <StatCard
-                    label="To Reuse"
-                    value={plan.actions.filter(a => a.action === 'reuse' || a.action === 'exists').length}
-                    color="green"
-                  />
-                </div>
-
-                {/* Actions list */}
-                {plan.actions.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Create */}
-                    {plan.actions.filter(a => a.action === 'create').length > 0 && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <h4 className="text-xs font-semibold text-blue-800 mb-1">
-                          Will Create ({plan.actions.filter(a => a.action === 'create').length})
-                        </h4>
-                        <ul className="space-y-1 max-h-32 overflow-y-auto">
-                          {plan.actions.filter(a => a.action === 'create').map((a, i) => (
-                            <li key={i} className="text-xs text-blue-700">
-                              + {a.resource_name || a.name} <span className="text-blue-400">({a.resource_type})</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Reuse */}
-                    {plan.actions.filter(a => a.action === 'reuse' || a.action === 'exists').length > 0 && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                        <h4 className="text-xs font-semibold text-green-800 mb-1">
-                          Will Reuse ({plan.actions.filter(a => a.action === 'reuse' || a.action === 'exists').length})
-                        </h4>
-                        <ul className="space-y-1 max-h-32 overflow-y-auto">
-                          {plan.actions.filter(a => a.action === 'reuse' || a.action === 'exists').map((a, i) => (
-                            <li key={i} className="text-xs text-green-700">
-                              = {a.resource_name || a.name} <span className="text-green-400">({a.resource_type})</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Conflicts */}
-                {plan.conflicts.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <h4 className="text-xs font-semibold text-amber-800 mb-1">
-                      Conflicts ({plan.conflicts.length})
-                    </h4>
-                    {plan.conflicts.map((c, i) => (
-                      <div key={i} className="text-xs text-amber-700 flex items-start gap-1">
-                        <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
-                        <span>{c.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </AccordionPanel>
-          )}
-
           {/* Continue button */}
           {canProceed && (
             <div className="flex justify-end">
               <button
-                onClick={() => dispatch({ type: 'SET_STEP', step: 5 })}
+                onClick={() => dispatch({ type: 'SET_STEP', step: 6 })}
                 className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold text-sm flex items-center gap-2"
               >
                 Continue to Execute
@@ -574,22 +654,6 @@ function AccordionPanel({ title, subtitle, section, isOpen, onToggle, badge, bad
           {children}
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Stat Card ──────────────────────────────────────────────────────
-
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
-  const colorMap: Record<string, string> = {
-    blue: 'bg-blue-50 border-blue-200 text-blue-700',
-    purple: 'bg-purple-50 border-purple-200 text-purple-700',
-    green: 'bg-green-50 border-green-200 text-green-700',
-  };
-  return (
-    <div className={`border rounded-lg p-3 text-center ${colorMap[color] || colorMap.blue}`}>
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-xs">{label}</div>
     </div>
   );
 }

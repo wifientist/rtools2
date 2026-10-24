@@ -168,6 +168,15 @@ class WlanService:
         - WPA3-SAE: WPA3 personal (SAE)
         - WPA3-Enterprise: WPA3 with 802.1X
         - DPSK: Dynamic Pre-Shared Key (unique PSK per user/device)
+        - External DPSK: WPA2 Personal whose keys are checked by an external
+          RADIUS server (Cloudpath) -- externalDpsk.enabled
+        - WPA2-PSK + Portal: an encrypted Hotspot (WISPr) / Guest / WebAuth WLAN
+
+        Enterprise (802.1X) is decided by the WLAN's own type
+        (Standard_8021X*), not by an auth service being present: external
+        DPSK and portal WLANs reference an auth service too, and reading them
+        as Enterprise turns a passphrase network into an 802.1X one. Rows
+        without a type (some list responses) keep the older auth-service rule.
 
         Args:
             wlan: WLAN object from SmartZone API
@@ -180,6 +189,17 @@ class WlanService:
         method = encryption.get("method") or ""
         dpsk_config = wlan.get("dpsk") or {}
         auth_service = wlan.get("authServiceOrProfile") or {}
+        wlan_type = wlan.get("type") or ""
+        portal = wlan.get("portalServiceProfile") or {}
+        has_auth = bool(auth_service.get("id") or auth_service.get("name"))
+        # No type: older behaviour (an auth service means 802.1X)
+        is_8021x = (wlan_type.startswith("Standard_8021X") or wlan_type in ("Hotspot20", "Hotspot20_OSEN")) \
+            if wlan_type else has_auth
+        has_portal = bool(portal.get("id") or portal.get("name")) or wlan_type in (
+            "Hotspot", "Hotspot_MacByPass", "Guest", "WebAuth")
+
+        if (wlan.get("externalDpsk") or {}).get("enabled"):
+            return "External DPSK"
 
         # Check for DPSK first - this takes priority as it's a special WPA2 variant
         # DPSK can be detected by:
@@ -213,7 +233,7 @@ class WlanService:
             if sae.get("enabled"):
                 return "WPA3-SAE"
             # Check for enterprise (802.1X)
-            if auth_service.get("id") or auth_service.get("name"):
+            if is_8021x:
                 return "WPA3-Enterprise"
             # WPA3 with saePassphrase is WPA3-SAE (Personal)
             if encryption.get("saePassphrase"):
@@ -223,9 +243,10 @@ class WlanService:
         # WPA2 variants
         if "WPA2" in method.upper() or method.upper() == "WPA_MIXED":
             # Check for enterprise (802.1X with RADIUS)
-            if auth_service.get("id") or auth_service.get("name"):
-                # Could also check throughController field
+            if is_8021x:
                 return "WPA2-Enterprise"
+            if has_portal:
+                return "WPA2-PSK + Portal"
             # PSK (passphrase-based)
             if encryption.get("passphrase"):
                 return "WPA2-PSK"
@@ -234,7 +255,7 @@ class WlanService:
 
         # WPA (legacy)
         if "WPA" in method.upper():
-            if auth_service.get("id"):
+            if is_8021x:
                 return "WPA-Enterprise"
             return "WPA-PSK"
 

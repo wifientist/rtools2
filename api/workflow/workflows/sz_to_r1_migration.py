@@ -7,6 +7,8 @@ Migrates WiFi networks from SmartZone to RuckusONE, including:
 - DPSK pool + identity group creation
 - SSID activation on per-AP-Group basis
 
+Venue settings are their own stage before this one (sz_venue_config).
+
 Prerequisites (completed BEFORE workflow starts):
 - M0: SZ deep extraction → snapshot stored in Redis
 - M2: WLAN Group resolution + security type mapping

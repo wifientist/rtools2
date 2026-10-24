@@ -876,13 +876,20 @@ class VenueService:
                 if request_id:
                     await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
 
-                    # After async task completes, fetch the created resource to get its ID
-                    created_group = await self.find_ap_group_by_name(tenant_id, venue_id, name)
-                    if created_group:
-                        return created_group
-                    else:
-                        logger.warning(f"Task completed but could not find created AP Group '{name}'")
-                        return result
+                    # R1 returns the new id with the request (EntityIdOperationResponse).
+                    # Looking the group up by name instead raced R1's query index: on
+                    # a 358-group run the 6th lookup came back empty and failed the job.
+                    new_id = (result.get("response") or {}).get("id")
+                    if new_id:
+                        return {"id": new_id, "name": name, "venueId": venue_id}
+                    for delay in (0, 1, 2, 4):
+                        if delay:
+                            await asyncio.sleep(delay)
+                        created_group = await self.find_ap_group_by_name(tenant_id, venue_id, name)
+                        if created_group:
+                            return created_group
+                    logger.warning(f"Task completed but could not find created AP Group '{name}'")
+                    return result
 
             return result
         else:

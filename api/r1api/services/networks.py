@@ -350,15 +350,12 @@ class NetworksService:
         else:
             response = self.client.post("/wifiNetworks/query", payload=body).json()
 
-        # Response format: {"data": [...], "totalCount": N}
-        networks = response.get('data', [])
-
-        if networks and len(networks) > 0:
-            # Network found (silent - will be logged by caller)
-            return networks[0]
-
-        # Network not found (silent - will be logged by caller)
-        return None
+        # Matched HERE, exactly. R1's name filter ignores case: asking for
+        # "Community" returned another property's "community", data[0] was
+        # taken, and an SZ migration "reused" that network instead of creating
+        # its own (as find_ap_group_by_name once created duplicates the same way).
+        networks = response.get('data', []) or []
+        return next((n for n in networks if n.get('name') == network_name), None)
 
     async def find_wifi_network_by_ssid(self, tenant_id: str, venue_id: str, ssid: str):
         """
@@ -889,10 +886,15 @@ class NetworksService:
         vlan_id: int = 1,
         description: str = None,
         advanced_customization: dict = None,
-        wait_for_completion: bool = True
+        wait_for_completion: bool = True,
+        use_dpsk_service: bool = True,
     ):
         """
         Create a DPSK WiFi network tied to a DPSK service (pool).
+
+        use_dpsk_service=False: a DPSK network whose keys an external RADIUS
+        server checks (SZ "external DPSK" / Cloudpath); link the RADIUS
+        profile afterwards instead of a DPSK service.
 
         The network is created as type 'dpsk' and the DPSK service handles authentication.
         Each passphrase in the DPSK pool can optionally have its own VLAN override.
@@ -933,7 +935,7 @@ class NetworksService:
             "type": WifiNetworkType.DPSK,  # DPSK type discriminator
             "name": name,
             "wlan": wlan_settings,
-            "useDpskService": True,  # Required: enables DPSK service on this network
+            "useDpskService": use_dpsk_service,  # True: R1 DPSK service; False: external RADIUS
         }
 
         if description:

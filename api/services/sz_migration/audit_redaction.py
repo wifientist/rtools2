@@ -41,8 +41,11 @@ MIN_SUBSTRING_LEN = 8
 # Key names whose string values are credentials. Anchored at the end so that
 # pskFormat, passphraseFormat, passphrase_count, placeholder_secret and the
 # like are not caught -- none of those hold a credential string.
+# The portal signing / integration keys (SZ hotspot signatureSigningKey = R1
+# WISPr integrationKey / externalPortalKey) authenticate the portal -- secrets.
 _SECRET_KEY = re.compile(
-    r"(passphrase|sharedsecret|shared_secret|secret|password|wephexkey|wepkey)$",
+    r"(passphrase|sharedsecret|shared_secret|secret|password|wephexkey|wepkey"
+    r"|signingkey|integrationkey|portalkey)$",
     re.IGNORECASE,
 )
 
