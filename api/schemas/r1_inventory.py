@@ -60,6 +60,16 @@ class R1VenueInventory(BaseModel):
                 return n
         return None
 
+    def network_in_tenant(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        A network by exact name anywhere in the tenant: this venue's first
+        (full records), then the slim tenant list (id, name, ssid, nwSubType).
+        Networks created but never activated here -- a partial run, staged
+        WLANs -- are only in the tenant list.
+        """
+        return self.network_by_name(name) or next(
+            (n for n in self.tenant_networks if n.get("name") == name), None)
+
     def network_by_ssid(self, ssid: str) -> Optional[Dict[str, Any]]:
         """Find a WiFi network by SSID."""
         for n in self.wifi_networks:
