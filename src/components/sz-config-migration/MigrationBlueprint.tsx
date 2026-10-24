@@ -19,13 +19,19 @@ import type {
   TypeMapping,
   PlanResult,
   WLANActivation,
+  R1Layout,
 } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 interface Props {
   state: WizardState;
+  // Current R1 placement; when given, activations come from it rather than
+  // the (AP Group tier only) resolver.
+  layout?: R1Layout | null;
 }
+
+const ACTIVATION_CHIPS = 20;
 
 // SZ WLAN from snapshot (subset of fields we care about)
 interface SZWlanInfo {
@@ -49,6 +55,8 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   open: <Globe size={14} className="text-green-600" />,
   aaa: <Shield size={14} className="text-purple-600" />,
   dpsk: <Key size={14} className="text-orange-600" />,
+  dpsk_external: <Key size={14} className="text-amber-700" />,
+  wispr: <Globe size={14} className="text-sky-700" />,
 };
 
 const R1_TYPE_LABELS: Record<string, string> = {
@@ -56,6 +64,8 @@ const R1_TYPE_LABELS: Record<string, string> = {
   open: 'Open Network',
   aaa: 'Enterprise (RADIUS)',
   dpsk: 'DPSK Network',
+  dpsk_external: 'DPSK Network (external RADIUS)',
+  wispr: 'Guest Network (WISPr captive portal)',
 };
 
 const R1_TYPE_COLORS: Record<string, string> = {
@@ -63,9 +73,11 @@ const R1_TYPE_COLORS: Record<string, string> = {
   open: 'bg-green-50 border-green-200',
   aaa: 'bg-purple-50 border-purple-200',
   dpsk: 'bg-orange-50 border-orange-200',
+  dpsk_external: 'bg-amber-50 border-amber-200',
+  wispr: 'bg-sky-50 border-sky-200',
 };
 
-export default function MigrationBlueprint({ state }: Props) {
+export default function MigrationBlueprint({ state, layout }: Props) {
   const [snapshot, setSnapshot] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +121,7 @@ export default function MigrationBlueprint({ state }: Props) {
     return <div className="text-red-600 text-sm py-4">Failed to load snapshot: {error}</div>;
   }
 
-  if (!mappings || !resolver) {
+  if (!mappings || (!resolver && !layout)) {
     return <div className="text-gray-500 text-sm py-4">Resolve must complete before viewing the blueprint.</div>;
   }
 
@@ -127,10 +139,26 @@ export default function MigrationBlueprint({ state }: Props) {
 
   // Build per-WLAN activation map: wlan_id -> activations
   const activationsByWlan = new Map<string, WLANActivation[]>();
-  for (const act of resolver.activations) {
-    const list = activationsByWlan.get(act.wlan_id) || [];
-    list.push(act);
-    activationsByWlan.set(act.wlan_id, list);
+  if (layout) {
+    const groupByKey = new Map(layout.groups.map(g => [g.key, g]));
+    for (const w of layout.wlans) {
+      const radios = w.radio_types.map(r => r.replace('-GHz', ''));
+      const base = { wlan_id: w.id, wlan_name: w.name, ssid: w.ssid, auth_type: w.auth_type, radios };
+      activationsByWlan.set(w.id, w.mode === 'all_ap_groups'
+        ? [{ ...base, ap_group_id: '*', ap_group_name: 'All AP Groups', source: 'all_ap_groups',
+             ap_count: layout.summary.aps }]
+        : (w.targets ?? []).flatMap(k => {
+            const g = groupByKey.get(k);
+            return g ? [{ ...base, ap_group_id: g.key, ap_group_name: g.name, ap_count: g.ap_count,
+                          source: g.exists ? 'exists' : g.create ? 'create' : 'pending' }] : [];
+          }));
+    }
+  } else if (resolver) {
+    for (const act of resolver.activations) {
+      const list = activationsByWlan.get(act.wlan_id) || [];
+      list.push(act);
+      activationsByWlan.set(act.wlan_id, list);
+    }
   }
 
   // Build action map from plan: name -> action details
@@ -384,7 +412,7 @@ function WlanBlueprintCard({ wlanId, mapping, szWlan, activations, planAction, r
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {activations.map((act, i) => (
+                {activations.slice(0, ACTIVATION_CHIPS).map((act, i) => (
                   <div
                     key={i}
                     className="bg-gray-50 border rounded px-2.5 py-1.5 text-[11px] flex items-center gap-2"
@@ -409,8 +437,19 @@ function WlanBlueprintCard({ wlanId, mapping, szWlan, activations, planAction, r
                     {act.source === 'ap_group_override' && (
                       <span className="text-[9px] text-orange-500 font-medium">override</span>
                     )}
+                    {act.source === 'create' && (
+                      <span className="text-[9px] text-indigo-500 font-medium">to create</span>
+                    )}
+                    {act.source === 'pending' && (
+                      <span className="text-[9px] text-gray-400 font-medium">not created — inactive</span>
+                    )}
                   </div>
                 ))}
+                {activations.length > ACTIVATION_CHIPS && (
+                  <span className="text-[11px] text-gray-500 self-center">
+                    +{activations.length - ACTIVATION_CHIPS} more AP Groups
+                  </span>
+                )}
               </div>
             </div>
           )}

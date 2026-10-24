@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from pydantic import ValidationError
 
 from schemas.sz_migration import (
-    SZMigrationSnapshot, SZZoneSnapshot, SZWLANFull, SZReferencedObject,
+    SZMigrationSnapshot, SZZoneSnapshot, SZWLANFull, SZReferencedObject, SZWLANGroup, SZWLANGroupMember,
 )
 from schemas.r1_inventory import R1VenueInventory
 from services.sz_migration.radius_choices import (
@@ -64,7 +64,16 @@ def check(label, ok, detail=""):
 
 # ==================== World ====================
 
-def snapshot():
+def broadcast_everywhere(snap):
+    """One AP broadcasting every WLAN via the zone's default WLAN Group, so
+    each WLAN is placed (WLANs no AP broadcasts aren't migrated)."""
+    snap.wlan_groups = [SZWLANGroup(id="wg", name="default", members=[
+        SZWLANGroupMember(id=w.id, name=w.name, ssid=w.ssid) for w in snap.wlans])]
+    snap.aps = [{"apMac": "aa:bb", "deviceName": "AP-1"}]
+    return snap
+
+
+def _snapshot():
     def ref(sid, name, ip, ref_type="auth_service"):
         return f"{ref_type}:{sid}", SZReferencedObject(
             ref_type=ref_type, id=sid, name=name,
@@ -88,6 +97,10 @@ def snapshot():
     ])
     return SZMigrationSnapshot(zone=SZZoneSnapshot(id="z", name="Zone"), wlans=wlans,
                                referenced_objects=refs)
+
+
+def snapshot():
+    return broadcast_everywhere(_snapshot())
 
 
 R1_PROFILES = [

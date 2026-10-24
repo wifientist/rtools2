@@ -58,6 +58,18 @@ class ConfigureDPSKPhase(PhaseExecutor):
             pool_id = pool_ids.get(pool_key)
             if not pool_id:
                 raise RuntimeError(f"[{wlan_name}] DPSK service '{pool_key}' was not created")
+            # A re-run: most networks already carry their pool. Read it (one
+            # GET) instead of re-sending the link -- the PUT costs an activity
+            # and a config push to the APs every time.
+            try:
+                linked = await self.r1_client.networks.get_dpsk_services_on_network(inputs.network_id, self.tenant_id)
+                linked_ids = {d.get("id") for d in (linked or {}).get("data", []) if d.get("id")}
+            except Exception as e:
+                linked_ids = set()
+                logger.debug(f"[{wlan_name}] Could not read linked DPSK services, linking anyway: {e}")
+            if pool_id in linked_ids:
+                await self.emit(f"[{wlan_name}] DPSK service already linked")
+                return self.Outputs(dpsk_pool_id=pool_id)
             await self.emit(f"[{wlan_name}] Linking DPSK service...")
             await self.r1_client.networks.activate_dpsk_service_on_network(
                 tenant_id=self.tenant_id,
@@ -78,7 +90,6 @@ class ConfigureDPSKPhase(PhaseExecutor):
         ig_result = await helper.find_or_create_identity_group(
             tenant_id=self.tenant_id,
             name=ig_name,
-            description=f"Migrated from SZ DPSK WLAN: {wlan_name}",
         )
         ig_id = ig_result.get("id", "")
         if not ig_id:
@@ -98,7 +109,6 @@ class ConfigureDPSKPhase(PhaseExecutor):
             tenant_id=self.tenant_id,
             name=pool_name,
             identity_group_id=ig_id,
-            description=f"Migrated from SZ DPSK WLAN: {wlan_name}",
         )
         pool_id = pool_result.get("id", "")
         if not pool_id:

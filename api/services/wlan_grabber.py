@@ -183,7 +183,9 @@ def _base(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def modes_for(base: Dict[str, Any]) -> tuple:
-    if base["sz_type"] == "open" and base["hotspot"]:
+    # The mapper calls an SZ hotspot WLAN "wispr" (the migration builds it so);
+    # here it may still be created as plain open instead.
+    if base["sz_type"] in ("open", "wispr") and base["hotspot"]:
         return HOTSPOT_MODES
     return MODES.get(base["sz_type"], ())
 

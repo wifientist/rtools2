@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { Loader2, ArrowRight, Wifi, Radio, MonitorSpeaker, Key, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2, ArrowRight, Wifi, Radio, MonitorSpeaker, Key, Users, CheckCircle } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import SingleEcSelector from '@/components/SingleEcSelector';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
-import type { WizardState, WizardAction } from '@/types/szConfigMigration';
+import CreateVenuePanel from './CreateVenuePanel';
+import type { WizardState, WizardAction, VenueDraft } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -18,6 +19,20 @@ interface Props {
 export default function Step3Destination({ r1ControllerId, isMSP, defaultTenantId, state, dispatch }: Props) {
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [selectedEc, setSelectedEc] = useState<any>(null);
+  const [venueMode, setVenueMode] = useState<'existing' | 'create'>(state.destVenueCreated ? 'create' : 'existing');
+  const [draft, setDraft] = useState<VenueDraft | null>(null);
+
+  // Zone-derived venue pre-fill, from the extraction (the zone settings are
+  // chosen on Review and applied by the migration job)
+  useEffect(() => {
+    if (!state.extractionJobId) return;
+    apiFetch(`${API_URL}/sz-migration/venue-draft/${state.extractionJobId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (d) setDraft(d.draft);
+      })
+      .catch(() => {});
+  }, [state.extractionJobId]);
 
   const handleEcSelect = (ecId: string | null, ec: any) => {
     setSelectedEc(ec);
@@ -42,6 +57,17 @@ export default function Step3Destination({ r1ControllerId, isMSP, defaultTenantI
         venueName: venue.name || venue.venueName || venueId,
       });
     }
+  };
+
+  const handleVenueCreated = (venue: { id: string; name: string }) => {
+    dispatch({
+      type: 'SET_DESTINATION',
+      r1ControllerId,
+      tenantId: effectiveTenantId,
+      venueId: venue.id,
+      venueName: venue.name,
+      created: true,
+    });
   };
 
   const captureR1Snapshot = async () => {
@@ -118,14 +144,41 @@ export default function Step3Destination({ r1ControllerId, isMSP, defaultTenantI
             <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">
               {isMSP ? '2' : '1'}
             </div>
-            <h3 className="text-lg font-semibold">Select Destination Venue</h3>
+            <h3 className="text-lg font-semibold">Destination Venue</h3>
+            <div className="ml-auto flex rounded border border-gray-300 overflow-hidden text-xs">
+              {(['existing', 'create'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setVenueMode(m)}
+                  className={`px-3 py-1.5 ${venueMode === m ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {m === 'existing' ? 'Existing venue' : 'Create new venue'}
+                </button>
+              ))}
+            </div>
           </div>
-          <SingleVenueSelector
-            controllerId={r1ControllerId}
-            tenantId={effectiveTenantId}
-            onVenueSelect={handleVenueSelect}
-            selectedVenueId={state.destVenueId}
-          />
+          {venueMode === 'existing' && (
+            <SingleVenueSelector
+              controllerId={r1ControllerId}
+              tenantId={effectiveTenantId}
+              onVenueSelect={handleVenueSelect}
+              selectedVenueId={state.destVenueId}
+            />
+          )}
+          {venueMode === 'create' && state.destVenueCreated && state.destVenueId && (
+            <div className="flex items-center gap-2 text-sm text-green-800 bg-green-50 border border-green-200 rounded px-3 py-2">
+              <CheckCircle size={16} />
+              Created <strong>{state.destVenueName}</strong> in R1.
+            </div>
+          )}
+          {venueMode === 'create' && !(state.destVenueCreated && state.destVenueId) && (
+            <CreateVenuePanel
+              r1ControllerId={r1ControllerId}
+              tenantId={effectiveTenantId}
+              draft={draft}
+              onCreated={handleVenueCreated}
+            />
+          )}
         </div>
       )}
 
@@ -168,7 +221,7 @@ export default function Step3Destination({ r1ControllerId, isMSP, defaultTenantI
                 onClick={() => dispatch({ type: 'SET_STEP', step: 4 })}
                 className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold text-sm flex items-center gap-2"
               >
-                Continue to Review
+                Continue to Venue Configuration
                 <ArrowRight size={14} />
               </button>
             </div>

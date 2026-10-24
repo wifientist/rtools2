@@ -14,6 +14,55 @@ interface Props {
   dispatch: React.Dispatch<WizardAction>;
 }
 
+interface Outcome {
+  status: string;
+  units: number;
+  units_with_failures: number;
+  activated: number;
+  to_activate: number;
+  staged: string[];
+  created_only: string[];
+  duration_seconds?: number | null;
+  failures: Array<{ phase: string; message: string; count: number; wlans: string[] }>;
+  networks?: { created: number; reused: number };
+  ap_groups?: { created: number; existing: number; failed: string[] };
+  resources?: Record<string, number>;
+}
+
+const took = (sec?: number | null) => {
+  if (sec == null) return '';
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), x = sec % 60;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${x}s` : `${x}s`;
+};
+
+// A results section: one stage of the wizard, in order.
+function StageCard({ n, title, status, children }: {
+  n: number; title: string; status: 'ok' | 'warn' | 'fail' | 'skip'; children: React.ReactNode;
+}) {
+  const tone = { ok: 'border-green-200', warn: 'border-amber-300', fail: 'border-red-300', skip: 'border-gray-200' }[status];
+  const icon = { ok: <CheckCircle size={16} className="text-green-600" />, warn: <AlertTriangle size={16} className="text-amber-600" />,
+    fail: <XCircle size={16} className="text-red-600" />, skip: <span className="text-[10px] font-bold text-gray-400">SKIP</span> }[status];
+  return (
+    <div className={`bg-white rounded-lg shadow border-l-4 ${tone} p-5`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center">{n}</span>
+        <h4 className="font-semibold">{title}</h4>
+        <span className="ml-auto">{icon}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Tile({ value, label, tone = 'text-gray-800' }: { value: React.ReactNode; label: string; tone?: string }) {
+  return (
+    <div className="text-center bg-gray-50 rounded p-2">
+      <div className={`text-2xl font-bold ${tone}`}>{value}</div>
+      <div className="text-xs text-gray-600">{label}</div>
+    </div>
+  );
+}
+
 interface PhaseStats {
   name: string;
   status?: string;
@@ -53,6 +102,12 @@ interface JobStatus {
 
 export default function Step6Results({ state, dispatch }: Props) {
   const [result, setResult] = useState<JobStatus | null>(null);
+  // What became of each WLAN: activated / staged / created only -- so the
+  // count matches what R1 shows activated in the venue.
+  const [breakdown, setBreakdown] = useState<Outcome | null>(null);
+  // The other stages' own read-backs, for their sections.
+  const [venueReport, setVenueReport] = useState<any | null>(null);
+  const [apReport, setApReport] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [showReport, setShowReport] = useState(false);
 
@@ -65,6 +120,16 @@ export default function Step6Results({ state, dispatch }: Props) {
   const fetchResults = async () => {
     if (!state.finalJobId) return;
     setLoading(true);
+    apiFetch(`${API_URL}/sz-migration/workflow/${state.finalJobId}/outcome`)
+      .then(r => (r.ok ? r.json() : null)).then(d => d && setBreakdown(d)).catch(() => {});
+    if (state.venueConfigJobId) {
+      apiFetch(`${API_URL}/sz-migration/venue-config/${state.venueConfigJobId}/report`)
+        .then(r => (r.ok ? r.json() : null)).then(d => d && setVenueReport(d)).catch(() => {});
+    }
+    if (state.apMappingJobId) {
+      apiFetch(`${API_URL}/sz-migration/ap-mapping/${state.apMappingJobId}/report`)
+        .then(r => (r.ok ? r.json() : null)).then(d => d && setApReport(d)).catch(() => {});
+    }
 
     try {
       const res = await apiFetch(`${API_URL}/jobs/${state.finalJobId}/status`);
@@ -140,38 +205,152 @@ export default function Step6Results({ state, dispatch }: Props) {
           </div>
         </div>
 
-        {/* WLAN progress */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between text-sm mb-1">
-            <span className="text-gray-600">WLAN Progress</span>
-            <span className="font-medium">{wlanCompleted}/{wlanTotal} completed</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-            <div
-              className={`h-full transition-all ${
-                wlanFailed > 0 ? 'bg-gradient-to-r from-green-500 to-red-500' : 'bg-green-500'
-              }`}
-              style={{ width: `${wlanTotal > 0 ? Math.round((wlanCompleted / wlanTotal) * 100) : 0}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div className="text-center">
-            <div className="text-2xl font-bold">{wlanTotal}</div>
-            <div className="text-xs text-gray-600">Total WLANs</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{wlanCompleted}</div>
-            <div className="text-xs text-gray-600">Completed</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-red-600">{wlanFailed}</div>
-            <div className="text-xs text-gray-600">Failed</div>
-          </div>
+        <div className="text-sm text-gray-600">
+          {state.selectedZoneName} → {state.destVenueName}
+          {breakdown?.duration_seconds != null && <> · Create WLANs took {took(breakdown.duration_seconds)}</>}
         </div>
       </div>
 
+      {/* 1. Venue Configuration */}
+      {(() => {
+        const verify: any[] = venueReport?.verify ?? [];
+        const ok = verify.filter(v => v.status === 'verified').length;
+        const off = verify.filter(v => v.status !== 'verified');
+        return (
+          <StageCard n={1} title="Venue Configuration"
+                     status={!state.venueConfigJobId ? 'skip' : !verify.length ? 'warn' : off.length ? 'warn' : 'ok'}>
+            {!state.venueConfigJobId ? (
+              <div className="text-sm text-gray-500">Not run — the venue's settings were left as R1 had them.</div>
+            ) : !verify.length ? (
+              <div className="text-sm text-gray-500">No read-back yet{venueReport?.status ? ` (job ${venueReport.status})` : ''}.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm mb-2">
+                  <Tile value={<>{ok}<span className="text-sm text-gray-400"> / {verify.length}</span></>} label="Sections verified"
+                        tone={off.length ? 'text-amber-600' : 'text-green-600'} />
+                  <Tile value={off.length} label="Not as the zone sets them" tone={off.length ? 'text-amber-600' : 'text-gray-400'} />
+                </div>
+                {off.length > 0 && (
+                  <ul className="text-xs text-amber-800 space-y-0.5">
+                    {off.map(v => (
+                      <li key={v.key}><b>{v.label}:</b> {v.status === 'differs'
+                        ? (v.differences ?? []).slice(0, 4).map((d: any) => d.field).join(', ') + ((v.differences?.length ?? 0) > 4 ? '…' : '')
+                        : v.error}</li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </StageCard>
+        );
+      })()}
+
+      {/* 2. WLANs */}
+      <StageCard n={2} title="WLANs"
+                 status={!breakdown ? (wlanFailed ? 'fail' : 'ok') : breakdown.units_with_failures ? 'warn'
+                   : breakdown.activated === breakdown.to_activate ? 'ok' : 'warn'}>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+          <Tile value={wlanTotal} label="WLANs" />
+          {breakdown ? (
+            <>
+              <Tile value={<>{breakdown.activated}<span className="text-sm text-gray-400"> / {breakdown.to_activate}</span></>}
+                    label="Activated" tone={breakdown.activated === breakdown.to_activate ? 'text-green-600' : 'text-amber-600'} />
+              <Tile value={breakdown.staged.length} label="Staged (AP Group built)" tone="text-indigo-600" />
+              <Tile value={breakdown.created_only.length} label="Created only" />
+              <Tile value={breakdown.units_with_failures} label="With a failure"
+                    tone={breakdown.units_with_failures ? 'text-red-600' : 'text-gray-400'} />
+            </>
+          ) : (
+            <>
+              <Tile value={wlanCompleted} label="Completed" tone="text-green-600" />
+              <Tile value={wlanFailed} label="Failed" tone="text-red-600" />
+            </>
+          )}
+        </div>
+        {breakdown && (
+          <div className="mt-3 text-xs text-gray-600 space-y-1">
+            <div>
+              {breakdown.networks && <>Networks: <b>{breakdown.networks.created}</b> created, <b>{breakdown.networks.reused}</b> already in R1 (reused). </>}
+              {breakdown.resources && Object.values(breakdown.resources).some(Boolean) && (
+                <>Services created: {[
+                  breakdown.resources.dpsk_pools ? `${breakdown.resources.dpsk_pools} DPSK pool(s)` : '',
+                  breakdown.resources.identity_groups ? `${breakdown.resources.identity_groups} identity group(s)` : '',
+                  breakdown.resources.radius_profiles ? `${breakdown.resources.radius_profiles} RADIUS profile(s)` : '',
+                ].filter(Boolean).join(', ')}.</>
+              )}
+            </div>
+            <div className="text-gray-500">Activated is what the venue should show as activated in R1.</div>
+            {(breakdown.staged.length > 0 || breakdown.created_only.length > 0) && (
+              <details>
+                <summary className="cursor-pointer select-none">Which WLANs aren't activated, and why</summary>
+                {breakdown.staged.length > 0 && <div className="mt-1"><b>Staged:</b> {breakdown.staged.join(', ')}</div>}
+                {breakdown.created_only.length > 0 && <div className="mt-1"><b>Created only:</b> {breakdown.created_only.join(', ')}</div>}
+                <div className="mt-1 text-gray-500">Neither is broadcast by any AP in SZ, so neither is activated in R1.</div>
+              </details>
+            )}
+            {breakdown.failures.filter(f => f.phase !== 'create_ap_groups').map((f, i) => (
+              <div key={i} className="text-red-700">
+                <b>{f.count}×</b> {f.message} <span className="text-gray-500">({f.wlans.slice(0, 6).join(', ')}{f.count > 6 ? '…' : ''})</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </StageCard>
+
+      {/* 3. AP Groups */}
+      {breakdown?.ap_groups && (
+        <StageCard n={3} title="AP Groups" status={breakdown.ap_groups.failed.length ? 'warn' : 'ok'}>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+            <Tile value={breakdown.ap_groups.created} label="Created" tone="text-green-600" />
+            <Tile value={breakdown.ap_groups.existing} label="Already in R1" />
+            <Tile value={breakdown.ap_groups.failed.length} label="Refused by R1"
+                  tone={breakdown.ap_groups.failed.length ? 'text-red-600' : 'text-gray-400'} />
+          </div>
+          {breakdown.ap_groups.failed.length > 0 && (
+            <div className="mt-2 text-xs text-red-700">Not created: {breakdown.ap_groups.failed.join(', ')} — re-run Create WLANs to retry.</div>
+          )}
+        </StageCard>
+      )}
+
+      {/* 4. AP Mapping */}
+      {(() => {
+        const v = apReport?.verify ?? {};
+        const c = v.counts ?? {};
+        const placed = (c.aps ?? 0) - (c.aps_unmapped ?? 0) - (c.aps_blocked ?? 0) - (c.aps_keep ?? 0)
+          - (c.aps_not_in_r1 ?? 0) - (c.aps_group_missing ?? 0);
+        const differ = v.differing_total ?? 0;
+        return (
+          <StageCard n={4} title="AP Mapping"
+                     status={!state.apMappingJobId ? 'skip' : !v.counts ? 'warn' : differ || (c.aps_already ?? 0) < placed ? 'warn' : 'ok'}>
+            {!state.apMappingJobId ? (
+              <div className="text-sm text-gray-500">Skipped — configuration only; no APs were brought into R1.</div>
+            ) : !v.counts ? (
+              <div className="text-sm text-gray-500">No read-back yet{apReport?.status ? ` (job ${apReport.status})` : ''}.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                  <Tile value={c.aps ?? 0} label="SZ APs" />
+                  <Tile value={<>{c.aps_already ?? 0}<span className="text-sm text-gray-400"> / {placed}</span></>}
+                        label="In their AP Group" tone={(c.aps_already ?? 0) >= placed ? 'text-green-600' : 'text-amber-600'} />
+                  <Tile value={(v.fallback_default ?? []).length} label="In default group (no AP Group)" tone="text-amber-600" />
+                  <Tile value={c.aps_keep ?? 0} label="Kept as R1 has them" />
+                  <Tile value={differ} label="Broadcast ≠ SZ" tone={differ ? 'text-red-600' : 'text-gray-400'} />
+                </div>
+                <div className="mt-2 text-xs text-gray-600">
+                  {(c.aps_not_in_r1 ?? 0) > 0 && <>{c.aps_not_in_r1} SZ AP(s) not brought into R1. </>}
+                  {(apReport?.map?.counts?.added ?? 0) > 0 && <>{apReport.map.counts.added} added this run. </>}
+                  {(apReport?.map?.counts?.moved ?? 0) > 0 && <>{apReport.map.counts.moved} moved this run. </>}
+                </div>
+              </>
+            )}
+          </StageCard>
+        );
+      })()}
+
+      {/* Details: the raw phases and created resources, for digging in */}
+      <details className="bg-white rounded-lg shadow p-4">
+        <summary className="font-semibold cursor-pointer select-none text-sm">Create WLANs job details — phases and created resources</summary>
+        <div className="mt-4 space-y-6">
       {/* Phase breakdown */}
       <div className="bg-white rounded-lg shadow p-6">
         <h4 className="font-semibold mb-3">Workflow Phases</h4>
@@ -307,6 +486,9 @@ export default function Step6Results({ state, dispatch }: Props) {
         </div>
       )}
 
+        </div>
+      </details>
+
       {/* Errors */}
       {result.errors.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-lg shadow p-6">
@@ -364,9 +546,11 @@ export default function Step6Results({ state, dispatch }: Props) {
         >
           Full Job Monitor
         </a>
-        {state.destVenueId && (state.extractionJobId || state.selectedZoneId) && (
+        {state.destVenueId && (
+          // Opens the audit fresh: the URL hand-off didn't fully load it, and
+          // picking the zone + venue there is quick.
           <a
-            href={`/migration-audit?${state.extractionJobId ? `sz_snapshot=${state.extractionJobId}&` : ''}${state.selectedZoneId ? `zone_id=${state.selectedZoneId}&` : ''}venue_id=${state.destVenueId}`}
+            href="/migration-audit"
             className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm font-medium flex items-center gap-2"
           >
             <SearchCheck size={14} />

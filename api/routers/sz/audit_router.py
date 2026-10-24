@@ -2422,14 +2422,15 @@ async def export_audit_csv(
             # WLAN type counts
             wlan_types = zone.wlan_type_breakdown
             wlans_open = wlan_types.get("Open", 0) + wlan_types.get("Open + Portal", 0)
-            wlans_wpa2_psk = wlan_types.get("WPA2-PSK", 0)
+            wlans_wpa2_psk = wlan_types.get("WPA2-PSK", 0) + wlan_types.get("WPA2-PSK + Portal", 0)
             wlans_wpa2_ent = wlan_types.get("WPA2-Enterprise", 0)
             wlans_wpa3_sae = wlan_types.get("WPA3-SAE", 0) + wlan_types.get("WPA3", 0)
             wlans_wpa3_ent = wlan_types.get("WPA3-Enterprise", 0)
-            wlans_dpsk = wlan_types.get("DPSK", 0)
+            wlans_dpsk = wlan_types.get("DPSK", 0) + wlan_types.get("External DPSK", 0)
             # Other = everything else
             known_types = {"Open", "Open + Portal", "WPA2-PSK", "WPA2-Enterprise",
-                          "WPA3-SAE", "WPA3", "WPA3-Enterprise", "DPSK"}
+                          "WPA3-SAE", "WPA3", "WPA3-Enterprise", "DPSK",
+                          "External DPSK", "WPA2-PSK + Portal"}
             wlans_other = sum(v for k, v in wlan_types.items() if k not in known_types)
 
             # Get mapped switch group for this zone

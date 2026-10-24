@@ -6,7 +6,7 @@ Every model carries a `raw` field with the complete API response
 so unmapped fields are always available for future use.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -109,6 +109,20 @@ class SZWLANFull(BaseModel):
     schedule: Optional[Dict[str, Any]] = None
 
     raw: Dict[str, Any] = Field(default_factory=dict, description="Complete WLAN detail API response")
+
+    @model_validator(mode="after")
+    def _classify_from_raw(self):
+        """
+        auth_type is re-derived from the raw WLAN whenever there is one, so
+        snapshots stored before a classification fix (external DPSK and
+        portal WLANs once read as Enterprise) load with the current answer.
+        """
+        # Only a full WLAN object can be classified; a partial raw (tests,
+        # odd rows) keeps the label it was stored with.
+        if self.raw and ("type" in self.raw or (self.raw.get("encryption") or {}).get("method")):
+            from szapi.services.wlans import WlanService
+            self.auth_type = WlanService.extract_auth_type(self.raw)
+        return self
 
     @classmethod
     def from_sz_response(cls, wlan: Dict[str, Any], auth_type: str) -> "SZWLANFull":
@@ -234,6 +248,12 @@ class SZMigrationSnapshot(BaseModel):
     #    "error": str (only when the detail call failed)}
     # wlan_group_id None = no AP-level override (inherit AP Group, then zone).
     ap_radio_config: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    # Zone-level per-AP-model settings (GET /rkszones/{z}/apmodel/{model}) for
+    # each model the zone's APs are, and the zone Ethernet Port Profiles their
+    # LAN ports reference:
+    #   {model: {"settings": {...}, "eth_profiles": {profile_id: {...}}, "error": str}}
+    # Empty in snapshots taken before model settings were read.
+    zone_ap_models: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     referenced_objects: Dict[str, SZReferencedObject] = Field(
         default_factory=dict,
         description="Chased references keyed by 'ref_type:id'"

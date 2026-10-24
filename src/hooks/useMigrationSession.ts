@@ -34,8 +34,9 @@ function buildSyncPayload(state: WizardState): Record<string, any> {
     2: 'extracting',
     3: 'reviewing',
     4: 'reviewing',
-    5: 'executing',
-    6: 'completed',
+    5: 'reviewing',
+    6: 'executing',
+    7: 'completed',
   };
 
   const effectiveStep = state.highestStepReached ?? state.currentStep;

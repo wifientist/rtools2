@@ -16,6 +16,18 @@ M1 (R1 Inventory):
   GET  /sz-migration/r1-snapshot/{job_id}     — full R1 inventory as JSON
   GET  /sz-migration/r1-snapshot/{job_id}/download — R1 inventory file download
 
+M1b (Destination venue):
+  GET  /sz-migration/venue-draft/{job_id}     — create-form pre-fill + zone settings plan
+  GET  /sz-migration/venue-tags               — tags already used on the tenant's venues
+  POST /sz-migration/venues                   — create the destination venue
+  POST /sz-migration/venue-config/plan        — stage: zone settings → venue (job; then /workflow/{id}/...)
+  GET  /sz-migration/venue-config/{id}/report — that stage's apply + read-back results
+  POST /sz-migration/ap-mapping/plan          — stage: AP Groups, AP membership, activations (job)
+  GET  /sz-migration/ap-mapping/{id}/report   — that stage's mapping, activation and read-back results
+
+M2b (R1 placement):
+  POST /sz-migration/layout/{job_id}          — All AP Groups vs derived AP Groups, for given choices
+
 M2 (Resolution):
   POST /sz-migration/resolve/{job_id}         — resolve WLAN Groups + map security types
 
@@ -33,12 +45,13 @@ import asyncio
 import csv
 import io
 import json
+import re
 import logging
 import time
 import uuid
 from datetime import datetime
 from routers.tenant_scope import resolve_tenant_id
-from typing import Dict, Any, Optional, List, Literal
+from typing import Dict, Any, Optional, List, Literal, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse, Response
@@ -55,7 +68,8 @@ from clients.r1_client import create_r1_client_from_controller
 from redis_client import get_redis_client
 from services.sz_migration.extractor import extract_zone_snapshot
 from services.sz_migration.resolver import resolve_wlan_activations
-from services.sz_migration.mapper import map_all_wlans
+from services.sz_migration.r1_layout import build_layout
+from services.sz_migration.mapper import map_all_wlans, wlan_vlans
 from services.sz_migration.radius_choices import (
     RADIUS_SECRET_KEY, RADIUS_SECRET_TTL, r1_profile_summary, referenced_services, suggest,
 )
@@ -67,7 +81,7 @@ from services.sz_migration.dpsk_choices import (
 from services.sz_migration.auditor import run_audit as run_migration_audit
 from services.sz_migration.auth_probe import collect_auth_facts
 from services.sz_migration.venue_settings import fetch_r1_venue_settings
-from services.sz_migration import audit_cache
+from services.sz_migration import audit_cache, venue_create
 from services.sz_migration.audit_redaction import (
     CredentialLeakError, assert_clean, collect_secrets, scrub_report,
 )
@@ -83,6 +97,11 @@ from workflow.v2.activity_tracker import ActivityTracker
 from workflow.v2.brain import WorkflowBrain
 from workflow.v2.graph import DependencyGraph
 from workflow.workflows.sz_to_r1_migration import SZtoR1MigrationWorkflow
+from workflow.workflows.sz_venue_config import SZVenueConfigWorkflow
+from workflow.workflows.sz_ap_mapping import SZApMappingWorkflow
+from workflow.phases.sz_migration.ap_mapping import load_report as load_ap_mapping_report
+from services.sz_migration.ap_mapping import plan_ap_mapping
+from workflow.phases.sz_migration.venue_config import load_stage_report
 from workflow.events import WorkflowEventPublisher
 
 logger = logging.getLogger(__name__)
@@ -93,6 +112,12 @@ router = APIRouter(prefix="/sz-migration")
 EXTRACTION_KEY_PREFIX = "sz_migration:extraction"
 R1_SNAPSHOT_KEY_PREFIX = "sz_migration:r1_snapshot"
 SNAPSHOT_TTL = 60 * 60 * 24  # 24 hours
+# An extraction runs as a background task in the API process: a restart
+# (deploy, dev reload) kills it without a word, leaving its state "running"
+# forever. No progress for this long means it is dead.
+EXTRACTION_STALE_SECONDS = 300
+PROGRESS_HEARTBEAT_SECONDS = 20
+INTERRUPTED_MESSAGE = "Extraction was interrupted (the server restarted while it ran) — run it again"
 
 
 # ── Request/Response Models ──────────────────────────────────────────
@@ -150,17 +175,31 @@ async def _save_extraction_state(job_id: str, state: Dict[str, Any]):
     """Save extraction job state to Redis."""
     redis = await get_redis_client()
     key = f"{EXTRACTION_KEY_PREFIX}:{job_id}:state"
+    state = {**state, "updated_at": datetime.utcnow().isoformat()}
     await redis.set(key, json.dumps(state, default=str), ex=SNAPSHOT_TTL)
 
 
 async def _get_extraction_state(job_id: str) -> Optional[Dict[str, Any]]:
-    """Get extraction job state from Redis."""
+    """Get extraction job state from Redis; a dead "running" job reads as failed."""
     redis = await get_redis_client()
     key = f"{EXTRACTION_KEY_PREFIX}:{job_id}:state"
     raw = await redis.get(key)
     if raw:
-        return json.loads(raw)
+        return _interrupted_if_stale(json.loads(raw))
     return None
+
+
+def _interrupted_if_stale(state: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    if state.get("status") not in ("pending", "running"):
+        return state
+    last = state.get("updated_at") or state.get("started_at")
+    try:
+        age = ((now or datetime.utcnow()) - datetime.fromisoformat(last)).total_seconds()
+    except (TypeError, ValueError):
+        return state
+    if age <= EXTRACTION_STALE_SECONDS:
+        return state
+    return {**state, "status": "failed", "error": INTERRUPTED_MESSAGE}
 
 
 async def _save_snapshot(job_id: str, snapshot: SZMigrationSnapshot):
@@ -228,10 +267,10 @@ async def _require_job_owner(job, user: User) -> None:
         raise HTTPException(status_code=404, detail="Job not found")
 
 
-def _redacted_snapshot_json(raw: str) -> str:
+def _redacted_snapshot_json(raw: str, indent: Optional[int] = None) -> str:
     """Snapshot JSON for the browser or a download: passphrases become keyed
     fingerprints, other credentials a marker -- never the values."""
-    return json.dumps(audit_cache.strip_credentials(json.loads(raw)))
+    return json.dumps(audit_cache.strip_credentials(json.loads(raw)), indent=indent)
 
 
 async def _publish_progress(job_id: str, phase: str, message: str, data: Dict[str, Any]):
@@ -261,14 +300,45 @@ async def _run_extraction(
         # Create SZ client
         sz_client = create_sz_client_from_controller(controller_id, db)
 
-        async def on_progress(phase: str, message: str, data: Dict[str, Any]):
-            """Progress callback — updates state and publishes SSE event."""
-            await _save_extraction_state(job_id, {
-                "status": "running",
-                "started_at": datetime.utcnow().isoformat(),
-                "progress": {"phase": phase, "message": message, "data": data},
-            })
-            await _publish_progress(job_id, phase, message, data)
+        # The extractor calls on_progress synchronously. It used to be an
+        # async function, so every call made a coroutine nobody awaited: the
+        # page sat on "Initializing..." until the end, and a long extraction
+        # (no updates for EXTRACTION_STALE_SECONDS) read as interrupted while
+        # it was still running. Now the callback only records the latest
+        # update and one writer task saves it, in order, coalescing bursts
+        # and re-saving at least every PROGRESS_HEARTBEAT_SECONDS.
+        started_at = datetime.utcnow().isoformat()
+        latest: Dict[str, Any] = {"progress": {"phase": "starting", "message": "Initializing..."}, "seq": 0}
+        changed = asyncio.Event()
+        finished = asyncio.Event()
+
+        def on_progress(phase: str, message: str, data: Dict[str, Any]):
+            if phase == "complete":
+                return   # announced below, once the snapshot is saved
+            latest["progress"] = {"phase": phase, "message": message, "data": data}
+            latest["seq"] += 1
+            changed.set()
+
+        async def write_progress():
+            saved = -1
+            while not finished.is_set():
+                try:
+                    await asyncio.wait_for(changed.wait(), timeout=PROGRESS_HEARTBEAT_SECONDS)
+                except asyncio.TimeoutError:
+                    pass
+                changed.clear()
+                if finished.is_set():
+                    break
+                try:
+                    p = latest["progress"]
+                    await _save_extraction_state(job_id, {"status": "running", "started_at": started_at,
+                                                          "progress": p})
+                    if latest["seq"] != saved:
+                        saved = latest["seq"]
+                        await _publish_progress(job_id, p["phase"], p["message"], p.get("data") or {})
+                except Exception as e:
+                    logger.warning(f"Extraction {job_id}: progress write failed: {e}")
+
 
         try:
             await sz_client.login()
@@ -282,7 +352,14 @@ async def _run_extraction(
             return
 
         try:
-            snapshot = await extract_zone_snapshot(sz_client, zone_id, on_progress=on_progress)
+            writer = asyncio.create_task(write_progress())
+            try:
+                snapshot = await extract_zone_snapshot(sz_client, zone_id, on_progress=on_progress)
+            finally:
+                # Stop the writer before the final state, so it can't overwrite it.
+                finished.set()
+                changed.set()
+                await writer
 
             # Persist snapshot
             await _save_snapshot(job_id, snapshot)
@@ -380,11 +457,15 @@ async def start_extraction(
         "started_at": datetime.utcnow().isoformat(),
     })
 
-    # Track job in user's extraction history
+    # Track job in user's extraction history, with what it read (the state
+    # blob is rewritten by every progress save, so this lives beside it).
     redis = await get_redis_client()
     user_index_key = f"{EXTRACTION_KEY_PREFIX}:user:{current_user.id}:jobs"
     await redis.zadd(user_index_key, {job_id: time.time()})
     await redis.expire(user_index_key, SNAPSHOT_TTL)
+    await redis.set(f"{EXTRACTION_KEY_PREFIX}:{job_id}:meta",
+                    json.dumps({"controller_id": request.controller_id, "zone_id": request.zone_id}),
+                    ex=SNAPSHOT_TTL)
 
     # Launch background extraction
     background_tasks.add_task(
@@ -402,6 +483,50 @@ async def start_extraction(
         status="running",
         message=f"Extraction started. Poll /sz-migration/extract/{job_id}/status for progress.",
     )
+
+
+@router.get("/extractions")
+@require_alpha()
+async def list_recent_extractions(
+    controller_id: int,
+    zone_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    The caller's own completed extractions of this zone on this controller that
+    are still kept (SNAPSHOT_TTL), newest first -- so step 1 can reuse one
+    instead of reading SZ again. Only the user's own jobs are listed.
+    """
+    validate_controller_access(controller_id, current_user, db)
+    redis = await get_redis_client()
+    since = time.time() - SNAPSHOT_TTL
+    ids = await redis.zrevrangebyscore(f"{EXTRACTION_KEY_PREFIX}:user:{current_user.id}:jobs", "+inf", since)
+    out = []
+    for job_id in ids:
+        job_id = job_id.decode() if isinstance(job_id, bytes) else job_id
+        try:
+            await _require_owner("sz", job_id, current_user, db)   # the index is the user's own; belt and braces
+        except HTTPException:
+            continue
+        state = await _get_extraction_state(job_id)
+        if not state or state.get("status") != "completed":
+            continue
+        meta_raw = await redis.get(f"{EXTRACTION_KEY_PREFIX}:{job_id}:meta")
+        meta = json.loads(meta_raw) if meta_raw else None
+        if meta is not None:
+            if meta.get("zone_id") != zone_id or meta.get("controller_id") != controller_id:
+                continue
+        else:
+            # Older jobs have no meta: match on the snapshot's zone id.
+            raw = await _get_snapshot_raw(job_id)
+            if not raw or (json.loads(raw).get("zone") or {}).get("id") != zone_id:
+                continue
+        if not await redis.exists(f"{EXTRACTION_KEY_PREFIX}:{job_id}:snapshot"):
+            continue
+        out.append({"job_id": job_id, "completed_at": state.get("completed_at"),
+                    "snapshot_summary": state.get("snapshot_summary") or {}})
+    return {"extractions": out, "kept_hours": SNAPSHOT_TTL // 3600}
 
 
 @router.get("/extract/{job_id}/status", response_model=ExtractionStatus)
@@ -483,7 +608,7 @@ async def download_snapshot(
     filename = f"sz_snapshot_{safe_name}_{timestamp}.json"
 
     return Response(
-        content=_redacted_snapshot_json(raw),
+        content=_redacted_snapshot_json(raw, indent=2),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -685,10 +810,339 @@ async def download_r1_snapshot(
     filename = f"r1_snapshot_{safe_name}_{timestamp}.json"
 
     return Response(
-        content=_redacted_snapshot_json(raw),
+        content=_redacted_snapshot_json(raw, indent=2),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# M1b: Destination venue — create from the zone, carry its settings
+# ══════════════════════════════════════════════════════════════════════
+
+class VenueAddress(BaseModel):
+    addressLine: Optional[str] = None
+    city: str = Field(..., min_length=1)
+    country: str = Field(..., min_length=1)
+    countryCode: Optional[str] = None
+    timezone: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class CreateVenueRequest(BaseModel):
+    controller_id: int
+    tenant_id: Optional[str] = None
+    name: str = Field(..., min_length=2, max_length=venue_create.VENUE_NAME_MAX)
+    description: Optional[str] = None
+    address: VenueAddress
+    tags: List[str] = Field(default_factory=list)
+
+
+async def _owned_snapshot(job_id: str, user: User, db: Session) -> SZMigrationSnapshot:
+    await _require_owner("sz", job_id, user, db)
+    raw = await _get_snapshot_raw(job_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
+    return SZMigrationSnapshot.model_validate_json(raw)
+
+
+def _r1_for(controller_id: int, tenant_id: Optional[str], user: User, db: Session):
+    controller = validate_controller_access(controller_id, user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
+    return create_r1_client_from_controller(controller_id, db), resolve_tenant_id(controller, tenant_id)
+
+
+@router.get("/venue-draft/{sz_snapshot_job_id}")
+@require_alpha()
+async def get_venue_draft(
+    sz_snapshot_job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create-form pre-fill from the zone, and the zone settings the Venue Configuration stage carries."""
+    snapshot = await _owned_snapshot(sz_snapshot_job_id, current_user, db)
+    zone = snapshot.zone.raw
+    return {
+        "draft": venue_create.venue_draft_from_zone(zone),
+        "settings": venue_create.public_plan(venue_create.build_settings_plan(zone, snapshot.zone_ap_models)),
+        # False on extractions made before per-model settings were read
+        "models_read": bool(snapshot.zone_ap_models) or not snapshot.aps,
+    }
+
+
+class VenueConfigPlanRequest(BaseModel):
+    r1_controller_id: int
+    tenant_id: Optional[str] = None
+    venue_id: str
+    sz_snapshot_job_id: str
+    # Section keys; None = every section the zone sets.
+    venue_settings: Optional[List[str]] = None
+
+
+@router.post("/venue-config/plan")
+@require_alpha()
+async def create_venue_config_plan(
+    request: VenueConfigPlanRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Stage: Venue Configuration. Creates the job and runs its plan phase;
+    poll / confirm / monitor it with the usual /workflow/{job_id}/... endpoints.
+    """
+    await _owned_snapshot(request.sz_snapshot_job_id, current_user, db)
+    controller = validate_controller_access(request.r1_controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="R1 controller must be RuckusONE")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
+
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+    brain = WorkflowBrain(
+        state_manager=state_manager,
+        activity_tracker=ActivityTracker(None, state_manager, tenant_id=tenant_id),
+    )
+    job = await brain.create_job(
+        workflow=SZVenueConfigWorkflow,
+        venue_id=request.venue_id,
+        tenant_id=tenant_id,
+        controller_id=request.r1_controller_id,
+        user_id=current_user.id,
+        options={"sz_snapshot_job_id": request.sz_snapshot_job_id, "venue_settings": request.venue_settings},
+        input_data={"sz_snapshot_job_id": request.sz_snapshot_job_id},
+    )
+    background_tasks.add_task(_run_migration_validation_background, job.id, request.r1_controller_id)
+    return {"job_id": job.id, "status": "VALIDATING",
+            "message": f"Planning venue configuration. Poll GET /sz-migration/workflow/{job.id}/plan"}
+
+
+@router.get("/venue-config/{job_id}/report")
+@require_alpha()
+async def get_venue_config_report(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """The stage's outcome: job status, per-section apply results and the read-back verification."""
+    redis_client = await get_redis_client()
+    job = await RedisStateManagerV2(redis_client).get_job(job_id)
+    await _require_job_owner(job, current_user)
+    report = await load_stage_report(job_id)
+    plan_sections = (job.global_phase_results.get("venue_config_plan") or {}).get("sections") or []
+    return {
+        "job_id": job_id,
+        "status": job.status.value,
+        "errors": job.errors,
+        "before": plan_sections,
+        "apply": report.get("apply") or [],
+        "verify": report.get("verify") or [],
+    }
+
+
+class ApMappingPlanRequest(BaseModel):
+    r1_controller_id: int
+    tenant_id: Optional[str] = None
+    venue_id: str
+    sz_snapshot_job_id: str
+    layout_choices: Optional["LayoutChoices"] = None
+    # Add SZ APs not in the venue into their groups (claims the serials for this tenant).
+    add_new_aps: bool = False
+    # The APs picked on the AP table: only these are moved / added. None = all moves, adds per add_new_aps.
+    selected_serials: Optional[List[str]] = None
+    # Duplicate AP names: "serial" (add as <name>_<serial>) or "keep"
+    ap_name_policy: Literal["serial", "keep"] = "serial"
+    # serial -> R1 name the operator typed for a duplicate-named AP
+    ap_renames: Dict[str, str] = Field(default_factory=dict)
+
+
+@router.post("/ap-mapping/plan")
+@require_alpha()
+async def create_ap_mapping_plan(
+    request: ApMappingPlanRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Stage: AP Mapping. Creates the job and runs its plan phase; poll / confirm /
+    monitor it with the usual /workflow/{job_id}/... endpoints.
+    """
+    await _owned_snapshot(request.sz_snapshot_job_id, current_user, db)
+    controller = validate_controller_access(request.r1_controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="R1 controller must be RuckusONE")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
+
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+    brain = WorkflowBrain(
+        state_manager=state_manager,
+        activity_tracker=ActivityTracker(None, state_manager, tenant_id=tenant_id),
+    )
+    choices = request.layout_choices.model_dump() if request.layout_choices else {}
+    job = await brain.create_job(
+        workflow=SZApMappingWorkflow,
+        venue_id=request.venue_id,
+        tenant_id=tenant_id,
+        controller_id=request.r1_controller_id,
+        user_id=current_user.id,
+        options={"sz_snapshot_job_id": request.sz_snapshot_job_id, "layout_choices": choices,
+                 "add_new_aps": request.add_new_aps, "selected_serials": request.selected_serials,
+                 "ap_name_policy": request.ap_name_policy, "ap_renames": request.ap_renames},
+        input_data={"sz_snapshot_job_id": request.sz_snapshot_job_id},
+    )
+    background_tasks.add_task(_run_migration_validation_background, job.id, request.r1_controller_id)
+    return {"job_id": job.id, "status": "VALIDATING",
+            "message": f"Planning AP mapping. Poll GET /sz-migration/workflow/{job.id}/plan"}
+
+
+@router.post("/ap-mapping/preview")
+@require_alpha()
+async def preview_ap_mapping(
+    request: ApMappingPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Every SZ AP with its target R1 AP Group, where it is in R1 now and what
+    mapping would do -- read-only (one fresh read of the venue), for the AP
+    table. The job plans the same way with the operator's picks.
+    """
+    snapshot = await _owned_snapshot(request.sz_snapshot_job_id, current_user, db)
+    r1_client, tenant = _r1_for(request.r1_controller_id, request.tenant_id, current_user, db)
+    try:
+        inv = await capture_venue_inventory(r1_client, tenant, request.venue_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not read the venue from R1: {e}")
+    choices = request.layout_choices.model_dump() if request.layout_choices else {}
+    plan = plan_ap_mapping(snapshot, inv, choices, add_new_aps=request.add_new_aps,
+                           selected=request.selected_serials, name_policy=request.ap_name_policy,
+                           renames=request.ap_renames)
+    return {
+        "venue_name": inv.venue_name,
+        "r1_ap_count": len(inv.aps),
+        "counts": plan["counts"],
+        "aps": plan["aps"],
+        "groups": plan["groups"],
+        "warnings": plan["warnings"],
+        "staged": plan["staged"],
+        "activations": [{"name": a["name"], "status": a["status"], "error": a["error"]}
+                        for a in plan["activations"] if a["status"] != "already"],
+    }
+
+
+@router.get("/ap-mapping/{job_id}/report")
+@require_alpha()
+async def get_ap_mapping_report(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """The stage's outcome: plan counts, AP mapping, activations and the read-back verification."""
+    redis_client = await get_redis_client()
+    job = await RedisStateManagerV2(redis_client).get_job(job_id)
+    await _require_job_owner(job, current_user)
+    report = await load_ap_mapping_report(job_id)
+    return {
+        "job_id": job_id,
+        "status": job.status.value,
+        "errors": job.errors,
+        "before": report.get("before") or {},
+        "map": report.get("map") or {},
+        "activate": report.get("activate") or [],
+        "verify": report.get("verify") or {},
+    }
+
+
+@router.get("/venue-tags")
+@require_alpha()
+async def get_venue_tags(
+    controller_id: int,
+    tenant_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tags already used on the tenant's venues, for the tag picker."""
+    r1_client, tenant = _r1_for(controller_id, tenant_id, current_user, db)
+    try:
+        return {"tags": await venue_create.list_venue_tags(r1_client, tenant)}
+    except Exception as e:
+        logger.warning(f"Could not list R1 venue tags: {e}")
+        return {"tags": [], "error": "Could not list existing venue tags"}
+
+
+@router.post("/venues")
+@require_alpha()
+async def create_destination_venue(
+    request: CreateVenueRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create the destination venue in R1 (name, address, description, tags)."""
+    r1_client, tenant = _r1_for(request.controller_id, request.tenant_id, current_user, db)
+    address = {k: v for k, v in request.address.model_dump().items() if v not in (None, "")}
+    body: Dict[str, Any] = {"name": request.name.strip(), "address": address}
+    if request.description:
+        body["description"] = request.description
+    tags = sorted({t.strip() for t in request.tags if t and t.strip()})
+    if tags:
+        body["tags"] = tags
+    try:
+        return await venue_create.create_venue(r1_client, tenant, body)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"R1 venue create failed: {e}")
+        raise HTTPException(status_code=502, detail=f"R1 refused the venue: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# M2b: R1 placement — All AP Groups vs AP Groups, derived from SZ broadcast
+# ══════════════════════════════════════════════════════════════════════
+
+class LayoutChoices(BaseModel):
+    all_ap_wlans: Optional[List[str]] = None      # None = the suggestion
+    create_groups: List[str] = Field(default_factory=list)
+    group_names: Dict[str, str] = Field(default_factory=dict)
+    include_unbroadcast: List[str] = Field(default_factory=list)
+    stage_unbroadcast: List[str] = Field(default_factory=list)
+    pairing: Dict[str, str] = Field(default_factory=dict)   # mode: wlan_group | pattern; wlan_pattern; ap_pattern
+
+
+class LayoutRequest(BaseModel):
+    r1_snapshot_job_id: Optional[str] = None
+    choices: LayoutChoices = Field(default_factory=LayoutChoices)
+
+
+ApMappingPlanRequest.model_rebuild()   # its layout_choices names LayoutChoices, defined just above
+
+
+@router.post("/layout/{sz_snapshot_job_id}")
+@require_alpha()
+async def get_r1_layout(
+    sz_snapshot_job_id: str,
+    request: LayoutRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Where every WLAN lands in R1 for the given choices: All AP Groups or the
+    AP Groups derived from what each AP broadcasts in SZ. Recomputed on every
+    change of choice on Review; the plan recomputes it the same way.
+    """
+    await _require_owner("sz", sz_snapshot_job_id, current_user, db)
+    raw = await _get_snapshot_raw(sz_snapshot_job_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="SZ snapshot not found or expired")
+    inventory = None
+    if request.r1_snapshot_job_id:
+        await _require_owner("r1", request.r1_snapshot_job_id, current_user, db)
+        r1_raw = await _get_r1_snapshot_raw(request.r1_snapshot_job_id)
+        if r1_raw:
+            inventory = R1VenueInventory.model_validate_json(r1_raw)
+    snapshot = SZMigrationSnapshot.model_validate_json(raw)
+    return build_layout(snapshot, inventory, request.choices.model_dump())
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -699,6 +1153,7 @@ async def download_r1_snapshot(
 @require_alpha()
 async def resolve_snapshot(
     job_id: str,
+    r1_snapshot_job_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -724,6 +1179,15 @@ async def resolve_snapshot(
     # Map security types
     type_mappings = map_all_wlans(snapshot.wlans)
 
+    # R1 side of each WLAN's VLAN: an existing same-named network is reused as is
+    inventory = None
+    if r1_snapshot_job_id:
+        await _require_owner("r1", r1_snapshot_job_id, current_user, db)
+        r1_raw = await _get_r1_snapshot_raw(r1_snapshot_job_id)
+        if r1_raw:
+            inventory = R1VenueInventory.model_validate_json(r1_raw)
+    wlan_by_id = {w.id: w for w in snapshot.wlans}
+
     return {
         "job_id": job_id,
         "zone_name": snapshot.zone.name,
@@ -736,6 +1200,8 @@ async def resolve_snapshot(
                 "notes": m.notes,
                 "needs_user_decision": m.needs_user_decision,
                 "dpsk_type": m.dpsk_type,
+                **wlan_vlans(wlan_by_id[wlan_id],
+                             inventory.network_by_name(wlan_by_id[wlan_id].name) if inventory else None),
             }
             for wlan_id, m in type_mappings.items()
         },
@@ -804,6 +1270,11 @@ class MigrationPlanRequest(BaseModel):
     # per-WLAN {wlan}-pool behaviour.
     dpsk_pools: Optional[Dict[str, DpskPoolSpec]] = None
     dpsk_assignments: Dict[str, str] = Field(default_factory=dict)
+    # Placement chosen on Review. Absent = the suggestion, no AP Groups created.
+    layout_choices: Optional[LayoutChoices] = None
+    # Keyed by SZ WLAN id: external-auth WLANs (external DPSK, Enterprise) to
+    # move onto R1's own DPSK service. Absent = keep them external.
+    auth_conversions: Dict[str, Literal["dpsk"]] = Field(default_factory=dict)
 
 
 class MigrationPlanResponse(BaseModel):
@@ -1173,6 +1644,8 @@ async def create_migration_plan(
         "sz_controller_id": request.sz_controller_id,
         "wlan_fallbacks": dict(request.wlan_fallbacks),
         "dpsk_assignments": dict(request.dpsk_assignments),
+        "layout_choices": request.layout_choices.model_dump() if request.layout_choices else None,
+        "auth_conversions": dict(request.auth_conversions),
     }
     if request.dpsk_pools is not None:
         options["dpsk_pools"] = {k: v.model_dump() for k, v in request.dpsk_pools.items()}
@@ -1340,6 +1813,105 @@ async def confirm_migration(
             f"Poll /jobs/{job.id}/status for progress."
         ),
     )
+
+
+_TASK_PREFIX = re.compile(r"^Task [0-9a-f-]{36} failed: ")
+_JOB_PREFIX = re.compile(r"^Job [0-9a-f-]{36}: ")
+_COUNTS = re.compile(r"after \d+ conflicting writes")
+
+
+def _error_key(err: str) -> str:
+    """Identical failures read identically: R1 task / job ids and retry counts dropped."""
+    e = _JOB_PREFIX.sub("", _TASK_PREFIX.sub("", str(err)))
+    return _COUNTS.sub("after N conflicting writes", e)[:300]
+
+
+@router.get("/workflow/{job_id}/outcome")
+@require_alpha()
+async def get_migration_outcome(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    What a migration job actually did, for the step that ran it: status,
+    per-phase done/failed counts, and failures grouped by message (R1's task
+    ids stripped so identical errors group) with the WLANs each hit. A PARTIAL
+    job is not a pass -- this is what says so.
+    """
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+    job = await state_manager.get_job(job_id)
+    await _require_job_owner(job, current_user)
+    units = list((await state_manager.get_all_units(job_id)).values())
+    staged_ids = set(((job.options or {}).get("layout_choices") or {}).get("stage_unbroadcast") or [])
+    # Only this workflow's phases (units also carry ids of phases it doesn't run).
+    known = {p.id for p in SZtoR1MigrationWorkflow.phases}
+    phases: Dict[str, Dict[str, int]] = {p.id: {"done": 0, "failed": 0} for p in SZtoR1MigrationWorkflow.phases
+                                         if p.per_unit}
+    groups: Dict[Tuple[str, str], List[str]] = {}
+    for u in units:
+        for ph in u.completed_phases or []:
+            if ph in phases:
+                phases[ph]["done"] += 1
+        for ph in u.failed_phases or []:
+            if ph in phases:
+                phases[ph]["failed"] += 1
+        for ph, err in (u.phase_errors or {}).items():
+            if ph in known:
+                groups.setdefault((ph, _error_key(err)), []).append(u.unit_number)
+    for ph, st in (job.global_phase_status or {}).items():
+        status = st.value if hasattr(st, "value") else str(st)
+        if status == "FAILED" and ph in known:
+            phases.setdefault(ph, {"done": 0, "failed": 0})["failed"] += 1
+            err = (job.global_phase_results.get(ph) or {}).get("error") if isinstance(
+                job.global_phase_results.get(ph), dict) else None
+            groups.setdefault((ph, _error_key(err or "global phase failed")), []).append("(whole job)")
+    # AP Groups: a global phase that carries on past refusals, so its own
+    # results say what wasn't created.
+    apg = job.global_phase_results.get("create_ap_groups") or {}
+    if isinstance(apg, dict) and not apg.get("skipped") and ("created" in apg or apg.get("failed")):
+        phases["create_ap_groups"] = {"done": len(apg.get("ap_group_ids") or {}),
+                                      "failed": len(apg.get("failed") or {})}
+        for name, err in (apg.get("failed") or {}).items():
+            groups.setdefault(("create_ap_groups", _error_key(err)), []).append(name)
+    failures = [{"phase": ph, "message": msg, "count": len(names), "wlans": sorted(names)[:50]}
+                for (ph, msg), names in sorted(groups.items(), key=lambda kv: -len(kv[1]))]
+    return {
+        "job_id": job_id,
+        "status": job.status.value,
+        "units": len(units),
+        "units_with_failures": sum(1 for u in units if u.failed_phases),
+        "phases": phases,
+        "failures": failures,
+        "errors": job.errors,
+        "duration_seconds": int((job.completed_at - (job.started_at or job.created_at)).total_seconds())
+        if job.completed_at else None,
+        # Created on purpose without activation (no SZ AP broadcasts them):
+        # they're in R1 but not on any AP Group -- say so, so the count of
+        # activated networks in R1 adds up.
+        "created_only": sorted(u.unit_number for u in units if (u.plan.extra or {}).get("activation_mode") == "none"
+                               and u.unit_id not in staged_ids),
+        "staged": sorted(u.unit_number for u in units if (u.plan.extra or {}).get("activation_mode") == "none"
+                         and u.unit_id in staged_ids),
+        "activated": sum(1 for u in units if (u.plan.extra or {}).get("activation_mode") in ("all_ap_groups", "ap_groups")
+                         and "activate_ssids" in (u.completed_phases or [])),
+        "to_activate": sum(1 for u in units if (u.plan.extra or {}).get("activation_mode") in ("all_ap_groups", "ap_groups")),
+        "networks": {
+            "reused": sum(1 for u in units if (u.resolved.extra or {}).get("network_reused")),
+            "created": sum(1 for u in units if "create_networks" in (u.completed_phases or [])
+                           and not (u.resolved.extra or {}).get("network_reused")),
+        },
+        "ap_groups": {
+            "created": int(apg.get("created") or 0) if isinstance(apg, dict) else 0,
+            # Groups the plan found already in R1 never reach create_ap_groups; count them from the plan.
+            "existing": sum(1 for a in (getattr(job.validation_result, "actions", None) or [])
+                            if a.resource_type == "ap_group" and a.action == "reuse")
+                        + max(0, len((apg or {}).get("ap_group_ids") or {}) - int((apg or {}).get("created") or 0)),
+            "failed": sorted((apg.get("failed") or {}).keys()) if isinstance(apg, dict) else [],
+        },
+        "resources": {k: len(v or []) for k, v in (job.created_resources or {}).items()
+                      if k in ("dpsk_pools", "identity_groups", "radius_profiles")},
+    }
 
 
 @router.get("/workflow/{job_id}/graph", response_model=MigrationGraphResponse)

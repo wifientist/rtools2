@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Database, Download, Eye, MapPin, Activity, X, Copy, Check } from 'lucide-react';
-import { apiFetch, apiGet } from '@/utils/api';
+import { apiGet } from '@/utils/api';
 import type { WizardState } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -128,21 +128,10 @@ function Chip({ icon, label, color, onClick, actionIcon, actionLabel }: ChipProp
 
 // ── Download helper ───────────────────────────────────────────────
 
-async function downloadSnapshot(jobId: string) {
-  try {
-    const res = await apiFetch(`${API_URL}/sz-migration/snapshot/${jobId}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sz-snapshot-${jobId.slice(0, 8)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error('Download failed:', e);
-  }
+// One download for every button: the server's file (redacted, pretty-printed,
+// named after the zone), so the chip and the step buttons give the same JSON.
+function downloadSnapshot(jobId: string) {
+  window.open(`${API_URL}/sz-migration/snapshot/${jobId}/download`, '_blank');
 }
 
 // ── Snapshot Modal ────────────────────────────────────────────────

@@ -1389,12 +1389,12 @@ export default function SZAudit() {
         // WLAN type counts
         const wlanTypes = zone.wlan_type_breakdown;
         const wlansOpen = (wlanTypes["Open"] || 0) + (wlanTypes["Open + Portal"] || 0);
-        const wlansWpa2Psk = wlanTypes["WPA2-PSK"] || 0;
+        const wlansWpa2Psk = (wlanTypes["WPA2-PSK"] || 0) + (wlanTypes["WPA2-PSK + Portal"] || 0);
         const wlansWpa2Ent = wlanTypes["WPA2-Enterprise"] || 0;
         const wlansWpa3Sae = (wlanTypes["WPA3-SAE"] || 0) + (wlanTypes["WPA3"] || 0);
         const wlansWpa3Ent = wlanTypes["WPA3-Enterprise"] || 0;
-        const wlansDpsk = wlanTypes["DPSK"] || 0;
-        const knownTypes = new Set(["Open", "Open + Portal", "WPA2-PSK", "WPA2-Enterprise", "WPA3-SAE", "WPA3", "WPA3-Enterprise", "DPSK"]);
+        const wlansDpsk = (wlanTypes["DPSK"] || 0) + (wlanTypes["External DPSK"] || 0);
+        const knownTypes = new Set(["Open", "Open + Portal", "WPA2-PSK", "WPA2-Enterprise", "WPA3-SAE", "WPA3", "WPA3-Enterprise", "DPSK", "External DPSK", "WPA2-PSK + Portal"]);
         const wlansOther = Object.entries(wlanTypes)
           .filter(([k]) => !knownTypes.has(k))
           .reduce((sum, [, v]) => sum + v, 0);

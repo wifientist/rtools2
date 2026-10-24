@@ -63,7 +63,6 @@ class CreateDpskPoolsPhase(PhaseExecutor):
                 await self.emit(f"Creating identity group '{ig['name']}'...")
                 result = await self.r1_client.identity.create_identity_group(
                     name=ig["name"],
-                    description=f"Migrated from SZ — DPSK service '{name}'",
                     tenant_id=self.tenant_id,
                 )
                 ig_id = (result or {}).get("id")
@@ -76,7 +75,6 @@ class CreateDpskPoolsPhase(PhaseExecutor):
                 identity_group_id=ig_id,
                 name=name,
                 tenant_id=self.tenant_id,
-                description="Migrated from SZ",
                 passphrase_length=spec["passphrase_length"],
                 passphrase_format=spec["passphrase_format"],
                 # 0 = unlimited: create_dpsk_pool then omits deviceCountLimit.
