@@ -30,6 +30,12 @@ WHAT THIS GUARDS
      unit forever, so one stuck flag can halt the whole workflow.
   2. _diagnose_stall names the blocked phases and their unmet dependencies,
      aggregated -- 400 units blocked the same way must read as one line.
+  4. A failed dependency BLOCKS a unit phase; it does not satisfy it. The
+     completion check counted it as satisfied while the scheduler never
+     started the phase, so a unit that failed a non-critical phase
+     (configure_dpsk at R1's DPSK network cap, 189 units) held the job open
+     until the stall detector failed it. Now the workflow completes and the
+     unit is settled; the diagnosis names the failed dependency.
   3. The idle branch heartbeats. If the heartbeat ever moves back below the
      `continue`, a stall goes silent again and the reaper handles it 300s
      later. Checked against the source, since that is a layout property.
@@ -64,10 +70,12 @@ class FakeUnit:
 
 
 class FakePhaseDef:
-    def __init__(self, pid, per_unit, depends_on=()):
+    def __init__(self, pid, per_unit, depends_on=(), critical=True):
         self.id = pid
         self.per_unit = per_unit
         self.depends_on = list(depends_on)
+        self.critical = critical
+        self.skip_if = None
 
 
 class FakeJob:
@@ -77,6 +85,10 @@ class FakeJob:
         self.units = {u.unit_id: u for u in units}
         self._settled = set(settled)
         self.global_phase_status = {}
+        self.options = {}
+
+    def get_phase_definition(self, pid):
+        return next((p for p in self.phase_definitions if p.id == pid), None)
 
 
 class FakeState:
@@ -184,6 +196,43 @@ async def main() -> int:
         "WorkflowStalled is an Exception, so the brain marks the job FAILED",
         issubclass(WorkflowStalled, Exception)
         and not issubclass(WorkflowStalled, asyncio.CancelledError),
+    )
+
+    # 7. a failed non-critical dependency blocks; the workflow still completes
+    mig = [
+        FakePhaseDef("validate", per_unit=False),
+        FakePhaseDef("create_networks", per_unit=True, depends_on=["validate"]),
+        FakePhaseDef("configure_dpsk", per_unit=True, depends_on=["create_networks"], critical=False),
+        FakePhaseDef("activate_ssids", per_unit=True, depends_on=["configure_dpsk"]),
+    ]
+    mgraph = DependencyGraph(mig)
+    units = [
+        FakeUnit(1, UnitStatus.RUNNING, completed=["create_networks"], failed=["configure_dpsk"]),
+        FakeUnit(2, UnitStatus.RUNNING, completed=["create_networks", "configure_dpsk", "activate_ssids"]),
+    ]
+    job = FakeJob(mig, units, settled={"validate"})
+    job.global_phase_status = {"validate": PhaseStatus.COMPLETED}
+    brain = make_brain(job)
+    failures += check(
+        "the blocked phase is not scheduled",
+        brain._find_ready_work(job, mgraph) == [],
+        str(brain._find_ready_work(job, mgraph)),
+    )
+    complete = await brain._is_workflow_complete(job, mgraph)
+    failures += check(
+        "workflow completes instead of stalling (failed dep blocks, not satisfies)",
+        complete is True,
+    )
+    msg = brain._diagnose_stall(job, mgraph)
+    failures += check(
+        "diagnosis names the failed dependency",
+        "activate_ssids' blocked by failed ['configure_dpsk']" in msg and "never scheduled" not in msg,
+        msg,
+    )
+    units[0].failed_phases = []
+    failures += check(
+        "a unit still able to run its phase keeps the workflow open",
+        await brain._is_workflow_complete(job, mgraph) is False,
     )
 
     # 6. layout: the idle branch must heartbeat before it loops

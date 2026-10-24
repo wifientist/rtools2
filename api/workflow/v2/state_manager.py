@@ -24,7 +24,7 @@ import asyncio
 import random
 import redis.asyncio as redis
 from redis.exceptions import WatchError
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta
 
 from workflow.v2.models import (
@@ -45,10 +45,31 @@ JOB_TTL_SECONDS = 604800      # 7 days
 JOB_HEARTBEAT_TTL = 120
 LOCK_TTL_SECONDS = 300         # 5 minutes
 UNIT_LOCK_TTL_SECONDS = 60     # 1 minute (shorter for fine-grained ops)
-# Retries for a read-modify-write of the job blob that lost a WATCH race.
-# Contention is bounded by the concurrent phase tasks, so a handful of
-# retries is plenty; running out means something is wrong, not busy.
-MUTATE_MAX_ATTEMPTS = 50
+# Retrying a read-modify-write of the job blob that lost a WATCH race.
+# Bounded by time, not attempts: on a 259-unit SZ migration, per-unit phases
+# recording created resources collided often enough to lose 50 attempts in
+# ~3s of millisecond backoff, and the unit failed although its network was
+# created in R1. The blob also grows with every tracked resource, which
+# widens the race window as a big job goes on. Backoff grows to a cap, with
+# full jitter so the losers spread out instead of colliding again.
+MUTATE_BUDGET_SECONDS = 60
+MUTATE_BACKOFF_BASE = 0.005
+MUTATE_BACKOFF_CAP = 0.5
+
+# Writers in this process take turns per job. A job's phases all run in one
+# process, so nearly every WATCH conflict was two of its own units racing:
+# on a 365-WLAN SZ migration, three units lost 46+ races in 60s and failed
+# with their networks unrecorded. Queued here, they don't collide; WATCH
+# still guards against a writer in another process.
+_job_locks: Dict[Tuple[int, str], asyncio.Lock] = {}
+
+
+def _job_lock(job_id: str) -> asyncio.Lock:
+    key = (id(asyncio.get_running_loop()), job_id)
+    lock = _job_locks.get(key)
+    if lock is None:
+        lock = _job_locks[key] = asyncio.Lock()
+    return lock
 
 # Key prefixes
 PREFIX = "workflow:v2"
@@ -253,8 +274,16 @@ class RedisStateManagerV2:
         Only the blob is read (not the units, which live in their own keys),
         which also keeps the window between read and write short.
         """
+        async with _job_lock(job_id):
+            return await self._mutate_job_unlocked(job_id, mutate)
+
+    async def _mutate_job_unlocked(self, job_id: str, mutate) -> bool:
         key = f"{PREFIX}:jobs:{job_id}"
-        for attempt in range(MUTATE_MAX_ATTEMPTS):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + MUTATE_BUDGET_SECONDS
+        attempt = 0
+        while True:
+            attempt += 1
             async with self.redis.pipeline(transaction=True) as pipe:
                 try:
                     await pipe.watch(key)
@@ -277,11 +306,13 @@ class RedisStateManagerV2:
                     # Someone wrote the blob between our read and write.
                     # Re-read and re-apply; the mutation is replayed on
                     # their version, so neither update is lost.
-                    # Jittered so a crowd of losers doesn't retry in step.
-                    await asyncio.sleep(random.uniform(0, 0.005 * (attempt + 1)))
+                    if loop.time() >= deadline:
+                        break
+                    backoff = min(MUTATE_BACKOFF_CAP, MUTATE_BACKOFF_BASE * 2 ** min(attempt, 10))
+                    await asyncio.sleep(random.uniform(0, backoff))
         raise RuntimeError(
-            f"Job {job_id}: gave up updating job state after "
-            f"{MUTATE_MAX_ATTEMPTS} conflicting writes"
+            f"Job {job_id}: gave up updating job state after {attempt} conflicting "
+            f"writes in {MUTATE_BUDGET_SECONDS}s"
         )
 
     # =========================================================================

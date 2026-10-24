@@ -57,6 +57,10 @@ class JobStatusResponse(BaseModel):
     is_parallel: bool = False
     parallel_progress: Optional[Dict[str, Any]] = None
     child_jobs: Optional[List[Dict[str, Any]]] = None
+    # For the monitor's running timer (UTC ISO, 'Z')
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 
 class JobListItem(BaseModel):
@@ -234,7 +238,39 @@ def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
         errors=job.errors,
         summary={},
         is_parallel=False,
+        created_at=_iso(job.created_at),
+        started_at=_iso(job.started_at),
+        completed_at=_iso(job.completed_at),
     )
+
+
+def _failure_reason(job) -> Optional[str]:
+    """
+    Why a job ended FAILED / PARTIAL, for the monitor's final event (it said
+    "Unknown error" for every failure): job errors, else the failed phases'
+    own errors, else how many units failed where.
+    """
+    if job is None or job.status.value == "COMPLETED":
+        return None
+    if job.errors:
+        return "; ".join(str(e) for e in job.errors[-3:])[:600]
+    failed = []
+    for pid, st in (job.global_phase_status or {}).items():
+        if (st.value if hasattr(st, "value") else str(st)) == "FAILED":
+            res = job.global_phase_results.get(pid)
+            err = res.get("error") if isinstance(res, dict) else None
+            failed.append(f"{pid}: {err}" if err else pid)
+    if failed:
+        return "; ".join(failed)[:600]
+    by_phase: Dict[str, int] = {}
+    for u in (job.units or {}).values():
+        for ph in u.failed_phases or []:
+            by_phase[ph] = by_phase.get(ph, 0) + 1
+    return ", ".join(f"{n} unit(s) failed in {ph}" for ph, n in by_phase.items()) or None
+
+
+def _iso(dt) -> Optional[str]:
+    return dt.isoformat() + 'Z' if dt else None
 
 
 # ==================== API Endpoints ====================
@@ -585,7 +621,7 @@ async def stream_job_events(
                 terminal = ['COMPLETED', 'FAILED', 'PARTIAL', 'CANCELLED']
                 if status_val in terminal:
                     final_event_type = 'job_completed' if status_val == 'COMPLETED' else ('job_cancelled' if status_val == 'CANCELLED' else 'job_failed')
-                    yield f"event: {final_event_type}\ndata: {json.dumps({'status': status_val, 'progress': progress})}\n\n"
+                    yield f"event: {final_event_type}\ndata: {json.dumps({'status': status_val, 'progress': progress, 'error': _failure_reason(job)})}\n\n"
                     logger.info(f"Job {job_id} already in terminal state {status_val}, closing SSE stream")
                     return
 
@@ -615,7 +651,7 @@ async def stream_job_events(
                             ka_progress = ka_job.get_progress()
                             if ka_status in ['COMPLETED', 'FAILED', 'PARTIAL', 'CANCELLED']:
                                 final_event_type = 'job_completed' if ka_status == 'COMPLETED' else ('job_cancelled' if ka_status == 'CANCELLED' else 'job_failed')
-                                yield f"event: {final_event_type}\ndata: {json.dumps({'status': ka_status, 'progress': ka_progress})}\n\n"
+                                yield f"event: {final_event_type}\ndata: {json.dumps({'status': ka_status, 'progress': ka_progress, 'error': _failure_reason(ka_job)})}\n\n"
                                 logger.info(f"Job {job_id} reached terminal state {ka_status}, closing SSE stream")
                                 return
 
@@ -649,7 +685,7 @@ async def stream_job_events(
                             progress = current_job.get_progress()
                             status_str = current_job.status.value
                             final_event_type = 'job_completed' if current_job.status == JobStatus.COMPLETED else ('job_cancelled' if current_job.status == JobStatus.CANCELLED else 'job_failed')
-                            yield f"event: {final_event_type}\ndata: {json.dumps({'status': status_str, 'progress': progress})}\n\n"
+                            yield f"event: {final_event_type}\ndata: {json.dumps({'status': status_str, 'progress': progress, 'error': _failure_reason(current_job)})}\n\n"
                             logger.info(f"Job {job_id} reached terminal state {status_str}, closing SSE stream")
                             return
 
