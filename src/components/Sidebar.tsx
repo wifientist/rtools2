@@ -94,6 +94,7 @@ const Sidebar = () => {
         { to: "/data-studio-export", icon: <Download size={20} />, label: "Data Studio Export", requiresAuth: true, rolesAllowed: ["super"], requiresAlpha: true },
         { to: "/wiredwiz", icon: <Cable size={20} />, label: "WiredWiz", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/topology", icon: <Network size={20} />, label: "Topology", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
+        { to: "/wlan-rename", icon: <PenLine size={20} />, label: "WLAN Rename", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/option43", icon: <Camera size={20} />, label: "Option 43 Calc", requiresAuth: false },
       ],
     },

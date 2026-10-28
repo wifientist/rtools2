@@ -41,6 +41,7 @@ import FirmwareMatrix from "@/pages/FirmwareMatrix";
 import CloudpathImport from "@/pages/CloudpathImport";
 import WlanActivator from "@/pages/WlanActivator";
 import WlanVlan from "@/pages/WlanVlan";
+import WlanRename from "@/pages/WlanRename";
 import WlanGrabber from "@/pages/WlanGrabber";
 import ApgCleanup from "@/pages/ApgCleanup";
 import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
@@ -108,6 +109,7 @@ const App = () => {
           <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
           <Route path="/migration-audit" element={<BetaRoute element={<MigrationAudit />} />} />
           <Route path="/wlan-vlan" element={<BetaRoute element={<WlanVlan />} />} />
+          <Route path="/wlan-rename" element={<AlphaRoute element={<WlanRename />} />} />
           <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
           <Route path="/apg-cleanup" element={<BetaRoute element={<ApgCleanup />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
