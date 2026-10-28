@@ -44,6 +44,7 @@ import WlanVlan from "@/pages/WlanVlan";
 import WlanRename from "@/pages/WlanRename";
 import WlanGrabber from "@/pages/WlanGrabber";
 import ApgCleanup from "@/pages/ApgCleanup";
+import VenueCheckup from "@/pages/VenueCheckup";
 import MigrateSzToR1Config from "@/pages/MigrateSzToR1Config";
 import MigrationAudit from "@/pages/MigrationAudit";
 import JobMonitor from "@/pages/JobMonitor";
@@ -112,6 +113,7 @@ const App = () => {
           <Route path="/wlan-rename" element={<AlphaRoute element={<WlanRename />} />} />
           <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
           <Route path="/apg-cleanup" element={<BetaRoute element={<ApgCleanup />} />} />
+          <Route path="/venue-checkup" element={<BetaRoute element={<VenueCheckup />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
           <Route path="/wiredwiz" element={<AlphaRoute element={<WiredWiz />} />} />
