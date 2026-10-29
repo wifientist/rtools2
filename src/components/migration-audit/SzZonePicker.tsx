@@ -5,6 +5,10 @@ import { matchesSnippet, snippetScore } from '@/utils/textMatch';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const LIST_CAP = 50;
+const COUNT_CAP = 10;   // zones counted per search (server caps it too)
+
+type Counts = { wlans: number | null; aps: number | null };
+const isEmpty = (c?: Counts) => !!c && c.wlans === 0 && c.aps === 0;
 
 interface Zone {
   id: string;
@@ -58,8 +62,35 @@ export default function SzZonePicker({ controllerId, filter, selectedZoneId, onZ
       .map(x => x.z);
   }, [zones, filter]);
 
+  // WLAN / AP counts for the top matches, so an empty twin of a site's zone
+  // ("Kessler Jersey Village" beside "Madera-Kessler Jersey Village") shows.
+  const [counts, setCounts] = useState<Record<string, Counts>>({});
+  const toCount = useMemo(
+    () => (filter.trim() ? matches.slice(0, COUNT_CAP).map(z => z.id).filter(id => !(id in counts)) : []),
+    [matches, filter, counts],
+  );
+  useEffect(() => {
+    if (!controllerId || toCount.length === 0) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      apiFetch(`${API_URL}/sz/${controllerId}/zones/counts?ids=${encodeURIComponent(toCount.join(','))}`)
+        .then(res => (res.ok ? res.json() : null))
+        .then(json => {
+          if (cancelled) return;
+          // a zone the server couldn't count still gets an entry, so it isn't asked again
+          const got: Record<string, Counts> = Object.fromEntries(toCount.map(id => [id, { wlans: null, aps: null }]));
+          setCounts(prev => ({ ...prev, ...got, ...(json?.data ?? {}) }));
+        })
+        .catch(() => {});
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [controllerId, toCount]);
+
   const selected = zones.find(z => z.id === selectedZoneId);
-  const suggested = filter.trim() && matches.length > 0 ? matches[0].id : null;
+  // Best match skips a zone known to be empty when a matching one isn't
+  const suggested = filter.trim() && matches.length > 0
+    ? (matches.slice(0, COUNT_CAP).find(z => counts[z.id] && !isEmpty(counts[z.id])) ?? matches[0]).id
+    : null;
 
   if (loading) return <div className="text-sm text-gray-400 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading zones…</div>;
   if (error) return <div className="text-sm text-red-600">{error}</div>;
@@ -84,6 +115,14 @@ export default function SzZonePicker({ controllerId, filter, selectedZoneId, onZ
             >
               <span className="font-medium text-gray-800 truncate">{z.name}</span>
               {z._domain_name && <span className="text-xs text-gray-400 truncate">{z._domain_name}</span>}
+              {counts[z.id] && (isEmpty(counts[z.id])
+                ? <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 whitespace-nowrap"
+                        title="No WLANs and no APs in this zone">empty</span>
+                : (counts[z.id].wlans !== null || counts[z.id].aps !== null) && (
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                    {counts[z.id].wlans ?? '?'} WLANs · {counts[z.id].aps ?? '?'} APs
+                  </span>
+                ))}
               {z.id === suggested && !isSel && <span className="ml-auto text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5">best match</span>}
               {isSel && <span className="ml-auto text-[10px] font-semibold text-blue-700">selected</span>}
             </button>

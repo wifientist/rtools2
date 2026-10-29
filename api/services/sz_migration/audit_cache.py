@@ -54,11 +54,18 @@ def r1_key(controller_id: int, tenant_id: Optional[str], venue_id: str) -> str:
     return f"audit_cache:r1:{controller_id}:{tenant_id or '-'}:{venue_id}"
 
 
+# Credentials the audit compares across sides: PSK passphrases and the portal
+# signing key (SZ signatureSigningKey = R1 integrationKey / externalPortalKey).
+_COMPARED = ("passphrase", "signingkey", "integrationkey", "portalkey")
+
+
 def _strip_value(key: str, value: str) -> str:
-    # Passphrases become keyed fingerprints so a cached capture can still be
-    # checked against the other side (passphrase_check); every other
+    # Compared credentials become keyed fingerprints so a cached capture can
+    # still be checked against the other side (passphrase_check); every other
     # credential (shared secrets, passwords) is just marked present.
-    if key.lower().endswith("passphrase"):
+    if value == CREDENTIAL_PRESENT:
+        return value
+    if key.lower().endswith(_COMPARED):
         return fingerprint(value)
     return CREDENTIAL_PRESENT
 
@@ -124,7 +131,9 @@ async def _read(key: str, version: int) -> Tuple[Optional[Any], Optional[Dict[st
         return None, meta
     r = await get_audit_cache_redis()
     blob = await r.hget(key, "data")
-    return (_unpack(blob) if blob else None), meta
+    # Stripped again on the way out: captures written before a key name joined
+    # the credential list still hold its raw value.
+    return (strip_credentials(_unpack(blob)) if blob else None), meta
 
 
 # ── SZ side ───────────────────────────────────────────────────────────

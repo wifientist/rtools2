@@ -11,6 +11,7 @@ import SzZonePicker from '@/components/migration-audit/SzZonePicker';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
 import { Scorecard, VenueSettingsSection, MatchingSection, OverviewTable } from '@/components/migration-audit/AlignmentSections';
+import PortalSection from '@/components/migration-audit/PortalSection';
 import BroadcastSection from '@/components/migration-audit/BroadcastSection';
 import CachePanel, { ago } from '@/components/migration-audit/CachePanel';
 import type {
@@ -348,6 +349,8 @@ export default function MigrationAudit() {
           report={report}
           statusFilter={statusFilter}
           onFilterChange={setStatusFilter}
+          r1ControllerId={secondaryControllerId}
+          tenantId={effectiveTenantId}
         />
       )}
     </div>
@@ -360,10 +363,14 @@ function AuditResults({
   report,
   statusFilter,
   onFilterChange,
+  r1ControllerId,
+  tenantId,
 }: {
   report: MigrationAuditReport;
   statusFilter: AuditStatus | null;
   onFilterChange: (s: AuditStatus | null) => void;
+  r1ControllerId: number | null;
+  tenantId: string | null | undefined;
 }) {
   const s = report.summary;
 
@@ -395,6 +402,19 @@ function AuditResults({
         </div>
       </div>
 
+      {/* An empty zone makes every R1 network read "no SZ WLAN": say so first */}
+      {s.total_sz_wlans === 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">SZ zone “{report.sz_zone_name}” has no WLANs — is this the right zone?</div>
+          <div className="text-xs mt-1">
+            Nothing on the SZ side can pair, so
+            {report.extra_r1_networks.length > 0 ? ` all ${report.extra_r1_networks.length} R1 networks` : ' every R1 network'} show
+            as “no SZ WLAN” below. Controllers often hold an empty twin of a site's zone (a placeholder, or the
+            zone the APs left) — pick the zone again; the picker shows each zone's WLAN and AP counts.
+          </div>
+        </div>
+      )}
+
       {/* Top summary: the headline counts, SZ beside R1 */}
       {report.overview && report.overview.length > 0 && (
         <OverviewTable rows={report.overview} szName={report.sz_zone_name} r1Name={report.r1_venue_name} />
@@ -402,6 +422,10 @@ function AuditResults({
 
       {/* Scorecard: how aligned is this site, category by category */}
       {report.scorecard && report.scorecard.length > 0 && <Scorecard categories={report.scorecard} />}
+
+      {/* Captive portal WLANs, every setting */}
+      <PortalSection portals={report.portals ?? []} unpaired={report.unpaired_r1_portals ?? []}
+                     r1ControllerId={r1ControllerId} tenantId={tenantId ?? null} />
 
       {/* Zone ↔ Venue settings */}
       {report.venue_settings && <VenueSettingsSection audit={report.venue_settings} />}

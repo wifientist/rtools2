@@ -26,6 +26,7 @@ from services.sz_migration.mapper import map_all_wlans
 from services.sz_migration.field_mappings import compare_fields
 from services.sz_migration.audit_matching import build_matching
 from services.sz_migration.audit_scorecard import build_overview, build_scorecard
+from services.sz_migration.audit_portal import build_portal_audit, is_portal_wlan
 from services.sz_migration.venue_settings import compare_venue_settings
 from services.sz_migration.broadcast_model import build_broadcast_audit, r1_ssids_by_group
 from services.sz_migration.wlan_assignment import SzAssignments, r1_activation, r1_activation_lines
@@ -317,6 +318,14 @@ def run_audit(
         ),
     )
 
+    # Captive portal WLANs, setting by setting
+    portals, unpaired_portals = build_portal_audit(snapshot, r1_inventory, matching, r1_network_details, auth_facts)
+
+    # Captive portal WLANs first, then by name (the pairing view too)
+    portal_ids = {w.id for w in snapshot.wlans if is_portal_wlan(w)}
+    network_items.sort(key=lambda n: (n.sz_wlan_id not in portal_ids, (n.sz_wlan_name or "").lower()))
+    matching.wlans.sort(key=lambda m: (m.sz_wlan_id not in portal_ids, (m.sz_name or "").lower()))
+
     return MigrationAuditReport(
         sz_zone_name=snapshot.zone.name,
         r1_venue_name=r1_inventory.venue_name,
@@ -328,6 +337,8 @@ def run_audit(
         overview=build_overview(snapshot, r1_inventory, matching),
         venue_settings=venue_settings,
         broadcast=broadcast,
+        portals=portals,
+        unpaired_r1_portals=unpaired_portals,
         scorecard=build_scorecard(
             snapshot, r1_inventory, matching, venue_settings, broadcast, resolver_result, network_items,
             ap_group_audits, auth_items if auth_facts is not None else None,
@@ -724,8 +735,10 @@ def _annotate_assignments(snapshot, r1_inventory, matching, broadcast, venue_net
     by_group, everywhere = r1_ssids_by_group(r1_inventory)
     names = {g.get("id"): (g.get("name") or "(default)") for g in r1_inventory.ap_groups}
     carrying: Dict[str, List[str]] = {}
+    # Members carry the WLAN's id and name, not its SSID
+    ssid_of = {w.id: w.ssid for w in snapshot.wlans}
     for g in snapshot.wlan_groups:
-        want = {m.ssid for m in g.members if m.ssid}
+        want = {ssid_of.get(m.id) or m.ssid for m in g.members} - {None, ""}
         if want:
             carrying[g.id] = sorted(names[gid] for gid in names
                                     if want <= (by_group.get(gid, set()) | everywhere))

@@ -358,6 +358,34 @@ class OverviewRow(BaseModel):
     note: str = ""
 
 
+class PortalCheck(BaseModel):
+    """One captive-portal setting, SZ beside R1. Credentials appear only as set / not set."""
+    label: str
+    sz: str = ""
+    r1: str = ""
+    # match | differs | unknown | info (one side only / no counterpart)
+    status: str = "info"
+    note: str = ""
+
+
+class PortalAudit(BaseModel):
+    """A captive-portal WLAN: every setting of its SZ portal against the paired R1 guest network."""
+    sz_wlan_id: str
+    sz_wlan_name: str
+    sz_ssid: Optional[str] = None
+    sz_type: str
+    sz_portal_name: Optional[str] = None
+    r1_network_id: Optional[str] = None
+    r1_name: Optional[str] = None
+    r1_guest_type: Optional[str] = None
+    # match | differs | unknown | missing
+    status: str = "match"
+    checks: List[PortalCheck] = Field(default_factory=list)
+    sz_only: List[PortalCheck] = Field(default_factory=list)    # SZ portal settings with no R1 counterpart
+    r1_only: List[PortalCheck] = Field(default_factory=list)    # R1 guestPortal settings with no SZ counterpart
+    notes: List[str] = Field(default_factory=list)
+
+
 class AlignmentCategory(BaseModel):
     """
     One row of the end-of-run scorecard: SZ vs R1 for one category.
@@ -414,6 +442,8 @@ class MigrationAuditReport(BaseModel):
     matching: AuditMatching = Field(default_factory=AuditMatching)
     venue_settings: Optional[VenueSettingsAudit] = None   # None: no live R1 read this run
     broadcast: Optional[BroadcastAudit] = None
+    portals: List[PortalAudit] = Field(default_factory=list)
+    unpaired_r1_portals: List[Dict[str, Any]] = Field(default_factory=list)   # R1 guest networks no SZ portal pairs with
     # Per side: {cached, captured_at, age_seconds, expires_in_seconds, ...}
     data_sources: Dict[str, Any] = Field(default_factory=dict)
     networks: List[NetworkAuditItem] = Field(default_factory=list)

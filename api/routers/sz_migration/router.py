@@ -80,6 +80,7 @@ from services.sz_migration.dpsk_choices import (
 )
 from services.sz_migration.auditor import run_audit as run_migration_audit
 from services.sz_migration.auth_probe import collect_auth_facts
+from services.sz_migration.audit_portal import KEY_CHECK_MAX_NETWORKS, check_portal_key
 from services.sz_migration.venue_settings import fetch_r1_venue_settings
 from services.sz_migration import audit_cache, venue_create
 from services.sz_migration.audit_redaction import (
@@ -2306,6 +2307,59 @@ async def clear_audit_cache(
         r1c = validate_controller_access(r1_controller_id, current_user, db)
         keys.append(audit_cache.r1_key(r1_controller_id, resolve_tenant_id(r1c, tenant_id), venue_id))
     return {"cleared": await audit_cache.clear(*keys)}
+
+
+class PortalKeyCheckRequest(BaseModel):
+    # Every field defaulted: a missing-field 422 echoes the whole body, key included.
+    r1_controller_id: Optional[int] = None
+    tenant_id: Optional[str] = None
+    network_ids: List[str] = []
+    key: str = ""
+
+
+@router.post("/audit/portal-key-check")
+@require_beta()
+async def portal_key_check(
+    request: PortalKeyCheckRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Does each R1 guest network hold this portal key? SZ's API never returns
+    its signing key, so the user supplies it (from the SZ UI or the portal
+    provider) and R1 is read live. Only match / differs comes back; the key
+    is neither stored, logged nor returned.
+    """
+    key = request.key.strip()
+    if not key or len(key) > 256:
+        raise HTTPException(status_code=400, detail="Enter the portal key to check")
+    ids = list(dict.fromkeys(i for i in request.network_ids if i))[:KEY_CHECK_MAX_NETWORKS]
+    if not request.r1_controller_id or not ids:
+        raise HTTPException(status_code=400, detail="r1_controller_id and network_ids are required")
+    r1_controller = validate_controller_access(request.r1_controller_id, current_user, db)
+    if r1_controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
+    tenant_id = resolve_tenant_id(r1_controller, request.tenant_id)
+    r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
+    sem = asyncio.Semaphore(8)
+
+    async def one(net_id: str):
+        async with sem:
+            try:
+                r = await asyncio.to_thread(
+                    r1_client.get, f"/wifiNetworks/{net_id}",
+                    **({"override_tenant_id": tenant_id} if r1_client.ec_type == "MSP" and tenant_id else {}),
+                )
+                net = r.json() if r.status_code == 200 else None
+            except Exception as e:
+                logger.warning(f"Portal key check: could not read R1 network {net_id}: {type(e).__name__}")
+                net = None
+            return {"network_id": net_id, **check_portal_key(key, net)}
+
+    results = await asyncio.gather(*(one(i) for i in ids))
+    fmt_ok = bool(re.fullmatch(r"[a-zA-Z0-9]{16}", key))
+    return {"results": results,
+            "format_note": "" if fmt_ok else "R1 integration keys are exactly 16 letters or digits — this one isn't"}
 
 
 @router.post("/audit")
