@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes, Stethoscope } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes, CalendarRange, Stethoscope } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -56,6 +56,7 @@ const Sidebar = () => {
       items: [
         { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migration-dashboard", icon: <BarChart3 size={20} />, label: "Migration", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/tracker", icon: <CalendarRange size={20} />, label: "Tracker", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true, requiresFeature: "migration_tracker" },
         { to: "/r1-details", icon: <CloudCog size={20} />, label: "R1 Details", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/maps", icon: <Map size={20} />, label: "Maps", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/pisr", icon: <ClipboardCheck size={20} />, label: "PISR", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },

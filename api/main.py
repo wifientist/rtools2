@@ -154,6 +154,9 @@ app.include_router(apg_cleanup_router, tags=["APG Cleanup"])
 from routers.venue_checkup.router import router as venue_checkup_router
 app.include_router(venue_checkup_router, tags=["Venue Checkup"])
 
+from routers.migration_tracker import router as migration_tracker_router
+app.include_router(migration_tracker_router)
+
 app.include_router(status.router)
 app.include_router(opt43.router)
 app.include_router(users.router)
