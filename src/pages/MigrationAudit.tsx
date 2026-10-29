@@ -13,6 +13,7 @@ import SingleEcSelector from '@/components/SingleEcSelector';
 import { Scorecard, VenueSettingsSection, MatchingSection, OverviewTable } from '@/components/migration-audit/AlignmentSections';
 import PortalSection from '@/components/migration-audit/PortalSection';
 import BroadcastSection from '@/components/migration-audit/BroadcastSection';
+import GapsSection from '@/components/migration-audit/GapsSection';
 import CachePanel, { ago } from '@/components/migration-audit/CachePanel';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
@@ -419,6 +420,9 @@ function AuditResults({
       {report.overview && report.overview.length > 0 && (
         <OverviewTable rows={report.overview} szName={report.sz_zone_name} r1Name={report.r1_venue_name} />
       )}
+
+      {/* Right under the summary: APs and WLANs SZ has that R1 doesn't yet */}
+      {report.matching && <GapsSection matching={report.matching} />}
 
       {/* Scorecard: how aligned is this site, category by category */}
       {report.scorecard && report.scorecard.length > 0 && <Scorecard categories={report.scorecard} />}

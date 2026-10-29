@@ -225,6 +225,8 @@ export interface ApMatch {
   sz_name: string | null;
   r1_name: string | null;
   name_alignment: 'exact' | 'case' | 'differs' | null;
+  missing_code?: 'not_in_r1' | 'other_venue' | 'no_serial' | 'not_searched' | null;
+  missing_reason?: string | null;
 }
 
 export interface AuditMatching {

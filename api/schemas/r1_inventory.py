@@ -49,6 +49,15 @@ class R1VenueInventory(BaseModel):
         description="RADIUS attribute groups for this tenant"
     )
 
+    tenant_ap_lookup: Optional[Dict[str, Dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Serial -> {venue_id, venue_name, name} for APs the audit looked up "
+            "tenant-wide (SZ APs missing from this venue). None = not searched; "
+            "a searched serial absent from the map is not in the tenant at all."
+        ),
+    )
+
     snapshot_metadata: Dict[str, Any] = Field(default_factory=dict)
 
     # ── Lookup helpers ───────────────────────────────────────────────

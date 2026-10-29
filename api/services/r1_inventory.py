@@ -14,6 +14,7 @@ cleanup tools, and eventually V3 all benefit from a single way to
 snapshot R1 venue state.
 """
 
+import asyncio
 import logging
 import time
 from typing import Optional, Callable, Dict, Any, List
@@ -199,3 +200,38 @@ async def capture_venue_inventory(
     progress("complete", f"R1 inventory captured in {elapsed}s", inventory.summary())
 
     return inventory
+
+
+async def locate_aps_in_tenant(r1_client, tenant_id: Optional[str], serials: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    Where in the tenant each serial sits: serial -> {venue_id, venue_name, name}.
+    A serial absent from the result is not in R1 at all. /venues/aps/query
+    filters by serial tenant-wide (verified live), but leaves venueName empty,
+    so names come from /venues.
+    """
+    if not serials:
+        return {}
+    override = {"override_tenant_id": tenant_id} if r1_client.ec_type == "MSP" and tenant_id else {}
+    found: Dict[str, Dict[str, Any]] = {}
+    for i in range(0, len(serials), 200):
+        body = {
+            "fields": ["serialNumber", "venueId", "venueName", "name"],
+            "filters": {"serialNumber": serials[i:i + 200]},
+            "page": 0,
+            "pageSize": 500,
+        }
+        resp = await asyncio.to_thread(r1_client.post, "/venues/aps/query", payload=body, **override)
+        for a in (resp.json() or {}).get("data", []):
+            sn = (a.get("serialNumber") or "").strip().upper()
+            if sn:
+                found[sn] = {"venue_id": a.get("venueId"), "venue_name": a.get("venueName"), "name": a.get("name")}
+    if any(f["venue_id"] and not f["venue_name"] for f in found.values()):
+        try:
+            venues = await r1_client.venues.get_venues(tenant_id)
+            rows = venues.get("data", venues) if isinstance(venues, dict) else venues
+            names = {v.get("id"): v.get("name") for v in rows or [] if isinstance(v, dict)}
+            for f in found.values():
+                f["venue_name"] = f["venue_name"] or names.get(f["venue_id"])
+        except Exception as e:
+            logger.warning(f"Could not name venues for located APs: {e}")
+    return found
