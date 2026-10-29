@@ -224,14 +224,28 @@ def _lan_entry(e: Dict[str, Any], cap: Dict[str, Any], notes: List[str]) -> Opti
             want = {**want, "type": "TRUNK", "untagId": desired[pid]["untagId"],
                     "vlanMembers": desired[pid]["vlanMembers"]}
         desired[pid] = want
+    def in_order(ports: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(ports.values(), key=lambda p: int(p["portId"]) if p["portId"].isdigit() else 0)
+
     if desired != defaults:
         if cap.get("requireOneEnabledTrunkPort") and not any(
                 p["enabled"] and p.get("type") == "TRUNK" for p in desired.values()):
             notes.append(f"{model}: R1 needs one enabled trunk port and the zone leaves none — ports not pushed")
         else:
-            out["lanPorts"] = sorted(desired.values(), key=lambda p: int(p["portId"]) if p["portId"].isdigit() else 0)
+            out["lanPorts"] = in_order(desired)
             changed = True
-    return out if changed else None
+    if not changed:
+        return None
+    # A complete entry, R1's defaults filling what the zone leaves alone: R1's
+    # task fails (Internal Server Error) on a partial one -- {model, poeMode}
+    # for an H550 sank the whole section.
+    if cap.get("canSupportPoeMode") and default_poe_mode(cap):
+        out.setdefault("poeMode", default_poe_mode(cap))
+    if cap.get("canSupportPoeOut"):
+        out.setdefault("poeOut", False)
+    if defaults:
+        out.setdefault("lanPorts", in_order(defaults))
+    return out
 
 
 def customise(section_key: str, entries: List[Dict[str, Any]],

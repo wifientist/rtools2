@@ -431,7 +431,13 @@ def main() -> int:
                       [e["model"] for e in push] == ["H550"] and len(h550.get("lanPorts", [])) == 5
                       and h550["lanPorts"][2] == {"portId": "3", "enabled": True, "type": "ACCESS",
                                                   "untagId": 30, "vlanMembers": "30"}, str(push))
-    failures += check("PoE Auto (R1's default) not sent", "poeMode" not in h550, str(h550))
+    failures += check("complete entry: R1's defaults fill PoE mode / PoE out (a partial entry 500s in R1)",
+                      h550.get("poeMode") == "Auto" and h550.get("poeOut") is False, str(h550))
+    poe_only = [{"model": "H550", "poeMode": "802.3at"}]
+    push, _, _ = customise("model_lan_ports", poe_only, CAPS_BY_MODEL)
+    failures += check("a PoE-only change still sends PoE out and all 5 ports (the H550 802.3at 500)",
+                      len(push) == 1 and push[0].get("poeMode") == "802.3at" and push[0].get("poeOut") is False
+                      and len(push[0].get("lanPorts", [])) == 5, str(push))
     failures += check("H375 isn't offered by R1 at the venue: noted, never pushed",
                       any("H375" in n and "doesn't offer" in n for n in notes) and "H375" not in defaults, str(notes))
     led_push, _, _ = customise("model_leds", section(custom, "model_leds").body, CAPS_BY_MODEL)
@@ -449,10 +455,27 @@ def main() -> int:
     push, notes, _ = customise("model_lan_ports", no_trunk, CAPS_BY_MODEL)
     failures += check("no enabled trunk port left: R1 would refuse, so not pushed",
                       push == [] and any("one enabled trunk" in n for n in notes), f"{push} {notes}")
-    diffs = diff_section(section(custom, "model_lan_ports"), [{"model": "H550", "lanPorts": h550["lanPorts"]}],
-                         CAPS_BY_MODEL)
+    diffs = diff_section(section(custom, "model_lan_ports"), [h550], CAPS_BY_MODEL)
     failures += check("verify compares only what is pushed (R510 on defaults, H375 absent: no difference)",
                       diffs == [], str(diffs))
+
+    # R1 fails the whole list for one model it won't take: each model then goes on its own.
+    class OneBadModel(FakeR1):
+        def put(self, path, payload=None, override_tenant_id=None, content_type=None):
+            if "apModelLanPortSettings" in path and any(e.get("model") == "R510" for e in payload):
+                self.calls.append(("put", path, content_type, override_tenant_id, payload))
+                return Resp(500, {"errors": [{"message": "Internal Server Error"}]})
+            return super().put(path, payload, override_tenant_id, content_type)
+    two = build_settings_plan(ZONE, MODELS_CUSTOM)
+    lan_two = section(two, "model_lan_ports")
+    lan_two.body = [e for e in lan_two.body if e["model"] != "R510"] + [{"model": "R510", "poeMode": "802.3at"}]
+    r1 = OneBadModel()
+    res = asyncio.run(apply_settings(r1, "t", "v", two, ["model_lan_ports"]))[0]
+    puts = [c[4] for c in r1.calls if c[0] == "put"]
+    failures += check("one model R1 refuses: the others still land, the offender is named",
+                      res["status"] == "failed" and res.get("pushed") == ["H550"]
+                      and res["error"].startswith("R510:") and len(puts) == 3
+                      and [e["model"] for e in r1.current["apModelLanPortSettings"]] == ["H550"], str((res, puts)))
 
     print("\n12. Read-back")
     snap = SZMigrationSnapshot(zone=SZZoneSnapshot(id="z", name="Z", raw=ZONE), zone_ap_models=MODELS_CUSTOM,
