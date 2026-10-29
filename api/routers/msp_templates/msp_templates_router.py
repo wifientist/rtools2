@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from clients.r1_client import create_r1_client_from_controller, validate_controller_access
-from decorators import require_alpha
+from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
 from services import msp_template_copy, msp_templates
@@ -42,7 +42,7 @@ def _msp_client(controller_id: int, user: User, db: Session):
 
 
 @router.get("/{controller_id}/templates")
-@require_alpha()
+@require_beta()
 async def list_templates(controller_id: int, db: Session = Depends(get_db),
                          current_user: User = Depends(get_current_user)):
     """MSP and REC templates in one list, with applied-EC ids resolved to names."""
@@ -61,7 +61,7 @@ async def list_templates(controller_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/{controller_id}/templates/{template_id}/children")
-@require_alpha()
+@require_beta()
 async def template_children(controller_id: int, template_id: str,
                             context: Context = Query("MSP"),
                             db: Session = Depends(get_db),
@@ -71,7 +71,7 @@ async def template_children(controller_id: int, template_id: str,
 
 
 @router.get("/{controller_id}/templates/{template_id}/body")
-@require_alpha()
+@require_beta()
 async def template_body(controller_id: int, template_id: str,
                         type: str = Query(..., description="Template type, e.g. NETWORK"),
                         context: Context = Query("MSP"),
@@ -82,7 +82,7 @@ async def template_body(controller_id: int, template_id: str,
 
 
 @router.get("/{controller_id}/templates/{template_id}/drift/{tenant_id}")
-@require_alpha()
+@require_beta()
 async def template_drift(controller_id: int, template_id: str, tenant_id: str,
                          context: Context = Query("MSP"),
                          db: Session = Depends(get_db),
@@ -92,7 +92,7 @@ async def template_drift(controller_id: int, template_id: str, tenant_id: str,
 
 
 @router.get("/{controller_id}/templates/{template_id}/bundle")
-@require_alpha()
+@require_beta()
 async def template_bundle(controller_id: int, template_id: str,
                           context: Context = Query("MSP"),
                           db: Session = Depends(get_db),
@@ -103,7 +103,7 @@ async def template_bundle(controller_id: int, template_id: str,
 
 
 @router.get("/{controller_id}/venue-countries")
-@require_alpha()
+@require_beta()
 async def venue_countries(controller_id: int, context: Context = Query("MSP"),
                           db: Session = Depends(get_db),
                           current_user: User = Depends(get_current_user)):
@@ -121,7 +121,7 @@ class CopyPlan(BaseModel):
 
 
 @router.post("/{controller_id}/templates/{template_id}/copy-preview")
-@require_alpha()
+@require_beta()
 async def copy_preview(controller_id: int, template_id: str, plan: CopyPlan,
                        context: Context = Query("MSP"),
                        db: Session = Depends(get_db),

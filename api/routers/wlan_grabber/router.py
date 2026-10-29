@@ -42,7 +42,6 @@ from sqlalchemy.orm import Session
 
 from clients.r1_client import create_r1_client_from_controller
 from clients.sz_client_deps import create_sz_client_from_controller, validate_controller_access
-from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
 from r1api.constants import DpskPassphraseFormat
@@ -259,7 +258,6 @@ async def _wispr_r1_context(r1_client, tenant_id: str, tenant_networks: List[Dic
 # ==================== Endpoints ====================
 
 @router.post("/preview")
-@require_beta()
 async def preview(
     request: PreviewRequest,
     current_user: User = Depends(get_current_user),
@@ -365,7 +363,6 @@ class SecretCheckRequest(BaseModel):
 
 
 @router.post("/radius/check-secret")
-@require_beta()
 async def check_radius_secret(
     request: SecretCheckRequest,
     current_user: User = Depends(get_current_user),
@@ -462,7 +459,6 @@ async def _run_execution(job_id: str, controller_id: int):
 
 
 @router.post("/v2/plan", response_model=V2PlanResponse)
-@require_beta()
 async def create_plan(
     request: PlanRequest,
     background_tasks: BackgroundTasks = BackgroundTasks(),

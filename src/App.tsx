@@ -94,11 +94,11 @@ const App = () => {
           <Route path="/ap-rename" element={<ProtectedRoute element={<APRename />} />} />
           <Route path="/bulk-wlan" element={<ProtectedRoute element={<BulkWlanEdit />} />} />
           <Route path="/bulk-wlan-delete" element={<BetaRoute element={<BulkWlanDelete />} />} />
-          <Route path="/bulk-ap-tagging" element={<BetaRoute element={<BulkAPTagging />} />} />
+          <Route path="/bulk-ap-tagging" element={<ProtectedRoute element={<BulkAPTagging />} />} />
           <Route path="/cloudpath-import" element={<ProtectedRoute element={<CloudpathImport />} />} />
           {/* AP Regroup folded into APG Cleanup (2026-10-22); page kept in src/pages/APRegroup.tsx */}
           <Route path="/ap-regroup" element={<Navigate to="/apg-cleanup" />} />
-          <Route path="/wlan-activator" element={<BetaRoute element={<WlanActivator />} />} />
+          <Route path="/wlan-activator" element={<ProtectedRoute element={<WlanActivator />} />} />
           <Route path="/sz-audit" element={<ProtectedRoute element={<SZAudit />} />} />
           <Route path="/migration-dashboard" element={<ProtectedRoute element={<MigrationDashboard />} />} />
           <Route path="/danger-zone" element={<DangerRoute element={<DangerZone />} />} />
@@ -109,12 +109,12 @@ const App = () => {
           <Route path="/jobs/:jobId" element={<ProtectedRoute element={<JobMonitor />} />} />
           <Route path="/migrate" element={<ProtectedRoute element={<MigrateR1ToR1 />} />} />
           <Route path="/migrate-sz-to-r1" element={<ProtectedRoute element={<MigrateSzToR1 />} />} />
-          <Route path="/migrate-sz-config" element={<AlphaRoute element={<MigrateSzToR1Config />} />} />
-          <Route path="/migration-audit" element={<BetaRoute element={<MigrationAudit />} />} />
-          <Route path="/wlan-vlan" element={<BetaRoute element={<WlanVlan />} />} />
+          <Route path="/migrate-sz-config" element={<BetaRoute element={<MigrateSzToR1Config />} />} />
+          <Route path="/migration-audit" element={<ProtectedRoute element={<MigrationAudit />} />} />
+          <Route path="/wlan-vlan" element={<ProtectedRoute element={<WlanVlan />} />} />
           <Route path="/wlan-rename" element={<AlphaRoute element={<WlanRename />} />} />
-          <Route path="/wlan-grabber" element={<BetaRoute element={<WlanGrabber />} />} />
-          <Route path="/apg-cleanup" element={<BetaRoute element={<ApgCleanup />} />} />
+          <Route path="/wlan-grabber" element={<ProtectedRoute element={<WlanGrabber />} />} />
+          <Route path="/apg-cleanup" element={<ProtectedRoute element={<ApgCleanup />} />} />
           <Route path="/venue-checkup" element={<BetaRoute element={<VenueCheckup />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
@@ -139,7 +139,7 @@ const App = () => {
           />
           <Route path="/pisr" element={<AlphaRoute element={<PISR />} />} />
           <Route path="/tracker" element={<AlphaRoute element={<MigrationTracker />} />} />
-          <Route path="/template-tool" element={<AlphaRoute element={<TemplateTool />} />} />
+          <Route path="/template-tool" element={<BetaRoute element={<TemplateTool />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
