@@ -9,17 +9,25 @@ Workflow:
 2. POST /fetch-settings - Fetch current advanced settings for selected networks
 3. POST /preview - Preview changes (diff) before applying
 4. POST /apply - Apply the changes with batch processing
+
+fetch-settings also returns each network's type-specific profile, read-only:
+the captive portal (URLs, provider, auth, walled garden, session times, which
+integration key -- as a fingerprint, never the key), the DPSK pool, the
+RADIUS profiles. The WISPr portal fields are also editable (PORTAL_FIELDS);
+they apply to WISPr networks only, and the integration key can only be set
+to the one saved on the controller (resolved server-side at apply time).
+POST /portal-key reveals one network's key on request.
 """
 
 import asyncio
 import logging
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any
 from routers.tenant_scope import resolve_tenant_id
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from clients.r1_client import create_r1_client_from_controller, validate_controller_access
 from dependencies import get_current_user, get_db
@@ -27,6 +35,8 @@ from models.user import User
 from models.controller import Controller
 from sqlalchemy.orm import Session
 from redis_client import get_redis_client
+from services.portal_key import controller_portal_key
+from services.wlan_grabber import _key_id, is_wispr_network
 
 from workflow.v2.models import WorkflowJobV2, JobStatus, PhaseStatus, PhaseDefinitionV2
 from workflow.v2.state_manager import RedisStateManagerV2
@@ -44,9 +54,17 @@ router = APIRouter(prefix="/bulk-wlan", tags=["Bulk WLAN Edit"])
 WORKFLOW_NAME = "bulk_wlan_edit"
 
 # Field routing — which fields live where in the R1 network object
-WLAN_LEVEL_FIELDS = {"vlanId", "enabled", "managementFrameProtection", "macAddressAuthentication"}
+WLAN_LEVEL_FIELDS = {"vlanId", "enabled", "managementFrameProtection", "macAddressAuthentication",
+                     "bypassCNA", "bypassCPUsingMacAddressAuthentication"}
 RADIO_FIELDS = {"rfBandUsage", "bssMinimumPhyRate", "managementFrameMinimumPhyRate", "phyTypeConstraint"}
 ISOLATION_OPTION_FIELDS = {"clientIsolationPacketsType", "clientIsolationAutoVrrp"}
+
+# Captive portal fields (network.guestPortal.*), flat names. WISPR_FIELDS only
+# exist on WISPr guest networks, GUEST_FIELDS on every guest network; a network
+# without them is skipped for those fields, never given them.
+WISPR_FIELDS = {"portalUrl", "portalRedirectUrl", "portalWalledGardens", "portalEncryptMacIp", "portalKey"}
+GUEST_FIELDS = {"portalSessionTimeout", "portalGracePeriod", "bypassCNA", "bypassCPUsingMacAddressAuthentication"}
+PORTAL_FIELDS = WISPR_FIELDS | GUEST_FIELDS
 
 
 # ============================================================================
@@ -148,7 +166,30 @@ class WlanChanges(BaseModel):
     enableOptimizedConnectivityExperience: Optional[bool] = None
     enableAirtimeDecongestion: Optional[bool] = None
     enableAdditionalRegulatoryDomains: Optional[bool] = None
+
+    # === Captive portal (guestPortal.*, WISPr / guest networks only) ===
+    portalUrl: Optional[str] = Field(None, pattern=r"^https?://\S+$")
+    portalRedirectUrl: Optional[str] = Field(None, pattern=r"^https?://\S+$")
+    portalWalledGardens: Optional[List[str]] = None
+    portalEncryptMacIp: Optional[bool] = None
+    # Current value reads "saved" / "other" / "none"; the only change is
+    # "saved": the key saved on the controller, read when the job runs.
+    portalKey: Optional[Literal["saved"]] = None
+    portalSessionTimeout: Optional[int] = Field(None, ge=1, le=14400)    # minutes
+    portalGracePeriod: Optional[int] = Field(None, ge=1, le=14400)       # minutes
+    bypassCNA: Optional[bool] = None
+    bypassCPUsingMacAddressAuthentication: Optional[bool] = None
     proxyARP: Optional[bool] = None
+
+    @field_validator("portalWalledGardens")
+    @classmethod
+    def _walled_gardens(cls, v):
+        if v is None:
+            return v
+        out = sorted({e.strip() for e in v if e and e.strip()})
+        if not out:
+            raise ValueError("Walled garden needs at least one entry")
+        return out
     multicastFilterEnabled: Optional[bool] = None
     enableSyslog: Optional[bool] = None
     multiLinkOperationEnabled: Optional[bool] = None
@@ -169,6 +210,12 @@ class ApplyRequest(BaseModel):
     max_concurrent: int = Field(default=5, ge=1, le=20)
 
 
+class PortalKeyRequest(BaseModel):
+    controller_id: int
+    tenant_id: Optional[str] = None
+    network_id: str
+
+
 class FieldDiff(BaseModel):
     field: str
     old_value: Any
@@ -179,6 +226,79 @@ class FieldDiff(BaseModel):
 # ============================================================================
 # Helpers
 # ============================================================================
+
+def network_kind(network: dict) -> str:
+    """'wispr', 'guest' (other captive portals) or the R1 network type."""
+    if is_wispr_network(network):
+        return "wispr"
+    return str(network.get("type") or network.get("nwSubType") or "").lower()
+
+
+def portal_fields_for(kind: str) -> set:
+    """The captive portal fields a network of this kind has."""
+    if kind == "wispr":
+        return PORTAL_FIELDS
+    if kind == "guest":
+        return GUEST_FIELDS
+    return set()
+
+
+def _portal_key(network: dict) -> Optional[str]:
+    return ((network.get("guestPortal") or {}).get("wisprPage") or {}).get("integrationKey") or None
+
+
+def extract_portal_settings(network: dict, saved_key: Optional[str]) -> dict:
+    """The editable captive portal fields; None where this network has none."""
+    kind = network_kind(network)
+    have = portal_fields_for(kind)
+    portal = network.get("guestPortal") or {}
+    wispr = portal.get("wisprPage") or {}
+    key = _portal_key(network)
+    values = {
+        "portalUrl": wispr.get("captivePortalUrl") or portal.get("externalPortalUrl"),
+        "portalRedirectUrl": portal.get("redirectUrl"),
+        "portalWalledGardens": sorted(portal.get("walledGardens") or []),   # order is not meaningful
+        "portalEncryptMacIp": wispr.get("encryptMacIpEnabled"),
+        "portalKey": ("none" if not key else "saved" if saved_key and key == saved_key else "other"),
+        "portalSessionTimeout": portal.get("userSessionTimeout"),
+        "portalGracePeriod": portal.get("userSessionGracePeriod"),
+    }
+    return {f: (values[f] if f in have else None) for f in values}
+
+
+def extract_profile(network: dict, saved_key: Optional[str]) -> dict:
+    """Read-only, type-specific facts for the overview. Never a key or passphrase."""
+    wlan = network.get("wlan") or {}
+    kind = network_kind(network)
+    profile: Dict[str, Any] = {
+        "kind": kind,
+        "type": network.get("type"),
+        "wlanSecurity": wlan.get("wlanSecurity"),
+    }
+    if network.get("aaaAuthType"):
+        profile["aaaAuthType"] = network.get("aaaAuthType")
+    portal = network.get("guestPortal")
+    if portal is not None:
+        wispr = portal.get("wisprPage") or {}
+        key = _portal_key(network)
+        profile["guest"] = {
+            "guestNetworkType": portal.get("guestNetworkType"),
+            "portalUrl": wispr.get("captivePortalUrl") or portal.get("externalPortalUrl"),
+            "redirectUrl": portal.get("redirectUrl"),
+            "provider": wispr.get("externalProviderName"),
+            "authType": wispr.get("authType"),
+            "encryptMacIp": wispr.get("encryptMacIpEnabled"),
+            "keyId": _key_id(key),
+            "keyMatchesSaved": (key == saved_key) if key and saved_key else None,
+            "walledGardens": sorted(portal.get("walledGardens") or []),
+            "sessionTimeout": portal.get("userSessionTimeout"),
+            "gracePeriod": portal.get("userSessionGracePeriod"),
+            "bypassCNA": wlan.get("bypassCNA"),
+            "macBypass": wlan.get("bypassCPUsingMacAddressAuthentication"),
+            "enableDhcp": network.get("enableDhcp"),
+        }
+    return profile
+
 
 def extract_settings(network: dict) -> dict:
     """Extract all editable settings from a full network object.
@@ -204,6 +324,8 @@ def extract_settings(network: dict) -> dict:
 
     # Get all field names from the pydantic model
     for field_name in WlanChanges.model_fields:
+        if field_name in PORTAL_FIELDS - WLAN_LEVEL_FIELDS:
+            continue    # extract_portal_settings
         if field_name in WLAN_LEVEL_FIELDS:
             settings[field_name] = wlan.get(field_name)
         elif field_name in RADIO_FIELDS:
@@ -234,11 +356,33 @@ def apply_changes_to_network(network: dict, changes: dict) -> dict:
         "clientIsolationAutoVrrp": "autoVrrp",
     }
 
+    portal = network.get("guestPortal")
     for field, value in changes.items():
         if value is None:
             continue
 
-        if field in WLAN_LEVEL_FIELDS:
+        if field in PORTAL_FIELDS - WLAN_LEVEL_FIELDS:
+            if portal is None:
+                continue
+            wispr = portal.setdefault("wisprPage", {})
+            if field == "portalUrl":
+                wispr["captivePortalUrl"] = value
+                portal["externalPortalUrl"] = value     # R1 keeps the two equal
+            elif field == "portalRedirectUrl":
+                portal["redirectUrl"] = value
+            elif field == "portalWalledGardens":
+                portal["walledGardens"] = list(value)
+            elif field == "portalEncryptMacIp":
+                wispr["encryptMacIpEnabled"] = value
+            elif field == "portalKey":
+                # value is the resolved key here, never "saved"
+                wispr["integrationKey"] = value
+                portal["externalPortalKey"] = value     # R1 keeps the two equal
+            elif field == "portalSessionTimeout":
+                portal["userSessionTimeout"] = value
+            elif field == "portalGracePeriod":
+                portal["userSessionGracePeriod"] = value
+        elif field in WLAN_LEVEL_FIELDS:
             wlan[field] = value
         elif field in RADIO_FIELDS:
             radio[field] = value
@@ -254,6 +398,12 @@ def apply_changes_to_network(network: dict, changes: dict) -> dict:
             adv[field] = value
 
     return network
+
+
+def changes_for(network: dict, changes: dict) -> dict:
+    """Drop the captive portal fields this network does not have."""
+    have = portal_fields_for(network_kind(network))
+    return {f: v for f, v in changes.items() if f not in PORTAL_FIELDS or f in have}
 
 
 def compute_diff(current_settings: dict, changes: dict) -> List[FieldDiff]:
@@ -330,9 +480,39 @@ async def fetch_settings(
     effective_tenant_id = _get_effective_tenant(controller, request.tenant_id)
     r1_client = create_r1_client_from_controller(request.controller_id, db)
 
+    saved_key = controller_portal_key(request.controller_id)
     semaphore = asyncio.Semaphore(10)
     results = {}
     errors = []
+
+    # Which RADIUS profiles each network uses: the network itself does not say.
+    radius_by_network: Dict[str, Dict[str, str]] = {}
+    try:
+        for p in await r1_client.radius_profiles.query_radius_profiles(effective_tenant_id):
+            role = "accounting" if p.get("type") == "ACCOUNTING" else "auth"
+            for nid in p.get("wifiNetworkIds") or []:
+                radius_by_network.setdefault(nid, {})[role] = p.get("name")
+    except Exception as e:
+        logger.warning(f"Could not read RADIUS profiles: {e}")
+
+    # Which DPSK pool backs each network: pools carry networkIds, one query
+    # instead of GET /wifiNetworks/{id}/dpskServices per network.
+    pools_by_network: Dict[str, List[str]] = {}
+    pools_known = True
+    try:
+        page = 1
+        while page <= 50:
+            resp = await r1_client.dpsk.query_dpsk_pools(tenant_id=effective_tenant_id, page=page, limit=100)
+            rows = (resp.get("data") or resp.get("content") or []) if isinstance(resp, dict) else (resp or [])
+            for pool in rows:
+                for nid in pool.get("networkIds") or []:
+                    pools_by_network.setdefault(nid, []).append(pool.get("name") or pool.get("id"))
+            if not rows or not isinstance(resp, dict) or page * 100 >= (resp.get("totalCount") or 0):
+                break
+            page += 1
+    except Exception as e:
+        pools_known = False
+        logger.warning(f"Could not read DPSK pools: {e}")
 
     async def fetch_one(network_id: str):
         async with semaphore:
@@ -340,18 +520,43 @@ async def fetch_settings(
                 network = await r1_client.networks.get_wifi_network_by_id(
                     network_id, effective_tenant_id
                 )
+                profile = extract_profile(network, saved_key)
+                if network_id in radius_by_network:
+                    profile["radius"] = radius_by_network[network_id]
+                if profile["type"] == "dpsk" and pools_known:
+                    profile["dpskServices"] = pools_by_network.get(network_id, [])
                 results[network_id] = {
                     "name": network.get("name"),
                     "ssid": (network.get("wlan") or {}).get("ssid"),
-                    "settings": extract_settings(network),
+                    "kind": profile["kind"],
+                    "settings": {**extract_settings(network), **extract_portal_settings(network, saved_key)},
+                    "profile": profile,
                 }
+                network = None
             except Exception as e:
                 logger.warning(f"Failed to fetch network {network_id}: {e}")
                 errors.append({"network_id": network_id, "error": str(e)})
 
     await asyncio.gather(*[fetch_one(nid) for nid in request.network_ids])
 
-    return {"networks": results, "errors": errors}
+    return {"networks": results, "errors": errors, "has_saved_key": bool(saved_key)}
+
+
+@router.post("/portal-key")
+async def reveal_portal_key(
+    request: PortalKeyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """One WISPr network's integration key, on explicit request (Show)."""
+    controller = validate_controller_access(request.controller_id, current_user, db)
+    effective_tenant_id = _get_effective_tenant(controller, request.tenant_id)
+    r1_client = create_r1_client_from_controller(request.controller_id, db)
+    network = await r1_client.networks.get_wifi_network_by_id(request.network_id, effective_tenant_id)
+    if not network or not is_wispr_network(network):
+        raise HTTPException(status_code=404, detail="Not a WISPr network")
+    logger.info(f"User {current_user.id} revealed the portal key of network {request.network_id}")
+    return {"key": _portal_key(network)}
 
 
 @router.post("/apply")
@@ -373,6 +578,8 @@ async def apply_changes(
     changes_dict = request.changes.dict(exclude_none=True)
     if not changes_dict:
         raise HTTPException(status_code=400, detail="No changes specified")
+    if changes_dict.get("portalKey") and not controller_portal_key(request.controller_id):
+        raise HTTPException(status_code=400, detail="No portal integration key is saved on this controller")
 
     job_id = str(uuid.uuid4())
 
@@ -456,6 +663,11 @@ async def run_bulk_wlan_update(
             "phase_name": "Update WLAN Settings",
         })
 
+        # "saved" is resolved here, so the key never sits in the job's state.
+        saved_key = controller_portal_key(controller_id) if changes.get("portalKey") else None
+        if changes.get("portalKey") and not saved_key:
+            raise RuntimeError("The portal integration key is no longer saved on the controller")
+
         results = {"updated": [], "failed": [], "unchanged": []}
         semaphore = asyncio.Semaphore(max_concurrent)
         completed = 0
@@ -480,9 +692,10 @@ async def run_bulk_wlan_update(
                     name = network.get("name", network_id)
                     ssid = (network.get("wlan") or {}).get("ssid", "")
 
-                    # Check if changes actually differ
-                    current = extract_settings(network)
-                    field_diffs = compute_diff(current, changes)
+                    # Check if changes actually differ (only the fields this network has)
+                    wanted = changes_for(network, changes)
+                    current = {**extract_settings(network), **extract_portal_settings(network, saved_key)}
+                    field_diffs = compute_diff(current, wanted)
 
                     if not field_diffs:
                         results["unchanged"].append({
@@ -493,7 +706,9 @@ async def run_bulk_wlan_update(
                         return
 
                     # Merge changes into full network object
-                    apply_changes_to_network(network, changes)
+                    if "portalKey" in wanted:
+                        wanted = {**wanted, "portalKey": saved_key}
+                    apply_changes_to_network(network, wanted)
 
                     # PUT updated network
                     result = await r1_client.networks.update_wifi_network(
