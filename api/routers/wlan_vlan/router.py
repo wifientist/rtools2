@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session
 
 from clients.r1_client import create_r1_client_from_controller
 from clients.sz_client_deps import create_sz_client_from_controller, validate_controller_access
-from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
 from routers.tenant_scope import resolve_tenant_id
@@ -86,7 +85,6 @@ def _api_error(e: Exception) -> str:
 # ==================== Endpoints ====================
 
 @router.post("/preview")
-@require_beta()
 async def preview(
     request: PreviewRequest,
     current_user: User = Depends(get_current_user),
@@ -151,7 +149,6 @@ async def preview(
 
 
 @router.post("/apply")
-@require_beta()
 async def apply(
     request: ApplyRequest,
     current_user: User = Depends(get_current_user),

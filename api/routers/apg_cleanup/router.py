@@ -40,7 +40,6 @@ from sqlalchemy.orm import Session
 
 from clients.r1_client import create_r1_client_from_controller
 from clients.sz_client_deps import validate_controller_access
-from decorators import require_beta
 from dependencies import get_current_user, get_db
 from models.user import User
 from routers.tenant_scope import resolve_tenant_id
@@ -178,7 +177,6 @@ async def _read_or_502(r1_client, tenant_id: str, venue_id: str) -> Dict[str, An
 # ==================== Endpoints ====================
 
 @router.post("/inventory")
-@require_beta()
 async def inventory(
     request: VenueRequest,
     current_user: User = Depends(get_current_user),
@@ -192,7 +190,6 @@ async def inventory(
 
 
 @router.post("/delete")
-@require_beta()
 async def delete_groups(
     request: DeleteRequest,
     current_user: User = Depends(get_current_user),
@@ -232,7 +229,6 @@ async def delete_groups(
 
 
 @router.post("/rename")
-@require_beta()
 async def rename_groups(
     request: RenameRequest,
     current_user: User = Depends(get_current_user),
@@ -326,7 +322,6 @@ async def rename_groups(
 
 
 @router.post("/move")
-@require_beta()
 async def move_aps(
     request: MoveRequest,
     current_user: User = Depends(get_current_user),
@@ -381,7 +376,6 @@ async def move_aps(
 
 
 @router.post("/ap-names")
-@require_beta()
 async def rename_aps(
     request: ApNameRequest,
     current_user: User = Depends(get_current_user),

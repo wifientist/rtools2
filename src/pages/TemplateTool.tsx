@@ -434,7 +434,7 @@ export default function TemplateTool() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <LayoutTemplate /> Template Tool
-            <span className="text-xs bg-blue-200 text-blue-900 px-1.5 py-0.5 rounded">ALPHA</span>
+            <span className="text-xs bg-blue-200 text-blue-900 px-1.5 py-0.5 rounded">BETA</span>
           </h1>
           <p className="text-sm text-gray-600">
             The MSP's configuration templates — what each one holds, what it depends on, and where it has been

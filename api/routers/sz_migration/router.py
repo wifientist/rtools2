@@ -59,7 +59,7 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy.orm import Session
 
 from dependencies import get_db, get_current_user
-from decorators import require_alpha, require_beta
+from decorators import require_beta
 from models.user import User
 from models.controller import Controller
 from models.sz_migration_session import SZMigrationSession
@@ -397,7 +397,7 @@ async def _run_extraction(
 # ── Endpoints ────────────────────────────────────────────────────────
 
 @router.post("/census", response_model=CensusResponse)
-@require_alpha()
+@require_beta()
 async def zone_census(
     request: CensusRequest,
     current_user: User = Depends(get_current_user),
@@ -436,7 +436,7 @@ async def zone_census(
 
 
 @router.post("/extract", response_model=ExtractResponse)
-@require_alpha()
+@require_beta()
 async def start_extraction(
     request: ExtractRequest,
     background_tasks: BackgroundTasks,
@@ -489,7 +489,7 @@ async def start_extraction(
 
 
 @router.get("/extractions")
-@require_alpha()
+@require_beta()
 async def list_recent_extractions(
     controller_id: int,
     zone_id: str,
@@ -533,7 +533,7 @@ async def list_recent_extractions(
 
 
 @router.get("/extract/{job_id}/status", response_model=ExtractionStatus)
-@require_alpha()
+@require_beta()
 async def get_extraction_status(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -557,7 +557,7 @@ async def get_extraction_status(
 
 
 @router.get("/snapshot/{job_id}")
-@require_alpha()
+@require_beta()
 async def get_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -580,7 +580,7 @@ async def get_snapshot(
 
 
 @router.get("/snapshot/{job_id}/download")
-@require_alpha()
+@require_beta()
 async def download_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -618,7 +618,7 @@ async def download_snapshot(
 
 
 @router.get("/extract/{job_id}/sse")
-@require_alpha()
+@require_beta()
 async def extraction_sse(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -720,7 +720,7 @@ async def _get_r1_snapshot_raw(job_id: str) -> Optional[str]:
 
 
 @router.post("/r1-snapshot", response_model=ExtractResponse)
-@require_alpha()
+@require_beta()
 async def capture_r1_snapshot(
     request: R1SnapshotRequest,
     current_user: User = Depends(get_current_user),
@@ -770,7 +770,7 @@ async def capture_r1_snapshot(
 
 
 @router.get("/r1-snapshot/{job_id}")
-@require_alpha()
+@require_beta()
 async def get_r1_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -789,7 +789,7 @@ async def get_r1_snapshot(
 
 
 @router.get("/r1-snapshot/{job_id}/download")
-@require_alpha()
+@require_beta()
 async def download_r1_snapshot(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -858,7 +858,7 @@ def _r1_for(controller_id: int, tenant_id: Optional[str], user: User, db: Sessio
 
 
 @router.get("/venue-draft/{sz_snapshot_job_id}")
-@require_alpha()
+@require_beta()
 async def get_venue_draft(
     sz_snapshot_job_id: str,
     current_user: User = Depends(get_current_user),
@@ -885,7 +885,7 @@ class VenueConfigPlanRequest(BaseModel):
 
 
 @router.post("/venue-config/plan")
-@require_alpha()
+@require_beta()
 async def create_venue_config_plan(
     request: VenueConfigPlanRequest,
     background_tasks: BackgroundTasks,
@@ -923,7 +923,7 @@ async def create_venue_config_plan(
 
 
 @router.get("/venue-config/{job_id}/report")
-@require_alpha()
+@require_beta()
 async def get_venue_config_report(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -965,7 +965,7 @@ class ApMappingPlanRequest(BaseModel):
 
 
 @router.post("/ap-mapping/plan")
-@require_alpha()
+@require_beta()
 async def create_ap_mapping_plan(
     request: ApMappingPlanRequest,
     background_tasks: BackgroundTasks,
@@ -1007,7 +1007,7 @@ async def create_ap_mapping_plan(
 
 
 @router.post("/ap-mapping/preview")
-@require_alpha()
+@require_beta()
 async def preview_ap_mapping(
     request: ApMappingPlanRequest,
     current_user: User = Depends(get_current_user),
@@ -1053,7 +1053,7 @@ class ApGroupCreateRequest(BaseModel):
 
 
 @router.post("/ap-mapping/create-groups")
-@require_alpha()
+@require_beta()
 async def create_manual_ap_groups(
     request: ApGroupCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -1075,7 +1075,7 @@ async def create_manual_ap_groups(
 
 
 @router.get("/ap-mapping/{job_id}/report")
-@require_alpha()
+@require_beta()
 async def get_ap_mapping_report(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -1097,7 +1097,7 @@ async def get_ap_mapping_report(
 
 
 @router.get("/venue-tags")
-@require_alpha()
+@require_beta()
 async def get_venue_tags(
     controller_id: int,
     tenant_id: Optional[str] = None,
@@ -1114,7 +1114,7 @@ async def get_venue_tags(
 
 
 @router.post("/venues")
-@require_alpha()
+@require_beta()
 async def create_destination_venue(
     request: CreateVenueRequest,
     current_user: User = Depends(get_current_user),
@@ -1161,7 +1161,7 @@ ApMappingPlanRequest.model_rebuild()   # its layout_choices names LayoutChoices,
 
 
 @router.post("/layout/{sz_snapshot_job_id}")
-@require_alpha()
+@require_beta()
 async def get_r1_layout(
     sz_snapshot_job_id: str,
     request: LayoutRequest,
@@ -1192,7 +1192,7 @@ async def get_r1_layout(
 # ══════════════════════════════════════════════════════════════════════
 
 @router.post("/resolve/{job_id}")
-@require_alpha()
+@require_beta()
 async def resolve_snapshot(
     job_id: str,
     r1_snapshot_job_id: Optional[str] = None,
@@ -1543,7 +1543,7 @@ def _persist_execution_results(db, job_id: str, job) -> None:
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get("/radius-choices/{sz_snapshot_job_id}")
-@require_alpha()
+@require_beta()
 async def get_radius_choices(
     sz_snapshot_job_id: str,
     r1_controller_id: int,
@@ -1597,7 +1597,7 @@ async def get_radius_choices(
 
 
 @router.get("/dpsk-choices/{sz_snapshot_job_id}")
-@require_alpha()
+@require_beta()
 async def get_dpsk_choices(
     sz_snapshot_job_id: str,
     r1_controller_id: int,
@@ -1647,7 +1647,7 @@ async def get_dpsk_choices(
 
 
 @router.post("/workflow/plan", response_model=MigrationPlanResponse)
-@require_alpha()
+@require_beta()
 async def create_migration_plan(
     request: MigrationPlanRequest,
     background_tasks: BackgroundTasks,
@@ -1753,7 +1753,7 @@ async def create_migration_plan(
 
 
 @router.get("/workflow/{job_id}/plan", response_model=MigrationPlanResult)
-@require_alpha()
+@require_beta()
 async def get_migration_plan(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -1805,7 +1805,7 @@ async def get_migration_plan(
 
 
 @router.post("/workflow/{job_id}/confirm", response_model=MigrationConfirmResponse)
-@require_alpha()
+@require_beta()
 async def confirm_migration(
     job_id: str,
     background_tasks: BackgroundTasks,
@@ -1869,7 +1869,7 @@ def _error_key(err: str) -> str:
 
 
 @router.get("/workflow/{job_id}/outcome")
-@require_alpha()
+@require_beta()
 async def get_migration_outcome(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -1957,7 +1957,7 @@ async def get_migration_outcome(
 
 
 @router.get("/workflow/{job_id}/graph", response_model=MigrationGraphResponse)
-@require_alpha()
+@require_beta()
 async def get_migration_graph(
     job_id: str,
     current_user: User = Depends(get_current_user),
@@ -2068,7 +2068,7 @@ def _session_to_response(session: SZMigrationSession) -> SessionResponse:
 
 
 @router.post("/sessions", response_model=SessionResponse)
-@require_alpha()
+@require_beta()
 def create_session(
     body: SessionCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -2129,7 +2129,7 @@ def list_sessions(
 
 
 @router.get("/sessions/{session_id}", response_model=SessionResponse)
-@require_alpha()
+@require_beta()
 def get_session(
     session_id: int,
     current_user: User = Depends(get_current_user),
@@ -2153,7 +2153,7 @@ VALID_STATUSES = {"draft", "extracting", "reviewing", "executing", "completed", 
 
 
 @router.patch("/sessions/{session_id}", response_model=SessionResponse)
-@require_alpha()
+@require_beta()
 def update_session(
     session_id: int,
     body: SessionUpdateRequest,
@@ -2192,7 +2192,7 @@ def update_session(
 # ── Migration Report ───────────────────────────────────────────────────
 
 @router.get("/sessions/{session_id}/report.csv")
-@require_alpha()
+@require_beta()
 def export_migration_report_csv(
     session_id: int,
     current_user: User = Depends(get_current_user),
@@ -2307,7 +2307,6 @@ class AuditRequest(BaseModel):
 
 
 @router.get("/audit-cache")
-@require_beta()
 async def get_audit_cache_status(
     sz_controller_id: Optional[int] = None,
     zone_id: Optional[str] = None,
@@ -2328,7 +2327,6 @@ async def get_audit_cache_status(
 
 
 @router.delete("/audit-cache")
-@require_beta()
 async def clear_audit_cache(
     side: Literal["sz", "r1", "both"] = "both",
     sz_controller_id: Optional[int] = None,
@@ -2359,7 +2357,6 @@ class PortalKeyCheckRequest(BaseModel):
 
 
 @router.post("/audit/portal-key-check")
-@require_beta()
 async def portal_key_check(
     request: PortalKeyCheckRequest,
     current_user: User = Depends(get_current_user),
@@ -2404,7 +2401,6 @@ async def portal_key_check(
 
 
 @router.post("/audit")
-@require_beta()
 async def run_audit_endpoint(
     request: AuditRequest,
     current_user: User = Depends(get_current_user),
