@@ -25,7 +25,11 @@ WHAT THIS GUARDS
  10. Per-AP-model zone settings (real Lofts at Mercer H550/R510 data):
      PoE, LAN ports inline (type/untag/members, port id from LANn), LEDs;
      802.1X etc. on a port profile noted, LLDP/USB listed as not carried.
- 11. Per-model lists merge into R1's: other models untouched, ports by id.
+ 11. Only the zone's models that R1 offers at the venue, and only where the
+     zone differs from R1's default for the model, are written -- each as a
+     complete entry. A beta model R1 doesn't offer (H375), unsupported PoE,
+     undisableable ports and "no trunk left" are noted, never sent. Verify
+     compares only what was written.
  12. Read-back: verify passes when R1 holds what was written, and names the
      field when R1 accepted a write but kept its own value. The plan phase
      marks sections R1 already matches as "reuse".
@@ -42,9 +46,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.sz_migration.venue_create import (
-    apply_settings, build_settings_plan, create_venue, fit_6g_outdoor, merge, merge_by_model, public_plan,
+    apply_settings, build_settings_plan, create_venue, diff_section, fit_6g_outdoor, merge, public_plan,
     venue_draft_from_zone,
 )
+from services.sz_migration.venue_models import customise
+import copy
 from types import SimpleNamespace
 from workflow.phases.phase_executor import PhaseContext
 import workflow.phases.sz_migration.apply_venue_settings as phase_mod
@@ -115,6 +121,32 @@ MODELS = {
 }
 
 
+# R1's own defaults per model at the venue (GET apModelCapabilities), as
+# R1 reports them for these models.
+CAPS = [
+    {"model": "H550", "ledOn": True, "canSupportPoeMode": True, "canSupportPoeOut": True,
+     "poeModeCapabilities": ["Auto", "802.3af", "802.3at", "802.3bt-Class_5"],
+     "lanPorts": [{"id": str(i), "defaultType": "ACCESS", "untagId": 1, "vlanMembers": "1", "supportDisable": True}
+                  for i in range(1, 5)]
+     + [{"id": "5", "defaultType": "TRUNK", "untagId": 1, "vlanMembers": "1-4094", "supportDisable": False}]},
+    {"model": "R510", "ledOn": True, "canSupportPoeMode": True, "canSupportPoeOut": False,
+     "requireOneEnabledTrunkPort": True, "poeModeCapabilities": ["Auto", "802.3af", "802.3at"],
+     "lanPorts": [{"id": "1", "defaultType": "TRUNK", "untagId": 1, "vlanMembers": "1-4094", "supportDisable": True},
+                  {"id": "2", "defaultType": "TRUNK", "untagId": 1, "vlanMembers": "1-4094", "supportDisable": False}]},
+]
+CAPS_BY_MODEL = {c["model"]: c for c in CAPS}
+
+# The zone configured things R1 doesn't default to: H550 LAN3 on VLAN 30,
+# plus a beta H375 R1 doesn't offer at the venue.
+CUSTOM_ACCESS = {**ACCESS, "name": "Unit ports", "untagId": 30, "vlanMembers": "30"}
+MODELS_CUSTOM = copy.deepcopy(MODELS)
+MODELS_CUSTOM["H550"]["settings"]["lanPorts"][2]["ethPortProfile"] = {"id": "3"}
+MODELS_CUSTOM["H550"]["eth_profiles"]["3"] = CUSTOM_ACCESS
+MODELS_CUSTOM["H375"] = {"settings": {"ledStatusEnabled": False, "poeModeSetting": "Auto",
+                                      "lanPorts": [{"portName": "LAN1", "enabled": True, "ethPortProfile": {"id": "0"}}]},
+                         "eth_profiles": {"0": TRUNK}}
+
+
 class Resp:
     def __init__(self, status, body=None):
         self.status_code, self._body = status, body
@@ -131,6 +163,7 @@ class FakeR1:
     def __init__(self, current=None, fail_paths=(), venues=(), ignore_paths=()):
         self.calls = []
         self.current = current or {}
+        self.current.setdefault("apModelCapabilities", {"apModels": CAPS})
         self.fail_paths = fail_paths
         self.ignore_paths = ignore_paths
         self.venues = list(venues)
@@ -187,7 +220,7 @@ def main() -> int:
 
     # R1 reads back 6 GHz allowedChannels beside the indoor list and then
     # refuses both together; the write drops the combined list.
-    from services.sz_migration.venue_create import drop_combined_channels, fit_poe_modes
+    from services.sz_migration.venue_create import drop_combined_channels
     rb = {"radioParams24G": {"allowedChannels": ["1", "6", "11"]},
           "radioParams6G": {"allowedChannels": ["1"], "allowedIndoorChannels": ["1"], "allowedOutdoorChannels": ["1"]}}
     drop_combined_channels(rb)
@@ -195,14 +228,6 @@ def main() -> int:
                       "allowedChannels" not in rb["radioParams6G"] and rb["radioParams24G"]["allowedChannels"] == ["1", "6", "11"],
                       str(rb))
 
-    # R1 reports Auto for an H375 and rejects it: one supported mode -> that
-    # mode; several -> R1 default; supported or unknown -> untouched.
-    rows = [{"model": "H375", "poeMode": "Auto"}, {"model": "X1", "poeMode": "802.3bt-Class_5"},
-            {"model": "R550", "poeMode": "Auto"}, {"model": "Z9", "poeMode": "Auto"}]
-    notes = fit_poe_modes(rows, {"H375": ["802.3af"], "X1": ["Auto", "802.3af"], "R550": ["Auto", "802.3af", "802.3at"]})
-    failures += check("PoE modes fitted to model capabilities",
-                      [r["poeMode"] for r in rows] == ["802.3af", None, "Auto", "Auto"] and len(notes) == 2,
-                      str(rows))
     failures += check("dual 5 GHz on, lower/upper carried, inherit off",
                       d5["enabled"] and d5["inheritParamsLower5G"] is False
                       and d5["radioParamsLower5G"]["channelBandwidth"] == "40MHz"
@@ -217,18 +242,6 @@ def main() -> int:
     failures += check("dual 5 GHz off: the zone's split plan is noted for whoever turns it on",
                       any("Lower 5 GHz 36, 40" in n and "Upper 5 GHz 149, 153" in n for n in section(off, "radio").notes),
                       str(section(off, "radio").notes))
-
-    # R1 stores no poeMode when it equals its default (Auto): wanted Auto,
-    # nothing stored = verified; anything else still differs.
-    from types import SimpleNamespace
-    from services.sz_migration.venue_create import diff_section
-    lan = SimpleNamespace(by_model=True, body=[{"model": "R650", "poeMode": "Auto"}])
-    caps = {"R650": ["Auto", "802.3af", "802.3at"]}
-    diffs = diff_section(lan, [{"model": "R650"}], caps)
-    failures += check("PoE Auto with nothing stored in R1 = R1's default, not a difference", not diffs, str(diffs))
-    diffs = diff_section(lan, [{"model": "R650", "poeMode": "802.3af"}], caps)
-    failures += check("PoE Auto vs a different stored mode still differs",
-                      [d["field"] for d in diffs] == ["R650.poeMode"], str(diffs))
 
     print("\n2. Unmappable values are noted, not sent")
     notes = " | ".join(section(plan, "radio").notes)
@@ -364,9 +377,14 @@ def main() -> int:
     r1 = FakeR1()
     out = run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
     written = {c[1].rsplit("/", 1)[1] for c in r1.calls if c[0] == "put"}
-    failures += check("default: every section applied, model settings included",
-                      out.applied == len(full["sections"]) and {"apRadioSettings", "apMeshSettings",
-                      "apModelLanPortSettings", "apModelLedSettings"} <= written, str(written))
+    failures += check("default: every section applied",
+                      out.applied == len(full["sections"]) and {"apRadioSettings", "apMeshSettings"} <= written,
+                      str(written))
+    failures += check("zone LAN ports all on R1's defaults: apModelLanPortSettings not written at all",
+                      "apModelLanPortSettings" not in written, str(written))
+    led_put = next((c[4] for c in r1.calls if c[0] == "put" and c[1].endswith("apModelLedSettings")), None)
+    failures += check("LED PUT carries only the zone model that differs (R510 off)",
+                      led_put == [{"model": "R510", "ledEnabled": False}], str(led_put))
     failures += check("apply results kept in the stage report", "apply" in R.reports)
     r1 = FakeR1()
     out = run(phase_mod.ApplyVenueSettingsPhase, {"venue_settings": []}, r1)
@@ -401,18 +419,45 @@ def main() -> int:
                       section(full, "model_antennas") is None and section(full, "model_band_mode") is None)
     failures += check("public plan has no bodies", all("body" not in x for x in public_plan(full)["sections"]))
 
-    print("\n11. Per-model merge")
-    current = [{"model": "R510", "lanPorts": [{"portId": "1", "type": "ACCESS", "untagId": 9, "enabled": True, "x": 1}]},
-               {"model": "T350", "lanPorts": []}]
-    merged = merge_by_model(current, [{"model": "R510", "lanPorts": [{"portId": "1", "type": "TRUNK", "untagId": 1}]},
-                                      {"model": "H550", "poeMode": "Auto"}])
-    by = {m["model"]: m for m in merged}
-    failures += check("other models untouched, new model added",
-                      by["T350"] == {"model": "T350", "lanPorts": []} and by["H550"] == {"model": "H550", "poeMode": "Auto"})
-    failures += check("ports merged by id, unknown fields kept",
-                      by["R510"]["lanPorts"] == [{"portId": "1", "type": "TRUNK", "untagId": 1, "enabled": True, "x": 1}])
+    print("\n11. What is pushed: only zone models R1 offers, only where they differ from R1's defaults")
+    lan_all_default = section(full, "model_lan_ports")
+    push, notes, defaults = customise("model_lan_ports", lan_all_default.body, CAPS_BY_MODEL)
+    failures += check("real zone (H550, R510) = R1 defaults: nothing pushed", push == [] and defaults == ["H550", "R510"],
+                      str(push))
+    custom = build_settings_plan(ZONE, MODELS_CUSTOM)
+    push, notes, defaults = customise("model_lan_ports", section(custom, "model_lan_ports").body, CAPS_BY_MODEL)
+    h550 = push[0] if push else {}
+    failures += check("H550 pushed alone, as a complete entry (all 5 ports), LAN3 on VLAN 30",
+                      [e["model"] for e in push] == ["H550"] and len(h550.get("lanPorts", [])) == 5
+                      and h550["lanPorts"][2] == {"portId": "3", "enabled": True, "type": "ACCESS",
+                                                  "untagId": 30, "vlanMembers": "30"}, str(push))
+    failures += check("PoE Auto (R1's default) not sent", "poeMode" not in h550, str(h550))
+    failures += check("H375 isn't offered by R1 at the venue: noted, never pushed",
+                      any("H375" in n and "doesn't offer" in n for n in notes) and "H375" not in defaults, str(notes))
+    led_push, _, _ = customise("model_leds", section(custom, "model_leds").body, CAPS_BY_MODEL)
+    failures += check("LEDs: only R510 (off) pushed; H375 never", led_push == [{"model": "R510", "ledEnabled": False}],
+                      str(led_push))
+    odd = [{"model": "R510", "poeMode": "802.3bt-Class_5", "poeOut": True,
+            "lanPorts": [{"portId": "2", "enabled": False}]}]
+    push, notes, _ = customise("model_lan_ports", odd, CAPS_BY_MODEL)
+    failures += check("unsupported PoE mode and PoE out noted; a port that can't be disabled stays enabled",
+                      push == [] and any("isn't offered" in n for n in notes)
+                      and any("PoE out" in n for n in notes) and any("can't be disabled" in n for n in notes),
+                      f"{push} {notes}")
+    no_trunk = [{"model": "R510", "lanPorts": [{"portId": "1", "enabled": False},
+                                               {"portId": "2", "type": "ACCESS", "untagId": 5, "vlanMembers": "5"}]}]
+    push, notes, _ = customise("model_lan_ports", no_trunk, CAPS_BY_MODEL)
+    failures += check("no enabled trunk port left: R1 would refuse, so not pushed",
+                      push == [] and any("one enabled trunk" in n for n in notes), f"{push} {notes}")
+    diffs = diff_section(section(custom, "model_lan_ports"), [{"model": "H550", "lanPorts": h550["lanPorts"]}],
+                         CAPS_BY_MODEL)
+    failures += check("verify compares only what is pushed (R510 on defaults, H375 absent: no difference)",
+                      diffs == [], str(diffs))
 
     print("\n12. Read-back")
+    snap = SZMigrationSnapshot(zone=SZZoneSnapshot(id="z", name="Z", raw=ZONE), zone_ap_models=MODELS_CUSTOM,
+                               aps=[{"model": "H550"}])
+    full = build_settings_plan(ZONE, MODELS_CUSTOM)
     r1 = FakeR1()
     run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
     out = run(venue_config_mod.VerifyVenueSettingsPhase, {}, r1)
@@ -426,6 +471,11 @@ def main() -> int:
         failures += check("R1 keeping its own value fails verification, naming the field",
                           "AP model LAN ports" in str(e) and "H550" in str(e), str(e)[:200])
     failures += check("verify results kept in the stage report even when failing", "verify" in R.reports)
+    r1 = FakeR1()
+    run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
+    lan_put = next(c[4] for c in r1.calls if c[0] == "put" and c[1].endswith("apModelLanPortSettings"))
+    failures += check("the LAN-port PUT carries only H550 -- no other model, no H375",
+                      [e["model"] for e in lan_put] == ["H550"], str([e["model"] for e in lan_put]))
     r1 = FakeR1()
     run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
     plan_out = run(venue_config_mod.VenueConfigPlanPhase, {"venue_settings": ["radio", "model_leds"]}, r1)

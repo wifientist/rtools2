@@ -8,18 +8,27 @@ stored in unit.plan.extra['r1_network_type'].
 For AAA networks, links the RADIUS profile created in Phase 1.
 """
 
+import asyncio
 import logging
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from redis_client import get_redis_client
-from services.ap_group_ops import api_error
+from services.ap_group_ops import api_error, is_transient
 from schemas.sz_migration import SZMigrationSnapshot
 from services.wlan_grabber import build_spec as build_wispr_spec, build_wispr_payload, wispr_radius_settings
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
 
 logger = logging.getLogger(__name__)
+
+# R1 lags on big runs (hundreds of networks): a create whose task finished
+# isn't findable by name yet ("returned no ID"), a task outlives our ~97s
+# wait and lands later, or R1 answers 503 / "System might be busy". Every
+# such WLAN worked on a re-run. So: look again for a while before failing,
+# and retry a transient refusal -- after checking it didn't land anyway.
+FIND_DELAYS = (2, 3, 5, 5, 10, 10, 15, 15)       # ~65s of re-reads by name
+RETRY_DELAYS = (10, 30)                         # pauses before a 2nd / 3rd create
 
 
 @register_phase("create_networks", "Create WiFi Networks")
@@ -76,29 +85,27 @@ class CreateNetworksPhase(PhaseExecutor):
         await self.emit(f"[{wlan_name}] Creating {r1_type} network"
                         + (f" as '{r1_name}' (SSID '{ssid}')" if r1_name != wlan_name else "") + "...")
 
-        try:
+        async def create():
             if r1_type == "psk":
-                network = await self._create_psk_network(plan_extra, r1_name, ssid, vlan_id)
-            elif r1_type == "open":
-                network = await self._create_open_network(plan_extra, r1_name, ssid, vlan_id)
-            elif r1_type == "aaa":
-                network = await self._create_aaa_network(plan_extra, r1_name, ssid, vlan_id)
-            elif r1_type == "dpsk":
-                network = await self._create_dpsk_network(plan_extra, r1_name, ssid, vlan_id)
-            elif r1_type == "dpsk_external":
-                network = await self._create_dpsk_network(plan_extra, r1_name, ssid, vlan_id,
-                                                          use_dpsk_service=False)
-            else:
-                raise RuntimeError(f"Unsupported R1 network type: {r1_type}")
-        except RuntimeError:
-            raise
-        except Exception as e:
-            # R1's reason, not the HTTP wrapper ("400 Client Error: Bad Request for url").
-            raise RuntimeError(f"R1 refused the network: {api_error(e)}") from e
+                return await self._create_psk_network(plan_extra, r1_name, ssid, vlan_id)
+            if r1_type == "open":
+                return await self._create_open_network(plan_extra, r1_name, ssid, vlan_id)
+            if r1_type == "aaa":
+                return await self._create_aaa_network(plan_extra, r1_name, ssid, vlan_id)
+            if r1_type == "dpsk":
+                return await self._create_dpsk_network(plan_extra, r1_name, ssid, vlan_id)
+            if r1_type == "dpsk_external":
+                return await self._create_dpsk_network(plan_extra, r1_name, ssid, vlan_id, use_dpsk_service=False)
+            raise ValueError(f"Unsupported R1 network type: {r1_type}")
 
-        net_id = network.get("id", "")
+        if r1_type not in ("psk", "open", "aaa", "dpsk", "dpsk_external"):
+            raise RuntimeError(f"Unsupported R1 network type: {r1_type}")
+        # R1's reason, not the HTTP wrapper ("400 Client Error: Bad Request for url").
+        net_id = await self._create_resilient(create, r1_name, wlan_name,
+                                              refused=lambda e: f"R1 refused the network: {api_error(e)}")
         if not net_id:
-            raise RuntimeError(f"Network creation returned no ID for '{wlan_name}'")
+            raise RuntimeError(f"Network creation returned no ID for '{wlan_name}' — R1 accepted it but it "
+                               "wasn't findable by name after ~65s; a re-run will pick it up if it landed")
 
         await self.track_resource("wifi_networks", {
             "id": net_id, "name": r1_name, "type": r1_type,
@@ -110,6 +117,54 @@ class CreateNetworksPhase(PhaseExecutor):
             await self._link_radius(plan_extra, net_id, wlan_name)
 
         return self.Outputs(network_id=net_id, reused=False)
+
+    async def _find_settled(self, r1_name: str) -> Optional[str]:
+        """The network's id by exact name, re-read while R1's query index catches up."""
+        for d in (0,) + FIND_DELAYS:
+            if d:
+                await asyncio.sleep(d)
+            found = await self.r1_client.networks.find_wifi_network_by_name(self.tenant_id, self.venue_id, r1_name)
+            if found and found.get("id"):
+                return found["id"]
+        return None
+
+    async def _create_resilient(self, create, r1_name: str, wlan_name: str, refused) -> Optional[str]:
+        """
+        create() -> the new network's id, or None if R1 accepted it but it never
+        became findable. A transient failure (timeout, 503, busy) is checked
+        against R1 first -- the create may have landed -- then retried; any
+        other refusal raises refused(e) at once.
+        """
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
+                network = await create()
+            except Exception as e:
+                if not is_transient(e):
+                    # A retry refused because the timed-out first create landed meanwhile ("already exists")
+                    if attempt:
+                        found = await self.r1_client.networks.find_wifi_network_by_name(
+                            self.tenant_id, self.venue_id, r1_name)
+                        if found and found.get("id"):
+                            await self.emit(f"[{wlan_name}] The earlier create landed (id={found['id'][:12]})")
+                            return found["id"]
+                    raise RuntimeError(refused(e)) from e
+                await self.emit(f"[{wlan_name}] R1 was slow or busy ({api_error(e)[:120]}) — checking whether "
+                                "the network landed anyway...", "warning")
+                net_id = await self._find_settled(r1_name)
+                if net_id:
+                    await self.emit(f"[{wlan_name}] It did (id={net_id[:12]})")
+                    return net_id
+                if attempt == len(RETRY_DELAYS):
+                    raise RuntimeError(refused(e) + f" (tried {attempt + 1} times)") from e
+                await self.emit(f"[{wlan_name}] Not there — trying again in {RETRY_DELAYS[attempt]}s", "warning")
+                await asyncio.sleep(RETRY_DELAYS[attempt])
+                continue
+            net_id = (network or {}).get("id")
+            if net_id:
+                return net_id
+            # Task done, but the name lookup inside create() ran before R1's index had it.
+            return await self._find_settled(r1_name)
+        return None
 
     async def _radius_mappings(self) -> Dict[str, str]:
         job = await self.context.state_manager.get_job(self.job_id)
@@ -161,12 +216,11 @@ class CreateNetworksPhase(PhaseExecutor):
                         + (f" as '{name}'" if name != wlan_name else "")
                         + f" ({'RADIUS auth' if radius_auth else 'Always Accept'})...")
         try:
-            network = await self.r1_client.networks.create_wifi_network_from_payload(self.tenant_id, payload)
-        except Exception as e:
-            raise RuntimeError(f"[{wlan_name}] R1 refused the WISPr network: {api_error(e)}") from e
+            net_id = await self._create_resilient(
+                lambda: self.r1_client.networks.create_wifi_network_from_payload(self.tenant_id, payload),
+                name, wlan_name, refused=lambda e: f"[{wlan_name}] R1 refused the WISPr network: {api_error(e)}")
         finally:
             payload = None                         # carries the integration key
-        net_id = (network or {}).get("id")
         if not net_id:
             raise RuntimeError(f"[{wlan_name}] R1 accepted the create but the network was not found")
         await self.track_resource("wifi_networks", {"id": net_id, "name": name, "type": "wispr"})

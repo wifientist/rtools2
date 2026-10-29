@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from redis_client import get_redis_client
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
+from services.sz_migration.r1_layout import without_wlans
 from services import ap_group_ops
 from services.r1_inventory import capture_venue_inventory
 from services.sz_migration.ap_mapping import plan_ap_mapping
@@ -64,13 +65,17 @@ class _Stage(PhaseExecutor):
         raw = await redis.get(f"sz_migration:extraction:{snapshot_job_id}:snapshot")
         if not raw:
             raise RuntimeError("SZ snapshot not found — run the extraction again")
-        snapshot = SZMigrationSnapshot.model_validate_json(raw)
+        # Excluded WLANs are out of SZ's broadcast too, so verify doesn't miss them in R1.
+        snapshot = without_wlans(SZMigrationSnapshot.model_validate_json(raw),
+                                 (self.context.options.get("layout_choices") or {}).get("excluded_wlans"))
         inv = await capture_venue_inventory(self.r1_client, self.tenant_id, self.venue_id)
         plan = plan_ap_mapping(snapshot, inv, self.context.options.get("layout_choices") or {},
                                add_new_aps=bool(self.context.options.get("add_new_aps")),
                                selected=self.context.options.get("selected_serials"),
                                name_policy=self.context.options.get("ap_name_policy") or "serial",
-                               renames=self.context.options.get("ap_renames") or {})
+                               renames=self.context.options.get("ap_renames") or {},
+                               place_by_name=bool(self.context.options.get("place_by_name")),
+                               overrides=self.context.options.get("ap_group_overrides") or {})
         return snapshot, inv, plan
 
     async def read_aps(self) -> List[Dict[str, Any]]:
@@ -161,6 +166,26 @@ class ApMappingPlanPhase(_Stage):
                 resource_type="ap", resource_name=", ".join(a["name"] or a["serial"] for a in kept[:8]),
                 description=f"{c['aps_keep']} AP(s) broadcast only the All AP Groups WLANs in SZ, but R1 has them "
                             "in groups with SSIDs of their own (a fix made in R1?) — kept where they are",
+                severity="warning"))
+        if c["aps_manual"]:
+            missing = plan["manual_missing"]
+            conflicts.append(ConflictDetail(
+                resource_type="ap", resource_name=", ".join(missing[:8]),
+                description=f"{c['aps_manual']} AP(s) placed by hand"
+                            + (f"; {len(missing)} of those AP Groups aren't in R1 — their APs wait until they're "
+                               "created ('Validate manual choices')" if missing else ""),
+                severity="warning"))
+        if c["aps_by_name"]:
+            moved = [a for a in plan["aps"] if a.get("by_name")]
+            conflicts.append(ConflictDetail(
+                resource_type="ap", resource_name=", ".join(f"{a['name']} → {a['group_name']}" for a in moved[:6]),
+                description=f"{c['aps_by_name']} AP(s) placed by name, not by their SZ AP Group — they broadcast "
+                            "their name group's WLANs, not what SZ broadcast on them", severity="warning"))
+        elif c["aps_name_differs"]:
+            conflicts.append(ConflictDetail(
+                resource_type="ap", resource_name="",
+                description=f"{c['aps_name_differs']} AP(s) are named after a different R1 AP Group than SZ puts "
+                            "them in — mapped as SZ had them (choose 'By AP name' if SZ had them wrong)",
                 severity="warning"))
         for msg in plan["staged"]["conflicts"]:
             conflicts.append(ConflictDetail(resource_type="ap_group", resource_name="staging",
@@ -262,7 +287,9 @@ class VerifyApMappingPhase(_Stage):
         broadcast = build_broadcast_audit(snapshot, inv, build_matching(snapshot, inv))
         # Kept as R1 has them, or placed in the default group because their AP
         # Group wasn't built (the operator's call): listed, not failed.
-        kept = {a["serial"] for a in plan["aps"] if a["action"] == "keep" or a.get("fallback_default")}
+        # Placed by name: they broadcast their name group's WLANs, not SZ's (wrong) ones.
+        kept = {a["serial"] for a in plan["aps"]
+                if a["action"] == "keep" or a.get("fallback_default") or a.get("by_name") or a.get("manual")}
         # Kept on purpose (R1 adds SSIDs SZ doesn't broadcast there): listed, not failed.
         differing = [a for a in broadcast.aps if a.status == "differs" and (a.serial or "").upper() not in kept]
         not_mapped = [a for a in plan["aps"] if a["action"] in ("move", "add")]
@@ -286,6 +313,8 @@ class VerifyApMappingPhase(_Stage):
             "kept": [{"name": a["name"], "serial": a["serial"], "current_group": a["current_group"],
                       "extra_ssids": a.get("extra_ssids") or []} for a in plan["aps"] if a["action"] == "keep"],
             "no_network": [a["name"] for a in plan["activations"] if a["status"] == "no_network"],
+            "by_name": [{"name": a["name"], "serial": a["serial"], "group_name": a["group_name"],
+                         "sz_group_name": a.get("sz_group_name")} for a in plan["aps"] if a.get("by_name")],
             "staged": [{"name": g["name"], "ssids": g["ssids"], "ap_count": g["ap_count"]}
                        for g in plan["groups"] if g["staged"]][:SAMPLE],
         }

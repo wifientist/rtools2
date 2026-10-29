@@ -193,6 +193,15 @@ async def raises(coro):
         return str(e)
 
 
+_real_sleep = asyncio.sleep
+
+
+async def _no_sleep(*_a, **_k):
+    await _real_sleep(0)
+
+asyncio.sleep = _no_sleep          # read-back waits and retry pauses are R1's, not the fakes'
+
+
 async def main():
     failures = 0
     print("Migration SSID activation")
@@ -404,6 +413,28 @@ async def main():
     failures += check("already on All AP Groups -> no call", not calls and out.already_active == 1)
     msg = await raises(run_activate([], {"bound": {"g1"}}, mode="all_ap_groups"))
     failures += check("already on specific groups -> not widened", msg is not None and "specific" in msg, str(msg))
+
+    # 11 Excluded WLANs: as if SZ never had them
+    from services.sz_migration.ap_mapping import plan_ap_mapping
+    ex = {"excluded_wlans": ["w3"]}
+    lay = build_layout(snapshot(), inventory(), ex)
+    cat = {c["id"]: c for c in lay["catalog"]}
+    failures += check("excluded: gone from placement, and its AP Group with it",
+                      "w3" not in {w["id"] for w in lay["wlans"]} and lay["groups"] == []
+                      and lay["summary"]["aps_default_group"] == 10, str(lay["groups"]))
+    failures += check("catalog keeps it, excluded, with its SZ AP count",
+                      cat["w3"]["excluded"] and cat["w3"]["ap_count"] == 1 and not cat["w1"]["excluded"], str(cat["w3"]))
+    snap = snapshot()
+    snap.wlans[0].name = "TEST Guest"
+    hints = {c["name"]: c["skip_hint"] for c in build_layout(snap, inventory())["catalog"]}
+    failures += check("skip hint: 'TEST Guest' yes, 'Secure6' no", hints["TEST Guest"] and not hints["Secure6"], str(hints))
+    out = await run_validate({"layout_choices": ex})
+    failures += check("plan: no unit for the excluded WLAN", "w3" not in out.unit_mappings
+                      and "w1" in out.unit_mappings, str(sorted(out.unit_mappings)))
+    p = plan_ap_mapping(snapshot(), inventory(), ex)
+    a0 = next(a for a in p["aps"] if a["serial"] == "S0")
+    failures += check("AP Mapping: the AP whose only own WLAN was excluded goes to the default group",
+                      a0["group_key"] == "__default__" and "Unit101" not in a0["broadcast"], str(a0))
 
     print(f"\n{'FAILED' if failures else 'All checks passed'}"
           f"{f' ({failures})' if failures else ''}")

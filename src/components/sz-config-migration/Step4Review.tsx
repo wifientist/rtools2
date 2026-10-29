@@ -3,6 +3,7 @@ import { ChevronDown, Loader2, ArrowRight, AlertCircle } from 'lucide-react';
 import { apiFetch } from '@/utils/api';
 import { captureR1Snapshot } from './r1Snapshot';
 import WlanPlacement from './WlanPlacement';
+import WlanSelection from './WlanSelection';
 import NetworkSettingsReview from './NetworkSettingsReview';
 import DpskChoicesPanel, { type DpskWlan } from './DpskChoicesPanel';
 import RadiusMapping from './RadiusMapping';
@@ -26,10 +27,10 @@ interface Props {
   dispatch: React.Dispatch<WizardAction>;
 }
 
-type Section = 'placement' | 'auth' | 'blueprint' | 'networks' | 'dpsk' | 'radius';
+type Section = 'wlans' | 'placement' | 'auth' | 'blueprint' | 'networks' | 'dpsk' | 'radius';
 
 export default function Step4Review({ state, dispatch }: Props) {
-  const [openSections, setOpenSections] = useState<Set<Section>>(new Set(['placement', 'auth']));
+  const [openSections, setOpenSections] = useState<Set<Section>>(new Set(['wlans', 'placement', 'auth']));
   const [resolving, setResolving] = useState(false);
   const [planning, setPlanning] = useState(false);
 
@@ -110,7 +111,8 @@ export default function Step4Review({ state, dispatch }: Props) {
   // ── External auth → R1 DPSK ─────────────────────────────────────
   // WLANs that authenticate against RADIUS may move onto R1's own DPSK
   // service. Only WLANs that are migrated at all are offered.
-  const notMigrated = new Set((layout?.unbroadcast ?? []).filter(u => !u.included).map(u => u.id));
+  const excludedWlans = state.layoutChoices.excluded_wlans ?? [];
+  const notMigrated = new Set([...(layout?.unbroadcast ?? []).filter(u => !u.included).map(u => u.id), ...excludedWlans]);
   const serviceByWlan = new Map<string, string>();
   for (const svc of radiusChoices?.services ?? []) {
     for (const u of svc.used_by) if (u.role === 'authentication') serviceByWlan.set(u.wlan_id, svc.name);
@@ -142,6 +144,9 @@ export default function Step4Review({ state, dispatch }: Props) {
           notes: `Converted to R1 DPSK — SZ ${m.sz_auth_type} used RADIUS; R1's DPSK service replaces it` }
       : m]),
   );
+  // ...less the WLANs excluded from the migration
+  const migratedMappings: Record<string, TypeMapping> | null = effectiveMappings && Object.fromEntries(
+    Object.entries(effectiveMappings).filter(([id]) => !excludedWlans.includes(id)));
 
   // Effective decisions: what was chosen, else the suggestion.
   const decisions: Record<string, RadiusDecision> = {};
@@ -424,6 +429,30 @@ export default function Step4Review({ state, dispatch }: Props) {
       {!loading && state.resolverResult && (
         <>
           <AccordionPanel
+            title="WLANs to migrate"
+            subtitle={layout?.catalog
+              ? `${layout.catalog.length - excludedWlans.length} of ${layout.catalog.length} migrated`
+                + (excludedWlans.length ? ` · ${excludedWlans.length} excluded` : '')
+              : 'Loading…'}
+            section="wlans"
+            isOpen={openSections.has('wlans')}
+            onToggle={toggleSection}
+            badge={(layout?.catalog ?? []).some(w => w.skip_hint && !excludedWlans.includes(w.id)) ? 'TEST / TEMP?' : undefined}
+            badgeColor="amber"
+          >
+            {layout?.catalog ? (
+              <div className={layoutLoading ? 'opacity-60' : ''}>
+                <WlanSelection catalog={layout.catalog} excluded={excludedWlans} disabled={planning}
+                               onChange={ids => updateLayoutChoices({ ...state.layoutChoices, excluded_wlans: ids })} />
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" /> Loading WLANs…
+              </div>
+            )}
+          </AccordionPanel>
+
+          <AccordionPanel
             title="WLAN Placement"
             subtitle={layout
               ? `${layout.summary.all_ap_wlans} on All AP Groups · ${layout.summary.groups} AP Groups (${layout.summary.groups_existing} in R1, ${layout.summary.groups_to_create} to create, ${layout.summary.groups_pending} not created)`
@@ -552,7 +581,7 @@ export default function Step4Review({ state, dispatch }: Props) {
                 isOpen={openSections.has('blueprint')}
                 onToggle={toggleSection}
               >
-                <MigrationBlueprint state={{ ...state, typeMappings: effectiveMappings }} layout={layout} />
+                <MigrationBlueprint state={{ ...state, typeMappings: migratedMappings }} layout={layout} />
               </AccordionPanel>
 
               <AccordionPanel
@@ -562,7 +591,7 @@ export default function Step4Review({ state, dispatch }: Props) {
                 isOpen={openSections.has('networks')}
                 onToggle={toggleSection}
               >
-                <NetworkSettingsReview typeMappings={effectiveMappings ?? {}} />
+                <NetworkSettingsReview typeMappings={migratedMappings ?? {}} />
               </AccordionPanel>
 
               {!canProceed && (
@@ -600,6 +629,30 @@ export default function Step4Review({ state, dispatch }: Props) {
               </button>
             </div>
           )}
+
+          {/* Networks already built in R1 (an earlier run, or by hand): AP
+              Mapping pairs each WLAN with the network R1 has, using the
+              placement chosen above, so Create WLANs can be skipped. */}
+          <div className="flex justify-end items-center gap-2 text-xs text-gray-500">
+            {!placementReady && (
+              <span className="text-amber-700">
+                {layoutLoading || r1Reading ? 'Waiting for WLAN Placement to finish loading…'
+                  : !layout ? "WLAN Placement didn't load — see the error at the top of the page"
+                  : `WLAN Placement is blocked: ${layout.warnings.filter(w => w.severity === 'error')
+                      .map(w => w.message).join('; ') || 'see the panel above'}`}
+              </span>
+            )}
+            WLANs already in R1 for this venue?
+            <button
+              onClick={() => dispatch({ type: 'SET_STEP', step: 7 })}
+              disabled={!placementReady}
+              title={placementReady ? 'Uses the placement above; Create WLANs is not run'
+                : 'Placement must load (and be under the 15-SSID limit) first'}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:text-gray-300 flex items-center gap-1"
+            >
+              Skip to AP Mapping <ArrowRight size={12} />
+            </button>
+          </div>
         </>
       )}
     </div>

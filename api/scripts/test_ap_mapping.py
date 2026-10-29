@@ -434,8 +434,115 @@ def test_graph():
     return f
 
 
+
+
+def test_place_by_name():
+    print("\n10. Place by name (SZ had the APs in the wrong AP Groups)")
+    f = 0
+    site = "Site"
+    w = {k: SZWLANFull(id=k, name=n, ssid=n, auth_type="WPA2-PSK", encryption={"method": "WPA2"})
+         for k, n in (("wifi", "WiFi"), ("u124", f"4-124@{site}"), ("u125", f"4-125@{site}"), ("u126", f"4-126@{site}"))}
+    m = {k: SZWLANGroupMember(id=v.id, name=v.name, ssid=v.ssid) for k, v in w.items()}
+    wgs = [SZWLANGroup(id="wg-d", name="default", members=[m["wifi"]])] + [
+        SZWLANGroup(id=f"wg-{u}", name=u, members=[m["wifi"], m[f"u{u}"]]) for u in ("124", "125", "126")]
+    # Swapped in SZ: AP 4-124 broadcasts 4-125's WLAN and vice versa; 4-126 is right; Lobby has no unit.
+    plan_of = {"4-124": "wg-125", "4-125": "wg-124", "4-126": "wg-126", "Lobby": None}
+    aps = [{"apMac": n, "deviceName": n, "serial": f"S{n}", "apGroupId": "sz-default"} for n in plan_of]
+    detail = {n: {"dual5g": False, "radios": {b: {"wlan_group_id": wg, "service_enabled": True}
+                                              for b in ("radio24g", "radio5g")}} for n, wg in plan_of.items()}
+    snap = SZMigrationSnapshot(zone=SZZoneSnapshot(id="z", name="Z"), wlans=list(w.values()), wlan_groups=wgs,
+                               aps=aps, ap_radio_config=detail,
+                               ap_groups=[SZAPGroupEnriched(id="sz-default", name="default", ap_count=len(aps))])
+
+    def net(nid, ssid, groups=None):
+        vag = {"venueId": "v", "isAllApGroups": groups is None, "apGroupIds": groups or []}
+        return {"id": nid, "name": ssid, "ssid": ssid, "venueApGroups": [vag]}
+    # R1 groups built by name; 4-126's group is called "Unit 126" but carries its unit SSID.
+    inv = R1VenueInventory(
+        venue_id="v", venue_name="V", tenant_id="t",
+        ap_groups=[{"id": "g-d", "name": "", "isDefault": True}, {"id": "g124", "name": "4-124"},
+                   {"id": "g125", "name": "4-125"}, {"id": "g126", "name": "Unit 126"}],
+        wifi_networks=[net("n0", "WiFi"), net("n124", f"4-124@{site}", ["g124"]),
+                       net("n125", f"4-125@{site}", ["g125"]), net("n126", f"4-126@{site}", ["g126"])],
+        aps=[{"serialNumber": f"S{n}", "name": n, "apGroupId": "g-d"} for n in plan_of])
+    row = lambda p, n: next(a for a in p["aps"] if a["name"] == n)
+
+    p = plan_ap_mapping(snap, inv)
+    f += check("off: SZ's (wrong) broadcast decides -- 4-124 goes to 4-125's group",
+               row(p, "4-124")["group_name"] == "4-125" and not row(p, "4-124")["by_name"], str(row(p, "4-124")))
+    f += check("off: the two swapped APs are counted, and say where their name points",
+               p["counts"]["aps_name_differs"] == 2 and row(p, "4-124")["name_group"] == "4-124"
+               and p["counts"]["aps_by_name"] == 0, str(p["counts"]))
+
+    p = plan_ap_mapping(snap, inv, place_by_name=True)
+    a = row(p, "4-124")
+    f += check("on: 4-124 goes to the group named 4-124, SZ's target kept for display",
+               a["group_id"] == "g124" and a["by_name"] and a["sz_group_name"] == "4-125" and a["action"] == "move",
+               str(a))
+    f += check("on: it will broadcast its name group's unit SSID",
+               f"4-124@{site}" in a["broadcast"] and f"4-125@{site}" not in a["broadcast"], str(a["broadcast"]))
+    b = row(p, "4-126")
+    f += check("an AP already right is left alone (not by_name)", b["group_id"] == "g126" and not b["by_name"], str(b))
+    f += check("no name match: unchanged", row(p, "Lobby")["group_key"] == "__default__" and not row(p, "Lobby")["by_name"])
+    f += check("counts", p["counts"]["aps_by_name"] == 2, str(p["counts"]))
+
+    # Strays: APs with no unit group of their own, broadcasting 4-124's unit WLAN (Novo: 223 APs
+    # fell back to WLAN Group "3109"); "4-124-B" is a second AP in unit 4-124, not a stray.
+    stray = {"5101": "wg-124", "Club": "wg-124", "4-124-B": "wg-124"}
+    snap2 = snap.model_copy(update={
+        "aps": snap.aps + [{"apMac": n, "deviceName": n, "serial": f"S{n}", "apGroupId": "sz-default"} for n in stray],
+        "ap_radio_config": {**detail, **{n: {"dual5g": False, "radios": {b: {"wlan_group_id": wg, "service_enabled": True}
+                                                                         for b in ("radio24g", "radio5g")}}
+                                         for n, wg in stray.items()}}})
+    p = plan_ap_mapping(snap2, inv)
+    f += check("off: strays follow SZ into 4-124's group, flagged 'name says: (default)'",
+               row(p, "5101")["group_id"] == "g124" and row(p, "5101")["name_group"] == "(default)"
+               and row(p, "Club")["name_group"] == "(default)", str(row(p, "5101")))
+    f += check("a second AP in the unit isn't a stray", row(p, "4-124-B")["name_group"] is None, str(row(p, "4-124-B")))
+    p = plan_ap_mapping(snap2, inv, place_by_name=True)
+    f += check("on: strays go to the default group, broadcasting only the All AP Groups set",
+               all(row(p, n)["group_key"] == "__default__" and row(p, n)["by_name"] and row(p, n)["broadcast"] == ["WiFi"]
+                   for n in ("5101", "Club")), str(row(p, "Club")))
+    f += check("on: the unit's own APs stay", row(p, "4-124-B")["group_id"] == "g124" and not row(p, "4-124-B")["by_name"])
+
+    # Wider match: "2-2045" finds group "2045" (the unit number alone).
+    inv2 = inv.model_copy(update={"ap_groups": inv.ap_groups + [{"id": "g2045", "name": "2045"}]})
+    snap3 = snap2.model_copy(update={
+        "aps": snap2.aps + [{"apMac": "2-2045", "deviceName": "2-2045", "serial": "S2-2045", "apGroupId": "sz-default"}],
+        "ap_radio_config": {**snap2.ap_radio_config, "2-2045": snap2.ap_radio_config["5101"]}})
+    p = plan_ap_mapping(snap3, inv2, place_by_name=True)
+    f += check("'2-2045' -> group '2045'", row(p, "2-2045")["group_id"] == "g2045" and row(p, "2-2045")["by_name"],
+               str(row(p, "2-2045")))
+
+    # Manual overrides beat both; a name R1 lacks is "missing" and its AP waits.
+    ov = {"SClub": "4-125", "S5101": "Pool House", "SLobby": "(default)", "S4-126": "  "}
+    p = plan_ap_mapping(snap3, inv2, place_by_name=True, overrides=ov)
+    a = row(p, "Club")
+    f += check("manual -> an R1 group (any case match), status exists, SZ's target kept for display",
+               a["group_id"] == "g125" and a["manual"] and a["manual_status"] == "exists"
+               and a["sz_group_name"] == "4-124" and a["auto_group"] == "(default)", str(a))
+    a = row(p, "5101")
+    f += check("manual -> a group R1 lacks: missing, waits on it, listed",
+               a["manual_status"] == "missing" and a["action"] == "group_missing"
+               and p["manual_missing"] == ["Pool House"], str((a, p["manual_missing"])))
+    f += check("manual '(default)' -> the default group", row(p, "Lobby")["group_key"] == "__default__"
+               and row(p, "Lobby")["manual"])
+    f += check("a blank override is ignored", not row(p, "4-126")["manual"])
+    f += check("count", p["counts"]["aps_manual"] == 3, str(p["counts"]))
+
+    # Unit match: an AP named after a unit SSID, the group named something else.
+    detail["4-126"]["radios"] = {b: {"wlan_group_id": "wg-124", "service_enabled": True} for b in ("radio24g", "radio5g")}
+    snap = snap.model_copy(update={"ap_radio_config": detail})
+    p = plan_ap_mapping(snap, inv, place_by_name=True)
+    c = row(p, "4-126")
+    f += check("unit match: 4-126 -> 'Unit 126' (carries 4-126@Site)",
+               c["group_id"] == "g126" and c["by_name"], str(c))
+    return f
+
+
 if __name__ == "__main__":
     failures = sum(t() for t in (test_layout_radios, test_plan, test_place_aps, test_map_phase,
-                                 test_graph, test_staging, test_selection, test_name_clash_retry))
+                                 test_graph, test_staging, test_selection, test_name_clash_retry,
+                                 test_place_by_name))
     print(f"\n{'All checks passed' if not failures else f'{failures} check(s) failed'}")
     sys.exit(1 if failures else 0)

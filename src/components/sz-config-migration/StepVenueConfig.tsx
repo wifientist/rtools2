@@ -19,6 +19,8 @@ interface SectionResult {
   status: string;   // apply: applied | failed; verify: verified | differs | unreadable
   error?: string;
   differences?: Array<{ field: string; wanted: unknown; actual: unknown }>;
+  notes?: string[];          // apply: per-model decisions (written / R1 defaults kept / not offered)
+  pushed?: string[];         // per-model sections: the models actually written
 }
 
 interface StageReport {
@@ -186,6 +188,10 @@ export default function StepVenueConfig({ state, dispatch }: Props) {
                       <td className="px-3 py-1.5">
                         {a?.status === 'applied' ? <span className="text-green-700">applied</span>
                           : a ? <span className="text-red-700">refused — {a.error}</span> : '—'}
+                        {a?.pushed && <div className="text-[11px] text-gray-600">written: {a.pushed.join(', ')}</div>}
+                        {(a?.notes ?? []).map(n => (
+                          <div key={n} className="text-[11px] text-gray-500">{n}</div>
+                        ))}
                       </td>
                       <td className="px-3 py-1.5">
                         {v.status === 'verified' && <span className="text-green-700 font-semibold">verified</span>}

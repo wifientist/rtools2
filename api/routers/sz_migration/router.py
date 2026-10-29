@@ -102,6 +102,8 @@ from workflow.workflows.sz_venue_config import SZVenueConfigWorkflow
 from workflow.workflows.sz_ap_mapping import SZApMappingWorkflow
 from workflow.phases.sz_migration.ap_mapping import load_report as load_ap_mapping_report
 from services.sz_migration.ap_mapping import plan_ap_mapping
+from services.sz_migration.r1_layout import r1_group_name
+from services import ap_group_ops
 from workflow.phases.sz_migration.venue_config import load_stage_report
 from workflow.events import WorkflowEventPublisher
 
@@ -956,6 +958,10 @@ class ApMappingPlanRequest(BaseModel):
     ap_name_policy: Literal["serial", "keep"] = "serial"
     # serial -> R1 name the operator typed for a duplicate-named AP
     ap_renames: Dict[str, str] = Field(default_factory=dict)
+    # SZ had APs in the wrong AP Groups: send each AP to the R1 group its name points at
+    place_by_name: bool = False
+    # serial -> R1 AP Group name the operator typed; beats SZ and by-name
+    ap_group_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
 @router.post("/ap-mapping/plan")
@@ -991,7 +997,8 @@ async def create_ap_mapping_plan(
         user_id=current_user.id,
         options={"sz_snapshot_job_id": request.sz_snapshot_job_id, "layout_choices": choices,
                  "add_new_aps": request.add_new_aps, "selected_serials": request.selected_serials,
-                 "ap_name_policy": request.ap_name_policy, "ap_renames": request.ap_renames},
+                 "ap_name_policy": request.ap_name_policy, "ap_renames": request.ap_renames,
+                 "place_by_name": request.place_by_name, "ap_group_overrides": request.ap_group_overrides},
         input_data={"sz_snapshot_job_id": request.sz_snapshot_job_id},
     )
     background_tasks.add_task(_run_migration_validation_background, job.id, request.r1_controller_id)
@@ -1020,18 +1027,51 @@ async def preview_ap_mapping(
     choices = request.layout_choices.model_dump() if request.layout_choices else {}
     plan = plan_ap_mapping(snapshot, inv, choices, add_new_aps=request.add_new_aps,
                            selected=request.selected_serials, name_policy=request.ap_name_policy,
-                           renames=request.ap_renames)
+                           renames=request.ap_renames, place_by_name=request.place_by_name,
+                           overrides=request.ap_group_overrides)
     return {
         "venue_name": inv.venue_name,
         "r1_ap_count": len(inv.aps),
         "counts": plan["counts"],
         "aps": plan["aps"],
         "groups": plan["groups"],
+        # every named R1 AP Group in the venue (manual override suggestions), and typed names R1 lacks
+        "r1_groups": sorted((g.get("name") for g in inv.ap_groups if (g.get("name") or "").strip()), key=str.casefold),
+        "manual_missing": plan["manual_missing"],
         "warnings": plan["warnings"],
         "staged": plan["staged"],
         "activations": [{"name": a["name"], "status": a["status"], "error": a["error"]}
                         for a in plan["activations"] if a["status"] != "already"],
     }
+
+
+class ApGroupCreateRequest(BaseModel):
+    r1_controller_id: int
+    tenant_id: Optional[str] = None
+    venue_id: str
+    names: List[str]
+
+
+@router.post("/ap-mapping/create-groups")
+@require_alpha()
+async def create_manual_ap_groups(
+    request: ApGroupCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Find-or-create the (empty) AP Groups named in manual overrides, so the
+    APs can be mapped into them. Nothing is activated on them.
+    """
+    names = list(dict.fromkeys(r1_group_name(n) for n in request.names if (n or "").strip()))
+    if not names:
+        raise HTTPException(status_code=400, detail="No AP Group names given")
+    if len(names) > 200:
+        raise HTTPException(status_code=400, detail="At most 200 AP Groups at a time")
+    r1_client, tenant = _r1_for(request.r1_controller_id, request.tenant_id, current_user, db)
+    ids, errors, created = await ap_group_ops.ensure_groups(r1_client, tenant, request.venue_id, names)
+    return {"created": created, "existing": [n for n in names if n.casefold() in ids and n not in created],
+            "errors": [{"name": n, "error": errors[n.casefold()]} for n in names if n.casefold() in errors]}
 
 
 @router.get("/ap-mapping/{job_id}/report")
@@ -1109,6 +1149,7 @@ class LayoutChoices(BaseModel):
     include_unbroadcast: List[str] = Field(default_factory=list)
     stage_unbroadcast: List[str] = Field(default_factory=list)
     pairing: Dict[str, str] = Field(default_factory=dict)   # mode: wlan_group | pattern; wlan_pattern; ap_pattern
+    excluded_wlans: List[str] = Field(default_factory=list)  # not migrated at all (test / temp SSIDs...)
 
 
 class LayoutRequest(BaseModel):

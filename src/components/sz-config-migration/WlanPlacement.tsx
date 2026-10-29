@@ -21,7 +21,7 @@ const pct = (n: number) => `${(n * 100).toFixed(n >= 0.995 || n < 0.01 ? 0 : 1)}
 export default function WlanPlacement({ layout, choices, onChange, disabled }: Props) {
   const [showAllWlans, setShowAllWlans] = useState(false);
   const [groupFilter, setGroupFilter] = useState('');
-  const [groupView, setGroupView] = useState<'all' | 'pending' | 'create' | 'exists' | 'staged'>('all');
+  const [groupView, setGroupView] = useState<'all' | 'pending' | 'create' | 'exists' | 'staged' | 'ambiguous'>('all');
   const s = layout.summary;
 
   const allAp = useMemo(() => new Set(
@@ -54,12 +54,16 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
   };
   const setCreate = (keys: string[], on: boolean) => onChange(withCreate(choices, keys, on));
 
-  const rename = (key: string, name: string) => {
+  // name '' = back to the suggestion
+  const renameMany = (pairs: Array<[string, string]>) => {
     const names = { ...choices.group_names };
-    if (name.trim()) names[key] = name.trim();
-    else delete names[key];
+    for (const [key, name] of pairs) {
+      if (name.trim()) names[key] = name.trim();
+      else delete names[key];
+    }
     onChange({ ...choices, group_names: names });
   };
+  const rename = (key: string, name: string) => renameMany([[key, name]]);
 
   const toggleInclude = (id: string) => {
     const next = new Set(choices.include_unbroadcast);
@@ -96,8 +100,9 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
   const groups = useMemo(() => {
     const q = groupFilter.trim().toLowerCase();
     const source = groupView === 'staged' ? stagedGroups
-      : groupView === 'all' ? [...layout.groups, ...stagedGroups] : layout.groups;
+      : groupView === 'all' || groupView === 'ambiguous' ? [...layout.groups, ...stagedGroups] : layout.groups;
     return source.filter(g => {
+      if (groupView === 'ambiguous' && !g.ambiguous) return false;
       if (groupView === 'pending' && (g.exists || g.create)) return false;
       if (groupView === 'create' && !g.create) return false;
       if (groupView === 'exists' && !g.exists) return false;
@@ -107,6 +112,14 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
         || g.aps.some(a => (a.name || '').toLowerCase().includes(q) || (a.serial || '').toLowerCase().includes(q));
     });
   }, [layout.groups, stagedGroups, groupFilter, groupView]);
+  const nAmbiguous = [...layout.groups, ...stagedGroups].filter(g => g.ambiguous).length;
+  // Bulk naming over the groups shown: '' = each group's suggestion
+  const nameShownFrom = (source: '' | 'AP name' | 'unit WLAN') =>
+    renameMany(groups.filter(g => g.name_options?.length).flatMap((g): Array<[string, string]> => {
+      if (!source) return [[g.key, '']];
+      const o = g.name_options!.find(x => x.source.split(' / ').includes(source));
+      return o ? [[g.key, o.name]] : [];
+    }));
   const newVisible = groups.filter(g => !g.exists && !g.staged).map(g => g.key);
   const stagedVisible = groups.filter(g => g.staged);
   const stagedChosen = stagedGroups.filter(g => g.chosen);
@@ -336,7 +349,18 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
             <option value="pending">Not created ({s.groups_pending})</option>
             <option value="create">To create ({s.groups_to_create})</option>
             <option value="exists">Exist in R1 ({s.groups_existing})</option>
+            {nAmbiguous > 0 && <option value="ambiguous">Other names possible ({nAmbiguous})</option>}
           </select>
+          {groups.some(g => g.name_options?.length) && (
+            <span className="flex items-center gap-2 text-xs text-gray-500"
+                  title="Renames the groups shown. Each name stays editable afterwards.">
+              Name {groups.length === layout.groups.length + stagedGroups.length ? 'all' : 'shown'} from:
+              {([['', 'suggestion'], ['AP name', 'AP name'], ['unit WLAN', 'unit WLAN']] as const).map(([src, label]) => (
+                <button key={label} disabled={disabled} onClick={() => nameShownFrom(src)}
+                        className="text-indigo-600 hover:underline disabled:text-gray-400">{label}</button>
+              ))}
+            </span>
+          )}
           {tickable > 0 && (
             <>
               <button disabled={disabled}
@@ -511,11 +535,12 @@ function GroupRow({ g, disabled, onCreate, onRename }: {
         )}
       </td>
       <td className="px-3 py-1.5">
-        {g.exists && !g.staged ? (
+        {g.matched_by === 'SSIDs' ? (
           <span className="font-medium">{g.name}</span>
         ) : (
           <input
-            className="w-full border border-transparent hover:border-gray-300 focus:border-indigo-400 rounded px-1 py-0.5 font-medium"
+            className={`w-full border rounded px-1.5 py-0.5 font-medium bg-white focus:border-indigo-400 focus:outline-none ${
+              g.ambiguous ? 'border-amber-400' : 'border-gray-300'}`}
             value={draft ?? g.name}
             disabled={disabled}
             maxLength={64}
@@ -525,11 +550,27 @@ function GroupRow({ g, disabled, onCreate, onRename }: {
           />
         )}
         <div className="text-[10px] text-gray-400 px-1">
-          {g.staged ? `per-unit (staged) · named from ${g.name_source}${g.renamed ? ' (renamed)' : ''}`
-            : g.exists
-            ? (g.matched_by === 'SSIDs' ? 'existing R1 group already carrying these SSIDs' : 'existing R1 group of this name')
-            : `named from ${g.name_source}${g.renamed ? ' (renamed)' : ''}`}
+          {g.matched_by === 'SSIDs' ? 'existing R1 group already carrying these SSIDs'
+            : `${g.staged ? 'per-unit (staged) · ' : ''}${g.exists ? 'existing R1 group of this name · ' : ''}`
+              + `named from ${g.renamed ? 'your edit' : g.name_source}`}
         </div>
+        {/* Other reasonable names: one click to take one */}
+        {(g.name_options?.length ?? 0) > 1 && (
+          <div className="flex flex-wrap items-center gap-1 px-1 mt-0.5 text-[10px]">
+            {g.ambiguous && <span className="text-amber-700 font-semibold">pick:</span>}
+            {g.name_options!.filter(o => o.name !== g.name).map(o => (
+              <button key={o.name} disabled={disabled} onClick={() => onRename(o.name)}
+                      title={`Name it ${o.name} (from ${o.source})`}
+                      className="px-1.5 py-px rounded border border-gray-300 bg-white hover:border-indigo-400 hover:text-indigo-700 disabled:text-gray-400">
+                {o.name} <span className="text-gray-400">· {o.source}</span>
+              </button>
+            ))}
+            {g.renamed && (
+              <button disabled={disabled} onClick={() => onRename('')}
+                      className="text-gray-500 hover:underline disabled:text-gray-400">reset</button>
+            )}
+          </div>
+        )}
       </td>
       <td className="px-3 py-1.5" title={g.aps.map(a => `${a.name}${a.serial ? ` (${a.serial})` : ''}`).join('\n')}>
         {g.ap_count === 1 ? g.aps[0]?.name : `${g.ap_count} APs`}
