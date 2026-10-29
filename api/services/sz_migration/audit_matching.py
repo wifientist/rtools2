@@ -55,9 +55,9 @@ def match_wlans(snapshot: SZMigrationSnapshot, inv: R1VenueInventory) -> Tuple[L
     out: List[WlanMatch] = []
 
     rules = (
-        (MatchMethod.NAME, lambda w, n: n.get("name") == w.name),
-        (MatchMethod.NAME_CASE, lambda w, n: (n.get("name") or "").lower() == w.name.lower()),
-        (MatchMethod.SSID, lambda w, n: n.get("ssid") == w.ssid),
+        (MatchMethod.NAME, lambda w, n: (n.get("name") or "").strip() == w.name),
+        (MatchMethod.NAME_CASE, lambda w, n: (n.get("name") or "").strip().lower() == w.name.lower()),
+        (MatchMethod.SSID, lambda w, n: (n.get("ssid") or "").strip() == w.ssid),
     )
 
     for w in snapshot.wlans:
@@ -81,7 +81,7 @@ def match_wlans(snapshot: SZMigrationSnapshot, inv: R1VenueInventory) -> Tuple[L
             m.method, m.activated_in_venue = method, in_venue
             if not in_venue:
                 m.notes.append("Exists in the tenant but is not activated in this venue")
-            if method != MatchMethod.SSID and cand.get("ssid") != w.ssid:
+            if method != MatchMethod.SSID and (cand.get("ssid") or "").strip() != w.ssid:
                 m.notes.append(f"SSID differs: SZ '{w.ssid}', R1 '{cand.get('ssid')}'")
         out.append(m)
 
