@@ -274,7 +274,8 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
             await update_activity("Discovering zones...")
 
         # For normal path, we'll track zones as we discover them
-        zones_discovered = 0
+        # Unique zone IDs: a zone can be returned under more than one domain
+        discovered_zone_ids = set()
         await update_zone_progress(0, 0)
 
         cancelled = False
@@ -296,8 +297,8 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                 zones = await sz_client.zones.get_zones(domain_id=domain_id)
                 # Update discovered count (excluding system zones)
                 non_system_zones = [z for z in zones if z.get("name", "").lower() != "staging zone"]
-                zones_discovered += len(non_system_zones)
-                await update_zone_progress(total_zones_processed, zones_discovered)
+                discovered_zone_ids.update(z.get("id") for z in non_system_zones)
+                await update_zone_progress(total_zones_processed, len(discovered_zone_ids))
 
                 for zone in zones:
                     # Check for cancellation before each zone
@@ -375,7 +376,7 @@ async def execute(context: Dict[str, Any]) -> List[Task]:
                     )
 
                     # Update progress after each zone
-                    await update_zone_progress(total_zones_processed, zones_discovered)
+                    await update_zone_progress(total_zones_processed, len(discovered_zone_ids))
 
                     # Update cache stats periodically
                     if total_zones_processed % 10 == 0:
