@@ -140,6 +140,29 @@ def _sz_ap_fields(ap: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def sz_serials_missing_from_venue(snapshot: SZMigrationSnapshot, inv: R1VenueInventory) -> List[str]:
+    """SZ AP serials this venue holds by neither serial nor MAC -- the ones to look up tenant-wide."""
+    serials = {norm_serial(a.get("serialNumber")) for a in inv.aps}
+    macs = {norm_mac(a.get("macAddress")) for a in inv.aps}
+    out = []
+    for raw in snapshot.aps:
+        s = _sz_ap_fields(raw)
+        if s["serial"] and s["serial"] not in serials and not (s["mac"] and s["mac"] in macs):
+            out.append(s["serial"])
+    return sorted(set(out))
+
+
+def _missing_reason(serial: Optional[str], lookup: Optional[Dict[str, Dict[str, Any]]]) -> Tuple[str, str]:
+    if not serial:
+        return "no_serial", "SZ reports no serial, so it can't be looked up in R1"
+    if lookup is None:
+        return "not_searched", "Not in this venue; the rest of the tenant wasn't searched (refresh R1 to check)"
+    hit = lookup.get(serial)
+    if hit is None:
+        return "not_in_r1", "Serial not in R1 — add the AP to the tenant"
+    return "other_venue", f"In R1, but in venue “{hit.get('venue_name') or hit.get('venue_id') or 'unknown'}”"
+
+
 def match_aps(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
               group_matches: List[ApGroupMatch]) -> List[ApMatch]:
     sz_group_name = {g.id: g.name for g in snapshot.ap_groups}
@@ -168,6 +191,7 @@ def match_aps(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         )
         if r1 is None:
             m.presence = "sz_only"
+            m.missing_code, m.missing_reason = _missing_reason(s["serial"], inv.tenant_ap_lookup)
         else:
             used.add(id(r1))
             m.r1_ap_group = r1.get("apGroupName") or r1_group_name.get(r1.get("apGroupId"))

@@ -243,6 +243,10 @@ class ApMatch(BaseModel):
     # Raw keys as each controller reports them (for lookups, not display)
     sz_ap_mac: Optional[str] = None
     r1_serial: Optional[str] = None
+    # sz_only: why it isn't in this venue -- not_in_r1 / other_venue /
+    # no_serial / not_searched -- with a sentence for the page
+    missing_code: Optional[str] = None
+    missing_reason: Optional[str] = None
 
 
 class WlanGroupUsage(BaseModel):

@@ -23,6 +23,8 @@ WHAT THIS GUARDS
   6. Empty SZ AP Group without an R1 match is noted, not counted missing.
   7. AP by serial, then MAC, across formats; presence and group alignment.
   8. The auditor uses the same pairings (no second opinion).
+  9. An SZ AP missing from the venue says why: serial not in R1, in another
+     venue, no serial in SZ, or the tenant was not searched.
 
 Usage:
     docker compose exec backend python scripts/test_audit_matching.py
@@ -38,7 +40,7 @@ from schemas.sz_migration import (
     SZWLANGroup, SZWLANGroupMember,
 )
 from schemas.r1_inventory import R1VenueInventory
-from services.sz_migration.audit_matching import build_matching
+from services.sz_migration.audit_matching import build_matching, sz_serials_missing_from_venue
 from services.sz_migration.auditor import run_audit
 
 
@@ -198,6 +200,22 @@ def main():
     sc2 = {c.key: c for c in run_audit(snapshot(), empty_r1, "sz", "r1", r1_network_details={}).scorecard}
     failures += check("no APs in R1 yet -> APs and membership are pending, not misaligned",
                       sc2["aps"].status == "pending" and sc2["ap_membership"].status == "pending")
+
+    # 9
+    failures += check("SZ-only serials to look up (MAC-matched AP excluded)",
+                      sz_serials_missing_from_venue(snapshot(), inventory()) == ["SER003", "SER004"])
+    failures += check("no tenant lookup -> not_searched", aps["ap-3"].missing_code == "not_searched")
+    looked = inventory()
+    looked.tenant_ap_lookup = {"SER003": {"venue_id": "v2", "venue_name": "Other Property", "name": "ap-3"}}
+    aps9 = {a.name: a for a in build_matching(snapshot(), looked).aps}
+    failures += check("found in another venue -> other_venue, named",
+                      aps9["ap-3"].missing_code == "other_venue" and "Other Property" in aps9["ap-3"].missing_reason)
+    failures += check("searched, absent -> not_in_r1", aps9["ap-4"].missing_code == "not_in_r1")
+    failures += check("in-venue AP has no reason", aps9["ap-1"].missing_code is None)
+    no_serial = snapshot()
+    no_serial.aps[1] = {"apMac": "DE:AD:00:00:00:01", "serial": None, "deviceName": "ap-2", "apGroupId": "sz-def"}
+    aps9b = {a.name: a for a in build_matching(no_serial, looked).aps if a.presence == "sz_only"}
+    failures += check("no serial in SZ -> no_serial", aps9b["ap-2"].missing_code == "no_serial")
 
     print(f"\n{'FAILED' if failures else 'All checks passed'}"
           f"{f' ({failures})' if failures else ''}")

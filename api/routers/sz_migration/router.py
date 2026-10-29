@@ -86,7 +86,8 @@ from services.sz_migration import audit_cache, venue_create
 from services.sz_migration.audit_redaction import (
     CredentialLeakError, assert_clean, collect_secrets, scrub_report,
 )
-from services.r1_inventory import capture_venue_inventory
+from services.r1_inventory import capture_venue_inventory, locate_aps_in_tenant
+from services.sz_migration.audit_matching import sz_serials_missing_from_venue
 from schemas.sz_migration import SZMigrationSnapshot, ResolverResult
 from schemas.r1_inventory import R1VenueInventory
 
@@ -2579,6 +2580,14 @@ async def run_audit_endpoint(
             )
         except Exception as e:
             logger.exception(f"Auth-path probe failed during audit: {e}")
+
+        # ── Where the SZ APs this venue lacks are: elsewhere in the tenant, or not in R1 ──
+        # Rides on the inventory, so a cached run keeps it.
+        try:
+            r1_inventory.tenant_ap_lookup = await locate_aps_in_tenant(
+                r1_client, tenant_id, sz_serials_missing_from_venue(snapshot, r1_inventory))
+        except Exception as e:
+            logger.exception(f"Tenant AP lookup failed during audit: {e}")
 
         # ── Venue-level Wi-Fi settings (as the EC tenant for MSP) ──
         try:
