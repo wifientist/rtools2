@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes, CalendarRange, Stethoscope } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes, CalendarRange, Stethoscope, ArrowRightLeft } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -30,6 +30,7 @@ const Sidebar = () => {
   const [openCategories, setOpenCategories] = useState<{ [key: string]: boolean }>({
     informational: true,
     explainers: true,
+    "sz↔r1": true,
     helpers: true,
     admin: false,
   });
@@ -73,16 +74,24 @@ const Sidebar = () => {
       ],
     },
     {
+      label: "SZ↔R1",
+      icon: <ArrowRightLeft size={18} />,
+      items: [
+        { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Move SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
+        { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/wlan-vlan", icon: <Layers size={20} />, label: "WLAN VLAN", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/wlan-grabber", icon: <Import size={20} />, label: "WLAN Grabber", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
+        { to: "/wlan-rename", icon: <PenLine size={20} />, label: "WLAN Rename", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
+      ],
+    },
+    {
       label: "Helpers",
       icon: <Wrench size={18} />,
       items: [
         { to: "/migrate", icon: <RedoDot size={20} />, label: "Move R1→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
-        { to: "/migrate-sz-to-r1", icon: <ArrowRightFromLine size={20} />, label: "Move SZ→R1", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
-        { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/cloudpath-import", icon: <Key size={20} />, label: "Cloudpath Import", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/wlan-activator", icon: <Radio size={20} />, label: "WLAN Activator", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/wlan-vlan", icon: <Layers size={20} />, label: "WLAN VLAN", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
-        { to: "/wlan-grabber", icon: <Import size={20} />, label: "WLAN Grabber", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/bulk-wlan", icon: <Settings size={20} />, label: "Bulk WLAN Edit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/bulk-wlan-delete", icon: <Trash2 size={20} />, label: "Bulk WLAN Delete", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"] },
@@ -92,11 +101,9 @@ const Sidebar = () => {
         { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/bulk-ap-tagging", icon: <Tag size={20} />, label: "Bulk AP Tagging", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/danger-zone", icon: <AlertTriangle size={20} />, label: "Danger Zone", requiresAuth: true, requiresDanger: true },
-        { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/data-studio-export", icon: <Download size={20} />, label: "Data Studio Export", requiresAuth: true, rolesAllowed: ["super"], requiresAlpha: true },
         { to: "/wiredwiz", icon: <Cable size={20} />, label: "WiredWiz", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/topology", icon: <Network size={20} />, label: "Topology", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
-        { to: "/wlan-rename", icon: <PenLine size={20} />, label: "WLAN Rename", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/option43", icon: <Camera size={20} />, label: "Option 43 Calc", requiresAuth: false },
       ],
     },
