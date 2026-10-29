@@ -4,6 +4,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 interface FeatureAccess {
   migration_dashboard: boolean;
+  migration_tracker: boolean;
 }
 
 // Define context structure
@@ -55,7 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [companyId, setCompanyId] = useState<number | null>(null);
-  const [featureAccess, setFeatureAccess] = useState<FeatureAccess>({ migration_dashboard: false });
+  const [featureAccess, setFeatureAccess] = useState<FeatureAccess>({ migration_dashboard: false, migration_tracker: false });
   const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
   const [alphaEnabled, setAlphaEnabled] = useState<boolean>(false);
   const [dangerEnabled, setDangerEnabled] = useState<boolean>(false);
@@ -131,7 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUserRole(null);
         setUserId(null);
         setCompanyId(null);
-        setFeatureAccess({ migration_dashboard: false });
+        setFeatureAccess({ migration_dashboard: false, migration_tracker: false });
         setBetaEnabled(false);
         setAlphaEnabled(false);
         setDangerEnabled(false);
@@ -150,7 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserRole(data.role);
       setUserId(data.id);
       setCompanyId(data.company_id ?? null);
-      setFeatureAccess(data.feature_access ?? { migration_dashboard: false });
+      setFeatureAccess(data.feature_access ?? { migration_dashboard: false, migration_tracker: false });
       setBetaEnabled(data.beta_enabled || false);
       setAlphaEnabled(data.alpha_enabled || false);
       setDangerEnabled(data.danger_enabled || false);
@@ -194,7 +195,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserRole(null);
       setUserId(null);
       setCompanyId(null);
-      setFeatureAccess({ migration_dashboard: false });
+      setFeatureAccess({ migration_dashboard: false, migration_tracker: false });
       setBetaEnabled(false);
       setAlphaEnabled(false);
       setDangerEnabled(false);

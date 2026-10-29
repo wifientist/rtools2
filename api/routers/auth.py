@@ -16,6 +16,7 @@ from services.signup_service import generate_and_store_signup_otp, verify_signup
 from utils.email import send_otp_email_via_api
 from utils.audit import log_login, log_user_creation
 from constants.roles import role_hierarchy
+from constants.access import has_tracker_access
 from models.signup_attempt import SignupAttempt
 
 logger = logging.getLogger(__name__)
@@ -277,6 +278,7 @@ def auth_status(request: Request, db: Session = Depends(get_db)):
         "secondary_controller_name": secondary_controller_name,
         "feature_access": {
             "migration_dashboard": True,
+            "migration_tracker": has_tracker_access(user),
         },
     })
 

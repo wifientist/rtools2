@@ -31,6 +31,9 @@ from models.sz_migration_session import SZMigrationSession
 # Data Studio Export
 from models.data_studio_export import DataStudioExportConfig, DataStudioExportRun
 
+# Migration Tracker
+from models.migration_tracker import TrackerSite
+
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
     'PendingSignupOtp', 'RevokedToken', 'AuditLog', 'SignupAttempt',
@@ -45,4 +48,6 @@ __all__ = [
     'SZMigrationSession',
     # Data Studio Export
     'DataStudioExportConfig', 'DataStudioExportRun',
+    # Migration Tracker
+    'TrackerSite',
 ]

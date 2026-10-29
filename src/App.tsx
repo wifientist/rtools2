@@ -35,6 +35,7 @@ import APRename from "@/pages/APRename";
 import BulkWlanEdit from "@/pages/BulkWlanEdit";
 import BulkWlanDelete from "@/pages/BulkWlanDelete";
 import MigrationDashboard from "@/pages/MigrationDashboard";
+import MigrationTracker from "@/pages/MigrationTracker";
 import SpeedExplainer from "@/pages/SpeedExplainer";
 import RoamingExplainer from "@/pages/RoamingExplainer";
 import FirmwareMatrix from "@/pages/FirmwareMatrix";
@@ -136,6 +137,7 @@ const App = () => {
             }
           />
           <Route path="/pisr" element={<AlphaRoute element={<PISR />} />} />
+          <Route path="/tracker" element={<AlphaRoute element={<MigrationTracker />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
