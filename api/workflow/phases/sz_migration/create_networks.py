@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 from redis_client import get_redis_client
-from services.ap_group_ops import api_error, is_transient
+from services.ap_group_ops import api_error, is_transient, still_running
 from schemas.sz_migration import SZMigrationSnapshot
 from services.portal_key import controller_portal_key
 from services.wlan_grabber import build_spec as build_wispr_spec, build_wispr_payload, wispr_radius_settings
@@ -24,10 +24,11 @@ from workflow.phases.phase_executor import PhaseExecutor
 logger = logging.getLogger(__name__)
 
 # R1 lags on big runs (hundreds of networks): a create whose task finished
-# isn't findable by name yet ("returned no ID"), a task outlives our ~97s
-# wait and lands later, or R1 answers 503 / "System might be busy". Every
-# such WLAN worked on a re-run. So: look again for a while before failing,
-# and retry a transient refusal -- after checking it didn't land anyway.
+# isn't findable by name yet ("returned no ID"), a task runs for minutes
+# and lands later, or R1 answers 503 / "System might be busy". Every such
+# WLAN worked on a re-run. So: wait on the task itself (up to ~5 min, its
+# activity is the truth), look again by name for a while before failing,
+# and retry only a transient refusal -- after checking it didn't land anyway.
 FIND_DELAYS = (2, 3, 5, 5, 10, 10, 15, 15)       # ~65s of re-reads by name
 RETRY_DELAYS = (10, 30)                         # pauses before a 2nd / 3rd create
 
@@ -80,7 +81,8 @@ class CreateNetworksPhase(PhaseExecutor):
             return self.Outputs(network_id=net_id, reused=True)
 
         if r1_type == "wispr":
-            return await self._create_wispr(plan_extra, r1_name, wlan_name)
+            with self.r1_wait_notices(f"[{wlan_name}] "):
+                return await self._create_wispr(plan_extra, r1_name, wlan_name)
 
         # ── Create network based on type ──────────────────────────────
         await self.emit(f"[{wlan_name}] Creating {r1_type} network"
@@ -102,8 +104,9 @@ class CreateNetworksPhase(PhaseExecutor):
         if r1_type not in ("psk", "open", "aaa", "dpsk", "dpsk_external"):
             raise RuntimeError(f"Unsupported R1 network type: {r1_type}")
         # R1's reason, not the HTTP wrapper ("400 Client Error: Bad Request for url").
-        net_id = await self._create_resilient(create, r1_name, wlan_name,
-                                              refused=lambda e: f"R1 refused the network: {api_error(e)}")
+        with self.r1_wait_notices(f"[{wlan_name}] "):
+            net_id = await self._create_resilient(create, r1_name, wlan_name,
+                                                  refused=lambda e: f"R1 refused the network: {api_error(e)}")
         if not net_id:
             raise RuntimeError(f"Network creation returned no ID for '{wlan_name}' — R1 accepted it but it "
                                "wasn't findable by name after ~65s; a re-run will pick it up if it landed")
@@ -132,14 +135,25 @@ class CreateNetworksPhase(PhaseExecutor):
     async def _create_resilient(self, create, r1_name: str, wlan_name: str, refused) -> Optional[str]:
         """
         create() -> the new network's id, or None if R1 accepted it but it never
-        became findable. A transient failure (timeout, 503, busy) is checked
-        against R1 first -- the create may have landed -- then retried; any
-        other refusal raises refused(e) at once.
+        became findable. A task still running when the ~5 min wait ended is
+        never re-sent: R1 has the create, it's only slow -- found by name, or
+        the WLAN is skipped for a re-run to pick up. A transient refusal (503,
+        busy, a task R1 FAILED as busy) is checked against R1 first -- the
+        create may have landed -- then retried; any other refusal raises
+        refused(e) at once.
         """
         for attempt in range(len(RETRY_DELAYS) + 1):
             try:
                 network = await create()
             except Exception as e:
+                if still_running(e):
+                    net_id = await self._find_settled(r1_name)
+                    if net_id:
+                        await self.emit(f"[{wlan_name}] R1 finished it while we looked (id={net_id[:12]})")
+                        return net_id
+                    raise RuntimeError(
+                        f"R1 accepted the network but was still creating it after 5 min ({api_error(e)}) — "
+                        "skipped, not re-sent; re-run once R1 shows it and it will be reused") from e
                 if not is_transient(e):
                     # A retry refused because the timed-out first create landed meanwhile ("already exists")
                     if attempt:

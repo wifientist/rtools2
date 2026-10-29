@@ -42,7 +42,7 @@ where the last one stopped.
 
 import re
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
@@ -58,6 +58,68 @@ def _serial(v: Any) -> str:
     return str(v or "").strip().upper()
 
 
+# R1 AP names (ApCreationV1.name): 2-32 printable ASCII, no backtick or "$(",
+# no space at either end. SZ allows longer ("Building A - in Regency room
+# behind Concierge desk") and the add failed "Invalid attribute value".
+# The description takes 180.
+R1_AP_NAME_MAX = 32
+R1_AP_DESCRIPTION_MAX = 180
+_AP_NAME_DELIMITERS = (" - ", " – ", " — ", " | ", ": ", ", ", " / ", " (")
+
+
+def r1_ap_name_problem(name: Optional[str]) -> Optional[str]:
+    """Why R1 would refuse this AP name, or None."""
+    n = name or ""
+    if len(n.strip()) < 2:
+        return "R1 AP names need at least 2 characters"
+    if len(n) > R1_AP_NAME_MAX:
+        return f"{len(n)} characters — R1 allows {R1_AP_NAME_MAX}"
+    if n != n.strip():
+        return "R1 AP names can't start or end with a space"
+    if "`" in n or "$(" in n or any(not (" " <= c <= "~") for c in n):
+        return "R1 AP names take plain ASCII only (no ` or $( )"
+    return None
+
+
+def _ascii(name: str) -> str:
+    n = re.sub(r"`|\$\(", "", name or "")
+    return "".join(c if " " <= c <= "~" else "-" if c in "–—" else "" for c in n).strip()
+
+
+def split_ap_name(name: str) -> Optional[Tuple[str, str]]:
+    """
+    A name too long for R1 split at a natural delimiter ("Building A - near
+    library" -> "Building A", "near library"): the first delimiter kind that
+    leaves 2-32 characters in front, at its last such place. None if none does.
+    """
+    for d in _AP_NAME_DELIMITERS:
+        cuts = [m.start() for m in re.finditer(re.escape(d), name)]
+        for p in reversed(cuts):
+            head = name[:p].strip()
+            if 2 <= len(head) <= R1_AP_NAME_MAX:
+                tail = name[p + len(d):].strip() if d != " (" else name[p:].strip()
+                return head, tail
+    return None
+
+
+def cut_ap_name(name: str) -> Tuple[str, str]:
+    """No delimiter fits: as much as fits, ending on a word, the rest after it."""
+    head = name[:R1_AP_NAME_MAX + 1]
+    sp = head.rfind(" ")
+    p = sp if sp >= 2 else R1_AP_NAME_MAX
+    return name[:p].rstrip(" -|,:/(–—"), name[p:].lstrip(" -|,:/–—")
+
+
+def _with_serial(name: str, serial: str) -> str:
+    """"<name>_<serial>" kept within 32: the name gives way."""
+    return f"{name[:max(2, R1_AP_NAME_MAX - len(serial) - 1)].rstrip()}_{serial}"
+
+
+def _description(rest: str, sz_description: Optional[str]) -> Optional[str]:
+    parts = [p for p in (rest.strip(), _ascii(sz_description or "")) if p]
+    return " | ".join(parts)[:R1_AP_DESCRIPTION_MAX] or None
+
+
 def is_dpsk_network(net: Optional[Dict[str, Any]]) -> bool:
     return str((net or {}).get("nwSubType") or (net or {}).get("type") or "").lower() == "dpsk"
 
@@ -66,13 +128,17 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
                     choices: Optional[Dict[str, Any]] = None, add_new_aps: bool = False,
                     selected: Optional[List[str]] = None, name_policy: str = "serial",
                     renames: Optional[Dict[str, str]] = None, place_by_name: bool = False,
-                    overrides: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                    overrides: Optional[Dict[str, str]] = None,
+                    descriptions: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """
     name_policy: R1 needs unique AP names; SZ doesn't ("Hallway" twice failed
     the second add). AP names are unique per VENUE: an AP whose name another
     AP being loaded -- or another AP already in this venue -- also has gets
     r1_name "<name>_<serial>" ("serial", default) unless the operator typed
-    its name (renames: {serial: name});
+    its name (renames: {serial: name}). Over 32 characters (R1's limit), the
+    name is split at a delimiter or cut on a word, the rest becoming the AP's
+    description (r1_description, name_fix); descriptions: {serial: text} typed.
+    A typed name R1 would refuse is reported (name_error) and the add skipped;
     "keep" leaves the names (R1 will refuse those adds).
     selected: the serials the operator picked on the AP table. Only those are
     moved or added; an AP not in the venue is added only when picked --
@@ -186,16 +252,37 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
 
     # ── APs ────────────────────────────────────────────────────────
     fold = lambda n: (n or "").strip().casefold()
-    sz_name_count = Counter(fold(t["ap"].get("name")) for t in target.values() if t["ap"].get("name"))
     r1_name_owner = {fold(a.get("name")): _serial(a.get("serialNumber")) for a in inv.aps if a.get("name")}
+    renames = {_serial(k): (v or "").strip() for k, v in (renames or {}).items() if (v or "").strip()}
+    descriptions = {_serial(k): (v or "").strip() for k, v in (descriptions or {}).items()}
+    # R1 takes 32 characters: a longer SZ name is split at a natural delimiter
+    # (the rest goes to the description), else cut on a word. A split that
+    # leaves several APs the same name ("Building A") is cut on a word instead.
+    short: Dict[str, Tuple[str, Optional[str], Optional[str]]] = {}     # key -> (name, rest, how)
+    for key, t in target.items():
+        n = _ascii(t["ap"].get("name") or "")
+        split = split_ap_name(n) if len(n) > R1_AP_NAME_MAX else None
+        short[key] = ((n, None, None) if len(n) <= R1_AP_NAME_MAX
+                      else (*split, "split") if split else (*cut_ap_name(n), "cut"))
+    split_count = Counter(fold(s[0]) for s in short.values())
+    for key, (n, _, how) in list(short.items()):
+        if how == "split" and (split_count[fold(n)] > 1 or fold(n) in r1_name_owner):
+            short[key] = (*cut_ap_name(_ascii(target[key]["ap"].get("name") or "")), "cut")
+    sz_name_count = Counter(fold(s[0]) for s in short.values() if s[0])
     aps: List[Dict[str, Any]] = []
     for key, t in target.items():
         ap = t["ap"]
         serial = _serial(ap.get("serial"))
         cur = r1_ap.get(serial) if serial else None
         raw = sz_raw.get(serial) or {}
-        n = fold(ap.get("name"))
+        short_name, rest, how = short[key]
+        n = fold(short_name)
         clash = bool(n) and (sz_name_count[n] > 1 or (n in r1_name_owner and r1_name_owner[n] != serial))
+        auto = _with_serial(short_name, serial) if clash and serial and name_policy == "serial" else short_name
+        r1_name = renames.get(serial) or auto
+        sz_desc = raw.get("description") if (raw.get("description") or "").strip().upper() not in ("", "N/A") else None
+        r1_description = (descriptions[serial] or None) if serial in descriptions else (
+            _description(rest or "", sz_desc) if how else None)
         row = {"name": ap.get("name"), "serial": serial or None, "mac": ap.get("mac"),
                "model": raw.get("model"), "sz_ap_group": sz_group_name.get(raw.get("apGroupId")),
                "group_key": t["key"], "group_name": t["name"], "group_id": t["id"], "staged": t["staged"],
@@ -207,8 +294,11 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
                "manual": bool(t.get("manual")), "manual_status": t.get("manual_status"),
                "auto_group": t.get("auto_group"),
                "name_clash": clash,
-               "r1_name": (((renames or {}).get(serial) or "").strip() or f"{ap.get('name')}_{serial}")
-                          if clash and serial and name_policy == "serial" else ap.get("name")}
+               # The name an add gets in R1 (typed, else proposed), and why it differs from SZ's.
+               "r1_name": r1_name, "r1_description": r1_description,
+               "name_fix": "typed" if serial in renames else how,
+               # Only an add sends a name; an AP already in R1 keeps its own.
+               "name_error": r1_ap_name_problem(r1_name) if cur is None else None}
         if not serial:
             row.update(action="blocked", error="SZ has no serial for this AP")
         elif not t["ready"]:
@@ -315,6 +405,8 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
                          "unmapped", "blocked")},
             "aps_fallback_default": sum(1 for r in aps if r.get("fallback_default")),
             "aps_name_clash": sum(1 for r in aps if r.get("name_clash")),
+            "aps_name_too_long": sum(1 for r in aps if r.get("name_fix") in ("split", "cut") and not r["in_r1"]),
+            "aps_name_invalid": sum(1 for r in aps if r.get("name_error")),
             "aps_silent": sum(1 for r in aps if r["silent"]),
             "aps_name_differs": name_differs,
             "aps_by_name": sum(1 for r in aps if r["by_name"]),

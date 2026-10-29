@@ -291,6 +291,26 @@ async def main():
     failures += check("the rename is explained in the plan",
                       any("Guest" in w and "created as 'Guest_V'" in w and "SSID stays 'Guest'" in w for w in warns), str(warns))
 
+    # A re-run: the first run's "Guest_V" is ours and reused, not skipped for
+    # "Guest_V2" (every renamed WLAN used to be duplicated). A "Secure6_V"
+    # with another SSID is not ours: the next free name is used.
+    rerun = inventory()
+    rerun.tenant_networks = clash.tenant_networks + [
+        {"id": "n-guest-v", "name": "Guest_V", "ssid": "Guest", "nwSubType": "psk", "venueIds": [rerun.venue_id]},
+        {"id": "n-sec6-v", "name": "Secure6_V", "ssid": "Other", "nwSubType": "psk", "venueIds": [rerun.venue_id]},
+    ]
+    out = await run_validate(inv=rerun)
+    ex = {u.plan.extra["sz_wlan_name"]: u for u in out.unit_mappings.values()}
+    acts = {a.name: a for a in out.validation_result.actions if a.resource_type == "wifi_network"}
+    failures += check("re-run: the earlier run's 'Guest_V' is reused, no 'Guest_V2'",
+                      ex["Guest"].resolved.network_id == "n-guest-v" and ex["Guest"].plan.extra["r1_network_name"] == "Guest_V"
+                      and acts.get("Guest") is not None and acts["Guest"].action == "reuse"
+                      and "reusing 'Guest_V'" in " ".join(acts["Guest"].notes),
+                      str((ex["Guest"].plan.extra.get("r1_network_name"), acts.get("Guest"))))
+    failures += check("re-run: 'Secure6_V' with another SSID is not ours -> 'Secure6_V2' created",
+                      ex["Secure6"].plan.extra["r1_network_name"] == "Secure6_V2" and not ex["Secure6"].resolved.network_id,
+                      str(ex["Secure6"].plan.extra.get("r1_network_name")))
+
     # R1's SSID / name rules: SZ allowed "430T " (trailing space) and the
     # create failed twice with a bare 400. Trimmed with a warning; an SSID R1
     # can't take at all stops the plan with the reason.

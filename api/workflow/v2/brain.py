@@ -75,9 +75,10 @@ SSID_SAFETY_BUFFER = 1
 DEFAULT_VENUE_WIDE_LIMIT = SSID_LIMIT_PER_AP_GROUP - SSID_SAFETY_BUFFER  # 14
 
 # Phase execution timeout (seconds) - prevents indefinite hangs on stuck API calls
-# The sequential 3-step SSID config can take 3+ minutes (3 steps × ~60s polling each)
+# The sequential 3-step SSID config can take 15 minutes: each step's R1 task
+# is waited on until R1 finishes it, up to 5 min (r1api.client ACTIVITY_TIMEOUT_SECONDS)
 # plus AP assignment time. Set high enough to allow these legitimate slow operations.
-PHASE_EXECUTION_TIMEOUT = 600  # 10 minutes (per-unit phases)
+PHASE_EXECUTION_TIMEOUT = 1200  # 20 minutes (per-unit phases)
 
 # Global phase timeout (seconds) - longer because global phases process many
 # resources sequentially (e.g., deleting 274 WiFi networks at 5 concurrent).
@@ -90,8 +91,8 @@ GLOBAL_PHASE_EXECUTION_TIMEOUT = 3600  # 60 minutes
 # released (notify_all), all waiters reset their timer. The timeout only
 # fires when no progress is made for this duration, indicating R1 is stuck.
 # Must exceed PHASE_EXECUTION_TIMEOUT since each slot is held for a full
-# phase execution (up to 10 min for 3-step SSID config).
-ACTIVATION_SLOT_STALE_TIMEOUT = PHASE_EXECUTION_TIMEOUT + 60  # 11 minutes
+# phase execution (up to 20 min for 3-step SSID config).
+ACTIVATION_SLOT_STALE_TIMEOUT = PHASE_EXECUTION_TIMEOUT + 60  # 21 minutes
 
 # Max times a failed unit can be requeued for retry. When a unit fails and its
 # SSID is orphaned on venue-wide, we deactivate the SSID to free the R1 slot

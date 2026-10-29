@@ -958,6 +958,8 @@ class ApMappingPlanRequest(BaseModel):
     ap_name_policy: Literal["serial", "keep"] = "serial"
     # serial -> R1 name the operator typed for a duplicate-named AP
     ap_renames: Dict[str, str] = Field(default_factory=dict)
+    # serial -> R1 description the operator typed (a name over R1's 32 characters moves part of it here)
+    ap_descriptions: Dict[str, str] = Field(default_factory=dict)
     # SZ had APs in the wrong AP Groups: send each AP to the R1 group its name points at
     place_by_name: bool = False
     # serial -> R1 AP Group name the operator typed; beats SZ and by-name
@@ -998,6 +1000,7 @@ async def create_ap_mapping_plan(
         options={"sz_snapshot_job_id": request.sz_snapshot_job_id, "layout_choices": choices,
                  "add_new_aps": request.add_new_aps, "selected_serials": request.selected_serials,
                  "ap_name_policy": request.ap_name_policy, "ap_renames": request.ap_renames,
+                 "ap_descriptions": request.ap_descriptions,
                  "place_by_name": request.place_by_name, "ap_group_overrides": request.ap_group_overrides},
         input_data={"sz_snapshot_job_id": request.sz_snapshot_job_id},
     )
@@ -1027,7 +1030,8 @@ async def preview_ap_mapping(
     choices = request.layout_choices.model_dump() if request.layout_choices else {}
     plan = plan_ap_mapping(snapshot, inv, choices, add_new_aps=request.add_new_aps,
                            selected=request.selected_serials, name_policy=request.ap_name_policy,
-                           renames=request.ap_renames, place_by_name=request.place_by_name,
+                           renames=request.ap_renames, descriptions=request.ap_descriptions,
+                           place_by_name=request.place_by_name,
                            overrides=request.ap_group_overrides)
     return {
         "venue_name": inv.venue_name,

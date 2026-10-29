@@ -197,6 +197,28 @@ class PhaseExecutor(ABC):
         await self.register_activity(activity_id)
         return await self.wait_for_activity(activity_id)
 
+    def r1_wait_notices(self, label: str = ""):
+        """
+        Context manager: while inside it, any R1 task this phase waits on
+        through r1_client.await_task_completion (even deep in a service call)
+        emits "still processing" once a minute instead of going quiet.
+        """
+        from contextlib import contextmanager
+        from r1api.client import activity_wait_listener, ACTIVITY_TIMEOUT_SECONDS
+
+        async def notice(request_id, status, elapsed):
+            await self.emit(f"{label}R1 still {'working on it (' + status + ')' if status else 'registering the task'}"
+                            f" after {elapsed / 60:.0f} min — waiting up to {ACTIVITY_TIMEOUT_SECONDS // 60} min")
+
+        @contextmanager
+        def scope():
+            token = activity_wait_listener.set(notice)
+            try:
+                yield
+            finally:
+                activity_wait_listener.reset(token)
+        return scope()
+
     async def track_resource(self, resource_type: str, resource_data: Dict[str, Any]) -> None:
         """Track a created resource for cleanup reference."""
         if self.context.state_manager:

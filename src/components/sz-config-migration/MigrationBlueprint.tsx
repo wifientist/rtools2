@@ -166,7 +166,8 @@ export default function MigrationBlueprint({ state, layout }: Props) {
   if (plan?.actions) {
     for (const a of plan.actions) {
       const name = a.resource_name || a.name || '';
-      if (name) actionMap.set(name, { action: a.action, details: a.details || a.notes });
+      const notes = Array.isArray(a.notes) ? a.notes.join('; ') : a.notes;
+      if (name) actionMap.set(name, { action: a.action, details: a.details || notes });
     }
   }
 

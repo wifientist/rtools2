@@ -30,17 +30,18 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from pydantic import BaseModel
 
 from services import r1_activation
-from services.ap_group_ops import api_error, is_transient
+from services.ap_group_ops import api_error, is_transient, still_running
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
 
 logger = logging.getLogger(__name__)
 
-# On big runs R1's activation tasks outlive our wait, or R1 answers 503 /
+# On big runs R1's activation tasks take minutes, or R1 answers 503 /
 # "Object not found" (a network created moments ago), and the read-back lags
-# -- yet a re-run always found them fine. So a WLAN not active yet gets a
-# longer look (a timed-out task usually finishes), then one retry of what's
-# still missing when every error was transient.
+# -- yet a re-run always found them fine. So each task is waited on until R1
+# finishes it (up to ~5 min), a WLAN not active yet gets a longer read-back,
+# and only what R1 refused or FAILED transiently is re-sent once. A task
+# still running after the wait is never re-sent: the WLAN is skipped.
 LATE_DELAYS = (10, 15, 20)        # ~45s more of read-back after the first ~45s
 RETRY_PAUSE = 15
 
@@ -96,13 +97,14 @@ class ActivateSSIDsPhase(PhaseExecutor):
             return self.Outputs(activated=True, activations_attempted=len(targets), already_active=already)
 
         await self.emit(f"[{wlan_name}] Activating on {len(todo)} AP Group(s)...")
-        errors = await r1_activation.activate_on_groups(
-            self.r1_client, self.tenant_id, self.venue_id, inputs.network_id, todo, state,
-            dpsk_pool_id=inputs.dpsk_pool_id or None, emit=self.emit, label=f"[{wlan_name}] ",
-        )
+        with self.r1_wait_notices(f"[{wlan_name}] "):
+            errors = await r1_activation.activate_on_groups(
+                self.r1_client, self.tenant_id, self.venue_id, inputs.network_id, todo, state,
+                dpsk_pool_id=inputs.dpsk_pool_id or None, emit=self.emit, label=f"[{wlan_name}] ",
+            )
 
-        # The activities are not the truth -- R1's own record is, once its
-        # query index has caught up.
+        # Activities first (each was waited on until R1 finished, up to ~5
+        # min), then R1's own record once its query index has caught up.
         want = {t["id"] for t in targets}
         settled = lambda st, b: st == "venue_wide" or want <= b
         state, bound = await r1_activation.settled_state(
@@ -110,7 +112,10 @@ class ActivateSSIDsPhase(PhaseExecutor):
         if not settled(state, bound):
             state, bound = await r1_activation.settled_state(
                 self.r1_client, self.tenant_id, self.venue_id, inputs.network_id, settled, delays=LATE_DELAYS)
-        if not settled(state, bound) and all(is_transient(e) for e in errors):
+        pending = [e for e in errors if still_running(e)]
+        # Re-send only what R1 refused or FAILED for a transient reason -- never
+        # a task still running, nor one that succeeded and is only slow to read back.
+        if not settled(state, bound) and errors and not pending and all(is_transient(e) for e in errors):
             retry = [t for t in targets if t["id"] not in bound]
             await self.emit(f"[{wlan_name}] Not active on {', '.join(t['name'] for t in retry)} yet"
                             + (f" (R1: {errors[0][:120]})" if errors else "")
@@ -125,6 +130,10 @@ class ActivateSSIDsPhase(PhaseExecutor):
         missing = [t["name"] for t in targets if t["id"] not in bound]
         if state == "venue_wide":
             raise RuntimeError(f"[{wlan_name}] Ended up on All AP Groups instead of specific groups")
+        if missing and pending:
+            raise RuntimeError(f"[{wlan_name}] R1 was still processing the activation on {', '.join(missing)} "
+                               f"after 5 min — skipped, not re-sent; re-run once R1 shows it active "
+                               f"({'; '.join(pending)})")
         if missing:
             detail = f"; errors: {'; '.join(errors)}" if errors else ""
             raise RuntimeError(f"[{wlan_name}] Not active on AP Group(s) {', '.join(missing)}{detail}")
@@ -154,13 +163,13 @@ class ActivateSSIDsPhase(PhaseExecutor):
         error = None
         for attempt in range(2):
             if attempt:
-                await self.emit(f"[{wlan_name}] Not on All AP Groups yet"
-                                + (f" (R1: {error[:120]})" if error else "") + f" — retrying in {RETRY_PAUSE}s",
-                                "warning")
+                await self.emit(f"[{wlan_name}] Not on All AP Groups yet (R1: {error[:120]}) — retrying in "
+                                f"{RETRY_PAUSE}s", "warning")
                 await asyncio.sleep(RETRY_PAUSE)
             else:
                 await self.emit(f"[{wlan_name}] Activating on All AP Groups ({', '.join(radio_types)})...")
-            error = await self._activate_venue_wide(inputs, radio_types)
+            with self.r1_wait_notices(f"[{wlan_name}] "):
+                error = await self._activate_venue_wide(inputs, radio_types)
             if error and not is_transient(error):
                 raise RuntimeError(f"[{wlan_name}] All AP Groups activation failed: {error}")
             state, _ = await r1_activation.settled_state(
@@ -169,10 +178,15 @@ class ActivateSSIDsPhase(PhaseExecutor):
                 state, _ = await r1_activation.settled_state(
                     self.r1_client, self.tenant_id, self.venue_id, inputs.network_id, venue_wide,
                     delays=LATE_DELAYS)
-            if state == "venue_wide":
+            # Re-send only a transient refusal; a task still running or one
+            # that succeeded (read-back lagging) is not sent twice.
+            if state == "venue_wide" or not error or still_running(error):
                 break
+        if state != "venue_wide" and error and still_running(error):
+            raise RuntimeError(f"[{wlan_name}] R1 was still processing the All AP Groups activation after "
+                               f"5 min — skipped, not re-sent; re-run once R1 shows it active ({error})")
         if state != "venue_wide":
-            raise RuntimeError(f"[{wlan_name}] Not on All AP Groups after activation and a retry (R1 still "
+            raise RuntimeError(f"[{wlan_name}] Not on All AP Groups after activation (R1 still "
                                f"reports '{state}')" + (f"; R1: {error}" if error else ""))
         await self.emit(f"[{wlan_name}] Active on All AP Groups", "success")
         return self.Outputs(activated=True, activations_attempted=1, activations_succeeded=1)

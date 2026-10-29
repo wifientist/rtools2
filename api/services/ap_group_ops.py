@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 CONCURRENCY = 5
 WAIT_SECONDS = 30
 CONFIRM_POLL_SECONDS = 15
+TASK_PROGRESS_SECONDS = 30
 
 
 def api_error(e: Exception) -> str:
@@ -55,6 +56,17 @@ def is_transient(e: Any) -> bool:
         text += " " + str(e).casefold()
     return (isinstance(e, (TimeoutError, asyncio.TimeoutError)) or any(m in text for m in _TRANSIENT)
             or bool(_TRANSIENT_STATUS.search(text)))
+
+
+def still_running(e: Any) -> bool:
+    """
+    R1 accepted the request and its task hadn't finished when the wait ended
+    (r1api.client.ActivityPending, ~5 min). Not a refusal: re-sending the
+    request duplicates work R1 is still doing -- wait or re-read instead.
+    """
+    text = (api_error(e) if isinstance(e, Exception) else str(e)).casefold()
+    return (isinstance(e, (TimeoutError, asyncio.TimeoutError)) or "did not complete after" in text
+            or "activity timed out after" in text)
 
 
 def r1_call(r1_client, method: str, path: str, tenant_id: str, **kw):
@@ -101,7 +113,7 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
                     retry_name_clash: bool = True) -> List[Dict[str, Any]]:
     """
     Submit and confirm. Each row: {serial, ap_name, to_group_id, to_group_name,
-    op: "move" | "add"} (other keys are kept). Sets status
+    op: "move" | "add", description (adds, optional)} (other keys are kept). Sets status
     moved | added | failed | unconfirmed and error, in place; returns rows.
 
     wait_seconds bounds the wait on R1's tasks. confirm_seconds keeps re-reading
@@ -119,7 +131,8 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
                 if r.get("op") == "add":
                     resp = await asyncio.to_thread(
                         r1_call, r1_client, "post", f"/venues/{venue_id}/apGroups/{r['to_group_id']}/aps",
-                        tenant_id, payload={"name": r.get("ap_name") or r["serial"], "serialNumber": r["serial"]})
+                        tenant_id, payload={"name": r.get("ap_name") or r["serial"], "serialNumber": r["serial"],
+                                            **({"description": r["description"]} if r.get("description") else {})})
                 else:
                     resp = await asyncio.to_thread(
                         r1_call, r1_client, "put",
@@ -139,11 +152,25 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
 
     task_results: Dict[str, Dict[str, Any]] = {}
     if request_of:
+        finished: Dict[str, bool] = {}
+
+        def record(_done, _total, res):
+            finished[res.get("request_id")] = bool(res.get("success"))
+
+        waiter = asyncio.create_task(r1_client.await_task_completion_bulk(
+            list(request_of.values()), override_tenant_id=tenant_id,
+            global_timeout_seconds=wait_seconds, progress_callback=record,
+        ))
+        # Big batches take minutes in R1: say how far along it is meanwhile.
+        while progress and not waiter.done():
+            done, _ = await asyncio.wait({waiter}, timeout=TASK_PROGRESS_SECONDS)
+            if not done:
+                ok = sum(finished.values())
+                await progress(f"R1 finished {ok} of {len(request_of)} AP task(s)"
+                               + (f", {len(finished) - ok} failed" if len(finished) > ok else "")
+                               + "; still waiting on the rest...")
         try:
-            task_results = await r1_client.await_task_completion_bulk(
-                list(request_of.values()), override_tenant_id=tenant_id,
-                global_timeout_seconds=wait_seconds,
-            ) or {}
+            task_results = await waiter or {}
         except Exception as e:
             logger.warning(f"{log_label} Waiting on {len(request_of)} AP tasks stopped early: {e}")
 
@@ -165,7 +192,9 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
                 r["status"] = "added" if r.get("op") == "add" else "moved"
                 logger.info(f"{log_label} {r['status'].capitalize()} {r.get('ap_name')} ({r['serial']}) "
                             f"-> {r.get('to_group_name')}")
-            elif task and not task.get("success") and "timeout" not in str(task.get("error", "")).lower():
+            # Only R1's FAIL is a failure; a task still running when the wait
+            # ended stays submitted (it usually lands -- "unconfirmed" if not).
+            elif task and not task.get("success") and not task.get("pending"):
                 r.update(status="failed", error=task.get("error"))
         waiting = [r for r in rows if r.get("status") == "submitted"]
         if not waiting or loop.time() >= deadline:
@@ -188,7 +217,9 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
     if clashed:
         for r in clashed:
             r["renamed_from"] = r.get("ap_name")
-            r.update(ap_name=f"{r.get('ap_name') or 'AP'}_{r['serial']}", status=None, error=None)
+            # within R1's 32 characters: the name gives way to the serial
+            r.update(ap_name=f"{(r.get('ap_name') or 'AP')[:max(2, 31 - len(r['serial']))].rstrip()}_{r['serial']}",
+                     status=None, error=None)
             logger.info(f"{log_label} AP name '{r['renamed_from']}' is taken in R1 -- retrying as '{r['ap_name']}'")
         await place_aps(r1_client, tenant_id, venue_id, clashed, read_aps, concurrency, wait_seconds,
                         log_label, confirm_seconds, progress, retry_name_clash=False)

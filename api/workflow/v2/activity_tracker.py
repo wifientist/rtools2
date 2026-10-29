@@ -51,7 +51,7 @@ class TransientActivityError(Exception):
 
 
 # Max time to track a single activity before timeout
-# Must be less than PHASE_EXECUTION_TIMEOUT (600s) to allow the phase
+# Must be less than PHASE_EXECUTION_TIMEOUT (1200s) to allow the phase
 # to handle the timeout result before the phase itself times out.
 ACTIVITY_TIMEOUT_SECONDS = 540  # 9 minutes
 

@@ -231,7 +231,7 @@ export interface ActionItem {
   name?: string;
   action: string;
   details?: string;
-  notes?: string;
+  notes?: string | string[];
 }
 
 export interface PlanResult {
@@ -368,6 +368,10 @@ export interface WizardState {
   dpskAssignments: Record<string, string>;          // wlan id -> pool key
   layoutChoices: LayoutChoices;
   authConversions: Record<string, 'dpsk'>;   // wlan id -> converted to R1 DPSK
+  // Extraction job whose WLAN-step defaults (SZ as-is placement, create + stage,
+  // convert to R1 DPSK) were filled in -- once per extraction, never over choices made.
+  layoutDefaultsFor?: string | null;
+  authDefaultsFor?: string | null;
   venueSettings: string[] | null;            // zone setting sections to apply; null = all
   venueConfigJobId: string | null;           // Venue Configuration stage job
   apMappingJobId: string | null;             // AP Mapping stage job
@@ -403,6 +407,7 @@ export type WizardAction =
   | { type: 'CLEAR_PLAN' }
   | { type: 'SET_LAYOUT_CHOICES'; choices: LayoutChoices }
   | { type: 'SET_AUTH_CONVERSIONS'; conversions: Record<string, 'dpsk'> }
+  | { type: 'APPLY_WLAN_DEFAULTS'; jobId: string; choices?: LayoutChoices; conversions?: Record<string, 'dpsk'> }
   | { type: 'SET_VENUE_SETTINGS'; sections: string[] | null }
   | { type: 'SET_VENUE_CONFIG_JOB'; jobId: string }
   | { type: 'SET_AP_MAPPING_JOB'; jobId: string }
@@ -656,6 +661,19 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
 
     case 'SET_AUTH_CONVERSIONS':
       return { ...state, authConversions: action.conversions, planJobId: null, planResult: null };
+
+    case 'APPLY_WLAN_DEFAULTS': {
+      // Marks the defaults done for this extraction; fills in only what is given.
+      // Choices the operator already made come back unchanged and keep their plan.
+      const changed = (action.choices && action.choices !== state.layoutChoices)
+        || (action.conversions && action.conversions !== state.authConversions);
+      return {
+        ...state,
+        ...(action.choices ? { layoutChoices: action.choices, layoutDefaultsFor: action.jobId } : {}),
+        ...(action.conversions ? { authConversions: action.conversions, authDefaultsFor: action.jobId } : {}),
+        ...(changed ? { planJobId: null, planResult: null } : {}),
+      };
+    }
 
     case 'CLEAR_PLAN':
       // Choices changed after a plan was built: that plan no longer describes

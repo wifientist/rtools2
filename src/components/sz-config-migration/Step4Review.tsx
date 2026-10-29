@@ -127,6 +127,38 @@ export default function Step4Review({ state, dispatch }: Props) {
   const converted = new Set(convertible.filter(w => state.authConversions[w.id]).map(w => w.id));
   const updateConversions = (c: Record<string, 'dpsk'>) => dispatch({ type: 'SET_AUTH_CONVERSIONS', conversions: c });
 
+  // Defaults, once per extraction and only over untouched choices: SZ as-is
+  // (every SZ-broadcast AP Group built), every WLAN no AP broadcasts created +
+  // staged, and every RADIUS-backed WLAN converted to R1 DPSK. The operator
+  // backs out of any of them on this step.
+  useEffect(() => {
+    const job = state.extractionJobId;
+    if (!job || !layout || state.layoutDefaultsFor === job) return;
+    const c = state.layoutChoices;
+    const untouched = c.all_ap_wlans == null && !c.create_groups.length && !c.include_unbroadcast.length
+      && !(c.stage_unbroadcast ?? []).length && !Object.keys(c.group_names).length;
+    dispatch({
+      type: 'APPLY_WLAN_DEFAULTS', jobId: job,
+      choices: untouched ? {
+        ...c,
+        create_groups: layout.groups.filter(g => !g.exists).map(g => g.key),
+        include_unbroadcast: [],
+        stage_unbroadcast: layout.unbroadcast.map(u => u.id),
+      } : c,
+    });
+  }, [layout, state.extractionJobId]);
+  useEffect(() => {
+    const job = state.extractionJobId;
+    if (!job || !state.typeMappings || state.authDefaultsFor === job) return;
+    const all = Object.entries(state.typeMappings)
+      .filter(([id, m]) => CONVERTIBLE_TYPES.includes(m.r1_network_type) && !excludedWlans.includes(id))
+      .map(([id]) => [id, 'dpsk' as const]);
+    dispatch({
+      type: 'APPLY_WLAN_DEFAULTS', jobId: job,
+      conversions: Object.keys(state.authConversions).length ? state.authConversions : Object.fromEntries(all),
+    });
+  }, [state.typeMappings, state.extractionJobId]);
+
   // RADIUS services still needed: used by a migrated WLAN that authenticates
   // against RADIUS in R1 (not converted; not e.g. a portal WLAN made plain PSK).
   // RADIUS users: Enterprise / external DPSK not converted, and WISPr guest

@@ -85,25 +85,35 @@ def _network_name(inv: R1VenueInventory, name: str, ssid: str, taken: set) -> Tu
     name differing only in case (R1 treats those as the same name), or held
     by another property's network, or with another SSID -- creates this one
     under "<name>_<venue>" (number added if needed); the SSID stays exactly
-    as in SZ. taken: names already planned this run (casefolded).
+    as in SZ. A "<name>_<venue>" an earlier run created is ours too, and is
+    reused rather than skipped for "<name>_<venue>2" (a re-run used to make
+    a duplicate of every renamed WLAN). taken: names already planned this
+    run (casefolded).
     """
+    ours = lambda n: n.get("ssid") in (None, ssid) and _network_venues(n) <= {inv.venue_id}
     exact = inv.network_in_tenant(name)
-    if exact and (exact.get("ssid") in (None, ssid)) and _network_venues(exact) <= {inv.venue_id}:
+    if exact and ours(exact):
         return name, exact, ""
     folded = {(n.get("name") or "").casefold(): n for n in [*inv.wifi_networks, *inv.tenant_networks]}
     clash = exact or folded.get(name.casefold())
     if not clash and name.casefold() not in taken:
         return name, None, ""
+    where = sorted(_network_venues(clash)) if clash else []
+    held = (f"R1 already has '{clash.get('name')}'" + (" (another property's network)" if where and where != [inv.venue_id] else "")
+            if clash else "Another WLAN in this plan has that name")
     venue = re.sub(r"\s+", "_", (inv.venue_name or "venue").strip())
     for i in range(1, 100):
         suffix = f"_{venue}" if i == 1 else f"_{venue}{i}"
         candidate = name[:max(2, R1_NETWORK_NAME_MAX - len(suffix))] + suffix
         candidate = candidate[:R1_NETWORK_NAME_MAX]
-        if candidate.casefold() not in folded and candidate.casefold() not in taken:
+        if candidate.casefold() in taken:
+            continue
+        prior = folded.get(candidate.casefold())
+        if prior is None:
             break
-    where = sorted(_network_venues(clash)) if clash else []
-    held = (f"R1 already has '{clash.get('name')}'" + (" (another property's network)" if where and where != [inv.venue_id] else "")
-            if clash else "Another WLAN in this plan has that name")
+        if ours(prior):
+            return (prior.get("name") or candidate, prior,
+                    f"{held} — reusing '{prior.get('name')}' from an earlier run; SSID stays '{ssid}'")
     return candidate, None, f"{held} — created as '{candidate}'; SSID stays '{ssid}'"
 
 
@@ -478,7 +488,8 @@ class ValidateMigrationPhase(PhaseExecutor):
                     name=wlan.name,
                     action="reuse",
                     existing_id=existing_network.get("id"),
-                    notes=reuse_notes or ["Already in R1 (an earlier run?) — reused, not created again"],
+                    notes=([name_note] if name_note else []) + (
+                        reuse_notes or ["Already in R1 (an earlier run?) — reused, not created again"]),
                 ))
             else:
                 will_create += 1

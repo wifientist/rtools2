@@ -57,8 +57,9 @@ export default function AuthConversionPanel({ wlans, conversions, onChange, disa
   return (
     <div className="space-y-4">
       <p className="text-xs text-gray-600">
-        Each WLAN below authenticates against a RADIUS server in SZ. Keep it that way in R1, or move it onto R1's own
-        DPSK service and identity management. Converted WLANs get a DPSK service in the next sections; a RADIUS
+        Each WLAN below authenticates against a RADIUS server in SZ. By default every one moves onto R1's own DPSK
+        service and identity management; untick a WLAN to keep it on its external RADIUS server in R1 instead.
+        Converted WLANs get a DPSK service in the next sections; a RADIUS
         server only converted WLANs used is not created. No SZ or Cloudpath passphrase or identity is copied.
       </p>
 
