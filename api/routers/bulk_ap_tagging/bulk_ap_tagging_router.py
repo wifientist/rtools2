@@ -6,6 +6,9 @@ Bulk tool for managing AP tags with three modes:
 2. Add: Merge new tags into existing tags
 3. Remove: Remove specific tags from existing tags
 
+Tags come either from one list applied to every selected AP, or per AP
+(``ap_tags``, built from an R1 AP import CSV) so each AP gets its own tags.
+
 Workflow:
 1. GET /{controller_id}/venue/{venue_id}/aps - List APs with current tags
 2. POST /preview - Preview tag changes (dry run)
@@ -15,7 +18,7 @@ Workflow:
 import asyncio
 import logging
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional
 from routers.tenant_scope import resolve_tenant_id
 from datetime import datetime
 from enum import Enum
@@ -67,8 +70,12 @@ class TagPreviewRequest(BaseModel):
     venue_id: str
     tenant_id: Optional[str] = None
     mode: TagMode
-    tags: List[str] = Field(description="Tags to set/add/remove")
-    ap_serials: List[str] = Field(description="Selected AP serial numbers")
+    tags: List[str] = Field(default_factory=list, description="Tags to set/add/remove")
+    ap_serials: List[str] = Field(default_factory=list, description="Selected AP serial numbers")
+    ap_tags: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="Per-AP tags (serial -> tags), e.g. from an R1 AP import CSV. Overrides tags/ap_serials.",
+    )
 
 
 class TagPreviewResponse(BaseModel):
@@ -88,8 +95,12 @@ class TagApplyRequest(BaseModel):
     venue_id: str
     tenant_id: Optional[str] = None
     mode: TagMode
-    tags: List[str] = Field(description="Tags to set/add/remove")
-    ap_serials: List[str] = Field(description="Selected AP serial numbers")
+    tags: List[str] = Field(default_factory=list, description="Tags to set/add/remove")
+    ap_serials: List[str] = Field(default_factory=list, description="Selected AP serial numbers")
+    ap_tags: Optional[Dict[str, List[str]]] = Field(
+        default=None,
+        description="Per-AP tags (serial -> tags), e.g. from an R1 AP import CSV. Overrides tags/ap_serials.",
+    )
     max_concurrent: int = Field(
         default=10,
         ge=1,
@@ -120,6 +131,22 @@ def parse_tags(raw_tags: List[str]) -> List[str]:
             cleaned.append(t)
             seen.add(t)
     return cleaned
+
+
+def resolve_tag_targets(
+    tags: List[str],
+    ap_serials: List[str],
+    ap_tags: Optional[Dict[str, List[str]]],
+) -> Dict[str, List[str]]:
+    """Serial -> cleaned tags for this request; the per-AP map wins over the shared list."""
+    if ap_tags is not None:
+        return {
+            serial.strip(): parse_tags(t)
+            for serial, t in ap_tags.items()
+            if serial.strip()
+        }
+    shared = parse_tags(tags)
+    return {serial: shared for serial in ap_serials}
 
 
 def normalize_ap_tags(tags) -> List[str]:
@@ -251,16 +278,18 @@ async def preview_tag_changes(
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 
-    # Clean input tags
-    tags = parse_tags(request.tags)
-    if not tags:
+    targets = resolve_tag_targets(request.tags, request.ap_serials, request.ap_tags)
+    per_ap = request.ap_tags is not None
+    if not targets:
+        raise HTTPException(status_code=400, detail="No APs selected")
+    if not per_ap and not next(iter(targets.values())):
         raise HTTPException(status_code=400, detail="At least one tag is required")
 
-    # Validate tag count for SET mode
-    if request.mode == TagMode.SET and len(tags) > MAX_TAGS_PER_AP:
+    # Validate tag count for SET mode (per-AP lists are checked row by row below)
+    if not per_ap and request.mode == TagMode.SET and len(next(iter(targets.values()))) > MAX_TAGS_PER_AP:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot set more than {MAX_TAGS_PER_AP} tags per AP (got {len(tags)})"
+            detail=f"Cannot set more than {MAX_TAGS_PER_AP} tags per AP"
         )
 
     r1_client = create_r1_client_from_controller(request.controller_id, db)
@@ -272,7 +301,7 @@ async def preview_tag_changes(
         raise HTTPException(status_code=500, detail=f"Failed to fetch APs: {e}")
 
     # Build lookup for selected APs
-    selected_set = set(request.ap_serials)
+    selected_set = set(targets)
     ap_lookup = {
         ap.get("serialNumber"): ap
         for ap in aps
@@ -290,14 +319,29 @@ async def preview_tag_changes(
     if missing:
         warnings.append(f"{len(missing)} serial(s) not found in venue: {', '.join(sorted(missing)[:5])}")
 
-    for serial in request.ap_serials:
+    for serial, tags in targets.items():
         ap = ap_lookup.get(serial)
         if not ap:
+            # A CSV row names its AP explicitly, so show the miss on that row
+            if per_ap:
+                error_count += 1
+                previews.append(APTagPreview(
+                    serial_number=serial,
+                    ap_name="",
+                    current_tags=[],
+                    new_tags=tags,
+                    changed=False,
+                    error="AP not found in this venue",
+                ))
             continue
 
         current_tags = normalize_ap_tags(ap.get("tags"))
 
         new_tags, added, removed, error = compute_tag_changes(current_tags, tags, request.mode)
+        if not error and not tags:
+            error = "No tags given for this AP"
+        elif not error and len(new_tags) > MAX_TAGS_PER_AP:
+            error = f"Would exceed {MAX_TAGS_PER_AP}-tag limit ({len(new_tags)} tags)"
 
         changed = sorted(new_tags) != sorted(current_tags)
 
@@ -360,12 +404,11 @@ async def apply_tag_changes(
     if controller.controller_subtype == "MSP" and not effective_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
 
-    tags = parse_tags(request.tags)
-    if not tags:
-        raise HTTPException(status_code=400, detail="At least one tag is required")
-
-    if not request.ap_serials:
+    targets = resolve_tag_targets(request.tags, request.ap_serials, request.ap_tags)
+    if not targets:
         raise HTTPException(status_code=400, detail="No APs selected")
+    if request.ap_tags is None and not next(iter(targets.values())):
+        raise HTTPException(status_code=400, detail="At least one tag is required")
 
     job_id = str(uuid.uuid4())
 
@@ -381,9 +424,9 @@ async def apply_tag_changes(
         },
         input_data={
             "mode": request.mode.value,
-            "tags": tags,
-            "ap_serials": request.ap_serials,
-            "total_aps": len(request.ap_serials),
+            "ap_tags": targets,
+            "per_ap": request.ap_tags is not None,
+            "total_aps": len(targets),
         },
         phase_definitions=[
             PhaseDefinitionV2(
@@ -401,22 +444,21 @@ async def apply_tag_changes(
     state_manager = RedisStateManagerV2(redis_client)
     await state_manager.save_job(job)
 
-    logger.info(f"Created bulk AP tagging job {job_id} for {len(request.ap_serials)} APs (mode={request.mode.value})")
+    logger.info(f"Created bulk AP tagging job {job_id} for {len(targets)} APs (mode={request.mode.value})")
 
     background_tasks.add_task(
         run_tagging_workflow_background,
         job,
         request.controller_id,
         request.mode,
-        tags,
-        request.ap_serials,
+        targets,
         request.max_concurrent,
     )
 
     return {
         "job_id": job_id,
         "status": JobStatus.RUNNING,
-        "message": f"Bulk AP tagging started for {len(request.ap_serials)} APs. Poll /jobs/{job_id}/status for progress."
+        "message": f"Bulk AP tagging started for {len(targets)} APs. Poll /jobs/{job_id}/status for progress."
     }
 
 
@@ -428,17 +470,16 @@ async def run_tagging_workflow_background(
     job: WorkflowJobV2,
     controller_id: int,
     mode: TagMode,
-    tags: List[str],
-    ap_serials: List[str],
+    ap_tags: Dict[str, List[str]],
     max_concurrent: int,
 ):
-    """Background task to execute bulk AP tag operations."""
+    """Background task to execute bulk AP tag operations (serial -> tags)."""
     from database import SessionLocal
 
     db = SessionLocal()
 
     try:
-        logger.info(f"Starting bulk AP tagging job {job.id} (mode={mode.value}, {len(ap_serials)} APs)")
+        logger.info(f"Starting bulk AP tagging job {job.id} (mode={mode.value}, {len(ap_tags)} APs)")
 
         r1_client = create_r1_client_from_controller(controller_id, db)
 
@@ -470,9 +511,9 @@ async def run_tagging_workflow_background(
 
         semaphore = asyncio.Semaphore(max_concurrent)
         completed = 0
-        total = len(ap_serials)
+        total = len(ap_tags)
 
-        async def update_single_ap(serial: str):
+        async def update_single_ap(serial: str, tags: List[str]):
             nonlocal completed
 
             async with semaphore:
@@ -485,11 +526,13 @@ async def run_tagging_workflow_background(
                         })
                         return
 
-                    current_tags = ap.get("tags") or []
-                    if isinstance(current_tags, str):
-                        current_tags = [t.strip() for t in current_tags.split(";") if t.strip()]
+                    current_tags = normalize_ap_tags(ap.get("tags"))
 
                     new_tags, added, removed, error = compute_tag_changes(current_tags, tags, mode)
+                    if not error and not tags:
+                        error = "No tags given for this AP"
+                    elif not error and len(new_tags) > MAX_TAGS_PER_AP:
+                        error = f"Would exceed {MAX_TAGS_PER_AP}-tag limit ({len(new_tags)} tags)"
 
                     # Skip if error (e.g. would exceed limit)
                     if error:
@@ -554,7 +597,7 @@ async def run_tagging_workflow_background(
                     await state_manager.save_job(job)
 
         # Run all updates with concurrency limit
-        tasks = [update_single_ap(serial) for serial in ap_serials]
+        tasks = [update_single_ap(serial, tags) for serial, tags in ap_tags.items()]
         await asyncio.gather(*tasks)
 
         # Update job with final results
