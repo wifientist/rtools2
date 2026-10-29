@@ -329,11 +329,13 @@ interface ScenarioDetection {
   unit_ssid_counts: { ssid: string; unit: string; count: number }[];
   passphrases_without_unit: number;   // no unit SSID at all
   excluded_junk_ssids: string[];      // "undefined@Property" etc — not created
-  skipped_usernames: number;          // not an account number — not imported
-  // The skipped entries themselves, for spotting a false positive. Built and
-  // shown only in the browser from the file already loaded here -- the backend
-  // reports just the count so these names never reach the job log.
-  skipped_username_entries: { name: string; ssids: string[] }[];
+  skipped_usernames: number;          // not an account number, not fixed — not imported
+  // Every entry whose FILE username is not an account number, fixed or not,
+  // so the table stays put while the user fixes rows. index is its position
+  // in dpsks, the key for usernameFixes. Built and shown only in the browser
+  // -- the backend reports just the count so these names never reach the
+  // job log.
+  skipped_username_entries: { index: number; name: string; ssids: string[] }[];
   property_name: string;              // the part after '@' on the unit SSIDs
 }
 
@@ -344,6 +346,31 @@ interface ScenarioDetection {
 // RuckusONE ceiling. Mirrors DpskScaleLimits in api/r1api/constants.py —
 // keep the two in step. Not published by R1, so it is described in the UI
 // as this tool's ceiling rather than a platform one.
+// Only "4021" or "4021_tier" usernames import; anything else is likely an
+// unconverted email (PII) and is dropped. Mirrors is_importable_username in
+// dpsk_usernames.py -- keep the two in step.
+const IMPORTABLE_USERNAME = /^\d+(?:_[A-Za-z0-9][A-Za-z0-9!-]*)?$/;
+
+/**
+ * A likely fix for a username that missed IMPORTABLE_USERNAME by formatting
+ * alone: "4021_performance pro" -> "4021_performance-pro", " 4021 " -> "4021".
+ * Only offered when the name already starts with the account number; anything
+ * else (an email, say) gets no suggestion and must be typed by hand.
+ */
+function suggestUsername(raw: string): string | null {
+  const t = raw.trim();
+  if (IMPORTABLE_USERNAME.test(t)) return t;
+  const m = t.match(/^(\d+)[\s_-]+(.*)$/);
+  if (!m) return null;
+  const tier = m[2].trim()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^A-Za-z0-9!-]/g, "")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .replace(/-+$/, "");
+  const s = tier ? `${m[1]}_${tier}` : m[1];
+  return IMPORTABLE_USERNAME.test(s) ? s : null;
+}
+
 const MAX_SSIDS_SHARED_POOL = 1024;  // ssid_mode="per_unit"
 
 type SsidMode = "none" | "single" | "per_unit";
@@ -709,6 +736,12 @@ function CloudpathImport() {
   // Scenario Detection (for unit count / coverage info)
   const [scenarioDetection, setScenarioDetection] = useState<ScenarioDetection | null>(null);
 
+  // Hand fixes for usernames that are not an account number, keyed by the
+  // entry's index in dpsks ("4021_performance pro" -> "4021_performance-pro").
+  // A fix applies only once it passes IMPORTABLE_USERNAME itself, so this
+  // can repair formatting but cannot let an email through.
+  const [usernameFixes, setUsernameFixes] = useState<Record<number, string>>({});
+
   // Job monitoring modal
   const [showJobModal, setShowJobModal] = useState(false);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
@@ -873,11 +906,30 @@ function CloudpathImport() {
     return Array.from(poolMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [identityExportData]);
 
+  // The export with the user's username fixes applied. Everything that reads
+  // or sends the roster uses this; jsonData stays the file as loaded.
+  const effectiveJsonData = useMemo(() => {
+    if (!jsonData || Array.isArray(jsonData)) return jsonData;
+    if (Object.keys(usernameFixes).length === 0) return jsonData;
+    const dpsks = ((jsonData as any).dpsks || []).map((d: any, i: number) => {
+      const fix = usernameFixes[i]?.trim();
+      return fix && IMPORTABLE_USERNAME.test(fix) ? { ...d, name: fix } : d;
+    });
+    return { ...jsonData, dpsks };
+  }, [jsonData, usernameFixes]);
+
+  // Re-count once a fix lands, so a fixed resident moves out of "skipped"
+  // and into the totals. Upload runs the first analysis itself.
+  useEffect(() => {
+    if (!jsonData || Array.isArray(jsonData) || !(jsonData as any).dpsks) return;
+    setScenarioDetection(analyzeCloudpathData(jsonData, usernameFixes));
+  }, [jsonData, usernameFixes]);
+
   // Build username→guid map from uploaded JSON for client-side GUID enrichment
   const cloudpathGuidMap = useMemo(() => {
-    if (!jsonData) return null;
+    if (!effectiveJsonData) return null;
     const map = new Map<string, string>();
-    const dpsks: any[] = Array.isArray(jsonData) ? jsonData : (jsonData as any).dpsks || [];
+    const dpsks: any[] = Array.isArray(effectiveJsonData) ? effectiveJsonData : (effectiveJsonData as any).dpsks || [];
     for (const dpsk of dpsks) {
       const name = dpsk.name || dpsk.username;
       const guid = dpsk.guid;
@@ -886,7 +938,7 @@ function CloudpathImport() {
       }
     }
     return map.size > 0 ? map : null;
-  }, [jsonData]);
+  }, [effectiveJsonData]);
 
   // Filter identity export data by selected pools (empty set = show all)
   // Enrich with cloudpath_guid_json from uploaded JSON (always, as a separate field)
@@ -920,20 +972,29 @@ function CloudpathImport() {
   }, [filteredIdentityData, identityPage]);
 
   // Analyze uploaded JSON for scenario detection and suffix patterns (client-side preview)
-  const analyzeCloudpathData = (data: Record<string, any>): ScenarioDetection => {
-    // Only "4021" or "4021_tier" usernames import; anything else is likely an
-    // unconverted email (PII) and is dropped. Mirrors is_importable_username
-    // in dpsk_usernames.py -- keep the two in step.
-    const importableUsername = /^\d+(?:_[A-Za-z0-9][A-Za-z0-9!-]*)?$/;
+  const analyzeCloudpathData = (
+    data: Record<string, any>,
+    fixes: Record<number, string> = {},
+  ): ScenarioDetection => {
     const rawDpsks: any[] = data.dpsks || [];
-    const dpsks = rawDpsks.filter((d) => importableUsername.test(d.name || ''));
+    const fixFor = (i: number): string | null => {
+      const f = fixes[i]?.trim();
+      return f && IMPORTABLE_USERNAME.test(f) ? f : null;
+    };
+    const dpsks = rawDpsks
+      .map((d, i) => {
+        const fix = fixFor(i);
+        return fix ? { ...d, name: fix } : d;
+      })
+      .filter((d) => IMPORTABLE_USERNAME.test(d.name || ''));
     const skippedUsernames = rawDpsks.length - dpsks.length;
     const skippedUsernameEntries = rawDpsks
-      .filter((d) => !importableUsername.test(d.name || ''))
-      .map((d) => ({
+      .map((d, i) => ({
+        index: i,
         name: String(d.name ?? ''),
         ssids: Array.isArray(d.ssidList) ? d.ssidList : [],
-      }));
+      }))
+      .filter((e) => !IMPORTABLE_USERNAME.test(e.name));
     // Split on the LAST '@': everything before it is the unit, everything
     // after is the property. Mirrors unit_ssid.py on the backend -- keep the
     // two in step. The old /^(\d+)@(.+)$/ required an all-digit unit, so a
@@ -1303,6 +1364,7 @@ function CloudpathImport() {
     setExportMetadata(null);
     setScenarioDetection(null);
     setDetectedSuffixes(null);
+    setUsernameFixes({});
     setUploadError("");
 
     // Target venue — a different property is a different venue
@@ -1494,7 +1556,7 @@ function CloudpathImport() {
           controller_id: activeControllerId,
           venue_id: venueId,
           tenant_id: effectiveTenantId,
-          cloudpath_data: jsonData,
+          cloudpath_data: effectiveJsonData,
           options: {
             skip_expired_dpsks: expiredDpskHandling === "skip",
             renew_expired_dpsks: expiredDpskHandling === "renew",
@@ -1600,10 +1662,10 @@ function CloudpathImport() {
    * that has no use for them.
    */
   const fileIdentities = useMemo(() => {
-    if (!jsonData) return [];
-    const entries: any[] = Array.isArray(jsonData)
-      ? jsonData
-      : (jsonData as any).dpsks || [];
+    if (!effectiveJsonData) return [];
+    const entries: any[] = Array.isArray(effectiveJsonData)
+      ? effectiveJsonData
+      : (effectiveJsonData as any).dpsks || [];
     return entries
       .map((d: any) => ({
         name: String(d?.name || "").trim(),
@@ -1613,7 +1675,7 @@ function CloudpathImport() {
         guid: String(d?.guid || "").trim() || null,
       }))
       .filter((d) => d.name);
-  }, [jsonData]);
+  }, [effectiveJsonData]);
 
   const handleAuditIdentities = async () => {
     // Both pre-checks are load-bearing: the roster is the row list, and the
@@ -2184,50 +2246,151 @@ function CloudpathImport() {
                   )}
                 </div>
 
-                {scenarioDetection.skipped_usernames > 0 && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
-                    <div className="font-medium">
-                      {scenarioDetection.skipped_usernames} DPSK(s) will NOT be
-                      imported — username is not an account number
-                    </div>
-                    <div className="mt-1">
-                      Only usernames that are all digits, or digits_tier
-                      (e.g. 4021_ultrafast, 4021_Blast!), are imported. Anything else is
-                      likely an email that was never converted, so it is left
-                      out to keep personal data out of RuckusONE.
-                    </div>
-                    <details className="mt-2">
-                      <summary className="cursor-pointer hover:text-red-900 select-none">
-                        Show the {scenarioDetection.skipped_usernames} skipped
-                        username(s)
-                      </summary>
-                      <div className="mt-2 max-h-64 overflow-y-auto border border-red-200 rounded bg-white">
+                {scenarioDetection.skipped_username_entries.length > 0 && (() => {
+                  const entries = scenarioDetection.skipped_username_entries;
+                  const stillSkipped = scenarioDetection.skipped_usernames;
+                  const fixedCount = entries.length - stillSkipped;
+                  const suggestions = entries
+                    .map((e) => ({ index: e.index, fix: suggestUsername(e.name) }))
+                    .filter((x): x is { index: number; fix: string } => !!x.fix);
+                  const unappliedSuggestions = suggestions.filter(
+                    (x) => (usernameFixes[x.index] ?? "").trim() === "",
+                  );
+                  // Names already importable as-is, to flag a fix that
+                  // lands on an existing resident (or on another fix).
+                  const nameCounts = new Map<string, number>();
+                  for (const d of fileIdentities) {
+                    nameCounts.set(d.name, (nameCounts.get(d.name) || 0) + 1);
+                  }
+                  const allFixed = stillSkipped === 0;
+                  return (
+                    <div className={`mt-2 p-2 border rounded text-xs ${
+                      allFixed
+                        ? "bg-green-50 border-green-200 text-green-800"
+                        : "bg-red-50 border-red-200 text-red-800"
+                    }`}>
+                      <div className="font-medium">
+                        {entries.length} DPSK(s) have a username that is not an
+                        account number
+                        {fixedCount > 0 && ` — ${fixedCount} fixed`}
+                        {stillSkipped > 0 && ` — ${stillSkipped} will NOT be imported`}
+                      </div>
+                      <div className="mt-1">
+                        Only usernames that are all digits, or digits_tier
+                        (e.g. 4021_ultrafast, 4021_Blast!), are imported. Anything
+                        else is likely an email that was never converted, so it
+                        is left out to keep personal data out of RuckusONE. If a
+                        row is just badly formatted (a space in the tier, say),
+                        type the name to import it as. The tier after the "_"
+                        becomes its RADIUS group. The file itself is not changed,
+                        so a re-run of the same export needs the same fixes.
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {unappliedSuggestions.length > 0 && (
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded border border-red-300 bg-white hover:bg-red-100 text-red-900"
+                            onClick={() =>
+                              setUsernameFixes((prev) => {
+                                const next = { ...prev };
+                                for (const x of unappliedSuggestions) next[x.index] = x.fix;
+                                return next;
+                              })
+                            }
+                          >
+                            Use all {unappliedSuggestions.length} suggestion(s)
+                          </button>
+                        )}
+                        {Object.keys(usernameFixes).length > 0 && (
+                          <button
+                            type="button"
+                            className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 text-gray-700"
+                            onClick={() => setUsernameFixes({})}
+                          >
+                            Clear all fixes
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 max-h-80 overflow-y-auto border border-red-200 rounded bg-white">
                         <table className="min-w-full text-xs">
                           <thead className="bg-red-50 sticky top-0">
                             <tr>
-                              <th className="px-2 py-1 text-left font-medium text-red-900">Username</th>
+                              <th className="px-2 py-1 text-left font-medium text-red-900">Username in file</th>
+                              <th className="px-2 py-1 text-left font-medium text-red-900">Import as</th>
                               <th className="px-2 py-1 text-left font-medium text-red-900">SSIDs</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-red-100">
-                            {scenarioDetection.skipped_username_entries.map((r, i) => (
-                              <tr key={i}>
-                                {/* Quoted so stray whitespace -- a common
-                                    false positive -- is visible */}
-                                <td className="px-2 py-1 font-mono text-gray-900 whitespace-pre">
-                                  {r.name ? `"${r.name}"` : <span className="italic text-gray-400">(empty)</span>}
-                                </td>
-                                <td className="px-2 py-1 font-mono text-gray-600 break-all">
-                                  {r.ssids.join(', ') || '—'}
-                                </td>
-                              </tr>
-                            ))}
+                            {entries.map((r) => {
+                              const value = usernameFixes[r.index] ?? "";
+                              const trimmed = value.trim();
+                              const valid = trimmed !== "" && IMPORTABLE_USERNAME.test(trimmed);
+                              const invalid = trimmed !== "" && !valid;
+                              const duplicate = valid && (nameCounts.get(trimmed) || 0) > 1;
+                              const suggestion = suggestUsername(r.name);
+                              return (
+                                <tr key={r.index} className={valid ? "bg-green-50" : ""}>
+                                  {/* Quoted so stray whitespace -- a common
+                                      false positive -- is visible */}
+                                  <td className="px-2 py-1 font-mono text-gray-900 whitespace-pre align-top">
+                                    {r.name ? `"${r.name}"` : <span className="italic text-gray-400">(empty)</span>}
+                                  </td>
+                                  <td className="px-2 py-1 align-top">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="text"
+                                        value={value}
+                                        placeholder="not imported"
+                                        onChange={(e) => {
+                                          const v = e.target.value;
+                                          setUsernameFixes((prev) => {
+                                            const next = { ...prev };
+                                            if (v === "") delete next[r.index];
+                                            else next[r.index] = v;
+                                            return next;
+                                          });
+                                        }}
+                                        className={`w-48 px-1 py-0.5 border rounded font-mono text-xs ${
+                                          invalid ? "border-red-500 bg-red-50"
+                                            : valid ? "border-green-500" : "border-gray-300"
+                                        }`}
+                                      />
+                                      {suggestion && trimmed !== suggestion && (
+                                        <button
+                                          type="button"
+                                          title="Use this suggestion"
+                                          className="px-1 py-0.5 rounded border border-gray-300 hover:bg-gray-100 font-mono text-gray-700 whitespace-nowrap"
+                                          onClick={() =>
+                                            setUsernameFixes((prev) => ({ ...prev, [r.index]: suggestion }))
+                                          }
+                                        >
+                                          ← {suggestion}
+                                        </button>
+                                      )}
+                                    </div>
+                                    {invalid && (
+                                      <div className="mt-0.5 text-red-700">
+                                        Must be digits, or digits_tier (tier: letters, digits, "-", "!")
+                                      </div>
+                                    )}
+                                    {duplicate && (
+                                      <div className="mt-0.5 text-amber-700">
+                                        Another resident in this file is already named this
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1 font-mono text-gray-600 break-all align-top">
+                                    {r.ssids.join(', ') || '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
-                    </details>
-                  </div>
-                )}
+                    </div>
+                  );
+                })()}
 
                 {scenarioDetection.excluded_junk_ssids.length > 0 && (
                   <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-800">
