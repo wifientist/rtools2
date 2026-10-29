@@ -6,9 +6,15 @@ Every model carries a `raw` field with the complete API response
 so unmapped fields are always available for future use.
 """
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+
+
+def _strip_text(v: Any) -> Any:
+    """SZ keeps leading / trailing spaces on WLAN names and SSIDs ("IOT2120  ");
+    R1 doesn't, so an unstripped value never matches its R1 network."""
+    return v.strip() if isinstance(v, str) else v
 
 
 class SZRadioConfig(BaseModel):
@@ -53,6 +59,8 @@ class SZWLANGroupMember(BaseModel):
     ssid: Optional[str] = None
     access_vlan: Optional[int] = None
     nas_id: Optional[str] = None
+
+    _strip = field_validator("name", "ssid", mode="before")(_strip_text)
 
 
 class SZWLANGroup(BaseModel):
@@ -109,6 +117,9 @@ class SZWLANFull(BaseModel):
     schedule: Optional[Dict[str, Any]] = None
 
     raw: Dict[str, Any] = Field(default_factory=dict, description="Complete WLAN detail API response")
+
+    # Stored snapshots are stripped as they load: no re-extraction needed.
+    _strip = field_validator("name", "ssid", mode="before")(_strip_text)
 
     @model_validator(mode="after")
     def _classify_from_raw(self):

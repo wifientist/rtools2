@@ -141,7 +141,7 @@ def r1_ssids_by_group(inv: R1VenueInventory) -> Tuple[Dict[str, Set[str]], Set[s
     by_group: Dict[str, Set[str]] = defaultdict(set)
     everywhere: Set[str] = set()
     for net in inv.wifi_networks:
-        ssid = net.get("ssid")
+        ssid = (net.get("ssid") or "").strip()
         if not ssid:
             continue
         for vag in net.get("venueApGroups") or []:
