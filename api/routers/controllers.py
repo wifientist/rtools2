@@ -16,7 +16,8 @@ from schemas.controller import (
     SetActiveControllerRequest,
     SetSecondaryControllerRequest,
     UserControllerInfo,
-    validate_sz_host
+    validate_sz_host,
+    validate_portal_key,
 )
 from security import create_access_token, is_production
 
@@ -49,6 +50,7 @@ def get_my_controllers(
             sz_host=controller.sz_host,
             sz_port=controller.sz_port,
             sz_version=controller.sz_version,
+            has_portal_key=bool(controller.encrypted_portal_key),
         )
         for controller in controllers
     ]
@@ -79,6 +81,8 @@ def create_ruckusone_controller(
     # Encrypt credentials
     new_controller.set_r1_client_id(controller_data.r1_client_id)
     new_controller.set_r1_shared_secret(controller_data.r1_shared_secret)
+    if controller_data.portal_key:
+        new_controller.set_portal_key(controller_data.portal_key)
 
     db.add(new_controller)
     db.commit()
@@ -91,6 +95,7 @@ def create_ruckusone_controller(
         controller_subtype=new_controller.controller_subtype,
         r1_tenant_id=new_controller.r1_tenant_id,
         r1_region=new_controller.r1_region,
+        has_portal_key=bool(new_controller.encrypted_portal_key),
     )
 
 
@@ -166,6 +171,13 @@ def update_controller(
             controller.set_r1_client_id(controller_data["r1_client_id"])
         if "r1_shared_secret" in controller_data:
             controller.set_r1_shared_secret(controller_data["r1_shared_secret"])
+        if "portal_key" in controller_data:
+            try:
+                key = validate_portal_key(controller_data["portal_key"])
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            if key is not None:
+                controller.set_portal_key(key)
 
     elif controller.controller_type == "SmartZone":
         if "name" in controller_data:
@@ -197,6 +209,7 @@ def update_controller(
         sz_host=controller.sz_host,
         sz_port=controller.sz_port,
         sz_version=controller.sz_version,
+        has_portal_key=bool(controller.encrypted_portal_key),
     )
 
 

@@ -68,6 +68,7 @@ interface Preview {
   dpsk_pools: { id: string; name: string }[];
   dpsk_suggestion: { pool_id: string; pool_name: string; reason: string } | null;
   wispr_key_sources: WisprKeySource[];
+  controller_has_portal_key?: boolean;   // a key is saved on the R1 controller (the key never comes back)
   wispr_r1: WisprR1Norms;
   warnings: string[];
 }
@@ -88,7 +89,7 @@ interface WisprR1Norms {
 
 // The integration key: each WLAN's SZ signature signing key unless overridden
 // with one copied from an R1 network or typed (sent once, never stored).
-interface WisprChoice { key_source: 'sz' | 'network' | 'typed'; key_network_id: string | null; integration_key: string }
+interface WisprChoice { key_source: 'sz' | 'controller' | 'network' | 'typed'; key_network_id: string | null; integration_key: string }
 
 interface RadiusChoice { action: 'dpsk' | 'create' | 'existing' | 'skip'; r1_profile_id: string | null; secret: string }
 
@@ -185,8 +186,10 @@ export default function WlanGrabber() {
       });
       setPreview(data);
       setModeOf(Object.fromEntries(data.rows.map(r => [r.sz_wlan_id, r.default_mode])));
-      // SZ by default; the R1 key most of the tenant uses is only preselected for the override.
-      setWispr({ key_source: 'sz', key_network_id: data.wispr_key_sources[0]?.network_id || null, integration_key: '' });
+      // The key saved on the R1 controller when there is one (SZ's API never returns its own),
+      // else SZ; the R1 key most of the tenant uses is only preselected for the override.
+      setWispr({ key_source: data.controller_has_portal_key ? 'controller' : 'sz',
+        key_network_id: data.wispr_key_sources[0]?.network_id || null, integration_key: '' });
       setRowPool({});
       // Usually one pool serves every DPSK network in a venue: start from the
       // venue's pool, else a new one named after the zone.
@@ -233,6 +236,7 @@ export default function WlanGrabber() {
   };
   const sharedReady = !shared || shared.mode !== 'new' || shared.name.trim().length >= 2;
   const keyReady = wispr.key_source === 'sz'
+    || (wispr.key_source === 'controller' && !!preview?.controller_has_portal_key)
     || (wispr.key_source === 'network' && !!wispr.key_network_id)
     || (wispr.key_source === 'typed' && /^[a-zA-Z0-9]{16}$/.test(wispr.integration_key));
   const wisprReady = (r: GrabRow) => modeFor(r).r1_type !== 'wispr' || keyReady;
@@ -499,6 +503,7 @@ export default function WlanGrabber() {
           {preview && wisprCapable.length > 0 && (
             <WisprPanel
               sources={preview.wispr_key_sources} norms={preview.wispr_r1} choice={wispr} onChange={setWispr}
+              controllerKey={!!preview.controller_has_portal_key}
               disabled={busy} rows={wisprCapable.filter(r => modeFor(r).r1_type === 'wispr')}
             />
           )}
@@ -762,8 +767,9 @@ function DpskPanel({ shared, onChange, pools, suggestion, venueName, convertible
   );
 }
 
-function WisprPanel({ sources, norms, choice, onChange, rows, disabled }: {
+function WisprPanel({ sources, norms, choice, onChange, rows, disabled, controllerKey }: {
   sources: WisprKeySource[];
+  controllerKey: boolean;
   norms: WisprR1Norms;
   choice: WisprChoice;
   onChange: (c: WisprChoice) => void;
@@ -810,11 +816,18 @@ function WisprPanel({ sources, norms, choice, onChange, rows, disabled }: {
         <div className="space-y-1.5 text-xs text-gray-700">
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={override} disabled={disabled}
-              onChange={e => onChange({ ...choice, key_source: e.target.checked ? (sources.length ? 'network' : 'typed') : 'sz' })} />
+              onChange={e => onChange({ ...choice, key_source: e.target.checked ? (controllerKey ? 'controller' : sources.length ? 'network' : 'typed') : 'sz' })} />
             Override SZ&apos;s integration key (MAC &amp; IP then encrypted)
           </label>
           {override && (
             <div className="pl-6 space-y-1.5">
+              {controllerKey && (
+                <label className="flex flex-wrap items-center gap-2">
+                  <input type="radio" checked={choice.key_source === 'controller'} disabled={disabled}
+                    onChange={() => onChange({ ...choice, key_source: 'controller' })} />
+                  The customer key saved on this RuckusONE controller
+                </label>
+              )}
               {sources.length > 0 && (
                 <label className="flex flex-wrap items-center gap-2">
                   <input type="radio" checked={choice.key_source === 'network'} disabled={disabled}

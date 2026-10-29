@@ -25,7 +25,7 @@ interface AuthContextType {
   secondaryControllerName: string | null;
   secondaryControllerType: string | null;
   secondaryControllerSubtype: string | null;
-  controllers: { id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[];
+  controllers: { id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null; sz_host?: string | null; sz_port?: number | null; sz_version?: string | null; has_portal_key?: boolean }[];
   roleHierarchy: { [key: string]: number };
   setActiveControllerId: (id: number) => void;
   setActiveControllerName: (name: string) => void;
@@ -60,7 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [betaEnabled, setBetaEnabled] = useState<boolean>(false);
   const [alphaEnabled, setAlphaEnabled] = useState<boolean>(false);
   const [dangerEnabled, setDangerEnabled] = useState<boolean>(false);
-  const [controllers, setControllers] = useState<{ id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null }[]>([]);
+  const [controllers, setControllers] = useState<{ id: number; name: string; controller_type: string; controller_subtype: string | null; r1_tenant_id: string | null; r1_region: string | null; sz_host?: string | null; sz_port?: number | null; sz_version?: string | null; has_portal_key?: boolean }[]>([]);
   const [activeControllerId, setActiveControllerId] = useState<number | null>(null);
   const [activeControllerName, setActiveControllerName] = useState<string | null>(null);
   const [secondaryControllerId, setSecondaryControllerId] = useState<number | null>(null);
