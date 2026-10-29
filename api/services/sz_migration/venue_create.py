@@ -540,20 +540,39 @@ async def apply_settings(r1_client, tenant_id: Optional[str], venue_id: str,
             notes.append(f"R1 defaults kept for: {', '.join(defaults)}")
         if not push:
             return {**out, "status": "applied", "notes": notes + ["Nothing differs from R1's defaults — nothing written"]}
-        async with sem:
+        async def put(entries: List[Dict[str, Any]]) -> Optional[str]:
+            """None when R1 took them, else R1's reason."""
             try:
                 resp = await asyncio.to_thread(
-                    lambda: r1_client.put(path, payload=push, content_type=sec.media, **kw))
+                    lambda: r1_client.put(path, payload=entries, content_type=sec.media, **kw))
                 if resp.status_code not in (200, 201, 202, 204):
-                    return {**out, "status": "failed", "error": r1_error(resp), "notes": notes}
+                    return r1_error(resp)
                 data = resp.json() if resp.content else {}
                 if resp.status_code == 202 and isinstance(data, dict) and data.get("requestId"):
                     await r1_client.await_task_completion(data["requestId"], override_tenant_id=tenant_id)
-                return {**out, "status": "applied", "notes": notes,
-                        "pushed": [e["model"] for e in push]}
+                return None
             except Exception as e:
                 logger.error(f"[SZ Migration] Venue {venue_id} {sec.path} failed: {e}")
-                return {**out, "status": "failed", "error": str(e)[:500], "notes": notes}
+                return str(e)[:500]
+
+        async with sem:
+            error = await put(push)
+            if error is None:
+                return {**out, "status": "applied", "notes": notes, "pushed": [e["model"] for e in push]}
+            if len(push) == 1:
+                return {**out, "status": "failed", "error": f"{push[0]['model']}: {error}", "notes": notes}
+            # R1 fails the whole list for one model it won't take: one model
+            # at a time, so the others still land and the offender is named.
+            pushed, failed = [], []
+            for e in push:
+                err = await put([e])
+                if err is None:
+                    pushed.append(e["model"])
+                else:
+                    failed.append(f"{e['model']}: {err}")
+            if not failed:
+                return {**out, "status": "applied", "notes": notes, "pushed": pushed}
+            return {**out, "status": "failed", "error": "; ".join(failed), "notes": notes, "pushed": pushed}
 
     async def one(sec: _Section) -> Dict[str, Any]:
         if sec.by_model:
