@@ -163,7 +163,8 @@ def main():
     # 10. top-of-report overview
     ov = {r.label: r for r in report.overview}
     failures += check("overview rows in order", [r.label for r in report.overview] ==
-                      ["APs", "WLANs", "AP Groups", "Default AP Group — APs"], str(list(ov)))
+                      ["APs", "WLANs", "AP Groups", "WLAN Groups (applied) → R1 AP Groups",
+                       "Default AP Group — APs"], str(list(ov)))
     failures += check("APs 4 vs 3", (ov["APs"].sz_value, ov["APs"].r1_value, ov["APs"].status) == (4, 3, "differs"))
     failures += check("WLANs 6 vs 5, one more not activated here",
                       (ov["WLANs"].sz_value, ov["WLANs"].r1_value) == (6, 5) and "1 more" in ov["WLANs"].note)

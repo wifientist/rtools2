@@ -12,6 +12,7 @@ Categories later audit checkpoints will fill are present from the start as
 Pure: builds from pieces the auditor already computed.
 """
 
+from collections import Counter
 from typing import Any, Dict, List, Optional, Set
 
 from schemas.migration_audit import (
@@ -388,6 +389,22 @@ def build_overview(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         sz_note=f"{sz_with_aps} with APs", r1_note=f"{len(r1_groups_with_aps)} with APs",
         note="" if len(snapshot.ap_groups) == len(inv.ap_groups) else
              "Not one-to-one: SZ per-AP WLAN Group overrides usually become R1 AP Groups",
+    ))
+
+    # WLAN Groups, beside AP Groups: in SZ the WLAN Group decides which SSIDs
+    # an AP broadcasts, so each one applied somewhere is, in effect, an R1
+    # AP Group. Matched = some R1 AP Group carries every SSID in it.
+    used = [u for u in matching.wlan_groups if u.zone_bands or u.ap_groups or u.ap_override_total]
+    carried = [u for u in used if u.r1_groups_carrying_all]
+    by_how = Counter("zone" if u.zone_bands else "AP Group" if u.ap_groups else "AP override" for u in used)
+    rows.append(OverviewRow(
+        label="WLAN Groups (applied) → R1 AP Groups", sz_value=len(used), r1_value=len(inv.ap_groups),
+        status="match" if used and len(carried) == len(used) else "differs" if used else "info",
+        sz_note=f"of {len(snapshot.wlan_groups)}; " + ", ".join(f"{n} by {k}" for k, n in by_how.most_common())
+                if used else f"none of {len(snapshot.wlan_groups)} applied",
+        r1_note=f"{len(carried)} of {len(used)} WLAN Groups carried in full by an R1 AP Group",
+        note="" if len(carried) == len(used) else
+             "Not carried: " + ", ".join(u.name for u in used if not u.r1_groups_carrying_all)[:300],
     ))
 
     sz_default = next((g for g in snapshot.ap_groups if g.name == SZ_DEFAULT_AP_GROUP), None)

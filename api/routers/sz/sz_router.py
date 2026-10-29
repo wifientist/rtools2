@@ -4,6 +4,7 @@ SmartZone API Router
 Provides endpoints for interacting with SmartZone controllers,
 including AP inventory queries and migration support.
 """
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -109,6 +110,47 @@ async def get_all_zones(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch zones: {str(e)}")
+
+
+ZONE_COUNTS_MAX = 10
+
+
+@router.get("/zones/counts")
+async def get_zone_counts(
+    ids: str,
+    sz_client: SZClient = Depends(get_dynamic_sz_client)
+) -> Dict[str, Any]:
+    """
+    WLAN and AP counts for a few zones (comma-separated ids, at most
+    ZONE_COUNTS_MAX): two one-row reads per zone, totalCount only. Lets a
+    zone picker show which of two same-named zones is the empty twin. A
+    zone whose counts can't be read gets nulls.
+    """
+    zone_ids = [z for z in dict.fromkeys(i.strip() for i in ids.split(",")) if z][:ZONE_COUNTS_MAX]
+
+    async def count(zone_id: str) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"wlans": None, "aps": None}
+        try:
+            w = await sz_client._request("GET", f"/{sz_client.api_version}/rkszones/{zone_id}/wlans",
+                                         params={"index": 0, "listSize": 1})
+            out["wlans"] = w.get("totalCount", len(w.get("list") or []))
+        except Exception as e:
+            logger.debug(f"WLAN count for zone {zone_id} failed: {e}")
+        try:
+            a = await sz_client.aps.get_aps_by_zone(zone_id, 0, 1)
+            out["aps"] = a.get("totalCount", len(a.get("list") or []))
+        except Exception as e:
+            logger.debug(f"AP count for zone {zone_id} failed: {e}")
+        return out
+
+    try:
+        async with sz_client:
+            results = await asyncio.gather(*(count(z) for z in zone_ids))
+            return {"status": "success", "data": dict(zip(zone_ids, results))}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to count zones: {str(e)}")
 
 
 @router.get("/zones/{zone_id}/aps")

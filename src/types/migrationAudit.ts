@@ -106,6 +106,8 @@ export interface MigrationAuditReport {
   matching?: AuditMatching;
   venue_settings?: VenueSettingsAudit | null;
   broadcast?: BroadcastAudit | null;
+  portals?: PortalAudit[];
+  unpaired_r1_portals?: Array<{ id: string; name: string | null; ssid: string | null; guest_type: string | null }>;
   data_sources?: Record<string, { cached: boolean; age_seconds?: number | null; captured_at?: string; source?: string }>;
   warnings: string[];
 }
@@ -322,4 +324,31 @@ export interface WlanGroupUsage {
   ap_override_total: number;
   ap_override_sample: string[];
   r1_groups_carrying_all: string[];
+}
+
+// ── Captive portal WLANs ──────────────────────────────────────────
+
+// One portal setting, SZ beside R1; credentials only as "set" / "not set"
+export interface PortalCheck {
+  label: string;
+  sz: string;
+  r1: string;
+  status: 'match' | 'differs' | 'unknown' | 'info';
+  note: string;
+}
+
+export interface PortalAudit {
+  sz_wlan_id: string;
+  sz_wlan_name: string;
+  sz_ssid: string | null;
+  sz_type: string;
+  sz_portal_name: string | null;
+  r1_network_id: string | null;
+  r1_name: string | null;
+  r1_guest_type: string | null;
+  status: 'match' | 'differs' | 'unknown' | 'missing';
+  checks: PortalCheck[];
+  sz_only: PortalCheck[];   // SZ portal settings with no R1 counterpart
+  r1_only: PortalCheck[];   // R1 guestPortal settings with no SZ counterpart
+  notes: string[];
 }
