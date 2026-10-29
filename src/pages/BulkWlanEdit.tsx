@@ -12,6 +12,10 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import { apiFetch } from "@/utils/api";
+import {
+  TypeOverview, CaptivePortalEditor, fieldApplies, PORTAL_KEY_LABELS,
+  type NetworkProfile, type PortalChanges,
+} from "@/components/bulk-wlan/TypeSettings";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -117,6 +121,16 @@ interface Settings {
   enableSyslog: boolean | null;
   multiLinkOperationEnabled: boolean | null;
   wifiCallingEnabled: boolean | null;
+  // Captive portal (WISPr / guest networks only; null elsewhere)
+  portalUrl: string | null;
+  portalRedirectUrl: string | null;
+  portalWalledGardens: string[] | null;
+  portalEncryptMacIp: boolean | null;
+  portalKey: string | null;   // "saved" | "other" | "none"; the only change is "saved"
+  portalSessionTimeout: number | null;
+  portalGracePeriod: number | null;
+  bypassCNA: boolean | null;
+  bypassCPUsingMacAddressAuthentication: boolean | null;
 }
 
 type Changes = {
@@ -126,7 +140,9 @@ type Changes = {
 interface NetworkSettings {
   name: string;
   ssid: string;
+  kind?: string;
   settings: Settings;
+  profile?: NetworkProfile;
 }
 
 interface FieldDiff {
@@ -167,6 +183,16 @@ const RECOMMENDED_CHANGES: Changes = {
 // ============================================================================
 
 const FIELD_LABELS: Record<string, string> = {
+  // Captive portal
+  portalUrl: "Portal URL",
+  portalRedirectUrl: "Redirect URL",
+  portalWalledGardens: "Walled Garden",
+  portalEncryptMacIp: "MAC & IP Encryption",
+  portalKey: "Integration Key",
+  portalSessionTimeout: "Session Timeout",
+  portalGracePeriod: "Grace Period",
+  bypassCNA: "Bypass CNA",
+  bypassCPUsingMacAddressAuthentication: "MAC Auth Bypass",
   // Basic WLAN
   vlanId: "VLAN ID",
   enabled: "Network Enabled",
@@ -373,10 +399,14 @@ const NUMBER_UNITS: Record<string, string> = {
   broadcastProbeResponseDelay: "ms",
   arpRequestRateLimit: "pps",
   dhcpRequestRateLimit: "pps",
+  portalSessionTimeout: "min",
+  portalGracePeriod: "min",
 };
 
 function formatValue(field: string, value: any): string {
   if (value === null || value === undefined) return "N/A";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "None";
+  if (field === "portalKey") return PORTAL_KEY_LABELS[value] || String(value);
   if (typeof value === "boolean") return value ? "Enabled" : "Disabled";
   // Bool-like string fields
   if (BOOL_STRING_FIELDS[field]) {
@@ -431,6 +461,8 @@ export default function BulkWlanEdit() {
   // Settings
   const [fetchedSettings, setFetchedSettings] = useState<Record<string, NetworkSettings>>({});
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [hasSavedKey, setHasSavedKey] = useState(false);
+  const [typeSectionOpen, setTypeSectionOpen] = useState(true);
 
   // Changes — all "No Change" by default for safer bulk operations
   const [changes, setChanges] = useState<Changes>({});
@@ -530,6 +562,7 @@ export default function BulkWlanEdit() {
         }
         const data = await res.json();
         Object.assign(allNetworks, data.networks || {});
+        setHasSavedKey(!!data.has_saved_key);
         fetched += batch.length;
         setFetchProgress({ fetched, total: selectedIds.length });
       }
@@ -550,6 +583,7 @@ export default function BulkWlanEdit() {
     const summary: Record<string, Record<string, number>> = {};
     for (const entry of entries) {
       for (const [field, value] of Object.entries(entry.settings)) {
+        if (!fieldApplies(field, entry.kind)) continue;   // e.g. portal fields on a PSK network
         if (!summary[field]) summary[field] = {};
         const key = formatValue(field, value);
         summary[field][key] = (summary[field][key] || 0) + 1;
@@ -575,10 +609,17 @@ export default function BulkWlanEdit() {
       const entry = fetchedSettings[nid];
       if (!entry) continue;
 
+      // A network none of the changes apply to (portal fields on a PSK network) is not "already set".
+      if (!activeChanges.some(([field]) => fieldApplies(field, entry.kind))) continue;
+
       const fieldDiffs: FieldDiff[] = [];
       for (const [field, newValue] of activeChanges) {
+        if (!fieldApplies(field, entry.kind)) continue;   // the job skips it too
         const oldValue = entry.settings[field as keyof Settings];
-        if (oldValue !== newValue) {
+        const differs = Array.isArray(newValue)
+          ? JSON.stringify([...newValue].sort()) !== JSON.stringify(oldValue ?? null)
+          : oldValue !== newValue;
+        if (differs) {
           fieldDiffs.push({ field, old_value: oldValue, new_value: newValue });
           changedFields.add(field);
         }
@@ -609,6 +650,17 @@ export default function BulkWlanEdit() {
       errors: [],
     });
     setShowPreview(true);
+  };
+
+  // ---- Reveal one network's integration key (on request only) ----
+  const revealPortalKey = async (networkId: string): Promise<string | null> => {
+    const res = await apiFetch(`${API_BASE_URL}/bulk-wlan/portal-key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ controller_id: activeControllerId, tenant_id: effectiveTenantId, network_id: networkId }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()).key ?? null;
   };
 
   // ---- Apply ----
@@ -1228,6 +1280,36 @@ export default function BulkWlanEdit() {
           </p>
 
           <div className="space-y-0">
+
+            {/* ========== Network type settings (captive portal, DPSK pool, RADIUS) ==========
+                Plain markup, not <Section>: Section is redefined on every render,
+                which would remount these inputs and drop focus while typing. */}
+            <div className="mb-10">
+              <button
+                type="button"
+                onClick={() => setTypeSectionOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-md group cursor-pointer hover:bg-gray-100 transition-colors mb-3"
+              >
+                <h3 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  Network Type Settings
+                </h3>
+                <span className="text-gray-400 group-hover:text-gray-600 text-xs transition-colors">
+                  {typeSectionOpen ? "\u2212" : "+"}
+                </span>
+              </button>
+              {typeSectionOpen && (
+                <>
+                  <TypeOverview networks={fetchedSettings} onReveal={revealPortalKey} />
+                  <CaptivePortalEditor
+                    networks={fetchedSettings}
+                    changes={changes as PortalChanges}
+                    setField={(f, v) => setField(f as keyof Changes, v)}
+                    summary={settingsSummary}
+                    hasSavedKey={hasSavedKey}
+                  />
+                </>
+              )}
+            </div>
 
             {/* ========== Section 1: Basic WLAN ========== */}
             <Section
