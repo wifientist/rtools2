@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/utils/api';
-import { ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, Server, Wifi, Router, HardDrive, Layers, Info, Download, Link2, X, Sparkles, Zap } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, Server, Wifi, Router, HardDrive, Layers, Info, Download, Link2, X, Sparkles, Zap, History } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -908,7 +908,7 @@ interface AuditJob {
   job_id: string;
   controller_id: number;
   controller_name: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'CANCELLED';
   current_phase?: string;
   current_activity?: string;  // Detailed progress message
   progress?: {
@@ -934,6 +934,41 @@ interface AuditJob {
   };
 }
 
+// A past or running audit job, from /sz/audit/history
+interface AuditHistoryItem {
+  job_id: string;
+  controller_id: number;
+  controller_name: string;
+  status: string;
+  created_at: string;
+  completed_at?: string | null;
+  total_zones?: number | null;
+  total_aps?: number | null;
+  errors: string[];
+}
+
+const TERMINAL_STATUSES = new Set(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);
+
+// Stored job results expire 24h after the audit finishes
+const RESULT_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Backend timestamps are naive UTC ("2026-10-27T22:06:34.5")
+const parseUtc = (s: string) => new Date(/(Z|[+-]\d\d:\d\d)$/.test(s) ? s : `${s}Z`);
+
+const formatAgo = (date: Date) => {
+  const mins = Math.round((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+};
+
+const formatDuration = (ms: number) => {
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return '<1m';
+  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+};
+
 // Main Page Component
 export default function SZAudit() {
   const { controllers } = useAuth();
@@ -945,6 +980,18 @@ export default function SZAudit() {
 
   // Async job tracking
   const [activeJobs, setActiveJobs] = useState<AuditJob[]>([]);
+
+  // Recent audit jobs, and per-job "Load result" state
+  const [history, setHistory] = useState<AuditHistoryItem[]>([]);
+  const [loadingJobId, setLoadingJobId] = useState<string | null>(null);
+  const [historyErrors, setHistoryErrors] = useState<Record<string, string>>({});
+
+  // Stops polling once the page is left; the job keeps running server-side
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Refresh mode
   const [refreshMode, setRefreshMode] = useState<RefreshMode>('full');
@@ -1078,77 +1125,86 @@ export default function SZAudit() {
     });
   };
 
-  const runAudit = async () => {
-    if (selectedControllers.size === 0) return;
+  // A results entry for a controller whose audit produced no data
+  const errorResult = (controllerId: number, controllerName: string, message: string): SZAuditResult => ({
+    controller_id: controllerId,
+    controller_name: controllerName,
+    host: '',
+    timestamp: new Date().toISOString(),
+    error: message,
+    domains: [],
+    zones: [],
+    total_domains: 0,
+    total_zones: 0,
+    total_aps: 0,
+    total_wlans: 0,
+    total_switches: 0,
+    ap_model_summary: [],
+    ap_firmware_summary: [],
+    switch_firmware_summary: [],
+    wlan_type_summary: {},
+    cluster_ip: null,
+    controller_firmware: null,
+    partial_errors: []
+  });
 
+  const fetchResult = async (url: string): Promise<SZAuditResult | null> => {
+    try {
+      const response = await apiFetch(url);
+      return response.ok ? await response.json() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/sz/audit/history?limit=10`);
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(data.audits || []);
+      }
+    } catch (err) {
+      console.error('Failed to load audit history:', err);
+    }
+  };
+
+  // Recent audits, so a run the page lost track of (reload, closed tab) can
+  // be watched again or its result loaded
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  // Poll jobs until each one finishes. Used by a fresh run and by watching a
+  // job again after the page lost it; the job runs server-side either way.
+  const watchJobs = async (jobs: AuditJob[]) => {
     setLoading(true);
     setError(null);
     setResults([]);
     setExpandedZones(new Set());
-    setActiveJobs([]);
     setFinalStats(null);
-
-    const controllerIds = Array.from(selectedControllers);
-    const jobs: AuditJob[] = [];
+    setActiveJobs([...jobs]);
 
     try {
-      // Start async audit jobs for all selected controllers
-      for (const controllerId of controllerIds) {
-        const controller = szControllers.find(c => c.id === controllerId);
-        try {
-          const response = await apiFetch(`${API_BASE_URL}/sz/audit/async`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              controller_id: controllerId,
-              refresh_mode: refreshMode,
-              force_refresh_zones: Array.from(forceRefreshZones)
-            })
-          });
-
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || errData.error || `HTTP ${response.status}`);
-          }
-
-          const data = await response.json();
-          jobs.push({
-            job_id: data.job_id,
-            controller_id: controllerId,
-            controller_name: controller?.name || `Controller ${controllerId}`,
-            status: 'RUNNING',
-            progress: { phases_total: 4, phases_completed: 0, percent: 0 },
-            errors: []
-          });
-        } catch (err) {
-          // If we can't even start the job, track it as failed
-          jobs.push({
-            job_id: '',
-            controller_id: controllerId,
-            controller_name: controller?.name || `Controller ${controllerId}`,
-            status: 'FAILED',
-            errors: [err instanceof Error ? err.message : 'Failed to start audit']
-          });
-        }
-      }
-
-      setActiveJobs([...jobs]);
-
-      // Poll for completion
       const completedResults: SZAuditResult[] = [];
-      const pendingJobs = jobs.filter(j => j.status === 'RUNNING');
+      const pendingJobs = jobs.filter(j => j.job_id && !TERMINAL_STATUSES.has(j.status));
 
-      while (pendingJobs.length > 0) {
+      while (pendingJobs.length > 0 && mountedRef.current) {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
 
         for (let i = pendingJobs.length - 1; i >= 0; i--) {
           const job = pendingJobs[i];
-          if (!job.job_id) continue;
 
           try {
             // Get job status
             const statusResponse = await apiFetch(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/status`);
 
+            if (statusResponse.status === 404) {
+              completedResults.push(errorResult(job.controller_id, job.controller_name, 'Audit job no longer exists'));
+              setResults([...completedResults]);
+              pendingJobs.splice(i, 1);
+              continue;
+            }
             if (!statusResponse.ok) {
               throw new Error(`Status check failed: HTTP ${statusResponse.status}`);
             }
@@ -1166,48 +1222,33 @@ export default function SZAudit() {
             // Update UI with latest status
             setActiveJobs(prev => prev.map(j => j.job_id === job.job_id ? { ...job } : j));
 
-            if (statusData.status === 'COMPLETED') {
+            if (statusData.status === 'COMPLETED' || statusData.status === 'PARTIAL') {
               // Capture final stats before moving on
               setFinalStats({
                 api_stats: statusData.api_stats,
                 cache_stats: statusData.cache_stats
               });
 
-              // Fetch the result from cache (audit updates cache, we read from it)
-              const resultResponse = await apiFetch(`${API_BASE_URL}/sz/audit/result/${job.controller_id}`);
-
-              if (resultResponse.ok) {
-                const result = await resultResponse.json();
-                completedResults.push(result);
-                setResults([...completedResults]);
-              }
-
+              // Read from the cache (audit updates cache, we read from it);
+              // fall back to the job's own stored result
+              const result =
+                await fetchResult(`${API_BASE_URL}/sz/audit/result/${job.controller_id}`) ||
+                await fetchResult(`${API_BASE_URL}/sz/audit/jobs/${job.job_id}/result`);
+              completedResults.push(result || errorResult(
+                job.controller_id,
+                job.controller_name,
+                'Audit finished but its result could not be loaded. Try Load result under Recent audits.'
+              ));
+              setResults([...completedResults]);
               pendingJobs.splice(i, 1);
             } else if (statusData.status === 'FAILED' || statusData.status === 'CANCELLED') {
-              // Create a failed/cancelled result entry
-              completedResults.push({
-                controller_id: job.controller_id,
-                controller_name: job.controller_name,
-                host: '',
-                timestamp: new Date().toISOString(),
-                error: statusData.status === 'CANCELLED'
+              completedResults.push(errorResult(
+                job.controller_id,
+                job.controller_name,
+                statusData.status === 'CANCELLED'
                   ? 'Audit cancelled'
-                  : (job.errors.join('; ') || 'Audit failed'),
-                domains: [],
-                zones: [],
-                total_domains: 0,
-                total_zones: 0,
-                total_aps: 0,
-                total_wlans: 0,
-                total_switches: 0,
-                ap_model_summary: [],
-                ap_firmware_summary: [],
-                switch_firmware_summary: [],
-                wlan_type_summary: {},
-                cluster_ip: null,
-                controller_firmware: null,
-                partial_errors: []
-              });
+                  : (job.errors.join('; ') || 'Audit failed')
+              ));
               setResults([...completedResults]);
               pendingJobs.splice(i, 1);
             }
@@ -1220,27 +1261,11 @@ export default function SZAudit() {
       // Handle any jobs that failed to start
       for (const job of jobs) {
         if (job.status === 'FAILED' && !job.job_id) {
-          completedResults.push({
-            controller_id: job.controller_id,
-            controller_name: job.controller_name,
-            host: '',
-            timestamp: new Date().toISOString(),
-            error: job.errors.join('; ') || 'Failed to start audit',
-            domains: [],
-            zones: [],
-            total_domains: 0,
-            total_zones: 0,
-            total_aps: 0,
-            total_wlans: 0,
-            total_switches: 0,
-            ap_model_summary: [],
-            ap_firmware_summary: [],
-            switch_firmware_summary: [],
-            wlan_type_summary: {},
-            cluster_ip: null,
-            controller_firmware: null,
-            partial_errors: []
-          });
+          completedResults.push(errorResult(
+            job.controller_id,
+            job.controller_name,
+            job.errors.join('; ') || 'Failed to start audit'
+          ));
         }
       }
 
@@ -1250,7 +1275,111 @@ export default function SZAudit() {
     } finally {
       setLoading(false);
       setActiveJobs([]);
+      loadHistory();
     }
+  };
+
+  const runAudit = async () => {
+    if (selectedControllers.size === 0) return;
+
+    setLoading(true);
+    setError(null);
+    setActiveJobs([]);
+
+    const jobs: AuditJob[] = [];
+
+    // Start async audit jobs for all selected controllers
+    for (const controllerId of Array.from(selectedControllers)) {
+      const controller = szControllers.find(c => c.id === controllerId);
+      try {
+        const response = await apiFetch(`${API_BASE_URL}/sz/audit/async`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            controller_id: controllerId,
+            refresh_mode: refreshMode,
+            force_refresh_zones: Array.from(forceRefreshZones)
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || errData.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        jobs.push({
+          job_id: data.job_id,
+          controller_id: controllerId,
+          controller_name: controller?.name || `Controller ${controllerId}`,
+          status: 'RUNNING',
+          progress: { phases_total: 4, phases_completed: 0, percent: 0 },
+          errors: []
+        });
+      } catch (err) {
+        // If we can't even start the job, track it as failed
+        jobs.push({
+          job_id: '',
+          controller_id: controllerId,
+          controller_name: controller?.name || `Controller ${controllerId}`,
+          status: 'FAILED',
+          errors: [err instanceof Error ? err.message : 'Failed to start audit']
+        });
+      }
+    }
+
+    await watchJobs(jobs);
+  };
+
+  const watchHistoryJob = (item: AuditHistoryItem) => {
+    watchJobs([{
+      job_id: item.job_id,
+      controller_id: item.controller_id,
+      controller_name: item.controller_name,
+      status: 'RUNNING',
+      errors: []
+    }]);
+  };
+
+  // Load a finished audit's result. The newest run for a controller reads the
+  // zone cache (it carries switch mappings set since); older runs read their
+  // own stored snapshot.
+  const loadHistoryResult = async (item: AuditHistoryItem) => {
+    setLoadingJobId(item.job_id);
+    setHistoryErrors(prev => {
+      const next = { ...prev };
+      delete next[item.job_id];
+      return next;
+    });
+
+    const newest = history.find(h => h.controller_id === item.controller_id && h.status === 'COMPLETED');
+    let result: SZAuditResult | null = null;
+    if (newest?.job_id === item.job_id) {
+      result = await fetchResult(`${API_BASE_URL}/sz/audit/result/${item.controller_id}`);
+    }
+    if (!result) {
+      try {
+        const response = await apiFetch(`${API_BASE_URL}/sz/audit/jobs/${item.job_id}/result`);
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${response.status}`);
+        }
+        result = await response.json();
+      } catch (err) {
+        setHistoryErrors(prev => ({
+          ...prev,
+          [item.job_id]: err instanceof Error ? err.message : 'Could not load result'
+        }));
+      }
+    }
+
+    if (result) {
+      const loaded = result;
+      setError(null);
+      setFinalStats(null);
+      setResults(prev => [...prev.filter(r => r.controller_id !== loaded.controller_id), loaded]);
+    }
+    setLoadingJobId(null);
   };
 
   const cancelJob = async (jobId: string) => {
@@ -1827,6 +1956,80 @@ export default function SZAudit() {
             </div>
           )}
         </div>
+
+        {/* Recent Audits - pick a run back up after the page lost track of it */}
+        {history.length > 0 && (
+          <div className="bg-white rounded-lg shadow p-4 mb-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <History className="w-4 h-4 text-gray-500" />
+              Recent Audits
+            </h3>
+            <div className="divide-y divide-gray-100">
+              {history.map(item => {
+                const created = parseUtc(item.created_at);
+                const completed = item.completed_at ? parseUtc(item.completed_at) : null;
+                const isRunning = !TERMINAL_STATUSES.has(item.status);
+                const isWatching = activeJobs.some(j => j.job_id === item.job_id);
+                const resultExpired = !completed || Date.now() - completed.getTime() > RESULT_TTL_MS;
+                const statusClass =
+                  item.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                  item.status === 'FAILED' ? 'bg-red-100 text-red-700' :
+                  item.status === 'CANCELLED' ? 'bg-orange-100 text-orange-700' :
+                  'bg-blue-100 text-blue-700';
+
+                return (
+                  <div key={item.job_id} className="py-2 flex items-center gap-3 text-sm">
+                    <span className="font-medium text-gray-900 truncate w-48" title={item.controller_name}>
+                      {item.controller_name}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusClass}`}>
+                      {item.status.toLowerCase()}
+                    </span>
+                    <span className="text-gray-500 text-xs" title={created.toLocaleString()}>
+                      started {formatAgo(created)}
+                      {completed && ` · took ${formatDuration(completed.getTime() - created.getTime())}`}
+                    </span>
+                    {item.total_zones != null && (
+                      <span className="text-gray-500 text-xs">
+                        {item.total_zones} zones · {item.total_aps ?? 0} APs
+                      </span>
+                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {historyErrors[item.job_id] && (
+                        <span className="text-xs text-red-600">{historyErrors[item.job_id]}</span>
+                      )}
+                      {isRunning && !isWatching && (
+                        <button
+                          onClick={() => watchHistoryJob(item)}
+                          disabled={loading}
+                          className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Watch progress
+                        </button>
+                      )}
+                      {item.status === 'COMPLETED' && (
+                        resultExpired ? (
+                          <span className="text-xs text-gray-400" title="Stored results last 24h; Cached only mode may still have this controller's zones">
+                            result expired
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => loadHistoryResult(item)}
+                            disabled={loading || loadingJobId !== null}
+                            className="px-3 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            {loadingJobId === item.job_id && <Loader2 className="w-3 h-3 animate-spin" />}
+                            Load result
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Active Jobs Progress */}
         {loading && activeJobs.length > 0 && (
