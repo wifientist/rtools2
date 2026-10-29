@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from r1api.constants import DpskPassphraseFormat
 from redis_client import get_redis_client
+from services.portal_key import controller_portal_key
 from services.wlan_grabber import (
     build_wispr_payload, is_wispr_network, wispr_integration_key, wispr_radius_settings,
 )
@@ -97,11 +98,16 @@ _key_locks: Dict[str, asyncio.Lock] = {}
 
 
 async def _wispr_key(r1_client, tenant_id: str, job_id: str, wispr: Dict[str, Any],
-                     wlan_id: str) -> Optional[str]:
+                     wlan_id: str, r1_controller_id: Optional[int] = None) -> Optional[str]:
     source = wispr.get("key_source") or "sz"
     if source == "sz":
         # The WLAN's own SZ signing key; absent = SZ does not sign = no key.
         return await _take_secret(job_id, f"wispr_key:{wlan_id}")
+    if source == "controller":
+        key = controller_portal_key(r1_controller_id)
+        if not key:
+            raise RuntimeError("The portal integration key is no longer saved on the RuckusONE controller — re-plan")
+        return key
     if source == "typed":
         redis = await get_redis_client()
         raw = await redis.hget(SECRET_KEY.format(job_id=job_id), "wispr_key")   # shared by every unit
@@ -223,6 +229,11 @@ class ValidateWlanGrabberPhase(PhaseExecutor):
             problem, source_name = None, None
             if (w.get("key_source") or "sz") == "sz":
                 source_name = "from each WLAN's SZ signing key (none set = no key)"
+            elif w.get("key_source") == "controller":
+                job = await self.context.state_manager.get_job(self.job_id)
+                if not controller_portal_key(job.controller_id):
+                    problem = "No portal integration key is saved on the RuckusONE controller"
+                source_name = "saved on the RuckusONE controller"
             elif w.get("key_source") == "typed":
                 redis = await get_redis_client()
                 if not await redis.hexists(SECRET_KEY.format(job_id=self.job_id), "wispr_key"):
@@ -602,7 +613,11 @@ class GrabberCreateNetworkPhase(PhaseExecutor):
                 raise RuntimeError(f"RADIUS profile not available: "
                                    f"{inputs.radius_errors.get(sid or '') or 'not mapped'}")
 
-        key = await _wispr_key(self.r1_client, self.tenant_id, self.job_id, w, spec["sz_wlan_id"])
+        r1_controller_id = None
+        if w.get("key_source") == "controller":
+            r1_controller_id = (await self.context.state_manager.get_job(self.job_id)).controller_id
+        key = await _wispr_key(self.r1_client, self.tenant_id, self.job_id, w, spec["sz_wlan_id"],
+                               r1_controller_id=r1_controller_id)
         payload = build_wispr_payload(
             spec, integration_key=key,
             encrypt_mac_ip=w.get("encrypt_mac_ip"), enable_dhcp=w.get("enable_dhcp", False),

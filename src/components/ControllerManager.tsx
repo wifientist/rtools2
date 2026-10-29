@@ -30,6 +30,7 @@ export default function ControllerManager() {
     sz_password: "",
     sz_use_https: true,
     sz_version: "",
+    portal_key: "",
   });
 
   async function handleActiveControllerSelect(controllerId: number) {
@@ -91,6 +92,7 @@ export default function ControllerManager() {
         r1_client_id: formData.r1_client_id,
         r1_shared_secret: formData.r1_shared_secret,
         r1_region: formData.r1_region,
+        ...(formData.portal_key && formData.controller_subtype === "EC" ? { portal_key: formData.portal_key } : {}),
       } : {
         name: formData.name,
         sz_host: formData.sz_host,
@@ -128,6 +130,7 @@ export default function ControllerManager() {
       sz_password: "",
       sz_use_https: true,
       sz_version: "",
+      portal_key: "",
     });
     setControllerType("RuckusONE");
   }
@@ -150,6 +153,7 @@ export default function ControllerManager() {
         sz_password: "",
         sz_use_https: true,
         sz_version: "",
+        portal_key: "",
       });
     } else {
       setFormData({
@@ -165,6 +169,7 @@ export default function ControllerManager() {
         sz_password: "",
         sz_use_https: true,
         sz_version: controller.sz_version || "",
+        portal_key: "",
       });
     }
   }
@@ -181,6 +186,7 @@ export default function ControllerManager() {
         payload.r1_region = formData.r1_region;
         if (formData.r1_client_id) payload.r1_client_id = formData.r1_client_id;
         if (formData.r1_shared_secret) payload.r1_shared_secret = formData.r1_shared_secret;
+        if (formData.portal_key && formData.controller_subtype === "EC") payload.portal_key = formData.portal_key;
       } else {
         payload.sz_host = formData.sz_host;
         payload.sz_port = parseInt(formData.sz_port);
@@ -200,6 +206,20 @@ export default function ControllerManager() {
       await checkAuth();
     } catch (error) {
       console.error("Failed to update controller", error);
+    }
+  }
+
+  async function handleClearPortalKey() {
+    if (!editingControllerId || !confirm("Remove the saved portal integration key?")) return;
+    try {
+      await apiFetch(`${API_BASE_URL}/controllers/${editingControllerId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portal_key: "" }),
+      });
+      await checkAuth();
+    } catch (error) {
+      console.error("Failed to clear portal key", error);
     }
   }
 
@@ -316,6 +336,9 @@ export default function ControllerManager() {
                 </select>
                 <p className="text-xs text-gray-500 mt-1">Select MSP for MSP tenant types with access to MSP-specific features</p>
               </div>
+              {formData.controller_subtype === "EC" && (
+                <PortalKeyInput value={formData.portal_key} onChange={handleInputChange} />
+              )}
             </>
           ) : (
             <>
@@ -452,6 +475,14 @@ export default function ControllerManager() {
                           <option value="MSP">MSP (Managed Service Provider)</option>
                         </select>
                       </div>
+                      {formData.controller_subtype === "EC" && (
+                        <PortalKeyInput
+                          value={formData.portal_key}
+                          onChange={handleInputChange}
+                          saved={!!controller.has_portal_key}
+                          onClear={handleClearPortalKey}
+                        />
+                      )}
                     </>
                   ) : (
                     <>
@@ -521,6 +552,9 @@ export default function ControllerManager() {
                       {controller.controller_type === "SmartZone" && controller.sz_host && (
                         <p className="text-xs text-gray-600">Host: {controller.sz_host}</p>
                       )}
+                      {controller.controller_type === "RuckusONE" && controller.has_portal_key && (
+                        <p className="text-xs text-gray-600">Portal integration key saved</p>
+                      )}
                       <div className="mt-1">
                         {getControllerTypeBadge(controller)}
                       </div>
@@ -566,6 +600,39 @@ export default function ControllerManager() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Optional, write-only, EC controllers only (one customer tenant each): the
+// customer's captive portal key, set as the WISPr integration key on guest
+// networks the tools create in that tenant.
+function PortalKeyInput({ value, onChange, saved = false, onClear }: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  saved?: boolean;
+  onClear?: () => void;
+}) {
+  const bad = value.length > 0 && !/^[a-zA-Z0-9]{16}$/.test(value);
+  return (
+    <div>
+      <input
+        className={`w-full border p-2 rounded ${bad ? "border-red-400" : ""}`}
+        placeholder={saved ? "Portal integration key (saved — leave empty to keep)" : "Portal integration key (optional)"}
+        type="password"
+        autoComplete="off"
+        maxLength={16}
+        name="portal_key"
+        value={value}
+        onChange={onChange}
+      />
+      <p className="text-xs text-gray-500 mt-1">
+        16 letters or digits. Set as the integration key on captive portal (WISPr) networks the
+        WLAN Grabber and SZ migration create in this tenant — SmartZone&apos;s API never returns its signing key.
+        {saved && onClear && (
+          <button type="button" onClick={onClear} className="ml-2 text-red-600 hover:underline">Remove saved key</button>
+        )}
+      </p>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import re
 from typing import Optional, Literal, Union
 from ipaddress import ip_address, ip_network
 import socket
@@ -56,6 +57,20 @@ def validate_sz_host(host: str) -> str:
     return host
 
 
+# R1 wisprPage.integrationKey: exactly 16 letters or digits.
+PORTAL_KEY_RE = re.compile(r"^[a-zA-Z0-9]{16}$")
+
+
+def validate_portal_key(key: Optional[str]) -> Optional[str]:
+    """None = leave as is; "" = clear; otherwise must be a valid R1 integration key."""
+    if key is None:
+        return None
+    key = key.strip()
+    if key and not PORTAL_KEY_RE.fullmatch(key):
+        raise ValueError("The portal integration key must be exactly 16 letters or digits")
+    return key
+
+
 # ===== Base Schemas =====
 
 class ControllerBase(BaseModel):
@@ -76,6 +91,12 @@ class RuckusONEControllerCreate(BaseModel):
     r1_client_id: str = Field(..., description="OAuth2 client ID")
     r1_shared_secret: str = Field(..., description="OAuth2 shared secret")
     r1_region: Literal["NA", "EU", "APAC"] = Field(default="NA", description="Geographic region")
+    portal_key: Optional[str] = Field(default=None, description="Captive portal integration key (write-only)")
+
+    @field_validator("portal_key")
+    @classmethod
+    def check_portal_key(cls, v):
+        return validate_portal_key(v)
 
 
 class RuckusONEControllerUpdate(BaseModel):
@@ -86,6 +107,12 @@ class RuckusONEControllerUpdate(BaseModel):
     r1_client_id: Optional[str] = None
     r1_shared_secret: Optional[str] = None
     r1_region: Optional[Literal["NA", "EU", "APAC"]] = None
+    portal_key: Optional[str] = None   # "" clears it
+
+    @field_validator("portal_key")
+    @classmethod
+    def check_portal_key(cls, v):
+        return validate_portal_key(v)
 
 
 # ===== SmartZone-Specific Schemas =====
@@ -148,6 +175,7 @@ class ControllerResponse(BaseModel):
     sz_host: Optional[str] = None
     sz_port: Optional[int] = None
     sz_version: Optional[str] = None
+    has_portal_key: bool = False    # the key itself never leaves the server
 
     class Config:
         from_attributes = True

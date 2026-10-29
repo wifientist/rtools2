@@ -39,6 +39,10 @@ class Controller(Base):
     r1_region = Column(String, nullable=True)  # "NA", "EU", "APAC"
     encrypted_r1_client_id = Column(String, nullable=True)
     encrypted_r1_shared_secret = Column(String, nullable=True)
+    # The customer's captive portal key: the WISPr integrationKey the tools
+    # set on guest networks they create in this R1 tenant. SZ's API never
+    # returns its signing key, so the user stores it here once.
+    encrypted_portal_key = Column(String, nullable=True)
 
     # ===== SmartZone-Specific Fields (nullable for RuckusONE) =====
     sz_host = Column(String, nullable=True)  # Hostname or IP
@@ -108,6 +112,16 @@ class Controller(Base):
         if not self.encrypted_r1_shared_secret:
             return ""
         return decrypt_value(self.encrypted_r1_shared_secret)
+
+    def set_portal_key(self, raw_value: str):
+        """Encrypt and store the captive portal integration key ("" clears it)"""
+        self.encrypted_portal_key = encrypt_value(raw_value) if raw_value else None
+
+    def get_portal_key(self) -> str:
+        """Decrypt and return the captive portal integration key"""
+        if not self.encrypted_portal_key:
+            return ""
+        return decrypt_value(self.encrypted_portal_key)
 
     # ===== SmartZone Credential Management =====
     def set_sz_username(self, raw_value: str):

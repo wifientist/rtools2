@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from redis_client import get_redis_client
 from services.ap_group_ops import api_error, is_transient
 from schemas.sz_migration import SZMigrationSnapshot
+from services.portal_key import controller_portal_key
 from services.wlan_grabber import build_spec as build_wispr_spec, build_wispr_payload, wispr_radius_settings
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
@@ -206,6 +207,12 @@ class CreateNetworksPhase(PhaseExecutor):
             raise RuntimeError(f"[{wlan_name}] RADIUS profile for the SZ auth service isn't available — "
                                "choose it under RADIUS Servers")
 
+        key_note = ""
+        if not spec.get("wispr_key"):
+            # SZ's API never returns the signing key; use the customer's key
+            # saved on the R1 controller, if any (none = no key, as before).
+            spec["wispr_key"] = controller_portal_key(job.controller_id)
+            key_note = ", integration key from the R1 controller" if spec["wispr_key"] else ", no integration key"
         payload = build_wispr_payload(spec, integration_key=spec.get("wispr_key"),
                                       description=extra.get("sz_description") or None)
         payload["name"] = name                     # the plan's R1 name
@@ -214,7 +221,7 @@ class CreateNetworksPhase(PhaseExecutor):
         spec["wispr_key"] = None
         await self.emit(f"[{wlan_name}] Creating WISPr guest network"
                         + (f" as '{name}'" if name != wlan_name else "")
-                        + f" ({'RADIUS auth' if radius_auth else 'Always Accept'})...")
+                        + f" ({'RADIUS auth' if radius_auth else 'Always Accept'}{key_note})...")
         try:
             net_id = await self._create_resilient(
                 lambda: self.r1_client.networks.create_wifi_network_from_payload(self.tenant_id, payload),

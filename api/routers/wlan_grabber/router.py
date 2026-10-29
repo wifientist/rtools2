@@ -50,6 +50,7 @@ from redis_client import get_redis_client
 from routers.tenant_scope import resolve_tenant_id
 from services.dpsk_pool_context import list_dpsk_pools, venue_pool_suggestion
 from services.sz_migration.radius_choices import r1_profile_summary, sz_server_details
+from services.portal_key import controller_has_portal_key
 from services.wlan_grabber import (
     EXISTS, SZ_HOTSPOT_TYPES, build_rows, build_spec, is_wispr_network,
     radius_services, wispr_key_sources, wispr_r1_check, wispr_r1_norms,
@@ -129,11 +130,12 @@ class SharedPool(BaseModel):
 class WisprChoice(BaseModel):
     """
     The integration key: by default each WLAN's SZ signature signing key
-    ("sz"; none = no key, MAC/IP not encrypted). Overrides: copy it from an
-    R1 WISPr network ("network") or type it ("typed", write-only).
+    ("sz"; none = no key, MAC/IP not encrypted). Overrides: the key saved on
+    the R1 controller ("controller", read when each network is created), copy
+    it from an R1 WISPr network ("network") or type it ("typed", write-only).
     encrypt_mac_ip None = encrypt exactly when there is a key.
     """
-    key_source: Literal["sz", "network", "typed"] = "sz"
+    key_source: Literal["sz", "controller", "network", "typed"] = "sz"
     key_network_id: Optional[str] = None
     integration_key: Optional[SecretStr] = None
     encrypt_mac_ip: Optional[bool] = None
@@ -345,6 +347,7 @@ async def preview(
         "venue_name": (venue or {}).get("name") if venue else None,
         **result,
         "wispr_key_sources": key_sources,
+        "controller_has_portal_key": controller_has_portal_key(request.r1_controller_id),
         "wispr_r1": r1_norms,
         "radius_services": radius_services(result["rows"], refs, r1_profiles),
         "r1_radius_profiles": r1_profiles,
@@ -521,6 +524,9 @@ async def create_plan(
         radius[sid] = entry
     if request.wispr and request.wispr.key_source == "typed":
         secrets["wispr_key"] = request.wispr.integration_key.get_secret_value()
+    if (request.wispr and request.wispr.key_source == "controller"
+            and not controller_has_portal_key(request.r1_controller_id)):
+        raise HTTPException(status_code=400, detail="No portal integration key is saved on this RuckusONE controller")
 
     redis_client = await get_redis_client()
     state_manager = RedisStateManagerV2(redis_client)
