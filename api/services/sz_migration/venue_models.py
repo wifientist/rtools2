@@ -15,14 +15,15 @@ VLAN members, 802.1X, ...). R1 takes type and VLANs inline on the port, so
 no R1 Ethernet Port Profile is created; what the profile carries beyond that
 (802.1X, client isolation, tunnelling, user-side limits) is noted, not sent.
 
-Only models the zone's APs are, and only what SZ actually sets, become
-sections. Each is one entry per model, merged into R1's current list at
-apply time (venue_create.apply_settings), so other models keep theirs.
+Sections hold what the zone sets for each of its models. What is actually
+written is narrower (customise, below): only the zone's models that R1
+offers at the venue, and only where the zone differs from R1's default for
+that model -- every other model, and every default, is left alone.
 
 Pure.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 _PORT_TYPE = {"AccessPort": "ACCESS", "TrunkPort": "TRUNK", "GeneralPort": "GENERAL"}
 _POE = {
@@ -163,3 +164,107 @@ def build_model_sections(zone_models: Dict[str, Dict[str, Any]], section_cls) ->
 
     sections = [x for x in (lan, led, ant, band) if x.body]
     return {"sections": sections, "not_carried": not_carried}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# What actually gets pushed: only what the zone sets differently from R1's
+# own defaults, for the zone's models that R1 offers at this venue.
+# ═══════════════════════════════════════════════════════════════════════
+#
+# R1's per-model lists hold every model in its catalogue, beta ones included
+# (an H375 got pushed that way, and R1 then rejected its own read-back).
+# The venue is fine on R1's defaults; a model is written only when the zone
+# configured it differently, and then as one complete entry. R1's defaults
+# per model come from GET /venues/{v}/apModelCapabilities.
+
+def default_poe_mode(cap: Dict[str, Any]) -> Optional[str]:
+    modes = cap.get("poeModeCapabilities") or []
+    return "Auto" if "Auto" in modes else (modes[0] if modes else None)
+
+
+def _default_ports(cap: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {str(p.get("id")): {"portId": str(p.get("id")), "enabled": True, "type": p.get("defaultType"),
+                               "untagId": p.get("untagId"), "vlanMembers": p.get("vlanMembers")}
+            for p in cap.get("lanPorts") or [] if p.get("id") is not None}
+
+
+def _lan_entry(e: Dict[str, Any], cap: Dict[str, Any], notes: List[str]) -> Optional[Dict[str, Any]]:
+    model = e["model"]
+    out: Dict[str, Any] = {"model": model}
+    changed = False
+
+    poe = e.get("poeMode")
+    if poe is not None:
+        allowed = cap.get("poeModeCapabilities") or []
+        if not cap.get("canSupportPoeMode") or (allowed and poe not in allowed):
+            notes.append(f"{model}: PoE mode {poe} isn't offered for this model in R1 "
+                         f"({', '.join(allowed) or 'none'}) — R1 default kept")
+        elif poe != default_poe_mode(cap):
+            out["poeMode"], changed = poe, True
+    if e.get("poeOut"):
+        if cap.get("canSupportPoeOut"):
+            out["poeOut"], changed = True, True
+        else:
+            notes.append(f"{model}: PoE out is on in SZ but R1 doesn't offer it for this model")
+
+    defaults = _default_ports(cap)
+    spec = {p["id"]: p for p in cap.get("lanPorts") or [] if p.get("id") is not None}
+    desired = {pid: dict(p) for pid, p in defaults.items()}
+    for p in e.get("lanPorts") or []:
+        pid = p["portId"]
+        if pid not in desired:
+            notes.append(f"{model}: SZ LAN{pid} has no port {pid} on this model in R1 — not pushed")
+            continue
+        want = {**desired[pid], **p}
+        if not want["enabled"] and spec[pid].get("supportDisable") is False:
+            notes.append(f"{model}: LAN{pid} can't be disabled in R1 — left enabled")
+            want["enabled"] = True
+        if spec[pid].get("trunkPortOnly") and want.get("type") != "TRUNK":
+            notes.append(f"{model}: LAN{pid} is trunk-only in R1 — SZ {want.get('type')} not pushed")
+            want = {**want, "type": "TRUNK", "untagId": desired[pid]["untagId"],
+                    "vlanMembers": desired[pid]["vlanMembers"]}
+        desired[pid] = want
+    if desired != defaults:
+        if cap.get("requireOneEnabledTrunkPort") and not any(
+                p["enabled"] and p.get("type") == "TRUNK" for p in desired.values()):
+            notes.append(f"{model}: R1 needs one enabled trunk port and the zone leaves none — ports not pushed")
+        else:
+            out["lanPorts"] = sorted(desired.values(), key=lambda p: int(p["portId"]) if p["portId"].isdigit() else 0)
+            changed = True
+    return out if changed else None
+
+
+def customise(section_key: str, entries: List[Dict[str, Any]],
+              caps: Dict[str, Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[str], List[str]]:
+    """
+    (entries to PUT, notes, models left on R1's defaults) for one per-model
+    section. caps: model -> capability row from apModelCapabilities.
+    """
+    push: List[Dict[str, Any]] = []
+    notes: List[str] = []
+    defaults: List[str] = []
+    for e in entries:
+        model = e["model"]
+        cap = caps.get(model)
+        if cap is None:
+            notes.append(f"{model}: R1 doesn't offer this model at this venue — not pushed")
+            continue
+        if section_key == "model_lan_ports":
+            entry = _lan_entry(e, cap, notes)
+        elif section_key == "model_leds":
+            entry = e if e.get("ledEnabled") != cap.get("ledOn", True) else None
+        elif section_key == "model_antennas":
+            entry = e if (e.get("enable24G") or e.get("enable50G")) else None
+        elif section_key == "model_band_mode":
+            if cap.get("supportBandCombination") or cap.get("supportTriRadio"):
+                entry = e
+            else:
+                notes.append(f"{model}: R1 has no band mode for this model — not pushed")
+                entry = None
+        else:
+            entry = e
+        if entry is None:
+            defaults.append(model)
+        else:
+            push.append(entry)
+    return push, notes, defaults

@@ -131,6 +131,15 @@ export interface LayoutChoices {
   include_unbroadcast: string[];          // wlan ids: create only
   stage_unbroadcast?: string[];           // wlan ids: create + build/fill their paired AP Group, not activated
   pairing?: { mode: 'wlan_group' | 'pattern'; wlan_pattern?: string; ap_pattern?: string };
+  excluded_wlans?: string[];              // wlan ids not migrated at all (test / temp SSIDs...)
+}
+
+// Every SZ WLAN, for the include / exclude list
+export interface LayoutCatalogWlan {
+  id: string; name: string; ssid: string; auth_type: string;
+  ap_count: number;        // SZ APs broadcasting it
+  excluded: boolean;
+  skip_hint: boolean;      // name / SSID looks like test / temp
 }
 
 export const DEFAULT_LAYOUT_CHOICES: LayoutChoices = {
@@ -161,6 +170,8 @@ export interface LayoutGroup {
   name: string;
   name_source: string;
   renamed: boolean;
+  name_options?: Array<{ name: string; source: string }>;   // suggestion first, then AP name / unit WLAN
+  ambiguous?: boolean;                                      // options disagree and nobody has picked yet
   wlan_ids: string[];
   ssids: string[];
   ap_count: number;
@@ -198,6 +209,7 @@ export interface R1Layout {
   unbroadcast: Array<{ id: string; name: string; ssid: string; auth_type: string; reason: string; included: boolean;
                        mode: 'skip' | 'create' | 'stage'; paired_aps: string[]; paired_group: string | null }>;
   staged: { groups: LayoutGroup[]; unpaired: string[]; conflicts: string[]; mode: string };
+  catalog?: LayoutCatalogWlan[];
   warnings: Array<{ message: string; severity: 'error' | 'warning' }>;
   blocked: boolean;
 }

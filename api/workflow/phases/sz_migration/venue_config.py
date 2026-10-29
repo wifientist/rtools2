@@ -83,14 +83,22 @@ class VenueConfigPlanPhase(PhaseExecutor):
                 continue
             b = before.get(sec.key) or {}
             n = len(b.get("differences") or [])
+            models_note = []
+            if sec.by_model and "pushed" in b:
+                # Only the zone's models that differ from R1's defaults are written.
+                models_note = [f"Writes: {', '.join(b['pushed']) or 'nothing'}"
+                               + (f"; R1 defaults kept for {', '.join(b['defaults'])}" if b.get("defaults") else "")]
             if b.get("status") == "verified":
                 actions.append(ResourceAction(resource_type="venue_settings", name=sec.label, action="reuse",
-                                              notes=["R1 already matches the zone"]))
+                                              notes=(["Every zone model is on R1's defaults — nothing to write"]
+                                                     if sec.by_model and not b.get("pushed")
+                                                     else ["R1 already matches the zone"]) + models_note))
             else:
                 note = (f"{n} value(s) differ from the zone" if b.get("status") == "differs"
                         else f"Current R1 value unreadable: {b.get('error')}")
                 actions.append(ResourceAction(resource_type="venue_settings", name=sec.label, action="update",
-                                              notes=[note, f"{len(sec.rows)} setting(s) from the zone"] + sec.notes))
+                                              notes=[note] + models_note + [f"{len(sec.rows)} setting(s) from the zone"]
+                                              + sec.notes))
         if not snapshot.zone_ap_models and snapshot.aps:
             conflicts.append(ConflictDetail(
                 resource_type="venue_settings", resource_name="AP model settings",

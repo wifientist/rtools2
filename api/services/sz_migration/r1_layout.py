@@ -37,6 +37,13 @@ that broadcast just the All AP Groups set (or nothing) can be staged -- an
 AP in a group derived from its SZ broadcast already has a group -- so
 staging never changes what an AP broadcasts.
 
+Excluded WLANs (choices.excluded_wlans: test / temp SSIDs, anything the
+operator won't take) are removed from the snapshot before any of this --
+as if SZ never had them: no network, no activation, gone from every AP's
+broadcast and so from the groups. without_wlans() is the one filter; the
+plan and AP Mapping apply it too. "catalog" lists every SZ WLAN, excluded
+or not, for the operator to pick from.
+
 AP membership is not done here: APs join their group later, by whatever
 loads them. The layout carries each group's APs for that.
 
@@ -77,6 +84,38 @@ def _ap_label(ap: Dict[str, Any]) -> str:
     return ap.get("deviceName") or ap.get("serial") or ap.get("apMac") or "?"
 
 
+def _name_options(base: str, source: str, member_aps: List[Dict[str, Any]], wlans: List[Any]) -> List[Dict[str, str]]:
+    """
+    Names a group could reasonably take, the suggestion first. SZ often
+    names a unit's WLAN Group by part of the unit -- "124" for AP "4-124"
+    and WLAN "4-124@Site" -- so the AP's name (one-AP groups) and the unit
+    part of each "unit@property" WLAN are offered beside it. More than one
+    option = the operator should look.
+    """
+    out: List[Dict[str, str]] = [{"name": r1_group_name(base), "source": source}]
+    if len(member_aps) == 1:
+        out.append({"name": r1_group_name(_ap_label(member_aps[0])), "source": "AP name"})
+    ap_names = [_ap_label(a).casefold() for a in member_aps]
+    units = []
+    for w in wlans:
+        for value in (w.name, w.ssid):
+            if value and "@" in value and value.rsplit("@", 1)[0].strip():
+                units.append(value.rsplit("@", 1)[0].strip())
+                break
+    # "2-116" before "Clone of 2-116": a unit an AP is named after, then the shortest
+    units.sort(key=lambda u: (not any(u.casefold() in n for n in ap_names), len(u), u))
+    out += [{"name": r1_group_name(u), "source": "unit WLAN"} for u in units]
+    # One entry per name; a name two sources agree on carries both ("AP name / unit WLAN")
+    uniq: Dict[str, Dict[str, str]] = {}
+    for o in out:
+        k = o["name"].casefold()
+        if k not in uniq:
+            uniq[k] = dict(o)
+        elif o["source"] not in uniq[k]["source"].split(" / "):
+            uniq[k]["source"] += f" / {o['source']}"
+    return list(uniq.values())
+
+
 def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
                  choices: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
@@ -88,8 +127,11 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
       stage_unbroadcast: [wlan id]   create + build/fill its paired AP Group, no activation
       pairing: {mode: "wlan_group" | "pattern", wlan_pattern, ap_pattern}
                                      how a staged WLAN finds its APs ({unit} in both patterns)
+      excluded_wlans: [wlan id]      not migrated at all
     """
     choices = choices or {}
+    full = snapshot
+    snapshot = without_wlans(snapshot, choices.get("excluded_wlans"))
     sz = _SzModel(snapshot)
     wlan_by_id = {w.id: w for w in snapshot.wlans}
     wlg_name = {g.id: g.name for g in snapshot.wlan_groups}
@@ -195,8 +237,11 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
         for w in wset:
             bands = set().union(*(m["wlans"].get(w, set()) for m in members))
             radios[w] = r1_radio_types(sorted(bands), wlan_by_id[w].encryption)[0]
+        options = [] if match == "SSIDs" else _name_options(
+            base, source, [m["raw"] for m in members], [wlan_by_id[w] for w in sorted(wset)])
         groups.append({
             "key": key, "name": name, "name_source": source, "renamed": key in renames,
+            "name_options": options, "ambiguous": len(options) > 1 and key not in renames,
             "wlan_ids": sorted(wset), "ssids": ssids,
             "ap_count": len(members),
             "aps": [{"name": _ap_label(m["raw"]), "serial": m["raw"].get("serial"),
@@ -273,6 +318,13 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
     over = [g["name"] for g in groups if g["over_limit"]]
     if over:
         warn(f"{len(over)} AP Group(s) over {R1_SSID_LIMIT} SSIDs: {', '.join(over[:SAMPLE])}", "error")
+    # Two groups to build under one name would land in one R1 group
+    planned = Counter(g["name"].casefold() for g in groups + [g for g in staged["groups"] if g["chosen"]]
+                      if g["create"])
+    clash = sorted(n for n, c in planned.items() if c > 1)
+    if clash:
+        warn(f"{len(clash)} AP Group name(s) used by more than one group to create: "
+             f"{', '.join(clash[:SAMPLE])} — rename one of each", "error")
     if unknown:
         warn(f"{unknown} AP(s) had no readable per-AP radio config: their AP-level overrides are "
                         "unknown, so their placement may be wrong — re-extract")
@@ -311,12 +363,42 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
                         "mac": a["raw"].get("apMac")} for a in aps
                        if not a["wlans"] and a["raw"].get("serial") not in staged_serials],
         "staged": staged,
+        "catalog": _catalog(full, set(choices.get("excluded_wlans") or [])),
         "wlans": wlans_out,
         "groups": groups,
         "unbroadcast": unbroadcast,
         "warnings": warnings,
-        "blocked": default_total > R1_SSID_LIMIT or bool(over) or bool(unlisted),
+        "blocked": default_total > R1_SSID_LIMIT or bool(over) or bool(unlisted) or bool(clash),
     }
+
+
+# A name an operator would likely skip: "TEST 4311@Site", "Temp-Lobby", "tmp_guest" (not "contemporary").
+SKIP_HINT = re.compile(r"(?<![a-z])(test|temp|tmp)", re.I)
+
+
+def without_wlans(snapshot: SZMigrationSnapshot, excluded: Optional[List[str]]) -> SZMigrationSnapshot:
+    """The snapshot as if SZ never had these WLANs: dropped, and out of every WLAN Group."""
+    ex = set(excluded or [])
+    if not ex:
+        return snapshot
+    return snapshot.model_copy(update={
+        "wlans": [w for w in snapshot.wlans if w.id not in ex],
+        "wlan_groups": [g.model_copy(update={"members": [m for m in g.members if m.id not in ex]})
+                        for g in snapshot.wlan_groups],
+    })
+
+
+def _catalog(snapshot: SZMigrationSnapshot, excluded: Set[str]) -> List[Dict[str, Any]]:
+    """Every SZ WLAN with the number of APs broadcasting it -- the include / exclude list."""
+    sz = _SzModel(snapshot)
+    count: Counter = Counter()
+    for raw in snapshot.aps:
+        count.update(sz.wlan_bands(raw)[0].keys())
+    rows = [{"id": w.id, "name": w.name, "ssid": w.ssid, "auth_type": w.auth_type, "ap_count": count[w.id],
+             "excluded": w.id in excluded,
+             "skip_hint": bool(SKIP_HINT.search(w.name or "") or SKIP_HINT.search(w.ssid or ""))}
+            for w in snapshot.wlans]
+    return sorted(rows, key=lambda r: (r["name"] or "").lower())
 
 
 def _pattern_regex(template: str) -> Optional["re.Pattern"]:
@@ -418,9 +500,13 @@ def _stage(snapshot: SZMigrationSnapshot, rows: List[Dict[str, Any]], default_ap
         for w in wids:
             row_by_id[w]["paired_aps"] = [_ap_label(a["raw"]) for a in members]
             row_by_id[w]["paired_group"] = name
+        source = "SZ WLAN Group" if shared else "WLAN name"
+        options = [] if match == "SSIDs" else _name_options(
+            base, source, [a["raw"] for a in members], [wlan_by_id[w] for w in sorted(wids)])
         out["groups"].append({
-            "key": key, "name": name, "name_source": "SZ WLAN Group" if shared else "WLAN name",
+            "key": key, "name": name, "name_source": source,
             "renamed": key in renames, "staged": True,
+            "name_options": options, "ambiguous": len(options) > 1 and key not in renames,
             "wlan_ids": sorted(wids), "ssids": ssids, "ap_count": len(members),
             "aps": [{"name": _ap_label(a["raw"]), "serial": a["raw"].get("serial"), "mac": a["raw"].get("apMac")}
                     for a in members],

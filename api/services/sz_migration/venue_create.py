@@ -30,6 +30,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
+from services.sz_migration.venue_models import customise
 from services.sz_migration.venue_settings import (
     V1, V1_1, _METHOD, _MESH_RADIO, bss_min_rate_6g, channel_width, mbps, tx_power,
 )
@@ -456,55 +457,12 @@ def drop_combined_channels(body: Dict[str, Any]) -> None:
             drop_combined_channels(band)
 
 
-async def poe_capabilities(r1_client, venue_id: str, kw: Dict[str, Any]) -> Dict[str, List[str]]:
-    """model -> PoE modes R1 accepts for it (empty when unknown)."""
+async def model_capabilities(r1_client, venue_id: str, kw: Dict[str, Any]) -> Optional[Dict[str, Dict[str, Any]]]:
+    """model -> R1's capability row for it at this venue (its defaults, PoE modes, ports); None if unreadable."""
     resp = await asyncio.to_thread(lambda: r1_client.get(f"/venues/{venue_id}/apModelCapabilities", **kw))
     if resp.status_code != 200:
-        return {}
-    models = (resp.json() or {}).get("apModels") or []
-    return {m.get("model"): list(m.get("poeModeCapabilities") or []) for m in models if m.get("model")}
-
-
-def fit_poe_modes(rows: List[Dict[str, Any]], caps: Dict[str, List[str]]) -> List[str]:
-    """
-    Make every per-model poeMode one R1 accepts for that model. R1 reports
-    'Auto' for models that only take 802.3af (H375) and then rejects it on
-    write -- from the zone or from R1's own read-back alike. A model with one
-    supported mode gets that mode; otherwise the value is cleared (R1's
-    default). Returns a note per change.
-    """
-    notes = []
-    for r in rows:
-        mode, allowed = r.get("poeMode"), caps.get(r.get("model")) or []
-        if mode is None or not allowed or mode in allowed:
-            continue
-        r["poeMode"] = allowed[0] if len(allowed) == 1 else None
-        notes.append(f"{r['model']}: PoE mode {mode} isn't offered for this model "
-                     f"(R1 supports {', '.join(allowed)}) — set to {r['poeMode'] or 'R1 default'}")
-    return notes
-
-
-def merge_by_model(current: Any, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    R1's per-model list with ours merged in: other models untouched, ours
-    overlaid on R1's entry for that model, LAN ports merged by portId.
-    """
-    rows = [dict(r) for r in (current if isinstance(current, list) else []) if isinstance(r, dict)]
-    by_model = {r.get("model"): r for r in rows}
-    for e in entries:
-        cur = by_model.get(e["model"])
-        if cur is None:
-            rows.append(dict(e))
-            continue
-        for k, v in e.items():
-            if k == "lanPorts":
-                ports = {p.get("portId"): dict(p) for p in cur.get("lanPorts") or []}
-                for p in v:
-                    ports[p["portId"]] = {**ports.get(p["portId"], {}), **p}
-                cur["lanPorts"] = sorted(ports.values(), key=lambda p: int(p["portId"]) if str(p.get("portId")).isdigit() else 0)
-            else:
-                cur[k] = v
-    return rows
+        return None
+    return {m["model"]: m for m in (resp.json() or {}).get("apModels") or [] if m.get("model")}
 
 
 def merge(base: Any, overlay: Any) -> Any:
@@ -568,8 +526,38 @@ async def apply_settings(r1_client, tenant_id: Optional[str], venue_id: str,
     """
     kw = _kw(r1_client, tenant_id)
     sem = asyncio.Semaphore(APPLY_CONCURRENCY)
+    chosen = [s for s in plan["sections"] if s.key in set(keys)]
+    caps = (await model_capabilities(r1_client, venue_id, kw)) if any(s.by_model for s in chosen) else None
+
+    async def one_model_section(sec: _Section) -> Dict[str, Any]:
+        """Only the zone's models that differ from R1's defaults, each as a complete entry."""
+        path = f"/venues/{venue_id}/{sec.path}"
+        out = {"key": sec.key, "label": sec.label}
+        if caps is None:
+            return {**out, "status": "failed", "error": "Could not read the venue's AP model capabilities"}
+        push, notes, defaults = customise(sec.key, sec.body, caps)
+        if defaults:
+            notes.append(f"R1 defaults kept for: {', '.join(defaults)}")
+        if not push:
+            return {**out, "status": "applied", "notes": notes + ["Nothing differs from R1's defaults — nothing written"]}
+        async with sem:
+            try:
+                resp = await asyncio.to_thread(
+                    lambda: r1_client.put(path, payload=push, content_type=sec.media, **kw))
+                if resp.status_code not in (200, 201, 202, 204):
+                    return {**out, "status": "failed", "error": r1_error(resp), "notes": notes}
+                data = resp.json() if resp.content else {}
+                if resp.status_code == 202 and isinstance(data, dict) and data.get("requestId"):
+                    await r1_client.await_task_completion(data["requestId"], override_tenant_id=tenant_id)
+                return {**out, "status": "applied", "notes": notes,
+                        "pushed": [e["model"] for e in push]}
+            except Exception as e:
+                logger.error(f"[SZ Migration] Venue {venue_id} {sec.path} failed: {e}")
+                return {**out, "status": "failed", "error": str(e)[:500], "notes": notes}
 
     async def one(sec: _Section) -> Dict[str, Any]:
+        if sec.by_model:
+            return await one_model_section(sec)
         path = f"/venues/{venue_id}/{sec.path}"
         out = {"key": sec.key, "label": sec.label}
         async with sem:
@@ -577,14 +565,12 @@ async def apply_settings(r1_client, tenant_id: Optional[str], venue_id: str,
                 cur = await asyncio.to_thread(lambda: r1_client.get(path, accept=sec.media, **kw))
                 if cur.status_code != 200:
                     return {**out, "status": "failed", "error": f"Reading current settings: {r1_error(cur)}"}
-                current = cur.json() or ([] if sec.by_model else {})
-                body = merge_by_model(current, sec.body) if sec.by_model else merge(current, sec.body)
+                current = cur.json() or {}
+                body = merge(current, sec.body)
                 notes: List[str] = []
                 if sec.key == "radio":
                     fit_6g_outdoor(current, body)
                     drop_combined_channels(body)
-                if sec.key == "model_lan_ports":
-                    notes = fit_poe_modes(body, await poe_capabilities(r1_client, venue_id, kw))
                 if sec.secret:
                     body = merge(body, sec.secret)
                 resp = await asyncio.to_thread(
@@ -599,7 +585,6 @@ async def apply_settings(r1_client, tenant_id: Optional[str], venue_id: str,
                 logger.error(f"[SZ Migration] Venue {venue_id} {sec.path} failed: {e}")
                 return {**out, "status": "failed", "error": str(e)[:500]}
 
-    chosen = [s for s in plan["sections"] if s.key in set(keys)]
     return list(await asyncio.gather(*(one(s) for s in chosen)))
 
 
@@ -628,28 +613,16 @@ def _diff(wanted: Any, actual: Any, path: str, out: List[Dict[str, Any]]) -> Non
         out.append({"field": path, "wanted": wanted, "actual": actual})
 
 
-def _poe_default(field_path: str, wanted: Any, actual: Any, poe_caps: Optional[Dict[str, List[str]]]) -> bool:
-    """
-    R1 stores no poeMode for a model whose setting equals R1's default, and
-    that default is Auto: on a production venue R550 (its entry customized
-    by a port change) read back Auto, while R650 / T350D, sent Auto, read
-    back with no poeMode at all. Wanted Auto + nothing stored = a match,
-    for models that support Auto.
-    """
-    if wanted != "Auto" or actual is not None or not field_path.endswith(".poeMode"):
-        return False
-    model = field_path.rsplit(".", 1)[0]
-    return not poe_caps or "Auto" in (poe_caps.get(model) or ["Auto"])
-
-
 def diff_section(sec: "_Section", current: Any,
-                 poe_caps: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, Any]]:
+                 caps: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """
+    Fields we set that R1 doesn't hold. Per-model sections compare only what
+    apply pushes (customise): models left on R1's defaults aren't compared.
+    """
     out: List[Dict[str, Any]] = []
     if sec.by_model:
         rows = {r.get("model"): r for r in (current or []) if isinstance(r, dict)}
-        wanted = [dict(e) for e in sec.body]
-        if poe_caps:
-            fit_poe_modes(wanted, poe_caps)   # what apply sent, not what the zone said
+        wanted, _, _ = customise(sec.key, sec.body, caps or {})
         for e in wanted:
             r = rows.get(e["model"]) or {}
             for k, v in e.items():
@@ -660,7 +633,7 @@ def diff_section(sec: "_Section", current: Any,
                     for p in v:
                         _diff({x: y for x, y in p.items() if x != "portId"}, ports.get(p["portId"]),
                               f"{e['model']} port {p['portId']}", out)
-                elif not _poe_default(f"{e['model']}.{k}", v, r.get(k), poe_caps):
+                else:
                     _diff(v, r.get(k), f"{e['model']}.{k}", out)
     else:
         _diff(sec.body, current, "", out)
@@ -675,9 +648,19 @@ async def verify_settings(r1_client, tenant_id: Optional[str], venue_id: str,
     The mesh passphrase is never read back or compared.
     """
     kw = _kw(r1_client, tenant_id)
+    chosen = [s for s in plan["sections"] if s.key in set(keys)]
+    caps = (await model_capabilities(r1_client, venue_id, kw)) if any(s.by_model for s in chosen) else None
 
     async def one(sec: _Section) -> Dict[str, Any]:
         out = {"key": sec.key, "label": sec.label}
+        if sec.by_model:
+            if caps is None:
+                return {**out, "status": "unreadable", "error": "Could not read the venue's AP model capabilities",
+                        "differences": []}
+            push, _, defaults = customise(sec.key, sec.body, caps)
+            out.update(pushed=[e["model"] for e in push], defaults=defaults)
+            if not push:
+                return {**out, "status": "verified", "differences": []}
         try:
             resp = await asyncio.to_thread(
                 lambda: r1_client.get(f"/venues/{venue_id}/{sec.path}", accept=sec.media, **kw))
@@ -685,9 +668,7 @@ async def verify_settings(r1_client, tenant_id: Optional[str], venue_id: str,
             return {**out, "status": "unreadable", "error": str(e)[:300], "differences": []}
         if resp.status_code != 200:
             return {**out, "status": "unreadable", "error": r1_error(resp), "differences": []}
-        caps = await poe_capabilities(r1_client, venue_id, kw) if sec.key == "model_lan_ports" else None
         diffs = diff_section(sec, resp.json(), caps)
         return {**out, "status": "differs" if diffs else "verified", "differences": diffs}
 
-    chosen = [s for s in plan["sections"] if s.key in set(keys)]
     return list(await asyncio.gather(*(one(s) for s in chosen)))

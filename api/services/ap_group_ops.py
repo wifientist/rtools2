@@ -14,6 +14,7 @@ added (R1 shows it in the group), failed (R1 said so), or unconfirmed
 
 import asyncio
 import logging
+import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,26 @@ def api_error(e: Exception) -> str:
         except Exception:
             pass
     return str(e)
+
+
+# R1 being slow or briefly down, not refusing the request: the write may
+# still land (a timed-out task usually finishes), and the same call usually
+# works a little later. Seen on big migrations: tasks not done after ~97s,
+# 503 "no healthy upstream", RCG-10000 "System might be busy", and "Object
+# not found" for a network created a moment before.
+# Status codes only in R1's / requests' own wording: a bare "503" matches unit names ("5030@Site").
+_TRANSIENT = ("did not complete after", "service unavailable", "bad gateway", "gateway time",
+              "rcg-10000", "system might be busy", "no healthy upstream", "temporarily unavailable",
+              "object not found", "timed out", "timeout", "connection aborted", "connection reset")
+_TRANSIENT_STATUS = re.compile(r"\b50[234] (?:-|server error)")
+
+
+def is_transient(e: Any) -> bool:
+    text = (api_error(e) if isinstance(e, Exception) else str(e)).casefold()
+    if isinstance(e, Exception):
+        text += " " + str(e).casefold()
+    return (isinstance(e, (TimeoutError, asyncio.TimeoutError)) or any(m in text for m in _TRANSIENT)
+            or bool(_TRANSIENT_STATUS.search(text)))
 
 
 def r1_call(r1_client, method: str, path: str, tenant_id: str, **kw):

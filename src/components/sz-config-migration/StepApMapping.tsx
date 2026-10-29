@@ -33,6 +33,7 @@ interface StageReport {
     no_network?: string[];
     staged?: Array<{ name: string; ssids: string[]; ap_count: number }>;
     fallback_default?: Array<{ name: string; serial: string; wanted_group: string | null }>;
+    by_name?: Array<{ name: string; serial: string; group_name: string; sz_group_name: string | null }>;
   };
 }
 
@@ -43,24 +44,32 @@ interface PreviewAp {
   action: 'already' | 'move' | 'not_in_r1' | 'group_missing' | 'keep' | 'unmapped' | 'blocked' | 'add' | 'not_selected';
   note?: string; extra_ssids?: string[]; error: string | null;
   name_clash?: boolean; r1_name?: string | null;
+  // Place by name: retargeted (sz_group_name = where SZ's broadcast put it), or,
+  // when off, the group its name points at instead
+  by_name?: boolean; sz_group_name?: string | null; name_group?: string | null;
+  // Manual: the operator's AP Group, checked against R1 (exists / planned = this plan builds it / missing)
+  manual?: boolean; manual_status?: 'exists' | 'planned' | 'missing' | null; auto_group?: string | null;
 }
 interface Preview {
   venue_name: string; r1_ap_count: number; counts: Counts; aps: PreviewAp[];
+  r1_groups: string[]; manual_missing: string[];
   warnings: Array<{ message: string; severity: string }>;
   staged: { unpaired: string[]; conflicts: string[] };
   activations: Array<{ name: string; status: string; error: string | null }>;
 }
 
 // What the table's filter chips group by.
-type View = 'all' | 'move' | 'new' | 'already' | 'waiting' | 'nogroup' | 'keep' | 'other';
+type View = 'all' | 'move' | 'new' | 'already' | 'waiting' | 'nogroup' | 'keep' | 'other' | 'byname';
 const VIEW_OF = (a: PreviewAp['action']): View =>
   a === 'move' ? 'move' : a === 'not_in_r1' ? 'new' : a === 'already' ? 'already'
     : a === 'group_missing' ? 'waiting' : a === 'unmapped' ? 'nogroup' : a === 'keep' ? 'keep' : 'other';
 const VIEWS: Array<[View, string]> = [
   ['all', 'All'], ['move', 'To move'], ['new', 'Not in R1 yet'], ['already', 'Already in place'],
   ['waiting', 'Waiting on an AP Group'], ['nogroup', 'No AP Group built'], ['keep', 'Kept as R1 has them'],
-  ['other', 'No serial'],
+  ['other', 'No serial'], ['byname', 'Name points elsewhere'],
 ];
+const inView = (a: PreviewAp, vw: View) =>
+  vw === 'all' || (vw === 'byname' ? !!(a.by_name || a.name_group) : VIEW_OF(a.action) === vw);
 const ROW_CAP = 800;
 
 const Tile = ({ label, value, ok }: { label: string; value: string; ok: boolean | null }) => (
@@ -95,6 +104,17 @@ export default function StepApMapping({ state, dispatch }: Props) {
   // serial -> the R1 name typed for a duplicate-named AP (default: Name_serial)
   const [renames, setRenames] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
+  // SZ had APs in the wrong AP Groups: send each to the R1 group its name points at.
+  const [placeByName, setPlaceByName] = useState(false);
+  // Manual AP Group per AP (serial -> name): typed (draft), and the set last
+  // validated against R1 -- the preview and the job use only the validated set.
+  const [draftOverrides, setDraftOverrides] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [creating, setCreating] = useState(false);
+  const [createResult, setCreateResult] = useState<string | null>(null);
+  const cleanOverrides = (o: Record<string, string>) =>
+    Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v));
+  const overridesDirty = JSON.stringify(cleanOverrides(draftOverrides)) !== JSON.stringify(overrides);
 
   // Placement: the same choices Review uses.
   useEffect(() => {
@@ -130,7 +150,7 @@ export default function StepApMapping({ state, dispatch }: Props) {
         body: JSON.stringify({
           r1_controller_id: state.r1ControllerId, tenant_id: state.tenantId, venue_id: state.destVenueId,
           sz_snapshot_job_id: state.extractionJobId, layout_choices: state.layoutChoices,
-          ap_name_policy: namePolicy,
+          ap_name_policy: namePolicy, place_by_name: placeByName, ap_group_overrides: overrides,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -145,7 +165,7 @@ export default function StepApMapping({ state, dispatch }: Props) {
   };
 
   useEffect(() => { loadPreview(); },
-    [state.extractionJobId, state.destVenueId, state.layoutChoices, namePolicy]); // eslint-disable-line react-hooks/exhaustive-deps
+    [state.extractionJobId, state.destVenueId, state.layoutChoices, namePolicy, placeByName, overrides]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const aps = preview?.aps ?? [];
   // An AP whose AP Group wasn't built can still come over: picked, it goes to
@@ -155,11 +175,13 @@ export default function StepApMapping({ state, dispatch }: Props) {
         || (a.action === 'unmapped' && !(a.in_r1 && a.current_group === '(default)')));
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return aps.filter(a => (view === 'all' || VIEW_OF(a.action) === view) && (!q || [
-      a.name, a.serial, a.mac, a.model, a.sz_ap_group, a.group_name, a.current_group, ...a.broadcast,
+    return aps.filter(a => inView(a, view) && (!q || [
+      a.name, a.serial, a.mac, a.model, a.sz_ap_group, a.group_name, a.current_group, a.sz_group_name, a.name_group,
+      a.serial ? draftOverrides[a.serial] : null,
+      ...a.broadcast,
     ].some(v => (v || '').toLowerCase().includes(q))));
   }, [aps, view, query]);
-  const countOf = (vw: View) => vw === 'all' ? aps.length : aps.filter(a => VIEW_OF(a.action) === vw).length;
+  const countOf = (vw: View) => aps.filter(a => inView(a, vw)).length;
   const isPicked = (a: PreviewAp) => !!a.serial && picked.has(a.serial);
   // The R1 name an AP will get: typed (or Name_serial) for a duplicate when renaming.
   const r1NameOf = (a: PreviewAp) => a.name_clash && namePolicy === 'serial' && a.serial
@@ -207,6 +229,8 @@ export default function StepApMapping({ state, dispatch }: Props) {
           layout_choices: state.layoutChoices,
           selected_serials: [...picked],
           ap_name_policy: namePolicy,
+          place_by_name: placeByName,
+          ap_group_overrides: overrides,
           ap_renames: namePolicy === 'serial'
             ? Object.fromEntries(aps.filter(a => a.name_clash && a.serial)
                 .map(a => [a.serial!, (renames[a.serial!] ?? `${a.name}_${a.serial}`).trim()]))
@@ -221,6 +245,30 @@ export default function StepApMapping({ state, dispatch }: Props) {
       dispatch({ type: 'SET_ERROR', error: e.message });
     } finally {
       setPlanning(false);
+    }
+  };
+
+  const createMissing = async (names: string[]) => {
+    if (!state.r1ControllerId || !state.destVenueId) return;
+    setCreating(true);
+    setCreateResult(null);
+    try {
+      const res = await apiFetch(`${API_URL}/sz-migration/ap-mapping/create-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ r1_controller_id: state.r1ControllerId, tenant_id: state.tenantId,
+                               venue_id: state.destVenueId, names }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Create failed: ${res.status}`);
+      const errs = (data.errors ?? []) as Array<{ name: string; error: string }>;
+      setCreateResult(`Created ${data.created.length}${data.existing.length ? `, ${data.existing.length} already there` : ''}`
+        + (errs.length ? ` — failed: ${errs.map(e => `${e.name} (${e.error})`).join('; ')}` : ''));
+      await loadPreview();
+    } catch (e: any) {
+      setCreateResult(e.message);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -351,6 +399,39 @@ export default function StepApMapping({ state, dispatch }: Props) {
               </span>
             </div>
 
+            {(Object.keys(cleanOverrides(draftOverrides)).length > 0 || Object.keys(overrides).length > 0) && (
+              <div className="text-xs border border-indigo-200 bg-indigo-50/50 rounded px-3 py-2 mb-2 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-semibold text-gray-700">
+                    {Object.keys(cleanOverrides(draftOverrides)).length} AP(s) placed by hand
+                  </span>
+                  <button onClick={() => setOverrides(cleanOverrides(draftOverrides))}
+                          disabled={previewLoading || !overridesDirty}
+                          className="px-2.5 py-1 rounded bg-indigo-600 text-white font-medium disabled:bg-gray-300">
+                    {previewLoading ? 'Checking R1…' : 'Validate manual choices'}
+                  </button>
+                  <button onClick={() => { setDraftOverrides({}); setOverrides({}); }}
+                          className="text-gray-500 hover:underline">Clear all</button>
+                  {overridesDirty
+                    ? <span className="text-amber-700">Changed since the last check — validate before mapping</span>
+                    : <span className="text-green-700">Checked against R1</span>}
+                </div>
+                {!overridesDirty && preview.manual_missing.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 text-red-800">
+                    <AlertTriangle size={13} />
+                    {preview.manual_missing.length} AP Group(s) not in R1: {preview.manual_missing.slice(0, 8).join(', ')}
+                    {preview.manual_missing.length > 8 ? '…' : ''}
+                    <button onClick={() => createMissing(preview.manual_missing)} disabled={creating}
+                            className="px-2.5 py-1 rounded bg-orange-600 text-white font-medium disabled:bg-gray-300">
+                      {creating ? 'Creating…' : `Create ${preview.manual_missing.length} AP Group(s) in R1`}
+                    </button>
+                    <span className="text-gray-500">(empty groups, nothing activated on them) — or fix the names</span>
+                  </div>
+                )}
+                {createResult && <div className="text-gray-700">{createResult}</div>}
+              </div>
+            )}
+
             {(preview.counts.aps_name_clash ?? 0) > 0 && (() => {
               const dup = aps.filter(a => a.name_clash && a.serial);
               const nameOf = (a: PreviewAp) => renames[a.serial!] ?? `${a.name}_${a.serial}`;
@@ -399,6 +480,29 @@ export default function StepApMapping({ state, dispatch }: Props) {
               );
             })()}
 
+            <div className="text-xs border border-gray-200 rounded px-3 py-2 mb-2 space-y-1">
+              <div className="font-semibold text-gray-700">Which R1 AP Group each AP goes into</div>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" className="mt-0.5" checked={!placeByName} disabled={previewLoading}
+                       onChange={() => setPlaceByName(false)} />
+                <span><span className="font-medium">As SmartZone had it</span> (default) — each AP gets the group
+                  matching what it broadcast in SZ.</span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="radio" className="mt-0.5" checked={placeByName} disabled={previewLoading}
+                       onChange={() => setPlaceByName(true)} />
+                <span><span className="font-medium">By AP name</span> — the group named after the AP (or carrying its
+                  "unit@…" SSID). An AP sitting in another unit's group with no group of its own goes to the default
+                  group (common WLANs only). Use when SZ had APs in the wrong AP Groups.</span>
+              </label>
+              <div className={(pc.aps_name_differs ?? 0) > 0 ? 'text-amber-800 pl-5' : 'text-gray-500 pl-5'}>
+                {(pc.aps_name_differs ?? 0) > 0
+                  ? <>{pc.aps_name_differs} AP(s) land in a different group by name than by SZ —
+                      {' '}<button className="underline" onClick={() => setView('byname')}>show them</button>.</>
+                  : 'Both give the same result for every AP here.'}
+              </div>
+            </div>
+
             {toAdd > 0 && (
               <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-2 flex gap-1.5">
                 <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
@@ -407,6 +511,10 @@ export default function StepApMapping({ state, dispatch }: Props) {
               </div>
             )}
 
+            <datalist id="r1-ap-groups">
+              <option value="(default)" />
+              {preview.r1_groups.map(n => <option key={n} value={n} />)}
+            </datalist>
             <div className="border border-gray-200 rounded max-h-[34rem] overflow-auto">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 text-gray-500 text-left sticky top-0">
@@ -414,7 +522,9 @@ export default function StepApMapping({ state, dispatch }: Props) {
                     <th className="px-2 py-1.5 w-6"></th>
                     <th className="px-2 py-1.5 font-medium">AP</th>
                     <th className="px-2 py-1.5 font-medium">SZ AP Group</th>
-                    <th className="px-2 py-1.5 font-medium">→ R1 AP Group</th>
+                    <th className="px-2 py-1.5 font-medium">→ R1 AP Group: as SZ had it</th>
+                    <th className="px-2 py-1.5 font-medium">by AP name</th>
+                    <th className="px-2 py-1.5 font-medium">manual</th>
                     <th className="px-2 py-1.5 font-medium">In R1 now</th>
                     <th className="px-2 py-1.5 font-medium">Mapping</th>
                     <th className="px-2 py-1.5 font-medium">Will broadcast</th>
@@ -452,10 +562,40 @@ export default function StepApMapping({ state, dispatch }: Props) {
                           <div className="font-mono text-gray-400">{a.serial ?? a.mac}{a.model ? ` · ${a.model}` : ''}</div>
                         </td>
                         <td className="px-2 py-1 text-gray-600">{a.sz_ap_group ?? '—'}</td>
-                        <td className="px-2 py-1">
-                          <span className="font-medium">{a.group_name}</span>
-                          {a.staged && <span className="ml-1 text-[10px] px-1 rounded bg-indigo-100 text-indigo-700">staged</span>}
-                        </td>
+                        {(() => {
+                          // Both targets; the one in use is bold, the other greyed
+                          const bySz = a.by_name || a.manual ? (a.sz_group_name ?? '—') : a.group_name;
+                          const byName = a.by_name ? a.group_name : a.name_group;
+                          const draft = a.serial ? (draftOverrides[a.serial] ?? '') : '';
+                          const pending = !!a.serial && draft.trim() !== (overrides[a.serial] ?? '');
+                          return (<>
+                            <td className={`px-2 py-1 ${a.manual || (placeByName && byName) ? 'text-gray-400 line-through' : 'font-medium'}`}>
+                              {bySz}
+                              {a.staged && !a.by_name && <span className="ml-1 text-[10px] px-1 rounded bg-indigo-100 text-indigo-700 no-underline">staged</span>}
+                            </td>
+                            <td className="px-2 py-1">
+                              {byName
+                                ? <span className={a.manual ? 'text-gray-400 line-through'
+                                    : placeByName ? 'font-medium text-indigo-700' : 'text-amber-700'}>{byName}</span>
+                                : <span className="text-gray-300">same</span>}
+                            </td>
+                            <td className="px-2 py-1 whitespace-nowrap">
+                              {a.serial && (
+                                <input list="r1-ap-groups" value={draft} placeholder="AP Group…" maxLength={64}
+                                       onChange={e => setDraftOverrides(o => ({ ...o, [a.serial!]: e.target.value }))}
+                                       className={`border rounded px-1.5 py-0.5 w-32 ${draft.trim() ? 'border-indigo-400 font-medium' : 'border-gray-200'}`} />
+                              )}
+                              {a.manual && !pending && (
+                                a.manual_status === 'missing'
+                                  ? <span className="ml-1 text-[10px] px-1 rounded bg-red-100 text-red-700">not in R1</span>
+                                  : a.manual_status === 'planned'
+                                    ? <span className="ml-1 text-[10px] px-1 rounded bg-blue-100 text-blue-700">to be built</span>
+                                    : <span className="ml-1 text-[10px] px-1 rounded bg-green-100 text-green-700">in R1 ✓</span>
+                              )}
+                              {pending && <span className="ml-1 text-[10px] text-amber-700">not checked</span>}
+                            </td>
+                          </>);
+                        })()}
                         <td className="px-2 py-1 text-gray-600">{a.in_r1 ? (a.current_group ?? '—') : <span className="text-gray-400">not in R1</span>}</td>
                         <td className={`px-2 py-1 ${outcome[1]}`} title={a.note ?? a.error ?? ''}>{outcome[0]}</td>
                         <td className="px-2 py-1 text-gray-600" title={a.broadcast.join('\n')}>
@@ -465,7 +605,7 @@ export default function StepApMapping({ state, dispatch }: Props) {
                       </tr>
                     );
                   })}
-                  {shown.length === 0 && <tr><td colSpan={7} className="px-3 py-3 text-center text-gray-400">No APs match</td></tr>}
+                  {shown.length === 0 && <tr><td colSpan={9} className="px-3 py-3 text-center text-gray-400">No APs match</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -592,6 +732,19 @@ export default function StepApMapping({ state, dispatch }: Props) {
                 </Section>
               )}
 
+              {(v.by_name ?? []).length > 0 && (
+                <Section title={`Placed by name (${v.by_name!.length})`}
+                         note="Mapped to the AP Group their name points at, not the one their SZ broadcast did. They broadcast that group's WLANs, so they aren't compared with SZ.">
+                  <table className="w-full text-xs"><tbody className="divide-y divide-gray-100">
+                    {v.by_name!.map(k => (
+                      <tr key={k.serial}><td className="px-3 py-1 font-medium">{k.name}</td>
+                        <td className="px-3 py-1">→ {k.group_name}</td>
+                        <td className="px-3 py-1 text-gray-500">SZ broadcast said {k.sz_group_name ?? '—'}</td></tr>
+                    ))}
+                  </tbody></table>
+                </Section>
+              )}
+
               {(v.kept ?? []).length > 0 && (
                 <Section title={`Kept as R1 has them (${v.kept!.length})`}
                          note="SZ broadcasts only the All AP Groups WLANs on these APs, but R1 has them in groups with SSIDs of their own — usually a fix made in R1. Left where they are; move them in R1 if that's wrong.">
@@ -622,8 +775,9 @@ export default function StepApMapping({ state, dispatch }: Props) {
         )}
         <button
           onClick={startPlan}
-          disabled={!preview || planning || !!running || toMove + toAdd === 0 || badRename}
-          title={badRename ? 'A rename box is empty or still a duplicate' : undefined}
+          disabled={!preview || planning || !!running || toMove + toAdd === 0 || badRename || overridesDirty}
+          title={overridesDirty ? 'Validate manual choices first'
+            : badRename ? 'A rename box is empty or still a duplicate' : undefined}
           className="px-5 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 font-semibold text-sm flex items-center gap-2"
         >
           {planning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}

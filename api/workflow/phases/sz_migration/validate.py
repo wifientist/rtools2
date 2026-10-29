@@ -29,7 +29,7 @@ from services.sz_migration.mapper import map_all_wlans, R1NetworkTypeMapping
 from services.sz_migration.field_mappings import build_r1_advanced_settings
 from services.sz_migration.radius_choices import referenced_services, r1_profile_summary
 from services.sz_migration.dpsk_choices import load_r1_dpsk, validate_dpsk_plan
-from services.sz_migration.r1_layout import build_layout, wlan_activations
+from services.sz_migration.r1_layout import build_layout, wlan_activations, without_wlans
 from services.wlan_grabber import build_spec as build_wispr_spec, sz_portal_facts
 from services.r1_inventory import capture_venue_inventory
 
@@ -183,6 +183,13 @@ class ValidateMigrationPhase(PhaseExecutor):
             f"SZ snapshot loaded: {snapshot.zone.name} — "
             f"{len(snapshot.wlans)} WLANs, {len(snapshot.ap_groups)} AP Groups"
         )
+        # Excluded WLANs: not migrated at all -- no unit, no network, not in any broadcast.
+        excluded = (self.context.options.get("layout_choices") or {}).get("excluded_wlans") or []
+        if excluded:
+            names = [w.name for w in snapshot.wlans if w.id in set(excluded)]
+            snapshot = without_wlans(snapshot, excluded)
+            await self.emit(f"Excluded by choice ({len(names)}): {', '.join(names[:10])}"
+                            + ("…" if len(names) > 10 else ""))
 
         # ── Capture R1 venue inventory ────────────────────────────────
         await self.emit("Capturing R1 venue inventory...")
