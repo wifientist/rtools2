@@ -47,6 +47,34 @@ from r1api.services.radius_attributes import RadiusAttributeService
 from r1api.services.ethernet_port_profiles import EthernetPortProfileService
 from r1api.services.radius_profiles import RadiusProfileService
 from r1api.services.switches import SwitchService
+from contextvars import ContextVar
+
+# An async task R1 still reports as pending is waited on this long. On big
+# runs creates/activations/AP adds take minutes and then succeed; the old
+# ~97s cap called them failed and callers re-sent work that was landing.
+ACTIVITY_TIMEOUT_SECONDS = 300
+# GET /activities/{id} answers 404 / "invalid id" for a few seconds after
+# the request is accepted (not registered yet). An activity never seen this
+# long stops the wait.
+ACTIVITY_UNSEEN_SECONDS = 120
+# How often a long wait tells activity_wait_listener it's still going.
+ACTIVITY_NOTICE_SECONDS = 60
+
+# Set by a caller (a workflow phase) to hear about long waits:
+# async listener(request_id, status, elapsed_seconds). Context-scoped, so it
+# reaches waits deep inside service calls without threading it through them.
+activity_wait_listener: ContextVar = ContextVar("activity_wait_listener", default=None)
+
+
+class ActivityPending(TimeoutError):
+    """R1 accepted the request; its task hadn't finished when the wait ended.
+    Not a refusal -- re-sending the request would duplicate work R1 is doing."""
+
+    def __init__(self, request_id: str, status, elapsed: float):
+        self.request_id, self.status, self.elapsed = request_id, status, elapsed
+        seen = f"R1 still reports it {status}" if status else "R1 never showed the activity"
+        super().__init__(f"Task {request_id} did not complete after {elapsed:.0f}s ({seen})")
+
 
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, ec_type=None, region=None):
@@ -432,17 +460,18 @@ class R1Client:
         # Last resort: return full data as string
         return 'Unknown error'
 
-    def _get_poll_delay(self, attempt: int) -> float:
+    def _get_poll_delay(self, attempt: int, elapsed: float = 0.0) -> float:
         """
         Get polling delay with gentle stepped backoff.
 
         Fast initial checks (most activities complete quickly), then back off
-        to reduce API pressure under heavy load.
+        to reduce API pressure under heavy load -- a big run has hundreds of
+        tasks waited on at once, some for minutes.
 
         Schedule:
-          - Attempts 1-5:   1 second  (5 sec cumulative - catch fast completions)
-          - Attempts 6-15:  2 seconds (20 sec cumulative - normal ops)
-          - Attempts 16+:   3 seconds (for long waits / eventual consistency)
+          - Attempts 1-5:   1 second  (catch fast completions)
+          - Attempts 6-15:  2 seconds (normal ops)
+          - Then 3 seconds, 5 seconds past 90s, 10 seconds past 180s
 
         Returns:
             Sleep duration in seconds
@@ -451,96 +480,107 @@ class R1Client:
             return 1.0
         elif attempt <= 15:
             return 2.0
-        else:
+        elif elapsed < 90:
             return 3.0
+        elif elapsed < 180:
+            return 5.0
+        return 10.0
 
     async def await_task_completion(
         self,
         request_id: str,
         override_tenant_id: str = None,
-        max_attempts: int = 40,
-        assume_success_on_timeout: bool = False
+        max_attempts: int = None,
+        assume_success_on_timeout: bool = False,
+        timeout_seconds: float = ACTIVITY_TIMEOUT_SECONDS,
     ):
         """
         Poll /activities/{requestId} until async task completes
 
         RuckusONE API returns 202 Accepted for many operations with a requestId.
-        This method polls the /activities endpoint to check task status until
-        completion (SUCCESS or FAIL).
+        This method polls the /activities endpoint until R1 says SUCCESS or
+        FAIL. Only FAIL is a failure: a task still pending is waited on for
+        up to timeout_seconds (5 min), since on big runs tasks take minutes
+        and then succeed. An error from /activities (404, "invalid id") right
+        after the request is the activity not being registered yet, and is
+        waited out -- for at most ACTIVITY_UNSEEN_SECONDS if it never shows.
 
-        Uses stepped backoff: 1s for first 5 attempts, 2s for next 10, then 3s.
-        This catches fast completions quickly while reducing API pressure for slow ops.
+        Long waits are reported to activity_wait_listener, if one is set.
 
         Args:
             request_id: The requestId returned from a 202 response
             override_tenant_id: Optional tenant ID for MSP multi-tenant calls
-            max_attempts: Maximum number of polling attempts (default: 40 ≈ 100 sec)
+            max_attempts: Cap on polls instead of the time limit (older callers)
             assume_success_on_timeout: If True and activity never appeared (all 404s),
-                return a synthetic success response instead of raising TimeoutError.
+                return a synthetic success response instead of raising.
                 Use this when the POST succeeded and you're confident the op went through.
+            timeout_seconds: How long to wait on a task R1 reports as pending
 
         Returns:
             dict: Final task status response from /activities/{requestId}
 
         Raises:
-            TimeoutError: If task doesn't complete within max_attempts
+            ActivityPending: (a TimeoutError) the wait ended before R1 finished
             Exception: If task status is FAIL
         """
         logger.info(f"Waiting for task {request_id} to complete...")
 
+        loop = asyncio.get_running_loop()
+        start = loop.time()
         activity_found = False  # Track if we ever got past 404
-        total_wait_time = 0.0
+        status = None
+        next_notice = ACTIVITY_NOTICE_SECONDS
+        attempt = 0
 
-        for attempt in range(1, max_attempts + 1):
+        while True:
+            attempt += 1
             response = self.get(f"/activities/{request_id}", override_tenant_id=override_tenant_id)
+            elapsed = loop.time() - start
 
-            if not response.ok:
-                # Activity might not exist yet - this is normal for the first few attempts
-                if attempt == 1:
-                    logger.debug(f"Waiting for activity {request_id} to be created...")
-                elif attempt % 10 == 0:
-                    logger.debug(f"Still waiting for {request_id}... (attempt {attempt}/{max_attempts}, {total_wait_time:.0f}s)")
-                delay = self._get_poll_delay(attempt)
-                await asyncio.sleep(delay)
-                total_wait_time += delay
-                continue
+            if response.ok:
+                activity_found = True
+                data = response.json()
+                status = data.get('status')
+                if attempt == 1 or attempt % 10 == 0:
+                    logger.debug(f"Poll {attempt} ({elapsed:.0f}s): {request_id} status={status}")
 
-            activity_found = True
-            data = response.json()
-            status = data.get('status')
+                if status == 'SUCCESS':
+                    logger.info(f"Task {request_id} completed successfully ({elapsed:.0f}s)")
+                    logger.debug(f"Success response for {request_id}: {data}")
+                    return data
 
-            # Log status updates periodically
-            if attempt == 1 or attempt % 5 == 0:
-                logger.debug(f"Poll {attempt}/{max_attempts}: status={status}")
+                elif status == 'FAIL':
+                    # Extract detailed error message from RuckusONE response
+                    error_msg = self._extract_error_message(data)
+                    logger.error(f"Task {request_id} failed: {error_msg}")
+                    logger.debug(f"Full failure response for {request_id}: {data}")
+                    raise Exception(f"Task {request_id} failed: {error_msg}")
+            elif attempt % 10 == 0:
+                # Not registered yet (or a hiccup reading it) - keep waiting
+                logger.debug(f"Still waiting for {request_id} to appear ({elapsed:.0f}s)")
 
-            # Debug: Log full data on first successful poll
-            if attempt == 1:
-                logger.debug(f"Activity data for {request_id}: {data}")
+            if max_attempts is not None:
+                if attempt >= max_attempts:
+                    break
+            elif elapsed >= (timeout_seconds if activity_found else min(timeout_seconds, ACTIVITY_UNSEEN_SECONDS)):
+                break
 
-            if status == 'SUCCESS':
-                logger.info(f"Task {request_id} completed successfully ({total_wait_time:.0f}s)")
-                logger.debug(f"Success response for {request_id}: {data}")
-                return data
+            listener = activity_wait_listener.get()
+            if listener and elapsed >= next_notice:
+                next_notice += ACTIVITY_NOTICE_SECONDS
+                try:
+                    await listener(request_id, status if activity_found else None, elapsed)
+                except Exception as e:
+                    logger.debug(f"activity_wait_listener failed: {e}")
 
-            elif status == 'FAIL':
-                # Extract detailed error message from RuckusONE response
-                error_msg = self._extract_error_message(data)
-                logger.error(f"Task {request_id} failed: {error_msg}")
-                logger.debug(f"Full failure response for {request_id}: {data}")
-                raise Exception(f"Task {request_id} failed: {error_msg}")
+            await asyncio.sleep(self._get_poll_delay(attempt, elapsed))
 
-            # Status is still PENDING or IN_PROGRESS
-            if attempt < max_attempts:
-                delay = self._get_poll_delay(attempt)
-                await asyncio.sleep(delay)
-                total_wait_time += delay
-
-        # Max attempts reached
+        elapsed = loop.time() - start
         if not activity_found and assume_success_on_timeout:
             # Activity never appeared but POST succeeded - assume it went through
             # This handles R1's eventual consistency under heavy load
             logger.warning(
-                f"Task {request_id} activity never appeared after {max_attempts} attempts ({total_wait_time:.0f}s), "
+                f"Task {request_id} activity never appeared after {elapsed:.0f}s, "
                 f"but POST succeeded - assuming success (R1 eventual consistency)"
             )
             return {
@@ -549,10 +589,9 @@ class R1Client:
                 'message': 'Activity polling timed out but creation request was accepted'
             }
 
-        raise TimeoutError(
-            f"Task {request_id} did not complete after {max_attempts} attempts "
-            f"({total_wait_time:.0f} seconds)"
-        )
+        logger.warning(f"Stopped waiting on task {request_id} after {elapsed:.0f}s "
+                       f"(status={status if activity_found else 'never seen'})")
+        raise ActivityPending(request_id, status if activity_found else None, elapsed)
 
     def query_activities_bulk(
         self,
@@ -620,7 +659,7 @@ class R1Client:
         self,
         request_ids: list[str],
         override_tenant_id: str = None,
-        max_attempts: int = 60,
+        max_attempts: int = None,
         max_concurrent: int = 100,
         progress_callback=None,
         global_timeout_seconds: int = None
@@ -631,7 +670,7 @@ class R1Client:
         Args:
             request_ids: List of requestId strings to poll
             override_tenant_id: Optional tenant ID for MSP multi-tenant calls
-            max_attempts: Maximum polling attempts per task (default: 60)
+            max_attempts: Maximum polling attempts per task (default: none -- each task gets await_task_completion's time limit)
             max_concurrent: Max concurrent polls (default: 100)
             progress_callback: Optional callback(completed_count, total_count, result)
             global_timeout_seconds: Optional global timeout for all tasks
@@ -679,6 +718,8 @@ class R1Client:
                     results[request_id] = {
                         "success": False,
                         "error": str(e),
+                        # Still running in R1 when the wait ended: not refused
+                        "pending": isinstance(e, TimeoutError),
                         "request_id": request_id
                     }
                     logger.warning(f"Task {request_id} failed: {str(e)}")
@@ -717,6 +758,7 @@ class R1Client:
                     results[request_id] = {
                         "success": False,
                         "error": f"Global timeout of {global_timeout_seconds}s exceeded",
+                        "pending": True,
                         "request_id": request_id
                     }
 

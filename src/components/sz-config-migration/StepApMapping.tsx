@@ -7,6 +7,14 @@ import WlanPlacement from './WlanPlacement';
 import type { WizardState, WizardAction, R1Layout, LayoutChoices } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const R1_AP_NAME_MAX = 32;
+
+/** Why R1 would refuse an AP name ('' = fine): 2-32 plain ASCII, no ` or $(, no space at an end. */
+const apNameProblem = (n: string) =>
+  n.trim().length < 2 ? 'too short'
+    : n.length > R1_AP_NAME_MAX ? `${n.length}/${R1_AP_NAME_MAX} characters`
+    : n !== n.trim() ? 'space at an end'
+    : /`|\$\(|[^\x20-\x7e]/.test(n) ? 'plain ASCII only, no ` or $(' : '';
 
 interface Props {
   state: WizardState;
@@ -44,6 +52,9 @@ interface PreviewAp {
   action: 'already' | 'move' | 'not_in_r1' | 'group_missing' | 'keep' | 'unmapped' | 'blocked' | 'add' | 'not_selected';
   note?: string; extra_ssids?: string[]; error: string | null;
   name_clash?: boolean; r1_name?: string | null;
+  // R1 takes 32 characters: a longer SZ name is split at a delimiter ('split') or cut on a word ('cut'),
+  // the rest going to the description; 'typed' = the operator's. name_error: R1 would refuse the add's name.
+  r1_description?: string | null; name_fix?: 'split' | 'cut' | 'typed' | null; name_error?: string | null;
   // Place by name: retargeted (sz_group_name = where SZ's broadcast put it), or,
   // when off, the group its name points at instead
   by_name?: boolean; sz_group_name?: string | null; name_group?: string | null;
@@ -95,14 +106,20 @@ export default function StepApMapping({ state, dispatch }: Props) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  // Picked serials. Moves start picked; APs not in R1 only when picked --
-  // adding a serial claims it for this R1 tenant.
+  // Picked serials. Every AP that would be mapped starts picked (moves, and
+  // adds -- adding a serial claims it for this R1 tenant); the operator unpicks.
+  // The operator's own picks / unpicks survive a preview reload. Not picked by default: an AP already in
+  // another R1 group whose own group isn't built (picked, it would move to the
+  // default group and lose what it broadcasts there).
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const ownPick = useRef<Map<string, boolean>>(new Map());   // serial -> picked by the operator
   const [view, setView] = useState<View>('all');
   // AP names must be unique within the venue; SZ doesn't care ("Hallway" x2).
   const [namePolicy, setNamePolicy] = useState<'serial' | 'keep'>('serial');
   // serial -> the R1 name typed for a duplicate-named AP (default: Name_serial)
   const [renames, setRenames] = useState<Record<string, string>>({});
+  // serial -> the R1 description typed (a name over 32 characters moves part of itself here)
+  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
   // SZ had APs in the wrong AP Groups: send each to the R1 group its name points at.
   const [placeByName, setPlaceByName] = useState(false);
@@ -156,7 +173,10 @@ export default function StepApMapping({ state, dispatch }: Props) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `Preview failed: ${res.status}`);
       setPreview(data);
-      setPicked(new Set((data as Preview).aps.filter(a => a.action === 'move' && a.serial).map(a => a.serial!)));
+      setPicked(new Set((data as Preview).aps
+        .filter(a => a.serial && (ownPick.current.get(a.serial)
+          ?? (a.action === 'move' || a.action === 'not_in_r1' || (a.action === 'unmapped' && !a.in_r1))))
+        .map(a => a.serial!)));
     } catch (e: any) {
       setPreviewError(e.message);
     } finally {
@@ -183,24 +203,50 @@ export default function StepApMapping({ state, dispatch }: Props) {
   }, [aps, view, query]);
   const countOf = (vw: View) => aps.filter(a => inView(a, vw)).length;
   const isPicked = (a: PreviewAp) => !!a.serial && picked.has(a.serial);
-  // The R1 name an AP will get: typed (or Name_serial) for a duplicate when renaming.
-  const r1NameOf = (a: PreviewAp) => a.name_clash && namePolicy === 'serial' && a.serial
-    ? (renames[a.serial] ?? `${a.name}_${a.serial}`) : (a.name ?? '');
-  const badRename = namePolicy === 'serial' && (() => {
-    const counts = new Map<string, number>();
-    for (const a of aps) { const n = r1NameOf(a).trim().toLowerCase(); if (n) counts.set(n, (counts.get(n) ?? 0) + 1); }
-    return aps.some(a => a.name_clash && (!r1NameOf(a).trim() || (counts.get(r1NameOf(a).trim().toLowerCase()) ?? 0) > 1));
-  })();
+  // The R1 name / description an add gets: typed, else what the plan proposes
+  // (Name_serial for a duplicate, split or cut when over 32 characters).
+  const r1NameOf = (a: PreviewAp) => (a.serial && renames[a.serial] !== undefined ? renames[a.serial] : a.r1_name ?? a.name ?? '');
+  const r1DescOf = (a: PreviewAp) => (a.serial && descriptions[a.serial] !== undefined ? descriptions[a.serial] : a.r1_description ?? '');
+  const willAdd = (a: PreviewAp) => isPicked(a) && (a.action === 'not_in_r1' || (a.action === 'unmapped' && !a.in_r1));
+  const nameCounts = new Map<string, number>();
+  for (const a of aps) { const n = r1NameOf(a).trim().toLowerCase(); if (n) nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1); }
+  const badName = aps.some(a => willAdd(a) && !!apNameProblem(r1NameOf(a)));
+  const badRename = badName || (namePolicy === 'serial'
+    && aps.some(a => a.name_clash && (!r1NameOf(a).trim() || (nameCounts.get(r1NameOf(a).trim().toLowerCase()) ?? 0) > 1)));
+  const setName = (serial: string, v: string) => setRenames(r => ({ ...r, [serial]: v }));
+  const setDesc = (serial: string, v: string) => setDescriptions(d => ({ ...d, [serial]: v }));
+  // Move one word across the name / description boundary.
+  const shiftWord = (a: PreviewAp, toDescription: boolean) => {
+    const name = r1NameOf(a).trim(), desc = r1DescOf(a).trim();
+    if (toDescription) {
+      const i = name.lastIndexOf(' ');
+      if (i < 1) return;
+      setName(a.serial!, name.slice(0, i).trimEnd());
+      setDesc(a.serial!, `${name.slice(i + 1)} ${desc}`.trim());
+    } else {
+      if (!desc) return;
+      const i = desc.indexOf(' ');
+      setName(a.serial!, `${name} ${i < 0 ? desc : desc.slice(0, i)}`.trim());
+      setDesc(a.serial!, i < 0 ? '' : desc.slice(i + 1).trim());
+    }
+  };
+  // Adds whose SZ name doesn't fit R1 as is: proposed split, editable.
+  const longNamed = aps.filter(a => a.serial && !a.in_r1
+    && ((a.name ?? '').trim().length > R1_AP_NAME_MAX || a.name_fix === 'split' || a.name_fix === 'cut'
+        || !!apNameProblem(r1NameOf(a))));
   const toMove = aps.filter(a => isPicked(a) && (a.action === 'move' || (a.action === 'unmapped' && a.in_r1))).length;
   const toAdd = aps.filter(a => isPicked(a) && (a.action === 'not_in_r1' || (a.action === 'unmapped' && !a.in_r1))).length;
   const toDefault = aps.filter(a => isPicked(a) && a.action === 'unmapped').length;
   const noGroupShown = shown.filter(a => a.action === 'unmapped' && selectable(a));
   const newShown = shown.filter(a => a.action === 'not_in_r1');
-  const setPick = (serials: string[], on: boolean) => setPicked(prev => {
-    const next = new Set(prev);
-    serials.forEach(x => (on ? next.add(x) : next.delete(x)));
-    return next;
-  });
+  const setPick = (serials: string[], on: boolean) => {
+    serials.forEach(x => ownPick.current.set(x, on));
+    setPicked(prev => {
+      const next = new Set(prev);
+      serials.forEach(x => (on ? next.add(x) : next.delete(x)));
+      return next;
+    });
+  };
   const pc = preview?.counts ?? {};
   const configGaps = (pc.aps_group_missing ?? 0) > 0 || (preview?.activations ?? []).length > 0;
 
@@ -231,10 +277,9 @@ export default function StepApMapping({ state, dispatch }: Props) {
           ap_name_policy: namePolicy,
           place_by_name: placeByName,
           ap_group_overrides: overrides,
-          ap_renames: namePolicy === 'serial'
-            ? Object.fromEntries(aps.filter(a => a.name_clash && a.serial)
-                .map(a => [a.serial!, (renames[a.serial!] ?? `${a.name}_${a.serial}`).trim()]))
-            : {},
+          // Only what was typed: the plan proposes the rest itself.
+          ap_renames: Object.fromEntries(Object.entries(renames).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)),
+          ap_descriptions: Object.fromEntries(Object.entries(descriptions).map(([k, v]) => [k, v.trim()])),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -432,15 +477,56 @@ export default function StepApMapping({ state, dispatch }: Props) {
               </div>
             )}
 
+            {longNamed.length > 0 && (
+              <div className="text-xs bg-amber-50 border border-amber-300 rounded px-3 py-2 mb-2 space-y-2">
+                <div className="flex gap-1.5 text-amber-900">
+                  <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
+                  <span>
+                    {longNamed.length} AP name(s) are longer than R1's {R1_AP_NAME_MAX} characters. Each is split at a
+                    natural break (" - ", "|", ","…), the rest going into the AP's description; where no break works it
+                    is cut on a word — check those. Edit either box, or move words across with the arrows.
+                  </span>
+                </div>
+                <div className="max-h-72 overflow-y-auto space-y-1.5">
+                  {longNamed.map(a => {
+                    const name = r1NameOf(a), desc = r1DescOf(a);
+                    const problem = apNameProblem(name)
+                      || ((nameCounts.get(name.trim().toLowerCase()) ?? 0) > 1 ? 'same as another AP' : '');
+                    return (
+                      <div key={a.serial} className={`border-t border-amber-200 pt-1.5 ${isPicked(a) ? '' : 'opacity-50'}`}>
+                        <div className="text-gray-500 truncate" title={a.name ?? ''}>
+                          <span className="font-mono text-gray-400 mr-1">{a.serial}</span>{a.name}
+                          {a.name_fix === 'cut' && <span className="ml-1 text-[10px] px-1 rounded bg-amber-200 text-amber-900">no natural split — check</span>}
+                          {!isPicked(a) && <span className="ml-1 text-[10px] text-gray-500">(not picked)</span>}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          <input className={`border rounded px-1.5 py-0.5 font-mono w-64 ${problem ? 'border-red-400' : 'border-gray-300'}`}
+                                 value={name} maxLength={64} aria-label="R1 AP name"
+                                 onChange={e => setName(a.serial!, e.target.value)} />
+                          <span className={`w-10 text-right tabular-nums ${name.length > R1_AP_NAME_MAX ? 'text-red-700 font-semibold' : 'text-gray-400'}`}>
+                            {name.length}/{R1_AP_NAME_MAX}
+                          </span>
+                          <button type="button" title="Move the name's last word to the description"
+                                  onClick={() => shiftWord(a, true)} className="px-1 rounded border border-gray-300 bg-white hover:bg-gray-50">→</button>
+                          <button type="button" title="Move the description's first word to the name"
+                                  onClick={() => shiftWord(a, false)} className="px-1 rounded border border-gray-300 bg-white hover:bg-gray-50">←</button>
+                          <input className="border border-gray-300 rounded px-1.5 py-0.5 flex-1 min-w-[12rem]"
+                                 value={desc} maxLength={180} placeholder="Description (optional)" aria-label="R1 AP description"
+                                 onChange={e => setDesc(a.serial!, e.target.value)} />
+                        </div>
+                        {problem && <div className="text-red-700 mt-0.5">{problem}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {(preview.counts.aps_name_clash ?? 0) > 0 && (() => {
               const dup = aps.filter(a => a.name_clash && a.serial);
-              const nameOf = (a: PreviewAp) => renames[a.serial!] ?? `${a.name}_${a.serial}`;
+              const nameOf = r1NameOf;
               // Names an edited box would still collide with: the other APs here
-              const taken = new Map<string, number>();
-              for (const a of aps) {
-                const n = (a.name_clash && namePolicy === 'serial' ? nameOf(a) : a.name || '').trim().toLowerCase();
-                if (n) taken.set(n, (taken.get(n) ?? 0) + 1);
-              }
+              const taken = nameCounts;
               return (
                 <div className="text-xs bg-amber-50 border border-amber-300 rounded px-3 py-2 mb-2 space-y-2">
                   <div className="flex gap-1.5 text-amber-900">
@@ -458,14 +544,15 @@ export default function StepApMapping({ state, dispatch }: Props) {
                     <div className="pl-10 space-y-1 max-h-48 overflow-y-auto">
                       {dup.map(a => {
                         const v = nameOf(a);
-                        const bad = !v.trim() ? 'empty' : (taken.get(v.trim().toLowerCase()) ?? 0) > 1 ? 'still a duplicate' : '';
+                        const bad = !v.trim() ? 'empty' : (taken.get(v.trim().toLowerCase()) ?? 0) > 1 ? 'still a duplicate'
+                          : apNameProblem(v);
                         return (
                           <div key={a.serial} className="flex items-center gap-2">
                             <span className="w-40 truncate text-gray-700" title={a.serial ?? ''}>{a.name} <span className="text-gray-400 font-mono">{a.serial}</span></span>
                             <span className="text-gray-400">→</span>
                             <input className={`border rounded px-1.5 py-0.5 font-mono w-64 ${bad ? 'border-red-400' : 'border-gray-300'}`}
                                    value={v} maxLength={64}
-                                   onChange={e => setRenames(r => ({ ...r, [a.serial!]: e.target.value }))} />
+                                   onChange={e => setName(a.serial!, e.target.value)} />
                             {bad && <span className="text-red-700">{bad}</span>}
                           </div>
                         );
@@ -558,6 +645,9 @@ export default function StepApMapping({ state, dispatch }: Props) {
                           </div>
                           {r1NameOf(a) && r1NameOf(a) !== a.name && (
                             <div className="text-[11px] text-amber-700">→ in R1: <span className="font-mono">{r1NameOf(a)}</span></div>
+                          )}
+                          {!a.in_r1 && r1DescOf(a) && (
+                            <div className="text-[11px] text-gray-500 truncate" title={r1DescOf(a)}>description: {r1DescOf(a)}</div>
                           )}
                           <div className="font-mono text-gray-400">{a.serial ?? a.mac}{a.model ? ` · ${a.model}` : ''}</div>
                         </td>
@@ -777,6 +867,7 @@ export default function StepApMapping({ state, dispatch }: Props) {
           onClick={startPlan}
           disabled={!preview || planning || !!running || toMove + toAdd === 0 || badRename || overridesDirty}
           title={overridesDirty ? 'Validate manual choices first'
+            : badName ? `An AP name is over ${R1_AP_NAME_MAX} characters or has characters R1 refuses`
             : badRename ? 'A rename box is empty or still a duplicate' : undefined}
           className="px-5 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 font-semibold text-sm flex items-center gap-2"
         >

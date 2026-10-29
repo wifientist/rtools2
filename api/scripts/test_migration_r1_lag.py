@@ -13,7 +13,8 @@ WHAT THIS GUARDS
   1. is_transient: each of those real messages is transient; a real refusal
      (duplicate name, WIFI-20300) is not; a unit named "5030" is not a 503.
   2. Create: no id from the create -> found by name once R1 has it.
-  3. Create: task timed out but landed -> found, not re-created.
+  3. Create: task still running after the wait but landed -> found, not re-created;
+     still running and not landed -> skipped, never re-sent.
   4. Create: 503 and not landed -> retried, created on the 2nd try.
   5. Create: a real refusal fails at once, no retry.
   6. Create: the retry is refused "already exists" because the first create
@@ -23,6 +24,10 @@ WHAT THIS GUARDS
   8. Activate (groups): "Object not found" the first time -> retried once, active.
   9. Activate (groups): a non-transient error -> no retry, fails.
  10. Activate (All AP Groups): 503 the first time -> retried, active.
+ 10b. A task still running after the ~5 min wait (groups or All AP Groups),
+     or one R1 said SUCCESS for -> never re-sent.
+ 11. The activity wait itself: "invalid id" waited out, minutes IN_PROGRESS
+     waited out, ~5 min cap, ~2 min for a never-registered activity, FAIL at once.
 
 Usage:
     docker compose exec backend python scripts/test_migration_r1_lag.py
@@ -35,7 +40,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.ap_group_ops import is_transient
+import r1api.client as client_mod
+from services.ap_group_ops import is_transient, still_running
 from workflow.phases.phase_executor import PhaseContext
 import workflow.phases.sz_migration.activate_ssids as activate_mod
 import workflow.phases.sz_migration.create_networks as create_mod
@@ -148,6 +154,10 @@ class FakeVenues:
         elif step == "late":
             self.world["late"] = (kw["ap_group_id"], self.world["reads"] + self.world["late_reads"])
             raise TimeoutError("Task a did not complete after 40 attempts (97 seconds)")
+        elif step == "pending":
+            raise TimeoutError("Task a did not complete after 300s (R1 still reports it IN_PROGRESS)")
+        elif step == "hidden":
+            pass                         # R1 said SUCCESS; the read-back never shows it
         elif step == "notfound":
             raise RuntimeError("Task a failed: Object not found")
         else:
@@ -158,6 +168,8 @@ class FakeVenues:
         step = self.script.pop(0)
         if step == "503":
             raise RuntimeError("503 Server Error: Service Unavailable for url: https://api.ruckus.cloud/x")
+        if step == "pending":
+            raise TimeoutError("Task v did not complete after 300s (R1 still reports it INPROGRESS)")
         self.world["venue_wide"] = True
         return {}
 
@@ -193,6 +205,76 @@ async def run_activate(script, mode="ap_groups", late_reads=0):
         return venues.calls, str(e)
 
 
+async def wait_on(script, **kw):
+    """Run await_task_completion against /activities answers in script (one per poll; the
+    last repeats), on a fake clock. -> (result | exception, polls, notices)."""
+    from r1api.client import R1Client
+    loop = asyncio.get_running_loop()
+    clock = {"t": 0.0}
+    real_time, real_client_sleep = loop.time, client_mod.asyncio.sleep
+    polls, notices = [], []
+
+    def get(path, override_tenant_id=None):
+        step = script[min(len(polls), len(script) - 1)]
+        polls.append(clock["t"])
+        if step == "invalid":
+            return SimpleNamespace(ok=False, status_code=400, json=lambda: {"errors": ["Invalid activity id"]})
+        return SimpleNamespace(ok=True, status_code=200, json=lambda: {"status": step, "error": "Bad radio"})
+
+    async def tick(d):
+        clock["t"] += d
+        await _real_sleep(0)
+
+    async def listener(rid, status, elapsed):
+        notices.append((status, round(elapsed)))
+
+    c = R1Client.__new__(R1Client)
+    c.get = get
+    loop.time = lambda: clock["t"]
+    client_mod.asyncio.sleep = tick
+    token = client_mod.activity_wait_listener.set(listener)
+    try:
+        try:
+            out = await c.await_task_completion("r1", **kw)
+        except Exception as e:
+            out = e
+    finally:
+        client_mod.activity_wait_listener.reset(token)
+        loop.time, client_mod.asyncio.sleep = real_time, real_client_sleep
+    return out, polls, notices
+
+
+async def test_activity_wait():
+    f = 0
+    # "invalid id" for the first seconds, IN_PROGRESS for ~4 min, then SUCCESS
+    script = ["invalid"] * 4 + ["IN_PROGRESS"] * 45 + ["SUCCESS"]
+    out, polls, notices = await wait_on(script)
+    f += check("invalid id at first, then minutes IN_PROGRESS -> waited out, SUCCESS returned",
+               isinstance(out, dict) and out.get("status") == "SUCCESS" and polls[-1] > 97,
+               f"{out!r} after {polls[-1] if polls else 0:.0f}s")
+    f += check("long wait reported to the listener about once a minute",
+               len(notices) >= 2 and notices[0][0] == "IN_PROGRESS", str(notices))
+    out, polls, _ = await wait_on(["IN_PROGRESS"])
+    f += check("never finishes -> ActivityPending (a TimeoutError) after ~5 min, not before",
+               isinstance(out, client_mod.ActivityPending) and isinstance(out, TimeoutError)
+               and 300 <= polls[-1] < 320 and is_transient(out) and still_running(out),
+               f"{out!r} after {polls[-1]:.0f}s")
+    out, polls, _ = await wait_on(["invalid"])
+    f += check("never registered -> stops after ~2 min",
+               isinstance(out, client_mod.ActivityPending) and 120 <= polls[-1] < 135 and "never showed" in str(out),
+               f"{out!r} after {polls[-1]:.0f}s")
+    out, _, _ = await wait_on(["invalid"], assume_success_on_timeout=True)
+    f += check("never registered + assume_success_on_timeout -> ASSUMED_SUCCESS",
+               isinstance(out, dict) and out.get("status") == "ASSUMED_SUCCESS", repr(out))
+    out, polls, _ = await wait_on(["IN_PROGRESS", "FAIL"])
+    f += check("FAIL -> raises with R1's error at once, not a pending",
+               not isinstance(out, TimeoutError) and "Bad radio" in str(out) and len(polls) == 2, repr(out))
+    out, polls, _ = await wait_on(["IN_PROGRESS"], max_attempts=3)
+    f += check("max_attempts given -> that many polls", isinstance(out, TimeoutError) and len(polls) == 3,
+               str(len(polls)))
+    return f
+
+
 async def main():
     f = 0
     print("\n1. is_transient (messages from the real jobs)")
@@ -220,12 +302,12 @@ async def main():
                nid is None and n == 3 and "tried 3 times" in (err or ""), str((nid, n, err)))
     nid, n, err = await run_create(["refuse"])
     f += check("a real refusal fails at once", nid is None and n == 1 and "WIFI-20300" in (err or ""), str(err))
-    nets_script = ["timeout", "exists"]
-    nid, n, err = await run_create(nets_script, visible_after=10 ** 6)
-    f += check("(a timeout that never lands, then a real refusal: fails)", nid is None and n == 2, str((nid, n, err)))
+    nid, n, err = await run_create(["timeout"], visible_after=10 ** 6)
+    f += check("still running after the wait, never seen -> skipped, NOT re-sent",
+               nid is None and n == 1 and "not re-sent" in (err or ""), str((nid, n, err)))
 
-    # 6: first create times out, lands invisibly-late; the retry is refused "already exists"
-    nets = FakeNets(["timeout", "exists"])
+    # 6: first create refused 503 but lands invisibly-late; the retry is refused "already exists"
+    nets = FakeNets(["503", "exists"])
     orig_create = nets.create_wifi_network
 
     async def create_then_land(**kw):
@@ -267,6 +349,18 @@ async def main():
                calls == 1 and "Invalid radio type" in (err or ""), str((calls, err)))
     calls, err = await run_activate(["503", "ok"], mode="all_ap_groups")
     f += check("All AP Groups: 503 -> retried, active", err is None and calls == 2, str((calls, err)))
+    calls, err = await run_activate(["pending"])
+    f += check("still running after the wait, never lands -> skipped, NOT re-sent",
+               calls == 1 and "not re-sent" in (err or ""), str((calls, err)))
+    calls, err = await run_activate(["hidden"])
+    f += check("R1 said SUCCESS but the read-back never shows it -> fails, NOT re-sent",
+               calls == 1 and err is not None, str((calls, err)))
+    calls, err = await run_activate(["pending"], mode="all_ap_groups")
+    f += check("All AP Groups: still running after the wait -> skipped, NOT re-sent",
+               calls == 1 and "not re-sent" in (err or ""), str((calls, err)))
+
+    print("\n11. The activity wait (r1api.client.await_task_completion)")
+    f += await test_activity_wait()
 
     print(f"\n{'All checks passed' if not f else f'{f} check(s) failed'}")
     return f

@@ -74,6 +74,7 @@ class _Stage(PhaseExecutor):
                                selected=self.context.options.get("selected_serials"),
                                name_policy=self.context.options.get("ap_name_policy") or "serial",
                                renames=self.context.options.get("ap_renames") or {},
+                               descriptions=self.context.options.get("ap_descriptions") or {},
                                place_by_name=bool(self.context.options.get("place_by_name")),
                                overrides=self.context.options.get("ap_group_overrides") or {})
         return snapshot, inv, plan
@@ -244,9 +245,15 @@ class MapApsPhase(_Stage):
         await self.emit(f"Mapping {len(todo)} AP(s): "
                         f"{sum(1 for a in todo if a['action'] == 'move')} to move, "
                         f"{sum(1 for a in todo if a['action'] == 'add')} to add...")
+        # A name R1 would refuse (typed over 32 characters, say) isn't sent: it
+        # would only come back "Invalid attribute value".
+        refused = [{"serial": a["serial"], "ap_name": a.get("r1_name") or a["name"], "to_group_name": a["group_name"],
+                    "op": a["action"], "status": "failed", "error": f"Name not sent — {a['name_error']}"}
+                   for a in todo if a["action"] == "add" and a.get("name_error")]
         rows = [{"serial": a["serial"], "ap_name": a.get("r1_name") or a["name"], "to_group_id": a["group_id"],
-                 "to_group_name": a["group_name"], "from_group": a["current_group"], "op": a["action"]}
-                for a in todo]
+                 "to_group_name": a["group_name"], "from_group": a["current_group"], "op": a["action"],
+                 "description": a.get("r1_description")}
+                for a in todo if not (a["action"] == "add" and a.get("name_error"))]
         # Hundreds of adds keep landing in R1 long after their tasks are queued:
         # wait in proportion to the batch, then keep re-reading until every AP
         # shows in its group (or the deadline), so verify sees the result.
@@ -254,6 +261,7 @@ class MapApsPhase(_Stage):
         await ap_group_ops.place_aps(self.r1_client, self.tenant_id, self.venue_id, rows, self.read_aps,
                                      log_label="[SZ AP Mapping]", wait_seconds=budget,
                                      confirm_seconds=budget, progress=self.emit)
+        rows += refused
         counts: Dict[str, int] = {}
         for r in rows:
             counts[r["status"]] = counts.get(r["status"], 0) + 1

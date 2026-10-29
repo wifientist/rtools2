@@ -133,19 +133,14 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
   const tickShown = (on: boolean) =>
     onChange(withStaged(withCreate(choices, newVisible, on), stagedVisible, on));
 
-  // The approach. Both build every group SZ's broadcast needs; per-unit adds
-  // a group for every unit WLAN SZ doesn't broadcast.
+  // The approach (the default): every group SZ's broadcast needs, and every
+  // WLAN no AP broadcasts created + staged. Anything else is the operator's
+  // override, read back from the ticks as custom.
   const szToCreate = layout.groups.filter(g => !g.exists).map(g => g.key);
   const szReady = layout.groups.every(g => g.exists || g.create);
-  const setApproach = (kind: 'mirror' | 'per_unit') => {
-    const c = withCreate(choices, szToCreate, true);
-    onChange(kind === 'per_unit' ? withStaged(c, stagedGroups, true) : withStaged(c, stagedChosen, false));
-  };
-  // Read back from the ticks; anything in between is custom.
-  const approach: 'mirror' | 'per_unit' | 'custom' =
-    !szReady ? 'custom'
-      : stagedChosen.length === 0 ? 'mirror'
-      : stagedChosen.length === stagedGroups.length ? 'per_unit' : 'custom';
+  const setAsIs = () => onChange(withMode(withCreate(choices, szToCreate, true), layout.unbroadcast.map(u => u.id), 'stage'));
+  const approach: 'mirror' | 'custom' =
+    szReady && layout.unbroadcast.every(u => u.mode === 'stage') ? 'mirror' : 'custom';
   const szTicked = layout.groups.filter(g => g.exists || g.create).length;
 
   return (
@@ -187,39 +182,25 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
             </span>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <button type="button" disabled={disabled} onClick={() => setApproach('mirror')}
-                  className={`text-left rounded border p-3 ${approach === 'mirror'
-                    ? 'border-indigo-500 ring-1 ring-indigo-300 bg-indigo-50/50' : 'border-gray-200 hover:border-gray-300'}`}>
-            <div className="text-sm font-semibold text-gray-800">
-              <input type="radio" readOnly checked={approach === 'mirror'} className="mr-1.5 align-middle" />
-              Mirror SZ as it is
-            </div>
-            <div className="text-xs text-gray-600 mt-1">
-              R1 AP Groups only where SZ actually broadcasts different WLANs ({s.groups} here). Every AP ends up
-              broadcasting exactly what it broadcasts in SZ today. WLANs no AP broadcasts get no group — create or skip
-              them in section 3.
-            </div>
-          </button>
-          <button type="button" disabled={disabled || stagedGroups.length === 0}
-                  onClick={() => setApproach('per_unit')}
-                  className={`text-left rounded border p-3 disabled:opacity-50 ${approach === 'per_unit'
-                    ? 'border-indigo-500 ring-1 ring-indigo-300 bg-indigo-50/50' : 'border-gray-200 hover:border-gray-300'}`}>
-            <div className="text-sm font-semibold text-gray-800">
-              <input type="radio" readOnly checked={approach === 'per_unit'} className="mr-1.5 align-middle" />
-              Per-unit setup, regardless of SZ
-            </div>
-            <div className="text-xs text-gray-600 mt-1">
-              {stagedGroups.length === 0
-                ? 'No unit WLAN pairs with an AP by name — nothing to build per unit (check the pairing rule in section 3).'
-                : <>Everything above, plus a per-unit AP Group for each of the {stagedGroups.length} unit WLAN(s) SZ
-                    doesn't broadcast, with its AP(s) paired by name. Those WLANs are created but <b>not activated</b>,
-                    so every AP still broadcasts what it does in SZ — each unit is ready to switch on later.</>}
-            </div>
-          </button>
-        </div>
+        <button type="button" disabled={disabled} onClick={setAsIs}
+                className={`w-full text-left rounded border p-3 ${approach === 'mirror'
+                  ? 'border-indigo-500 ring-1 ring-indigo-300 bg-indigo-50/50' : 'border-gray-200 hover:border-gray-300'}`}>
+          <div className="text-sm font-semibold text-gray-800">
+            <input type="radio" readOnly checked={approach === 'mirror'} className="mr-1.5 align-middle" />
+            SZ as-is (default)
+          </div>
+          <div className="text-xs text-gray-600 mt-1">
+            R1 AP Groups where SZ actually broadcasts different WLANs ({s.groups} here), so every AP broadcasts exactly
+            what it broadcasts in SZ today.
+            {layout.unbroadcast.length > 0 && <> The {layout.unbroadcast.length} WLAN(s) no AP broadcasts are created
+              and staged{stagedGroups.length > 0 && <> in {stagedGroups.length} per-unit AP Group(s)</>}, not
+              activated — each unit ready to switch on later.</>}
+            {approach === 'custom' && <> <span className="text-indigo-700 font-medium">Click to go back to this.</span></>}
+          </div>
+        </button>
         <div className="text-[11px] text-gray-500 mt-2">
-          Fine-tune per group in section 2 or per WLAN in section 3; changing individual ticks shows this as Custom.
+          Override only where needed: per group in section 2, or skip / create-only per WLAN in section 3. Any change
+          shows this as Custom.
         </div>
       </section>
 
@@ -410,7 +391,7 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
         <section>
           <h4 className="text-sm font-semibold text-gray-800">3. WLANs no AP broadcasts ({layout.unbroadcast.length})</h4>
           <p className="text-xs text-gray-500 mb-2">
-            Your call, per WLAN. <b>Skip</b>: not migrated. <b>Create</b>: the WLAN is created in R1, nothing else.{' '}
+            Create + stage by default; change it per WLAN as needed. <b>Skip</b>: not migrated. <b>Create</b>: the WLAN is created in R1, nothing else.{' '}
             <b>Create + stage</b>: the WLAN is created, its AP Group built and filled with the AP(s) it pairs with, and
             nothing is activated — turning it on later is just activating the WLAN on that group. Only APs that broadcast
             just the All AP Groups WLANs can be staged, so staging never changes what an AP broadcasts.

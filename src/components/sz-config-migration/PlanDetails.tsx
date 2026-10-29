@@ -65,11 +65,16 @@ function ActionList({ title, tone, sign, items }: {
     <div className={`border rounded-lg p-3 ${c.box}`}>
       <h4 className={`text-xs font-semibold mb-1 ${c.h}`}>{title}</h4>
       <ul className="space-y-1 max-h-40 overflow-y-auto">
-        {items.map((a, i) => (
-          <li key={i} className={`text-xs ${c.li}`}>
-            {sign} {a.resource_name || a.name} <span className={c.sub}>({a.resource_type})</span>
-          </li>
-        ))}
+        {items.map((a, i) => {
+          // The backend sends a list; why it's created / reused under this name.
+          const notes = (Array.isArray(a.notes) ? a.notes : a.notes ? [a.notes] : []).join('; ');
+          return (
+            <li key={i} className={`text-xs ${c.li}`}>
+              {sign} {a.resource_name || a.name} <span className={c.sub}>({a.resource_type})</span>
+              {notes && <div className={`pl-3 text-[11px] ${c.sub}`}>{notes}</div>}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

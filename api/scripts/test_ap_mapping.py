@@ -223,7 +223,8 @@ def test_place_aps():
     print("\n4. Shared AP placement (APG Cleanup + AP Mapping)")
     f = 0
     r1 = FakeR1(refuse={"S3"}, slow={"S4"})
-    rows = [{"serial": "S1", "ap_name": "AP-1", "to_group_id": "gA", "to_group_name": "A", "op": "add"},
+    rows = [{"serial": "S1", "ap_name": "AP-1", "to_group_id": "gA", "to_group_name": "A", "op": "add",
+             "description": "near library"},
             {"serial": "S2", "ap_name": "AP-2", "to_group_id": "gB", "to_group_name": "B", "op": "move"},
             {"serial": "S3", "ap_name": "AP-3", "to_group_id": "gB", "to_group_name": "B", "op": "move"},
             {"serial": "S4", "ap_name": "AP-4", "to_group_id": "gB", "to_group_name": "B", "op": "move"}]
@@ -235,8 +236,9 @@ def test_place_aps():
     st = {r["serial"]: r["status"] for r in rows}
     f += check("add -> added, move -> moved, refused -> failed, not visible -> unconfirmed",
                st == {"S1": "added", "S2": "moved", "S3": "failed", "S4": "unconfirmed"}, str(st))
-    f += check("add is POST into the group with name + serial",
-               ("POST", "/venues/v/apGroups/gA/aps", {"name": "AP-1", "serialNumber": "S1"}) in r1.requests,
+    f += check("add is POST into the group with name + serial (+ description)",
+               ("POST", "/venues/v/apGroups/gA/aps", {"name": "AP-1", "serialNumber": "S1",
+                                                       "description": "near library"}) in r1.requests,
                str(r1.requests))
     f += check("move is PUT .../apGroups/{g}/aps/{serial}",
                ("PUT", "/venues/v/apGroups/gB/aps/S2", None) in r1.requests, str(r1.requests))
@@ -272,6 +274,45 @@ def test_name_clash_retry():
     f += check("refused 'Hallway' -> retried once as 'Hallway_962379002827', added",
                names == ["Hallway", "Hallway_962379002827"] and rows[0]["status"] == "added"
                and rows[0]["renamed_from"] == "Hallway", str((names, rows[0])))
+    return f
+
+
+def test_pending_tasks():
+    print("\n4c. A task still running when the wait ends is not a failure")
+    f = 0
+
+    class SlowR1(FakeR1):
+        """Tasks never finish in the wait (R1 still IN_PROGRESS); S1 shows up in its group on the 2nd read."""
+        reads = 0
+
+        async def await_task_completion_bulk(self, ids, **kw):
+            return {i: {"success": False, "pending": True,
+                        "error": f"Task {i} did not complete after 300s (R1 still reports it IN_PROGRESS)"}
+                    for i in ids}
+
+    r1 = SlowR1(slow={"S1", "S2"})
+    rows = [{"serial": "S1", "ap_name": "AP-1", "to_group_id": "gA", "to_group_name": "A", "op": "add",
+             "description": "near library"},
+            {"serial": "S2", "ap_name": "AP-2", "to_group_id": "gA", "to_group_name": "A", "op": "add"}]
+
+    async def read_aps():
+        r1.reads += 1
+        if r1.reads >= 2:
+            r1.where["S1"] = "gA"
+        return [{"serialNumber": s, "apGroupId": g} for s, g in r1.where.items()]
+
+    real_sleep = asyncio.sleep
+
+    async def no_sleep(*_a, **_k):
+        await real_sleep(0)
+    ap_group_ops.asyncio.sleep, saved = no_sleep, ap_group_ops.asyncio.sleep
+    try:
+        asyncio.run(ap_group_ops.place_aps(r1, "t", "v", rows, read_aps, confirm_seconds=1))
+    finally:
+        ap_group_ops.asyncio.sleep = saved
+    st = {r["serial"]: r["status"] for r in rows}
+    f += check("pending, then seen in its group -> added; pending, never seen -> unconfirmed (not failed)",
+               st == {"S1": "added", "S2": "unconfirmed"}, str(st))
     return f
 
 
@@ -416,6 +457,45 @@ def test_selection():
                typed["S6"]["r1_name"] == "Hallway East" and typed["S3"]["r1_name"] == "Hallway_S3")
     kept = {x["serial"]: x for x in plan_ap_mapping(snap, built, CHOICES, name_policy="keep")["aps"]}
     f += check("'keep' leaves the names (flagged)", kept["S3"]["r1_name"] == "Hallway" and kept["S3"]["name_clash"])
+
+    # R1 AP names take 32 characters (prod: 13 adds "Invalid attribute value")
+    from services.sz_migration.ap_mapping import split_ap_name, cut_ap_name, r1_ap_name_problem
+    f += check("split at the delimiter: 'Building A - in Regency room behind Concierge desk'",
+               split_ap_name("Building A - in Regency room behind Concierge desk")
+               == ("Building A", "in Regency room behind Concierge desk"))
+    head, rest = cut_ap_name("Building A - near entrance to auxiliary gym & ladies room")
+    f += check("cut on a word when no split fits", head == "Building A - near entrance to" and rest == "auxiliary gym & ladies room"
+               and not r1_ap_name_problem(head), str((head, rest)))
+    head, _ = cut_ap_name("X" * 45)
+    f += check("no space at all: hard cut at 32", len(head) == 32, str(len(head)))
+    f += check("name rules: >32, edge space, backtick refused; 32 plain accepted",
+               r1_ap_name_problem("x" * 33) and r1_ap_name_problem(" ab") and r1_ap_name_problem("a`b")
+               and not r1_ap_name_problem("x" * 32))
+    snap = snapshot()
+    snap.aps[3]["deviceName"] = "Building A - in Regency room behind Concierge desk"
+    snap.aps[4]["deviceName"] = "Building B - near Mayfair card room"
+    snap.aps[6]["deviceName"] = "Long name without any delimiter at all here"
+    snap.aps[4]["description"] = "N/A"
+    snap.aps[6]["description"] = "2nd floor"
+    lng = {x["serial"]: x for x in plan_ap_mapping(snap, built, CHOICES)["aps"]}
+    f += check("unique split: name before the delimiter, the rest as description",
+               (lng["S3"]["r1_name"], lng["S3"]["r1_description"], lng["S3"]["name_fix"])
+               == ("Building A", "in Regency room behind Concierge desk", "split")
+               and lng["S4"]["r1_description"] == "near Mayfair card room", str((lng["S3"], lng["S4"]["r1_description"])))
+    f += check("no delimiter: cut on a word, flagged 'cut', SZ's own description kept after the rest",
+               lng["S6"]["name_fix"] == "cut" and len(lng["S6"]["r1_name"]) <= 32
+               and lng["S6"]["r1_description"].endswith("| 2nd floor"), str(lng["S6"]))
+    snap.aps[4]["deviceName"] = "Building A - near entrance to auxiliary gym & ladies room"
+    same = {x["serial"]: x for x in plan_ap_mapping(snap, built, CHOICES)["aps"]}
+    f += check("two splits would both be 'Building A': each cut on a word instead, names differ",
+               same["S3"]["name_fix"] == same["S4"]["name_fix"] == "cut"
+               and same["S3"]["r1_name"] != same["S4"]["r1_name"]
+               and not same["S3"]["name_clash"], str((same["S3"]["r1_name"], same["S4"]["r1_name"])))
+    typed = {x["serial"]: x for x in plan_ap_mapping(snap, built, CHOICES, renames={"S1": "x" * 40},
+                                                      descriptions={"S3": "Regency room"})["aps"]}
+    f += check("a typed name over 32 on an add -> name_error; a typed description wins",
+               typed["S1"]["name_error"] and typed["S1"]["name_fix"] == "typed"
+               and typed["S3"]["r1_description"] == "Regency room", str((typed["S1"], typed["S3"]["r1_description"])))
     staged = {x["name"]: x for x in plan_ap_mapping(snapshot(), inventory(), {**CHOICES, "stage_unbroadcast": ["w7"]})["aps"]}
     f += check("a staged AP broadcasts only the All AP Groups set (its group carries nothing active)",
                staged["AP-7"]["staged"] and staged["AP-7"]["broadcast"] == ["Guest", "Secure6"], str(staged["AP-7"]))
@@ -543,6 +623,6 @@ def test_place_by_name():
 if __name__ == "__main__":
     failures = sum(t() for t in (test_layout_radios, test_plan, test_place_aps, test_map_phase,
                                  test_graph, test_staging, test_selection, test_name_clash_retry,
-                                 test_place_by_name))
+                                 test_place_by_name, test_pending_tasks))
     print(f"\n{'All checks passed' if not failures else f'{failures} check(s) failed'}")
     sys.exit(1 if failures else 0)
