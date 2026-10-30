@@ -76,6 +76,91 @@ class ActivityPending(TimeoutError):
         super().__init__(f"Task {request_id} did not complete after {elapsed:.0f}s ({seen})")
 
 
+# Every await_task_completion on a client shares one poller per tenant: one
+# POST /activities/query per cycle (the ActivityTracker's time-window match on
+# requestId), run in a worker thread. Each wait used to GET /activities/{id}
+# on its own, synchronously on the event loop -- a few hundred waits at once
+# kept the loop busy enough to starve SSE and every other job in the process.
+ACTIVITY_POLL_SECONDS = 3.0
+ACTIVITY_QUERY_PAGE_SIZE = 500
+ACTIVITY_QUERY_MAX_PAGES = 20
+# A task the bulk query hasn't shown for this long is also read on its own,
+# in case the query misses it (e.g. a clock skew outside the time window).
+ACTIVITY_BULK_MISS_SECONDS = 20
+ACTIVITY_SINGLE_READS_PER_CYCLE = 20
+_ACTIVITY_DONE = ("SUCCESS", "FAIL")
+
+
+class _ActivityWatch:
+    """Polls every activity one client is waiting on in one tenant, in bulk."""
+
+    def __init__(self, client, tenant_id, loop):
+        self.client, self.tenant_id, self.loop = client, tenant_id, loop
+        self.waiting: dict = {}      # request_id -> loop time it was first asked about
+        self.latest: dict = {}       # request_id -> last activity record read
+        self.cycle = asyncio.Event()
+        self.task = None
+        self.from_time = None        # ISO, the query's fromTime
+
+    async def next_read(self, request_id: str):
+        """The activity's record after the next poll cycle (None = not seen yet)."""
+        if request_id not in self.waiting:
+            self.waiting[request_id] = self.loop.time()
+            start = time.gmtime(time.time() - 60)    # buffer for clock skew
+            from_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", start)
+            self.from_time = min(self.from_time or from_time, from_time)
+        if not self.task or self.task.done():
+            self.task = self.loop.create_task(self._run())
+        cycle = self.cycle
+        await cycle.wait()
+        return self.latest.get(request_id)
+
+    def release(self, request_id: str):
+        self.waiting.pop(request_id, None)
+        self.latest.pop(request_id, None)
+        if not self.waiting:
+            self.from_time = None
+
+    async def _run(self):
+        await asyncio.sleep(1.0)     # let a burst of new waits join the first query
+        while self.waiting:
+            try:
+                await self._poll()
+            except Exception as e:
+                logger.warning(f"Activity poll failed: {e}")
+            cycle, self.cycle = self.cycle, asyncio.Event()
+            cycle.set()
+            await asyncio.sleep(ACTIVITY_POLL_SECONDS)
+
+    async def _poll(self):
+        ids = list(self.waiting)
+        bulk_ok = True
+        try:
+            found = await self.loop.run_in_executor(
+                None, self.client._query_activities_since, set(ids), self.from_time, self.tenant_id)
+        except Exception as e:
+            logger.debug(f"POST /activities/query failed ({e}); reading activities one by one")
+            found, bulk_ok = {}, False
+
+        # One by one: everything if the query failed, else what it has missed for a while.
+        now = self.loop.time()
+        missed = [rid for rid in ids if rid not in found and (
+            not bulk_ok or now - self.waiting[rid] >= ACTIVITY_BULK_MISS_SECONDS)]
+        # Finished ones too, once: the full record carries R1's error text.
+        done = [rid for rid in ids if str((found.get(rid) or {}).get("status")).upper() in _ACTIVITY_DONE]
+        single = done + missed[:ACTIVITY_SINGLE_READS_PER_CYCLE]
+        if single:
+            reads = await asyncio.gather(*(
+                self.loop.run_in_executor(None, self.client._read_activity, rid, self.tenant_id)
+                for rid in single), return_exceptions=True)
+            for rid, data in zip(single, reads):
+                if isinstance(data, dict):
+                    found[rid] = data
+        for rid in ids:
+            if rid in found and rid in self.waiting:
+                self.latest[rid] = found[rid]
+
+
 class R1Client:
     def __init__(self, tenant_id, client_id, shared_secret, ec_type=None, region=None):
         logger.debug(f"Initializing R1Client for tenant_id={tenant_id}, ec_type={ec_type}, region={region}")
@@ -460,31 +545,54 @@ class R1Client:
         # Last resort: return full data as string
         return 'Unknown error'
 
-    def _get_poll_delay(self, attempt: int, elapsed: float = 0.0) -> float:
+    def _query_activities_since(self, request_ids: set, from_time: str, tenant_id=None) -> dict:
         """
-        Get polling delay with gentle stepped backoff.
-
-        Fast initial checks (most activities complete quickly), then back off
-        to reduce API pressure under heavy load -- a big run has hundreds of
-        tasks waited on at once, some for minutes.
-
-        Schedule:
-          - Attempts 1-5:   1 second  (catch fast completions)
-          - Attempts 6-15:  2 seconds (normal ops)
-          - Then 3 seconds, 5 seconds past 90s, 10 seconds past 180s
-
-        Returns:
-            Sleep duration in seconds
+        {requestId: activity} for the given ones, from POST /activities/query
+        over [from_time, now + 1 min], newest first, paged until all are found.
+        Blocking -- run it in a thread. Raises if R1 refuses the query.
         """
-        if attempt <= 5:
-            return 1.0
-        elif attempt <= 15:
-            return 2.0
-        elif elapsed < 90:
-            return 3.0
-        elif elapsed < 180:
-            return 5.0
-        return 10.0
+        to_time = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 60))
+        found, seen = {}, 0
+        for page in range(1, ACTIVITY_QUERY_MAX_PAGES + 1):
+            response = self.post("/activities/query", payload={
+                "page": page, "pageSize": ACTIVITY_QUERY_PAGE_SIZE,
+                "sortField": "startDatetime", "sortOrder": "DESC",
+                "filters": {"fromTime": from_time, "toTime": to_time},
+            }, override_tenant_id=tenant_id)
+            if not response.ok:
+                raise RuntimeError(f"POST /activities/query: {response.status_code} {response.text[:200]}")
+            data = response.json()
+            rows = data.get("data") or []
+            seen += len(rows)
+            for row in rows:
+                if row.get("requestId") in request_ids:
+                    found[row["requestId"]] = row
+            total = data.get("totalCount")
+            if len(found) >= len(request_ids) or len(rows) < ACTIVITY_QUERY_PAGE_SIZE \
+                    or (isinstance(total, int) and seen >= total):
+                break
+        return found
+
+    def _read_activity(self, request_id: str, tenant_id=None):
+        """GET /activities/{id} -> the record, or None if R1 doesn't show it (yet). Blocking."""
+        response = self.get(f"/activities/{request_id}", override_tenant_id=tenant_id)
+        return response.json() if response.ok else None
+
+    async def _next_activity_read(self, request_id: str, tenant_id=None):
+        """The activity's record after the shared poller's next cycle (None = not seen yet)."""
+        loop = asyncio.get_running_loop()
+        watches = self.__dict__.setdefault("_activity_watches", {})
+        key = (tenant_id, id(loop))
+        watch = watches.get(key)
+        if watch is None or watch.loop is not loop:
+            watch = watches[key] = _ActivityWatch(self, tenant_id, loop)
+        return await watch.next_read(request_id)
+
+    def _done_with_activity(self, request_id: str, tenant_id=None):
+        watches = self.__dict__.get("_activity_watches") or {}
+        for (tenant, _), watch in list(watches.items()):
+            if tenant == tenant_id:
+                watch.release(request_id)
 
     async def await_task_completion(
         self,
@@ -532,48 +640,50 @@ class R1Client:
         next_notice = ACTIVITY_NOTICE_SECONDS
         attempt = 0
 
-        while True:
-            attempt += 1
-            response = self.get(f"/activities/{request_id}", override_tenant_id=override_tenant_id)
-            elapsed = loop.time() - start
+        try:
+            while True:
+                attempt += 1
+                # Read by the shared poller (one bulk query per cycle for every
+                # wait on this client), never a request of our own on the loop.
+                data = await self._next_activity_read(request_id, override_tenant_id)
+                elapsed = loop.time() - start
 
-            if response.ok:
-                activity_found = True
-                data = response.json()
-                status = data.get('status')
-                if attempt == 1 or attempt % 10 == 0:
-                    logger.debug(f"Poll {attempt} ({elapsed:.0f}s): {request_id} status={status}")
+                if data:
+                    activity_found = True
+                    status = data.get('status')
+                    if attempt == 1 or attempt % 10 == 0:
+                        logger.debug(f"Poll {attempt} ({elapsed:.0f}s): {request_id} status={status}")
 
-                if status == 'SUCCESS':
-                    logger.info(f"Task {request_id} completed successfully ({elapsed:.0f}s)")
-                    logger.debug(f"Success response for {request_id}: {data}")
-                    return data
+                    if status == 'SUCCESS':
+                        logger.info(f"Task {request_id} completed successfully ({elapsed:.0f}s)")
+                        logger.debug(f"Success response for {request_id}: {data}")
+                        return data
 
-                elif status == 'FAIL':
-                    # Extract detailed error message from RuckusONE response
-                    error_msg = self._extract_error_message(data)
-                    logger.error(f"Task {request_id} failed: {error_msg}")
-                    logger.debug(f"Full failure response for {request_id}: {data}")
-                    raise Exception(f"Task {request_id} failed: {error_msg}")
-            elif attempt % 10 == 0:
-                # Not registered yet (or a hiccup reading it) - keep waiting
-                logger.debug(f"Still waiting for {request_id} to appear ({elapsed:.0f}s)")
+                    elif status == 'FAIL':
+                        # Extract detailed error message from RuckusONE response
+                        error_msg = self._extract_error_message(data)
+                        logger.error(f"Task {request_id} failed: {error_msg}")
+                        logger.debug(f"Full failure response for {request_id}: {data}")
+                        raise Exception(f"Task {request_id} failed: {error_msg}")
+                elif attempt % 10 == 0:
+                    # Not registered yet (or a hiccup reading it) - keep waiting
+                    logger.debug(f"Still waiting for {request_id} to appear ({elapsed:.0f}s)")
 
-            if max_attempts is not None:
-                if attempt >= max_attempts:
+                if max_attempts is not None:
+                    if attempt >= max_attempts:
+                        break
+                elif elapsed >= (timeout_seconds if activity_found else min(timeout_seconds, ACTIVITY_UNSEEN_SECONDS)):
                     break
-            elif elapsed >= (timeout_seconds if activity_found else min(timeout_seconds, ACTIVITY_UNSEEN_SECONDS)):
-                break
 
-            listener = activity_wait_listener.get()
-            if listener and elapsed >= next_notice:
-                next_notice += ACTIVITY_NOTICE_SECONDS
-                try:
-                    await listener(request_id, status if activity_found else None, elapsed)
-                except Exception as e:
-                    logger.debug(f"activity_wait_listener failed: {e}")
-
-            await asyncio.sleep(self._get_poll_delay(attempt, elapsed))
+                listener = activity_wait_listener.get()
+                if listener and elapsed >= next_notice:
+                    next_notice += ACTIVITY_NOTICE_SECONDS
+                    try:
+                        await listener(request_id, status if activity_found else None, elapsed)
+                    except Exception as e:
+                        logger.debug(f"activity_wait_listener failed: {e}")
+        finally:
+            self._done_with_activity(request_id, override_tenant_id)
 
         elapsed = loop.time() - start
         if not activity_found and assume_success_on_timeout:

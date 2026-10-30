@@ -28,6 +28,11 @@ export default function Step2Extraction({ state, dispatch }: Props) {
   const [events, setEvents] = useState<string[]>([]);
   const [currentPhase, setCurrentPhase] = useState<string>('starting');
   const eventSourceRef = useRef<EventSource | null>(null);
+  const pollerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopPolling = () => {
+    if (pollerRef.current) clearInterval(pollerRef.current);
+    pollerRef.current = null;
+  };
   const eventsEndRef = useRef<HTMLDivElement>(null);
 
   // On mount: if we have a job ID but no summary (e.g. page reload), ask the
@@ -94,16 +99,20 @@ export default function Step2Extraction({ state, dispatch }: Props) {
       }
     };
 
+    // If the stream drops (server restart, proxy, its 10 min cap), keep
+    // following by polling until it finishes; a single poll left the page on
+    // its last update until the end.
     es.onerror = () => {
-      // Check if extraction might have completed via polling
-      if (state.extractionStatus === 'running') {
-        pollStatus();
-      }
       es.close();
+      if (!pollerRef.current) {
+        pollStatus();
+        pollerRef.current = setInterval(pollStatus, 3000);
+      }
     };
 
     return () => {
       es.close();
+      stopPolling();
       eventSourceRef.current = null;
     };
   }, [state.extractionJobId]);
@@ -121,6 +130,7 @@ export default function Step2Extraction({ state, dispatch }: Props) {
       );
       if (res.ok) {
         const data = await res.json();
+        if (data.status !== 'running') stopPolling();
         if (data.status === 'completed' && data.snapshot_summary) {
           const s = data.snapshot_summary;
           dispatch({
@@ -139,6 +149,19 @@ export default function Step2Extraction({ state, dispatch }: Props) {
         } else if (data.status === 'failed') {
           dispatch({ type: 'UPDATE_EXTRACTION', status: 'failed' });
           dispatch({ type: 'SET_ERROR', error: data.error || 'Extraction failed' });
+        } else if (data.status === 'running' && data.progress?.phase) {
+          const { phase, message } = data.progress;
+          setCurrentPhase(phase);
+          if (message) {
+            setEvents(prev => prev[prev.length - 1]?.endsWith(`] ${message}`)
+              ? prev
+              : [...prev.slice(-49), `[${new Date().toLocaleTimeString()}] ${message}`]);
+          }
+          dispatch({
+            type: 'UPDATE_EXTRACTION',
+            status: 'running',
+            progress: { phase, message: message || '', data: data.progress.data || {} },
+          });
         }
       }
     } catch {
