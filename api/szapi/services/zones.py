@@ -46,7 +46,7 @@ class ZoneService:
     async def get_zones(
         self,
         domain_id: str = None,
-        paginate: bool = False,
+        paginate: bool = True,
         list_size: int = 100
     ) -> List[Dict[str, Any]]:
         """
@@ -55,7 +55,8 @@ class ZoneService:
         Args:
             domain_id: Optional domain ID. If provided, returns zones within that domain.
                       If not provided, returns zones from current logon domain.
-            paginate: If True, fetch all zones across multiple pages. Default False for backwards compat.
+            paginate: If True (default), fetch all zones across pages. A single page
+                      (100) silently hid zones -- real domains hold 150-360.
             list_size: Number of zones per page (default 100, max 1000)
 
         Returns:
