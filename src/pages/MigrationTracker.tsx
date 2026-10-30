@@ -23,7 +23,7 @@ function matchesFilter(site: TrackerSite, filter: TableFilter, today: string): b
 
 /**
  * Tracker — one shared board for the last few site migrations, in place of
- * the spreadsheet that gets pasted back and forth. A two-week timeline up top,
+ * the spreadsheet that gets pasted back and forth. A two- or three-week timeline up top,
  * the full list below. Admins edit in place; everyone else reads.
  *
  * Human-driven only: the page loads once and on Refresh. No polling.

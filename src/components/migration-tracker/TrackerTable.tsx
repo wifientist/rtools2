@@ -1,9 +1,10 @@
 import { Fragment, useState } from "react";
-import { ChevronDown, ChevronRight, Trash2, X, Check } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Trash2, X, Check } from "lucide-react";
 import {
   STEPS, STEP_STYLES, TONE_CLASSES, defaultNewDate, fmtShort, isOverdue, isReconfigOverdue,
   nextWorkday, parseISO, previewMissConfig, siteStatus, toISO, type EditableField, type TrackerSite,
 } from "./trackerModel";
+import DateInput from "./DateInput";
 
 export interface FailBody {
   failed_on: string | null;
@@ -120,19 +121,20 @@ export default function TrackerTable({
                   <Cell site={site} field="sz_ap_count" kind="number" canEdit={canEdit} save={save} className="w-20 text-right" />
                   <Cell site={site} field="sz_wlan_count" kind="number" canEdit={canEdit} save={save} className="w-20 text-right" />
                   <Cell site={site} field="category" canEdit={canEdit} save={save} className="min-w-[100px]" list="tracker-categories" />
-                  {STEPS.map((s) => {
+                  {STEPS.map((s, si) => {
                     const done = site[s.doneKey];
+                    // → copies this step forward: the next step lands one workday later.
+                    const nextStep = STEPS[si + 1];
+                    const fillTo = nextStep && site[s.key] ? toISO(nextWorkday(parseISO(site[s.key]!))) : null;
                     const overdue = isOverdue(site, s, today);
                     return (
                       <td key={s.key} className="px-2 py-1.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           {canEdit ? (
-                            <input
-                              type="date"
-                              key={site[s.key] ?? ""}
-                              defaultValue={site[s.key] ?? ""}
-                              onChange={(e) => save(site, s.key, e.target.value || null)}
-                              className={`border rounded px-1 py-0.5 text-sm ${overdue ? "border-red-400" : "border-gray-300"}`}
+                            <DateInput
+                              value={site[s.key]}
+                              onChange={(v) => save(site, s.key, v)}
+                              className={overdue ? "border-red-400" : "border-gray-300"}
                             />
                           ) : (
                             <span className={overdue ? "text-red-700 font-medium" : ""}>{fmtShort(site[s.key])}</span>
@@ -174,6 +176,16 @@ export default function TrackerTable({
                               title="Failed validations — open history"
                             >
                               {fails}✕
+                            </button>
+                          )}
+                          {canEdit && nextStep && (
+                            <button
+                              disabled={!fillTo || fillTo === site[nextStep.key]}
+                              onClick={() => fillTo && save(site, nextStep.key, fillTo)}
+                              title={fillTo ? `Set ${nextStep.label.toLowerCase()} to ${fmtShort(fillTo)} (next workday)` : `Set a date first`}
+                              className="ml-1 px-1 rounded text-gray-400 hover:text-gray-800 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                            >
+                              <ArrowRight size={14} />
                             </button>
                           )}
                         </div>
@@ -335,12 +347,10 @@ function History({
                   <span className="flex items-center gap-1.5 text-gray-600">
                     → re-config + re-validate
                     {canEdit ? (
-                      <input
-                        type="date"
-                        key={e.reconfig_on ?? ""}
-                        defaultValue={e.reconfig_on ?? ""}
-                        onChange={(ev) => void onUpdateEvent(site.id, i, { reconfig_on: ev.target.value || null })}
-                        className={`border rounded px-1 py-0.5 text-sm ${isReconfigOverdue(e, today) ? "border-red-400" : "border-gray-300"}`}
+                      <DateInput
+                        value={e.reconfig_on ?? null}
+                        onChange={(v) => void onUpdateEvent(site.id, i, { reconfig_on: v })}
+                        className={isReconfigOverdue(e, today) ? "border-red-400" : "border-gray-300"}
                       />
                     ) : (
                       <span className={isReconfigOverdue(e, today) ? "text-red-700 font-medium" : ""}>{fmtShort(e.reconfig_on ?? null)}</span>
@@ -443,7 +453,7 @@ function RecordForm({
 
   const moved = (label: string, from: string | null, to: string | null) =>
     from ? (from !== to ? `${label} ${fmtShort(from)} → ${fmtShort(to)}` : `${label} stays ${fmtShort(from)}`) : null;
-  const dateInput = "block border border-gray-300 rounded px-1 py-0.5 text-sm";
+  const dateInput = "border-gray-300";
   const MODES = [
     { key: "config", label: "Missed config" },
     { key: "failed", label: "Failed validation" },
@@ -470,18 +480,18 @@ function RecordForm({
       {mode === "failed" ? (
         <label className="text-xs text-gray-600">
           Failed on
-          <input type="date" value={failedOn} onChange={(e) => setFailedOn(e.target.value)} className={dateInput} />
+          <div><DateInput value={failedOn || null} onChange={(v) => setFailedOn(v ?? "")} className={dateInput} /></div>
         </label>
       ) : mode === "config" ? (
         <>
           <label className="text-xs text-gray-600">
             Config was due
-            <input type="date" value={missedOn} onChange={(e) => setMissedOn(e.target.value)} className={dateInput} />
+            <div><DateInput value={missedOn || null} onChange={(v) => setMissedOn(v ?? "")} className={dateInput} /></div>
           </label>
           <label className="text-xs text-gray-600">
             New config date
-            <input type="date" value={effectiveNewConfig} min={missedOn || undefined}
-              onChange={(e) => setNewConfig(e.target.value || null)} className={dateInput} />
+            <div><DateInput value={effectiveNewConfig || null} min={missedOn || undefined}
+              onChange={setNewConfig} className={dateInput} /></div>
           </label>
           <label className="flex items-center gap-1.5 text-xs text-gray-700 pb-1 cursor-pointer">
             <input type="checkbox" checked={pushLater} onChange={(e) => setPushLater(e.target.checked)} />
@@ -492,12 +502,12 @@ function RecordForm({
         <>
           <label className="text-xs text-gray-600">
             Migration was due
-            <input type="date" value={hwMissedOn} onChange={(e) => setHwMissedOn(e.target.value)} className={dateInput} />
+            <div><DateInput value={hwMissedOn || null} onChange={(v) => setHwMissedOn(v ?? "")} className={dateInput} /></div>
           </label>
           <label className="text-xs text-gray-600">
             New migration date
-            <input type="date" value={effectiveNewHw} min={hwMissedOn || undefined}
-              onChange={(e) => setNewHw(e.target.value || null)} className={dateInput} />
+            <div><DateInput value={effectiveNewHw || null} min={hwMissedOn || undefined}
+              onChange={setNewHw} className={dateInput} /></div>
           </label>
         </>
       )}
