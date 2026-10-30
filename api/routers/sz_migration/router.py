@@ -81,6 +81,8 @@ from services.sz_migration.dpsk_choices import (
 from services.sz_migration.auditor import run_audit as run_migration_audit
 from services.sz_migration.auth_probe import collect_auth_facts
 from services.sz_migration.audit_portal import KEY_CHECK_MAX_NETWORKS, check_portal_key
+from services.sz_migration.passphrase_check import fingerprint
+from services.portal_key import tenant_portal_key
 from services.sz_migration.venue_settings import fetch_r1_venue_settings
 from services.sz_migration import audit_cache, venue_create
 from services.sz_migration.audit_redaction import (
@@ -2614,6 +2616,15 @@ async def run_audit_endpoint(
                 except Exception as e:
                     logger.warning(f"Could not cache R1 capture: {type(e).__name__}: {e}")
 
+    # The tenant's saved portal key, as a fingerprint only, to confirm R1 holds it
+    saved_portal_key_fp = None
+    if request.r1_controller_id:
+        try:
+            saved_portal_key_fp = fingerprint(
+                tenant_portal_key(request.r1_controller_id, tenant_id, current_user.id))
+        except Exception as e:
+            logger.warning(f"Could not read the saved portal key: {type(e).__name__}")
+
     # ── Run audit ──
     report = run_migration_audit(
         snapshot=snapshot,
@@ -2623,6 +2634,7 @@ async def run_audit_endpoint(
         r1_network_details=r1_network_details,
         auth_facts=auth_facts,
         r1_venue_settings=r1_venue_settings,
+        saved_portal_key_fp=saved_portal_key_fp,
     )
     report.data_sources = data_sources
     if auth_facts is None:

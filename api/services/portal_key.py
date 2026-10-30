@@ -31,3 +31,26 @@ def controller_portal_key(controller_id: Optional[int]) -> Optional[str]:
 
 def controller_has_portal_key(controller_id: Optional[int]) -> bool:
     return bool(controller_portal_key(controller_id))
+
+
+def tenant_portal_key(controller_id: Optional[int], tenant_id: Optional[str],
+                      user_id: Optional[int]) -> Optional[str]:
+    """
+    The key this tool would put on networks in the controller's tenant: the
+    controller's own when it is an EC; through an MSP controller, the key
+    saved on the user's EC controller for that same R1 tenant.
+    """
+    key = controller_portal_key(controller_id)
+    if key or not tenant_id or not user_id:
+        return key
+    from database import SessionLocal
+    from models.controller import Controller
+    db = SessionLocal()
+    try:
+        for ec in db.query(Controller).filter_by(user_id=user_id, controller_type="RuckusONE",
+                                                 r1_tenant_id=tenant_id).all():
+            if ec.is_ec() and ec.encrypted_portal_key:
+                return ec.get_portal_key() or None
+        return None
+    finally:
+        db.close()
