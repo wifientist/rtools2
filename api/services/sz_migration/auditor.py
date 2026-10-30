@@ -57,6 +57,7 @@ def run_audit(
     r1_network_details: Optional[Dict[str, Dict]] = None,
     auth_facts: Optional[Dict] = None,
     r1_venue_settings: Optional[Dict] = None,
+    saved_portal_key_fp: Optional[str] = None,
 ) -> MigrationAuditReport:
     """
     Run the full three-way audit comparison.
@@ -319,7 +320,8 @@ def run_audit(
     )
 
     # Captive portal WLANs, setting by setting
-    portals, unpaired_portals = build_portal_audit(snapshot, r1_inventory, matching, r1_network_details, auth_facts)
+    portals, unpaired_portals = build_portal_audit(snapshot, r1_inventory, matching, r1_network_details, auth_facts,
+                                                     saved_portal_key_fp)
 
     # Captive portal WLANs first, then by name (the pairing view too)
     portal_ids = {w.id for w in snapshot.wlans if is_portal_wlan(w)}

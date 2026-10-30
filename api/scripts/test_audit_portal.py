@@ -198,6 +198,32 @@ def main():
     f += check("R1's two key copies disagree: flagged", rows7.get("R1 portal key = integration key") is not None
                and rows7["R1 portal key = integration key"].status == "differs")
 
+    print("\n3a. Saved tenant key (the one rtools applies) vs R1")
+    SAVEDROW = "Integration key = saved key"
+
+    def rows(snap, details_, saved):
+        rp = run_audit(snap, inv, "s", "r", details_, facts, saved_portal_key_fp=saved)
+        return {c.label: c for c in next(x for x in rp.portals if x.sz_wlan_id == "g").checks}, rp
+
+    r_, rp_ = rows(snapshot(), details, fingerprint(KEY))
+    f += check("R1 holds the saved key: match", r_[SAVEDROW].status == "match", str(r_[SAVEDROW]))
+    f += check("…and no key value in the output", KEY not in json.dumps([x.model_dump() for x in rp_.portals]))
+    r_, _ = rows(snapshot(), with_key("OtherKey00000001"), fingerprint(KEY))
+    f += check("R1 holds another key: differs", r_[SAVEDROW].status == "differs", str(r_[SAVEDROW]))
+    r_, _ = rows(snapshot(), with_key(None), fingerprint(KEY))
+    f += check("R1 has no key: differs, says to apply it", r_[SAVEDROW].status == "differs"
+               and "apply" in r_[SAVEDROW].note, str(r_[SAVEDROW]))
+    r_, _ = rows(snapshot(), with_key(CREDENTIAL_PRESENT), fingerprint(KEY))
+    f += check("pre-fingerprint R1 capture: unknown, refresh", r_[SAVEDROW].status == "unknown", str(r_[SAVEDROW]))
+    r_, _ = rows(snapshot(), details, None)
+    f += check("no saved key: no row", SAVEDROW not in r_)
+    r_, _ = rows(blank, details, fingerprint(KEY))
+    f += check("SZ unreadable + R1 holds the saved key: signing-key row confirmed (match)",
+               r_[KEYROW].status == "match" and "saved" in r_[KEYROW].note, str(r_[KEYROW]))
+    r_, _ = rows(blank, with_key("OtherKey00000001"), fingerprint(KEY))
+    f += check("SZ unreadable + R1 off the saved key: signing-key row stays unknown",
+               r_[KEYROW].status == "unknown", str(r_[KEYROW]))
+
     print("\n3b. Key check (user-entered key vs live R1)")
     net = with_key(KEY, ext=KEY)["n-g"]
     r = check_portal_key(KEY, net)

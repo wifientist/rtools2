@@ -115,7 +115,7 @@ def _key_fp(v: Any) -> Optional[str]:
 
 
 def _key_rows(c: "_Checks", prof: Dict[str, Any], gp: Dict[str, Any], wp: Dict[str, Any],
-              key_labels: Dict[str, str]) -> None:
+              key_labels: Dict[str, str], saved_fp: Optional[str] = None) -> None:
     """
     The WISPr signing key, compared as keyed fingerprints. SZ's API has
     returned it blank or null at every site so far, so usually only R1's side
@@ -141,6 +141,8 @@ def _key_rows(c: "_Checks", prof: Dict[str, Any], gp: Dict[str, Any], wp: Dict[s
                 ("differs", "R1 holds a different key from SZ — the portal will reject R1's signed redirects")
     elif sz_raw and not r1_raw:
         status, note = "differs", "SZ signs with a key; R1 has none"
+    elif not sz_raw and saved_fp and r1_fp == saved_fp:
+        status, note = "match", "SZ won't hand its key out; R1 holds the key saved for this tenant"
     else:
         status = "unknown"
         note = ("SZ won't hand the key out, so it can't be compared here — paste it into "
@@ -157,9 +159,36 @@ def _key_rows(c: "_Checks", prof: Dict[str, Any], gp: Dict[str, Any], wp: Dict[s
             c.add("R1 portal key = integration key", "", "differ", "differs",
                   "R1's externalPortalKey and wisprPage.integrationKey should be the same key")
 
+    if saved_fp:
+        _saved_key_row(c, r1_raw, r1_fp, saved_fp)
+
+
+SAVED_KEY_ROW = "Integration key = saved key"
+
+
+def _saved_key_row(c: "_Checks", r1_raw: Any, r1_fp: Optional[str], saved_fp: str) -> None:
+    """
+    R1's integration key against the key saved for this tenant in the tool
+    (the one Grabber and the migration apply). SZ won't give its key out, so
+    this is the check that can actually be made every run.
+    """
+    if r1_raw == CREDENTIAL_PRESENT:
+        status, note = "unknown", "This R1 capture predates key fingerprints — refresh the R1 side to compare"
+    elif not r1_fp:
+        status, note = "differs", "R1 has no key; the tenant has one saved — apply it (Bulk WLAN Edit)"
+    elif r1_fp.split(":")[1] != saved_fp.split(":")[1]:
+        status, note = "unknown", "Captured under different fingerprint keys — refresh to compare"
+    elif r1_fp == saved_fp:
+        status, note = "match", "R1 holds the key saved for this tenant"
+    else:
+        status, note = "differs", "R1 holds a different key from the one saved for this tenant"
+    c.add(SAVED_KEY_ROW, "saved in rtools", "set" if r1_fp else "not set", status, note,
+          r1_keys={"wisprPage.integrationKey"})
+
 
 def _audit_pair(wlan, portal_ref, net: Optional[Dict[str, Any]], facts: Optional[Dict[str, Any]],
-                snapshot: SZMigrationSnapshot, key_labels: Optional[Dict[str, str]] = None) -> PortalAudit:
+                snapshot: SZMigrationSnapshot, key_labels: Optional[Dict[str, str]] = None,
+                saved_fp: Optional[str] = None) -> PortalAudit:
     key_labels = key_labels or {}
     raw = wlan.raw or {}
     prof = (portal_ref.raw if portal_ref else None) or {}
@@ -235,7 +264,7 @@ def _audit_pair(wlan, portal_ref, net: Optional[Dict[str, Any]], facts: Optional
         c.add("Provider name", out.sz_portal_name or "—", wp.get("externalProviderName") or "—",
               "match" if _norm(out.sz_portal_name) == _norm(wp.get("externalProviderName")) else "info",
               "R1 shows the SZ portal's name as the provider", r1_keys={"wisprPage.externalProviderName"})
-        _key_rows(c, prof, gp, wp, key_labels)
+        _key_rows(c, prof, gp, wp, key_labels, saved_fp)
 
     # ── Authentication / accounting ──────────────────────────────
     auth = raw.get("authServiceOrProfile") or {}
@@ -291,7 +320,8 @@ def _audit_pair(wlan, portal_ref, net: Optional[Dict[str, Any]], facts: Optional
 
 def build_portal_audit(snapshot: SZMigrationSnapshot, inv: R1VenueInventory, matching: AuditMatching,
                        r1_network_details: Optional[Dict[str, Dict]],
-                       auth_facts: Optional[Dict[str, Any]]) -> Tuple[List[PortalAudit], List[Dict[str, Any]]]:
+                       auth_facts: Optional[Dict[str, Any]],
+                       saved_key_fp: Optional[str] = None) -> Tuple[List[PortalAudit], List[Dict[str, Any]]]:
     """(one PortalAudit per SZ portal WLAN, R1 guest networks in the venue no SZ portal pairs with)."""
     pairs = {m.sz_wlan_id: m for m in matching.wlans}
     details = r1_network_details or {}
@@ -310,7 +340,7 @@ def build_portal_audit(snapshot: SZMigrationSnapshot, inv: R1VenueInventory, mat
         net = details.get(m.r1_network_id) if m and m.r1_network_id else None
         if m and m.r1_network_id:
             paired.add(m.r1_network_id)
-        audits.append(_audit_pair(w, ref, net, auth_facts, snapshot, key_labels))
+        audits.append(_audit_pair(w, ref, net, auth_facts, snapshot, key_labels, saved_key_fp))
     venue_ids = {n.get("id") for n in inv.wifi_networks}
     unpaired = [{"id": nid, "name": d.get("name"), "ssid": (d.get("wlan") or {}).get("ssid"),
                  "guest_type": (d.get("guestPortal") or {}).get("guestNetworkType")}
