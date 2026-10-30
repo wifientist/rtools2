@@ -277,6 +277,51 @@ class SwitchService:
         logger.info(f"Retrieved {len(all_switches)} total switches from SmartZone")
         return all_switches
 
+    async def get_switch_status_counts(self) -> Dict[str, int]:
+        """
+        Count online switches across all pages.
+
+        Unlike get_switches, this raises on failure so that an unreadable list
+        isn't reported as 0. Only a 404 (switch module not enabled) means none.
+
+        Returns:
+            Dict with online, read, total, groups (those holding a switch),
+            groups_with_online
+        """
+        endpoint = self._switchm_endpoint("/switch")
+        statuses: Dict[str, Any] = {}
+        groups: Dict[str, Any] = {}
+        total = 0
+        page = 1  # SmartZone uses 1-based pagination
+
+        while True:
+            try:
+                result = await self.client._request(
+                    "POST", endpoint, use_root_url=True, json={"page": page, "limit": 1000}
+                )
+            except ValueError as e:
+                if "(404)" in str(e):
+                    return {"online": 0, "read": 0, "total": 0, "groups": 0, "groups_with_online": 0}
+                raise
+
+            switches = result.get("list", [])
+            total = result.get("totalCount", total)
+            for switch in switches:
+                statuses[switch.get("id")] = switch.get("status")
+                groups[switch.get("id")] = switch.get("groupId")
+
+            if not switches or not result.get("hasMore"):
+                break
+            page += 1
+
+        return {
+            "online": sum(1 for s in statuses.values() if s == "ONLINE"),
+            "read": len(statuses),
+            "total": total,
+            "groups": len(set(groups.values())),
+            "groups_with_online": len({groups[i] for i, s in statuses.items() if s == "ONLINE"}),
+        }
+
     def format_switch_for_r1_import(self, switch: Dict[str, Any]) -> Dict[str, Any]:
         """
         Format SmartZone switch data for RuckusONE import

@@ -158,3 +158,69 @@ class SystemService:
             logger.warning(f"Could not fetch controller info for audit: {e}")
 
         return audit_info
+
+    async def get_licenses_summary(self) -> Dict[str, Any]:
+        """
+        Get used/total counts per license type
+
+        Returns:
+            Dict with 'list' of {licenseTypeDescription, capacityControlLicenseCount}
+        """
+        endpoint = f"/{self.client.api_version}/licensesSummary"
+        return await self.client._request("GET", endpoint)
+
+    async def get_licenses(self) -> Dict[str, Any]:
+        """
+        Get the licenses assigned to the controller
+
+        Returns:
+            Dict with 'list' of {name, description, count, createTime, expireDate}
+        """
+        endpoint = f"/{self.client.api_version}/licenses"
+        return await self.client._request("GET", endpoint)
+
+    async def get_devices_summary(self) -> Dict[str, Any]:
+        """
+        Get cluster-wide device totals and capacity
+
+        Returns:
+            Devices summary object including totalAps and totalSwitches
+        """
+        endpoint = f"/{self.client.api_version}/system/devicesSummary"
+        return await self.client._request("GET", endpoint)
+
+    async def get_connected_ap_count(self) -> Dict[str, int]:
+        """
+        Sum connected APs across zones from the system inventory.
+
+        Inventory order shifts between calls, so pages can repeat or skip a
+        zone. Zones are deduped by ID, and zones_read vs zones_total shows
+        whether any were missed.
+
+        Returns:
+            Dict with connected, zones_with_connected, zones_read, zones_total
+        """
+        endpoint = f"/{self.client.api_version}/system/inventory"
+        zones: Dict[str, int] = {}
+        index = 0  # index is an offset, not a page number
+        zones_total = 0
+
+        while True:
+            result = await self.client._request(
+                "GET", endpoint, params={"index": index, "listSize": 1000}
+            )
+            page = result.get("list", [])
+            zones_total = result.get("totalCount", zones_total)
+            for zone in page:
+                zones[zone.get("zoneId")] = zone.get("connectedAPs") or 0
+
+            index += len(page)
+            if not page or not result.get("hasMore"):
+                break
+
+        return {
+            "connected": sum(zones.values()),
+            "zones_with_connected": sum(1 for count in zones.values() if count > 0),
+            "zones_read": len(zones),
+            "zones_total": zones_total,
+        }
