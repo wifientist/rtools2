@@ -206,32 +206,27 @@ async def run_activate(script, mode="ap_groups", late_reads=0):
 
 
 async def wait_on(script, **kw):
-    """Run await_task_completion against /activities answers in script (one per poll; the
-    last repeats), on a fake clock. -> (result | exception, polls, notices)."""
+    """Run await_task_completion against /activities answers in script (one per poll
+    cycle, 3s apart; the last repeats), on a fake clock. -> (result | exception, polls, notices)."""
     from r1api.client import R1Client
     loop = asyncio.get_running_loop()
     clock = {"t": 0.0}
-    real_time, real_client_sleep = loop.time, client_mod.asyncio.sleep
+    real_time = loop.time
     polls, notices = [], []
 
-    def get(path, override_tenant_id=None):
+    async def next_read(request_id, tenant_id=None):
+        clock["t"] += client_mod.ACTIVITY_POLL_SECONDS
+        await _real_sleep(0)
         step = script[min(len(polls), len(script) - 1)]
         polls.append(clock["t"])
-        if step == "invalid":
-            return SimpleNamespace(ok=False, status_code=400, json=lambda: {"errors": ["Invalid activity id"]})
-        return SimpleNamespace(ok=True, status_code=200, json=lambda: {"status": step, "error": "Bad radio"})
-
-    async def tick(d):
-        clock["t"] += d
-        await _real_sleep(0)
+        return None if step == "invalid" else {"status": step, "error": "Bad radio"}
 
     async def listener(rid, status, elapsed):
         notices.append((status, round(elapsed)))
 
     c = R1Client.__new__(R1Client)
-    c.get = get
+    c._next_activity_read = next_read
     loop.time = lambda: clock["t"]
-    client_mod.asyncio.sleep = tick
     token = client_mod.activity_wait_listener.set(listener)
     try:
         try:
@@ -240,8 +235,101 @@ async def wait_on(script, **kw):
             out = e
     finally:
         client_mod.activity_wait_listener.reset(token)
-        loop.time, client_mod.asyncio.sleep = real_time, real_client_sleep
+        loop.time = real_time
     return out, polls, notices
+
+
+def fake_r1(statuses, *, bulk_fails=False, bulk_delay=0.0, hide=()):
+    """An R1Client whose POST /activities/query and GET /activities/{id} answer from
+    statuses {requestId: [status per bulk query, last repeats]} -- blocking, like requests."""
+    import time as _time
+    from r1api.client import R1Client
+    c = R1Client.__new__(R1Client)
+    calls = {"bulk": 0, "get": []}
+
+    def resp(ok, body):
+        return SimpleNamespace(ok=ok, status_code=200 if ok else 400, text="", json=lambda: body)
+
+    def status_of(rid):
+        seq = statuses[rid]
+        return seq[min(calls["bulk"] - 1, len(seq) - 1)]
+
+    def post(path, payload=None, override_tenant_id=None):
+        calls["bulk"] += 1
+        _time.sleep(bulk_delay)
+        if bulk_fails:
+            return resp(False, {})
+        rows = [{"requestId": rid, "status": status_of(rid)} for rid in statuses if rid not in hide]
+        return resp(True, {"data": rows, "totalCount": len(rows)})
+
+    def get(path, override_tenant_id=None):
+        rid = path.rsplit("/", 1)[-1]
+        calls["get"].append(rid)
+        st = status_of(rid) if calls["bulk"] else "INPROGRESS"
+        return resp(True, {"requestId": rid, "status": st, "error": f"{rid} refused"})
+
+    c.post, c.get = post, get
+    return c, calls
+
+
+async def test_shared_poller():
+    f = 0
+    saved = client_mod.ACTIVITY_POLL_SECONDS, client_mod.ACTIVITY_BULK_MISS_SECONDS
+    client_mod.ACTIVITY_POLL_SECONDS = 0.05
+    try:
+        # 200 waits at once -> a handful of bulk queries, not 200 x N GETs
+        ids = [f"r{i}" for i in range(200)]
+        c, calls = fake_r1({rid: ["INPROGRESS", "INPROGRESS", "SUCCESS"] for rid in ids})
+        out = await asyncio.gather(*(c.await_task_completion(rid) for rid in ids))
+        f += check("200 concurrent waits share one bulk query per cycle",
+                   all(o["status"] == "SUCCESS" for o in out) and calls["bulk"] <= 4,
+                   f"bulk={calls['bulk']} gets={len(calls['get'])}")
+        f += check("each finished task read on its own once (for R1's full record), no more",
+                   len(calls["get"]) == 200, str(len(calls["get"])))
+
+        # FAIL carries R1's error from the full record
+        c, _ = fake_r1({"ok": ["SUCCESS"], "bad": ["INPROGRESS", "FAIL"]})
+        res = await asyncio.gather(c.await_task_completion("ok"), c.await_task_completion("bad"),
+                                   return_exceptions=True)
+        f += check("FAIL -> that wait raises with R1's error, the other succeeds",
+                   res[0]["status"] == "SUCCESS" and "bad refused" in str(res[1])
+                   and not isinstance(res[1], TimeoutError), repr(res))
+
+        # A slow (blocking) query never blocks the event loop
+        c, _ = fake_r1({"slow": ["SUCCESS"]}, bulk_delay=0.4)
+        ticks = []
+
+        async def ticker():
+            for _ in range(8):
+                ticks.append(asyncio.get_running_loop().time())
+                await _real_sleep(0.05)
+        t = asyncio.create_task(ticker())
+        await c.await_task_completion("slow")
+        await t
+        gaps = [b - a for a, b in zip(ticks, ticks[1:])]
+        f += check("bulk query runs off the event loop (other tasks keep ticking)",
+                   max(gaps) < 0.25, f"max gap {max(gaps):.2f}s")
+
+        # Query refused -> falls back to one-by-one reads
+        c, calls = fake_r1({"a": ["SUCCESS"], "b": ["SUCCESS"]}, bulk_fails=True)
+        out = await asyncio.gather(c.await_task_completion("a"), c.await_task_completion("b"))
+        f += check("query refused -> read one by one, still finishes",
+                   all(o["status"] == "SUCCESS" for o in out) and set(calls["get"]) >= {"a", "b"},
+                   str(calls))
+
+        # Query never shows one -> read on its own after a while
+        client_mod.ACTIVITY_BULK_MISS_SECONDS = 0.1
+        c, calls = fake_r1({"seen": ["SUCCESS"], "lost": ["SUCCESS"]}, hide={"lost"})
+        out = await asyncio.gather(c.await_task_completion("seen"), c.await_task_completion("lost"))
+        f += check("one the query misses is read on its own",
+                   out[1]["status"] == "SUCCESS" and "lost" in calls["get"], str(calls))
+        await _real_sleep(0.2)
+        watches = list(c.__dict__["_activity_watches"].values())
+        f += check("poller stops once nothing is waited on",
+                   all(not w.waiting and w.task.done() for w in watches), str(len(watches)))
+    finally:
+        client_mod.ACTIVITY_POLL_SECONDS, client_mod.ACTIVITY_BULK_MISS_SECONDS = saved
+    return f
 
 
 async def test_activity_wait():
@@ -361,6 +449,9 @@ async def main():
 
     print("\n11. The activity wait (r1api.client.await_task_completion)")
     f += await test_activity_wait()
+
+    print("\n12. The shared activity poller (one bulk query for every wait)")
+    f += await test_shared_poller()
 
     print(f"\n{'All checks passed' if not f else f'{f} check(s) failed'}")
     return f

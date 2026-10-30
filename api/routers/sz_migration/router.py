@@ -657,10 +657,15 @@ async def extraction_sse(
             start = time.time()
 
             while time.time() - start < timeout_seconds:
-                message = await asyncio.wait_for(
-                    pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
-                    timeout=5.0,
-                )
+                try:
+                    message = await asyncio.wait_for(
+                        pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
+                        timeout=5.0,
+                    )
+                except asyncio.TimeoutError:
+                    # A slow tick (busy server) used to end the stream here, and
+                    # the page then sat on its last update until the end.
+                    message = None
 
                 if message and message["type"] == "message":
                     yield f"data: {message['data']}\n\n"
