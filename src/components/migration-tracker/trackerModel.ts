@@ -113,6 +113,18 @@ export function nextWorkday(d: Date): Date {
   return out;
 }
 
+export function prevWorkday(d: Date): Date {
+  let out = addDays(d, -1);
+  while (out.getDay() === 0 || out.getDay() === 6) out = addDays(out, -1);
+  return out;
+}
+
+/** One workday later (dir 1) or earlier (dir -1); an empty date starts from today. */
+export function stepWorkdayISO(iso: string | null, dir: 1 | -1): string {
+  if (!iso) return toISO(onOrAfterWorkday(new Date()));
+  return toISO(dir === 1 ? nextWorkday(parseISO(iso)) : prevWorkday(parseISO(iso)));
+}
+
 export function onOrAfterWorkday(d: Date): Date {
   return d.getDay() === 0 || d.getDay() === 6 ? nextWorkday(d) : d;
 }
@@ -265,7 +277,14 @@ export function compareSites(a: TrackerSite, b: TrackerSite): number {
   if (sa !== sb) return rank(sa) - rank(sb);
   return stageDate(a, sa).localeCompare(stageDate(b, sb))
     || (a.hw_migrated ?? NO_DATE).localeCompare(b.hw_migrated ?? NO_DATE)
+    // On a tie, sites that already slipped go first — they've been waiting longest.
+    || firstSlip(a).localeCompare(firstSlip(b))
     || a.site_name.localeCompare(b.site_name);
+}
+
+/** Date of the site's earliest miss or failure; NO_DATE if it never slipped. */
+function firstSlip(site: TrackerSite): string {
+  return site.events.reduce((min, e) => (e.date < min ? e.date : min), NO_DATE);
 }
 
 // ---------- Spreadsheet paste ----------

@@ -5,7 +5,6 @@ import {
   STAGES, compareSites, parseISO, stageOf, type StageKey, startOfWeek, toISO, type TrackerEvent, type TrackerSite,
 } from "./trackerModel";
 
-const DAYS = 14;
 const COLLAPSED_KEY = "tracker.gantt.collapsed";
 
 /**
@@ -14,6 +13,8 @@ const COLLAPSED_KEY = "tracker.gantt.collapsed";
  * config → HW span overlaps the window (or always, with "All sites").
  */
 const HOME_OFFSET = -1;
+const COMPACT_KEY = "tracker.gantt.compact";
+const WEEKS_KEY = "tracker.gantt.weeks";
 
 export default function TrackerGantt({
   sites, today, onSelect,
@@ -25,6 +26,27 @@ export default function TrackerGantt({
   // Home view is last week + this week: what just happened matters more than what's two weeks out.
   const [weekOffset, setWeekOffset] = useState(HOME_OFFSET);
   const [showAll, setShowAll] = useState(false);
+  const [compact, setCompactState] = useState(() => {
+    try { return localStorage.getItem(COMPACT_KEY) === "1"; } catch { return false; }
+  });
+  const setCompact = (on: boolean) => {
+    setCompactState(on);
+    try { localStorage.setItem(COMPACT_KEY, on ? "1" : "0"); } catch { /* storage unavailable */ }
+  };
+  const [weeks, setWeeksState] = useState<2 | 3>(() => {
+    try { return localStorage.getItem(WEEKS_KEY) === "3" ? 3 : 2; } catch { return 2; }
+  });
+  const setWeeks = (n: 2 | 3) => {
+    setWeeksState(n);
+    try { localStorage.setItem(WEEKS_KEY, String(n)); } catch { /* storage unavailable */ }
+  };
+  const DAYS = weeks * 7;
+  // Marker sizes for each density.
+  const sz = compact
+    ? { dot: "w-4 h-4 text-[9px] border", badge: "-top-1 -right-1 w-2.5 h-2.5", badgeX: 7,
+        fail: "w-3.5 h-3.5", failX: 9, ring: "ring-1 ring-red-500", sup: "text-[6px]" }
+    : { dot: "w-6 h-6 text-[11px] border-2", badge: "-top-1.5 -right-1.5 w-3.5 h-3.5", badgeX: 9,
+        fail: "w-5 h-5", failX: 12, ring: "ring-2 ring-red-500 ring-offset-1", sup: "text-[8px]" };
   const [collapsed, setCollapsed] = useState<Set<StageKey>>(() => {
     try {
       const saved = localStorage.getItem(COLLAPSED_KEY);
@@ -96,10 +118,14 @@ export default function TrackerGantt({
           <CalendarDays size={16} className="text-gray-500" /> {rangeLabel}
         </span>
         <Legend />
-        <label className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+        <div className="ml-auto flex items-center gap-3">
+        <Segmented value={weeks} onChange={setWeeks} options={[[2, "2 wk"], [3, "3 wk"]]} />
+        <Segmented value={compact} onChange={setCompact} options={[[false, "Comfortable"], [true, "Compact"]]} />
+        <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           All sites{!showAll && hidden > 0 && <span className="text-gray-400">({hidden} outside window)</span>}
         </label>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -146,7 +172,7 @@ export default function TrackerGantt({
               {groupStart && (
                 <button
                   onClick={() => toggleGroup(stage)}
-                  className="w-full flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wide text-gray-500"
+                  className={`w-full flex items-center gap-1 px-2 ${compact ? "py-0.5" : "py-1"} bg-gray-50 hover:bg-gray-100 border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wide text-gray-500`}
                   title={isCollapsed ? "Show these sites" : "Hide these sites"}
                 >
                   {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
@@ -158,14 +184,14 @@ export default function TrackerGantt({
               <div className="grid border-b border-gray-100 hover:bg-gray-50/60" style={gridCols}>
                 <button
                   onClick={() => onSelect(site.id)}
-                  className="px-3 py-1.5 text-left min-w-0"
+                  className={`px-3 text-left min-w-0 ${compact ? "py-0.5" : "py-1.5"}`}
                   title="Jump to this site in the table"
                 >
-                  <div className="text-sm font-medium text-gray-900 truncate">{site.site_name}</div>
-                  <div className="text-[11px] text-gray-500 truncate">
+                  <div className={`font-medium text-gray-900 truncate ${compact ? "text-xs" : "text-sm"}`}>{site.site_name}</div>
+                  {!compact && <div className="text-[11px] text-gray-500 truncate">
                     {[site.category, site.vsz || site.tenant ? `${site.vsz ?? "?"} → ${site.tenant ?? "?"}` : null]
                       .filter(Boolean).join(" · ") || " "}
-                  </div>
+                  </div>}
                 </button>
                 {days.map((d, i) => {
                   const date = parseISO(d);
@@ -220,25 +246,25 @@ export default function TrackerGantt({
                       {missed.map((m, k) => (
                         <span
                           key={`m${k}`}
-                          className={`relative z-10 inline-flex items-center justify-center w-6 h-6 rounded-full border-2 border-dashed bg-white text-[11px] font-bold ${m.tone}`}
+                          className={`relative z-10 inline-flex items-center justify-center ${sz.dot} rounded-full border-dashed bg-white font-bold ${m.tone}`}
                           title={m.title}
                         >
                           {m.letter}
-                          <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-600 text-white">
-                            <X size={9} strokeWidth={3} />
+                          <span className={`absolute ${sz.badge} inline-flex items-center justify-center rounded-full bg-red-600 text-white`}>
+                            <X size={sz.badgeX} strokeWidth={3} />
                           </span>
                         </span>
                       ))}
                       {ghosts.map((e, k) => (
                         <span
                           key={`g${k}`}
-                          className="relative z-10 inline-flex items-center justify-center w-6 h-6 rounded-full border-2 border-dashed border-amber-400 bg-white text-[11px] font-bold text-amber-400"
+                          className={`relative z-10 inline-flex items-center justify-center ${sz.dot} rounded-full border-dashed border-amber-400 bg-white font-bold text-amber-400`}
                           title={`Validation was planned ${fmtShort(d)}${e.date === d ? " — failed" : ""}${e.note ? `\n${e.note}` : ""}`}
                         >
                           V
                           {e.date === d && (
-                            <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-red-600 text-white">
-                              <X size={9} strokeWidth={3} />
+                            <span className={`absolute ${sz.badge} inline-flex items-center justify-center rounded-full bg-red-600 text-white`}>
+                              <X size={sz.badgeX} strokeWidth={3} />
                             </span>
                           )}
                         </span>
@@ -246,10 +272,10 @@ export default function TrackerGantt({
                       {fails.map((e, k) => (
                         <span
                           key={`f${k}`}
-                          className="relative z-10 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-600 text-white"
+                          className={`relative z-10 inline-flex items-center justify-center ${sz.fail} rounded-full bg-red-600 text-white`}
                           title={failTitle(e)}
                         >
-                          <X size={12} strokeWidth={3} />
+                          <X size={sz.failX} strokeWidth={3} />
                         </span>
                       ))}
                       {reconfigs.map(({ e, attempt }) => {
@@ -257,13 +283,13 @@ export default function TrackerGantt({
                         return (
                           <span
                             key={`r${attempt}`}
-                            className={`relative z-10 inline-flex items-center justify-center w-6 h-6 rounded-full border-2 text-[11px] font-bold ${
+                            className={`relative z-10 inline-flex items-center justify-center ${sz.dot} rounded-full font-bold ${
                               e.reconfig_done ? STEP_STYLES.sky.done : STEP_STYLES.sky.planned
-                            } ${overdue ? "ring-2 ring-red-500 ring-offset-1" : ""}`}
+                            } ${overdue ? sz.ring : ""}`}
                             title={`Re-config #${attempt - 1} + re-validation — ${fmtShort(d)} — ${
                               e.reconfig_done ? "done" : overdue ? "overdue" : "planned"}${e.note ? `\nAfter: ${e.note}` : ""}`}
                           >
-                            C<sup className="text-[8px] -mr-0.5">{attempt}</sup>
+                            C<sup className={`${sz.sup} -mr-0.5`}>{attempt}</sup>
                           </span>
                         );
                       })}
@@ -274,9 +300,9 @@ export default function TrackerGantt({
                         return (
                           <span
                             key={s.key}
-                            className={`relative z-10 inline-flex items-center justify-center w-6 h-6 rounded-full border-2 text-[11px] font-bold ${
+                            className={`relative z-10 inline-flex items-center justify-center ${sz.dot} rounded-full font-bold ${
                               done ? style.done : style.planned
-                            } ${overdue ? "ring-2 ring-red-500 ring-offset-1" : ""}`}
+                            } ${overdue ? sz.ring : ""}`}
                             title={`${s.label} — ${fmtShort(d)} — ${done ? "done" : overdue ? "overdue" : "planned"}`}
                           >
                             {s.short}
@@ -293,6 +319,28 @@ export default function TrackerGantt({
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Segmented<T extends string | number | boolean>({
+  value, onChange, options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly (readonly [T, string])[];
+}) {
+  return (
+    <div className="inline-flex rounded border border-gray-300 overflow-hidden text-xs">
+      {options.map(([v, label]) => (
+        <button
+          key={label}
+          onClick={() => onChange(v)}
+          className={`px-2 py-1 ${value === v ? "bg-gray-700 text-white" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
