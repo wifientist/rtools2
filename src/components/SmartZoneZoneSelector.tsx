@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Network, ChevronDown } from 'lucide-react';
+import { Network } from 'lucide-react';
+import { matchesSnippet } from '@/utils/textMatch';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -24,6 +25,7 @@ const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false, contr
   const activeControllerId = controllerId ?? authControllerId;
   const [zones, setZones] = useState<Zone[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +39,7 @@ const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false, contr
       setLoading(true);
       setError(null);
       setSelectedZoneId(null); // Reset selection when domain changes
+      setFilter('');
 
       try {
         const response = await fetch(
@@ -49,7 +52,9 @@ const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false, contr
         }
 
         const result = await response.json();
-        setZones(result.data || []);
+        const sorted: Zone[] = [...(result.data || [])].sort((a: Zone, b: Zone) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+        setZones(sorted);
 
         // Auto-select first zone if only one exists
         if (result.data?.length === 1) {
@@ -69,13 +74,16 @@ const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false, contr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeControllerId, domainId]);
 
-  const handleZoneChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const zoneId = e.target.value || null;
-    setSelectedZoneId(zoneId);
-
-    const zone = zones.find(z => z.id === zoneId);
-    onZoneSelect(zoneId, zone?.name || null);
+  // One zone at a time: ticking a zone unticks the last, unticking clears.
+  const pick = (zone: Zone | null) => {
+    setSelectedZoneId(zone?.id ?? null);
+    onZoneSelect(zone?.id ?? null, zone?.name ?? null);
   };
+
+  const q = filter.trim();
+  const shown = q
+    ? zones.filter(z => matchesSnippet(`${z.name} ${z.description ?? ''}`, q))
+    : zones;
 
   if (loading) {
     return (
@@ -115,28 +123,53 @@ const SmartZoneZoneSelector = ({ domainId, onZoneSelect, disabled = false, contr
       </div>
 
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Zone
-          </label>
-          <div className="relative">
-            <select
-              value={selectedZoneId || ''}
-              onChange={handleZoneChange}
-              disabled={disabled || zones.length === 0}
-              className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed appearance-none"
-            >
-              <option value="">Select a zone...</option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name}
-                  {zone.description ? ` - ${zone.description}` : ''}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+        {zones.length > 0 && (
+          <div>
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter zones by name or description…"
+                disabled={disabled}
+                className="border rounded px-3 py-1.5 text-sm w-full sm:w-80"
+              />
+              <span className="ml-auto text-xs text-gray-500">
+                {shown.length === zones.length
+                  ? `${zones.length} zones`
+                  : `${shown.length} of ${zones.length} zones`}
+              </span>
+            </div>
+            <div className="max-h-72 overflow-y-auto border rounded divide-y">
+              {shown.map((zone) => {
+                const on = zone.id === selectedZoneId;
+                return (
+                  <label
+                    key={zone.id}
+                    className={`flex items-center gap-3 px-3 py-1.5 text-sm ${
+                      disabled ? 'opacity-60' : 'cursor-pointer'
+                    } ${on ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={disabled}
+                      onChange={() => pick(on ? null : zone)}
+                    />
+                    <span className="flex-1">{zone.name}</span>
+                    {zone.description && (
+                      <span className="text-xs text-gray-500 truncate max-w-[50%]">{zone.description}</span>
+                    )}
+                  </label>
+                );
+              })}
+              {!shown.length && (
+                <p className="px-3 py-2 text-sm text-gray-500">
+                  No zone matches “{filter}”.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {zones.length === 0 && (
           <div className="text-sm text-gray-500 italic">
