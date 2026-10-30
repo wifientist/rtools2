@@ -839,10 +839,220 @@ function ZoneRow({ zone, expanded, onToggle }: { zone: ZoneRowData; expanded: bo
   );
 }
 
-// Refresh mode options
-type RefreshMode = 'full' | 'incremental' | 'cached_only' | 'switches_only';
+// Basic mode: licenses and overall counts. A null count couldn't be read.
+interface LicenseUsage {
+  license_type: string;
+  used: number;
+  total: number;
+}
+
+interface LicenseEntitlement {
+  name: string;
+  description: string;
+  count: number;
+  starts: string | null;
+  expires: string | null;
+  perpetual: boolean;
+}
+
+interface BasicAuditResult {
+  controller_id: number;
+  controller_name: string;
+  host: string | null;
+  total_aps: number | null;
+  aps_online: number | null;
+  total_zones: number | null;
+  zones_with_online_aps: number | null;
+  total_switches: number | null;
+  switches_online: number | null;
+  switch_groups: number | null;
+  switch_groups_with_online: number | null;
+  ap_license: LicenseUsage | null;
+  switch_license: LicenseUsage | null;
+  licenses: LicenseUsage[];
+  entitlements: LicenseEntitlement[];
+  error: string | null;
+  errors: string[];
+}
+
+const EXPIRY_WARNING_DAYS = 90;
+
+// Sums a count across controllers; unknown if any controller's is unknown
+const sumKnown = (values: (number | null | undefined)[]): number | null =>
+  values.some(v => v === null || v === undefined)
+    ? null
+    : values.reduce<number>((sum, v) => sum + (v as number), 0);
+
+const formatCount = (value: number | null) => (value === null ? '-' : value.toLocaleString());
+
+// Component: Licenses and overall counts per controller
+function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
+  const readable = results.filter(r => !r.error);
+  const failed = results.filter(r => r.error);
+  const sectionErrors = readable.flatMap(r => r.errors.map(e => `${r.controller_name}: ${e}`));
+
+  const licenseStat = (key: 'ap_license' | 'switch_license') => {
+    const used = sumKnown(readable.map(r => r[key]?.used));
+    const total = sumKnown(readable.map(r => r[key]?.total));
+    return used === null || total === null ? '-' : `${used.toLocaleString()} / ${total.toLocaleString()}`;
+  };
+
+  const ofTotal = (part: number | null, total: number | null) =>
+    part === null || total === null ? '-' : `${part.toLocaleString()} / ${total.toLocaleString()}`;
+
+  const expiryCell = (entitlement: LicenseEntitlement) => {
+    if (entitlement.perpetual) return <span className="text-gray-500">Perpetual</span>;
+    if (!entitlement.expires) return <span className="text-gray-400">-</span>;
+    const daysLeft = (new Date(`${entitlement.expires}T00:00:00`).getTime() - Date.now()) / 86400000;
+    if (daysLeft < 0) return <span className="font-medium text-red-600">{entitlement.expires} (expired)</span>;
+    if (daysLeft <= EXPIRY_WARNING_DAYS) return <span className="font-medium text-amber-600">{entitlement.expires}</span>;
+    return <span>{entitlement.expires}</span>;
+  };
+
+  const usageCell = (usage: LicenseUsage | null) => {
+    if (!usage) return <span className="text-gray-400">-</span>;
+    return (
+      <span className={usage.used > usage.total ? 'font-medium text-red-600' : ''}>
+        {usage.used.toLocaleString()} / {usage.total.toLocaleString()}
+      </span>
+    );
+  };
+
+  return (
+    <>
+      {(failed.length > 0 || sectionErrors.length > 0) && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-sm text-yellow-800">
+          <div className="font-medium mb-1 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            {failed.length > 0 ? 'Totals leave out controllers that could not be read' : 'Some data could not be read'}
+          </div>
+          <ul className="list-disc list-inside space-y-0.5">
+            {failed.map(r => <li key={r.controller_id}>{r.controller_name}: {r.error}</li>)}
+            {sectionErrors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {readable.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-6">
+            <StatCard label="APs" value={formatCount(sumKnown(readable.map(r => r.total_aps)))} icon={Wifi} />
+            <StatCard label="APs Online" value={formatCount(sumKnown(readable.map(r => r.aps_online)))} icon={Wifi} />
+            <StatCard
+              label="Zones With Online APs"
+              value={ofTotal(sumKnown(readable.map(r => r.zones_with_online_aps)), sumKnown(readable.map(r => r.total_zones)))}
+              icon={Server}
+            />
+            <StatCard label="Switches" value={formatCount(sumKnown(readable.map(r => r.total_switches)))} icon={HardDrive} />
+            <StatCard label="Switches Online" value={formatCount(sumKnown(readable.map(r => r.switches_online)))} icon={HardDrive} />
+            <StatCard
+              label="Switch Groups With Online Switches"
+              value={ofTotal(sumKnown(readable.map(r => r.switch_groups_with_online)), sumKnown(readable.map(r => r.switch_groups)))}
+              icon={Layers}
+            />
+            <StatCard label="AP Licenses Used" value={licenseStat('ap_license')} icon={Layers} />
+            <StatCard label="Switch Licenses Used" value={licenseStat('switch_license')} icon={Layers} />
+          </div>
+
+          <div className="bg-white rounded-lg shadow overflow-x-auto mb-6">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Controller</th>
+                  <th className="px-3 py-2">APs</th>
+                  <th className="px-3 py-2">APs Online</th>
+                  <th className="px-3 py-2">Zones With Online APs</th>
+                  <th className="px-3 py-2">Switches</th>
+                  <th className="px-3 py-2">Switches Online</th>
+                  <th className="px-3 py-2">Switch Groups With Online Switches</th>
+                  <th className="px-3 py-2">AP Licenses Used</th>
+                  <th className="px-3 py-2">Switch Licenses Used</th>
+                </tr>
+              </thead>
+              <tbody>
+                {readable.map(r => (
+                  <tr key={r.controller_id} className="border-t border-gray-100">
+                    <td className="px-3 py-2 font-medium text-gray-900">{r.controller_name}</td>
+                    <td className="px-3 py-2">{formatCount(r.total_aps)}</td>
+                    <td className="px-3 py-2">{formatCount(r.aps_online)}</td>
+                    <td className="px-3 py-2">{ofTotal(r.zones_with_online_aps, r.total_zones)}</td>
+                    <td className="px-3 py-2">{formatCount(r.total_switches)}</td>
+                    <td className="px-3 py-2">{formatCount(r.switches_online)}</td>
+                    <td className="px-3 py-2">{ofTotal(r.switch_groups_with_online, r.switch_groups)}</td>
+                    <td className="px-3 py-2">{usageCell(r.ap_license)}</td>
+                    <td className="px-3 py-2">{usageCell(r.switch_license)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-white rounded-lg shadow overflow-x-auto mb-6">
+            <h3 className="px-3 pt-3 pb-2 text-sm font-medium text-gray-700">License Usage</h3>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Controller</th>
+                  <th className="px-3 py-2">License Type</th>
+                  <th className="px-3 py-2">Used / Total</th>
+                  <th className="px-3 py-2">Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {readable.flatMap(r => r.licenses.map(usage => (
+                  <tr key={`${r.controller_id}-${usage.license_type}`} className="border-t border-gray-100">
+                    <td className="px-3 py-2 font-medium text-gray-900">{r.controller_name}</td>
+                    <td className="px-3 py-2">{usage.license_type}</td>
+                    <td className="px-3 py-2">{usageCell(usage)}</td>
+                    <td className="px-3 py-2">{(usage.total - usage.used).toLocaleString()}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="bg-white rounded-lg shadow overflow-x-auto mb-6">
+            <h3 className="px-3 pt-3 pb-2 text-sm font-medium text-gray-700">Licenses</h3>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Controller</th>
+                  <th className="px-3 py-2">License</th>
+                  <th className="px-3 py-2">Description</th>
+                  <th className="px-3 py-2">Count</th>
+                  <th className="px-3 py-2">Starts</th>
+                  <th className="px-3 py-2">Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {readable.flatMap(r => r.entitlements.map((entitlement, i) => (
+                  <tr key={`${r.controller_id}-${i}`} className="border-t border-gray-100">
+                    <td className="px-3 py-2 font-medium text-gray-900">{r.controller_name}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{entitlement.name}</td>
+                    <td className="px-3 py-2 text-gray-600">{entitlement.description}</td>
+                    <td className="px-3 py-2">{entitlement.count.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-gray-600">{entitlement.starts || '-'}</td>
+                    <td className="px-3 py-2">{expiryCell(entitlement)}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+// Refresh mode options. 'basic' never reaches the job API; it has its own endpoint.
+type RefreshMode = 'full' | 'incremental' | 'cached_only' | 'switches_only' | 'basic';
 
 const REFRESH_MODE_INFO: Record<RefreshMode, { label: string; description: string; icon: string }> = {
+  basic: {
+    label: 'License/Capacity',
+    description: 'Licenses and overall AP/switch counts only. Takes seconds, no zone data',
+    icon: '📊'
+  },
   full: {
     label: 'Full Refresh',
     description: 'Fetch all zones from SmartZone API, updating cache',
@@ -975,6 +1185,7 @@ export default function SZAudit() {
   const [selectedControllers, setSelectedControllers] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SZAuditResult[]>([]);
+  const [basicResults, setBasicResults] = useState<BasicAuditResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [expandedZones, setExpandedZones] = useState<Set<string>>(new Set());
 
@@ -1181,6 +1392,7 @@ export default function SZAudit() {
     setLoading(true);
     setError(null);
     setResults([]);
+    setBasicResults([]);
     setExpandedZones(new Set());
     setFinalStats(null);
     setActiveJobs([...jobs]);
@@ -1279,8 +1491,57 @@ export default function SZAudit() {
     }
   };
 
+  const runBasicAudit = async () => {
+    setLoading(true);
+    setError(null);
+    setResults([]);
+    setBasicResults([]);
+    setFinalStats(null);
+    setActiveJobs([]);
+
+    const fetched = await Promise.all(Array.from(selectedControllers).map(async (controllerId): Promise<BasicAuditResult> => {
+      const controller = szControllers.find(c => c.id === controllerId);
+      try {
+        const response = await apiFetch(`${API_BASE_URL}/sz/${controllerId}/audit/basic`);
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || `HTTP ${response.status}`);
+        }
+        return await response.json();
+      } catch (err) {
+        return {
+          controller_id: controllerId,
+          controller_name: controller?.name || `Controller ${controllerId}`,
+          host: null,
+          total_aps: null,
+          aps_online: null,
+          total_zones: null,
+          zones_with_online_aps: null,
+          total_switches: null,
+          switches_online: null,
+          switch_groups: null,
+          switch_groups_with_online: null,
+          ap_license: null,
+          switch_license: null,
+          licenses: [],
+          entitlements: [],
+          error: err instanceof Error ? err.message : 'Could not read controller',
+          errors: []
+        };
+      }
+    }));
+
+    setBasicResults(fetched.sort((a, b) => a.controller_name.localeCompare(b.controller_name)));
+    setLoading(false);
+  };
+
   const runAudit = async () => {
     if (selectedControllers.size === 0) return;
+
+    if (refreshMode === 'basic') {
+      await runBasicAudit();
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -1377,6 +1638,7 @@ export default function SZAudit() {
       const loaded = result;
       setError(null);
       setFinalStats(null);
+      setBasicResults([]);
       setResults(prev => [...prev.filter(r => r.controller_id !== loaded.controller_id), loaded]);
     }
     setLoadingJobId(null);
@@ -1401,7 +1663,47 @@ export default function SZAudit() {
     }
   };
 
+  const exportBasicCsv = () => {
+    const escape = (value: string | number | null) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows: (string | number | null)[][] = [
+      ["Controller", "Host", "Category", "Item", "Description", "Used/Online", "Total/Count", "Starts", "Expires", "Errors"]
+    ];
+
+    for (const r of basicResults) {
+      const errors = [r.error, ...r.errors].filter(Boolean).join('; ');
+      if (r.error) {
+        rows.push([r.controller_name, r.host, "Error", "", "", null, null, null, null, errors]);
+        continue;
+      }
+      rows.push([r.controller_name, r.host, "Devices", "APs", "", r.aps_online, r.total_aps, null, null, errors]);
+      rows.push([r.controller_name, r.host, "Devices", "Zones with online APs", "", r.zones_with_online_aps, r.total_zones, null, null, errors]);
+      rows.push([r.controller_name, r.host, "Devices", "Switches", "", r.switches_online, r.total_switches, null, null, errors]);
+      rows.push([r.controller_name, r.host, "Devices", "Switch groups with online switches", "", r.switch_groups_with_online, r.switch_groups, null, null, errors]);
+      for (const usage of r.licenses) {
+        rows.push([r.controller_name, r.host, "License usage", usage.license_type, "", usage.used, usage.total, null, null, ""]);
+      }
+      for (const e of r.entitlements) {
+        rows.push([r.controller_name, r.host, "License", e.name, e.description, null, e.count, e.starts, e.perpetual ? "Perpetual" : e.expires, ""]);
+      }
+    }
+
+    const blob = new Blob([rows.map(row => row.map(escape).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    a.download = `sz_audit_basic_${timestamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
   const exportCsv = () => {
+    if (basicResults.length > 0) {
+      exportBasicCsv();
+      return;
+    }
     if (results.length === 0) return;
 
     // Build CSV content from already-fetched results
@@ -1790,6 +2092,7 @@ export default function SZAudit() {
                     <option value="incremental">{REFRESH_MODE_INFO.incremental.icon} {REFRESH_MODE_INFO.incremental.label}</option>
                     <option value="switches_only">{REFRESH_MODE_INFO.switches_only.icon} {REFRESH_MODE_INFO.switches_only.label}</option>
                     <option value="cached_only">{REFRESH_MODE_INFO.cached_only.icon} {REFRESH_MODE_INFO.cached_only.label}</option>
+                    <option value="basic">{REFRESH_MODE_INFO.basic.icon} {REFRESH_MODE_INFO.basic.label}</option>
                   </select>
                 </div>
                 {/* Mode description */}
@@ -1797,7 +2100,7 @@ export default function SZAudit() {
                   {REFRESH_MODE_INFO[refreshMode].description}
                 </div>
                 {/* Cache status on separate line */}
-                {selectedControllers.size > 0 && Object.keys(cacheStatus).length > 0 && (
+                {refreshMode !== 'basic' && selectedControllers.size > 0 && Object.keys(cacheStatus).length > 0 && (
                   <div className="flex items-center gap-4 text-xs">
                     {(() => {
                       const statuses = Object.values(cacheStatus);
@@ -1837,9 +2140,9 @@ export default function SZAudit() {
               </div>
               <button
                 onClick={exportCsv}
-                disabled={results.length === 0 || loading}
+                disabled={(results.length === 0 && basicResults.length === 0) || loading}
                 className={`px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 ${
-                  results.length === 0 || loading
+                  (results.length === 0 && basicResults.length === 0) || loading
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     : 'bg-green-600 hover:bg-green-700 text-white'
                 }`}
@@ -2123,6 +2426,9 @@ export default function SZAudit() {
           </div>
         )}
 
+        {/* Basic mode results */}
+        {basicResults.length > 0 && <BasicAuditResults results={basicResults} />}
+
         {/* Results */}
         {results.length > 0 && (
           <>
@@ -2343,7 +2649,7 @@ export default function SZAudit() {
         )}
 
         {/* Empty State */}
-        {!loading && results.length === 0 && !error && (
+        {!loading && results.length === 0 && basicResults.length === 0 && !error && (
           <div className="text-center py-12 text-gray-500">
             <CheckCircle2 className="w-16 h-16 mx-auto mb-4 opacity-30" />
             <p className="text-lg">Select controllers and run an audit to see results</p>

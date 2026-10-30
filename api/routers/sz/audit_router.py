@@ -27,6 +27,7 @@ from clients.sz_client_deps import create_sz_client_from_controller, validate_co
 from szapi.client import SZClient
 from szapi.services.wlans import WlanService
 from schemas.sz_audit import (
+    BasicAuditResult,
     SZAuditResult,
     BatchAuditRequest,
     BatchAuditResponse,
@@ -49,6 +50,7 @@ from workflow.v2.models import WorkflowJobV2, JobStatus, PhaseStatus, PhaseDefin
 from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.events import WorkflowEventPublisher
 from routers.sz.audit_workflow_definition import get_workflow_definition
+from routers.sz.basic_audit import fetch_basic_audit
 from routers.sz.phases import initialize, fetch_switches, audit_zones, finalize
 from routers.sz.phases.finalize import get_match_candidates
 from routers.sz.zone_cache import ZoneCacheManager, RefreshMode
@@ -2089,6 +2091,39 @@ async def debug_audit_data(
         debug_data["error"] = str(e)
 
     return debug_data
+
+
+@router.get("/{controller_id}/audit/basic", response_model=BasicAuditResult)
+async def basic_audit(
+    controller_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> BasicAuditResult:
+    """
+    Licenses and overall AP/switch counts for one controller.
+
+    A few controller-wide calls, so it answers directly instead of running a job.
+    """
+    controller = validate_controller_access(controller_id, current_user, db)
+
+    if controller.controller_type != "SmartZone":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Controller {controller.name} is not a SmartZone controller"
+        )
+
+    try:
+        sz_client = create_sz_client_from_controller(controller_id, db)
+        async with sz_client:
+            return await fetch_basic_audit(sz_client, controller)
+    except Exception as e:
+        logger.warning(f"Basic audit failed for controller {controller_id}: {e}")
+        return BasicAuditResult(
+            controller_id=controller.id,
+            controller_name=controller.name,
+            host=controller.sz_host,
+            error=str(getattr(e, "detail", e))
+        )
 
 
 @router.post("/{controller_id}/audit", response_model=SZAuditResult)

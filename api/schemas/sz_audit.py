@@ -258,3 +258,41 @@ class ControllerMatchCandidates(BaseModel):
     """Match candidates for all zones in a controller"""
     controller_id: int
     zones: List[ZoneMatchCandidates] = Field(default_factory=list)
+
+
+class LicenseUsage(BaseModel):
+    """Used vs licensed count for one license type"""
+    license_type: str
+    used: int = 0
+    total: int = 0
+
+
+class LicenseEntitlement(BaseModel):
+    """One license assigned to the controller"""
+    name: str
+    description: str = ""
+    count: int = 0
+    starts: Optional[str] = Field(default=None, description="YYYY-MM-DD")
+    expires: Optional[str] = Field(default=None, description="YYYY-MM-DD, None if perpetual or unknown")
+    perpetual: bool = False
+
+
+class BasicAuditResult(BaseModel):
+    """Licenses and overall device counts. None means it couldn't be read, see errors."""
+    controller_id: int
+    controller_name: str
+    host: Optional[str] = None
+    total_aps: Optional[int] = None
+    aps_online: Optional[int] = None
+    total_zones: Optional[int] = None
+    zones_with_online_aps: Optional[int] = None
+    total_switches: Optional[int] = None
+    switches_online: Optional[int] = None
+    switch_groups: Optional[int] = Field(default=None, description="Groups holding at least one switch")
+    switch_groups_with_online: Optional[int] = None
+    ap_license: Optional[LicenseUsage] = None
+    switch_license: Optional[LicenseUsage] = None
+    licenses: List[LicenseUsage] = Field(default_factory=list)
+    entitlements: List[LicenseEntitlement] = Field(default_factory=list)
+    error: Optional[str] = Field(default=None, description="The controller couldn't be read at all")
+    errors: List[str] = Field(default_factory=list, description="Sections that couldn't be read")
