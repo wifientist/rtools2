@@ -46,13 +46,16 @@ class CreateDpskPoolsPhase(PhaseExecutor):
         pool_ids: Dict[str, str] = {}
         created = linked = 0
 
-        for key in sorted(used):
+        for i, key in enumerate(sorted(used)):
+            await self.emit_progress(i, len(used), item_name="DPSK service")
             spec = pools[key]
             if spec.get("mode") == "existing":
                 pool_ids[key] = spec["existing_pool_id"]
                 linked += 1
                 await self.emit(f"DPSK service '{key}' → existing R1 pool "
                                 f"(id={spec['existing_pool_id'][:12]})")
+                await self.record_change("reused", "dpsk_pools", key, resource_id=spec["existing_pool_id"],
+                                         detail="Existing R1 pool, chosen on Review")
                 continue
 
             name = spec["name"]
@@ -90,6 +93,7 @@ class CreateDpskPoolsPhase(PhaseExecutor):
             await self.track_resource("dpsk_pools", {"id": pool_id, "name": name})
             await self.emit(f"Created DPSK pool '{name}' (id={pool_id[:12]})", "success")
 
+        await self.emit_progress(len(used), len(used), item_name="DPSK service")
         await self.emit(f"DPSK pools: {created} created, {linked} existing", "success")
         return self.Outputs(dpsk_pool_ids=pool_ids, pools_created=created, pools_linked=linked)
 

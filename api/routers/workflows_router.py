@@ -348,6 +348,28 @@ async def list_jobs(
     )
 
 
+@router.get("/{job_id}/activity")
+async def get_job_activity(
+    job_id: str,
+    position: int = 0,
+    limit: int = 2000,
+    current_user: User = Depends(get_current_user),
+):
+    """The objects this job created or changed, oldest first, from a position."""
+    redis_client = await get_redis_client()
+    state_manager = RedisStateManagerV2(redis_client)
+
+    job = await state_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    # Verify user owns this job (legacy jobs with user_id=0 are accessible to all)
+    if job.user_id != current_user.id and job.user_id != 0:
+        raise HTTPException(status_code=403, detail=f"Access denied to job {job_id}")
+
+    return await state_manager.get_activity(job_id, max(0, position), max(1, min(limit, 2000)))
+
+
 @router.get("/{job_id}/status", response_model=JobStatusResponse)
 async def get_job_status(
     job_id: str,

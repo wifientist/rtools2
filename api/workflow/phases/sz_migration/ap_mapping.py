@@ -265,6 +265,10 @@ class MapApsPhase(_Stage):
         counts: Dict[str, int] = {}
         for r in rows:
             counts[r["status"]] = counts.get(r["status"], 0) + 1
+            target = f"{r['op'].capitalize()} to {r['to_group_name']}"
+            await self.record_change("failed" if r["status"] == "failed" else "updated", "aps", r["ap_name"],
+                                     resource_id=r["serial"],
+                                     detail=f"{target}: {r['error']}" if r.get("error") else target)
         problems = [r for r in rows if r["status"] in ("failed", "unconfirmed")]
         await save_report(self.job_id, "map", {"counts": counts, "problems": problems[:SAMPLE]})
         await self.emit(", ".join(f"{v} {k}" for k, v in sorted(counts.items())),

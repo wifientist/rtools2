@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '@/utils/api';
+import JobStatusPanel, { warningKey, type WarningGroup } from './job-monitor/JobStatusPanel';
+import JobActivityLog from './job-monitor/JobActivityLog';
+import { pluralize, resultCounts } from './job-monitor/format';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -137,12 +140,6 @@ interface JobMonitorViewProps {
   onJobComplete?: (result: JobResult) => void;
 }
 
-// "resident" -> "residents", "identity" -> "identities", "batch" -> "batches"
-function pluralize(word: string): string {
-  if (word.endsWith('y')) return `${word.slice(0, -1)}ies`;
-  return word.endsWith('ch') ? `${word}es` : `${word}s`;
-}
-
 function formatPhaseProgress(row: PhaseProgressRow): string {
   const failed = row.failed ? `, ${row.failed.toLocaleString()} failed` : '';
   return `${row.current.toLocaleString()}/${row.total.toLocaleString()} ${pluralize(row.item_name)}${failed}`;
@@ -170,6 +167,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [expandedChildJobs, setExpandedChildJobs] = useState<Set<string>>(new Set());
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
+  const [warningGroups, setWarningGroups] = useState<Record<string, WarningGroup>>({});
   const [cancelling, setCancelling] = useState(false);
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [sseReconnects, setSseReconnects] = useState(0);
@@ -352,6 +350,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       };
       const icon = icons[data.level] || 'ℹ️';
       addLiveEvent(`${icon} ${data.message}`);
+      noteWarning(data.level, data.message);
     });
 
     // Child job events (for parallel execution)
@@ -557,7 +556,23 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
   const addLiveEvent = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    setLiveEvents(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 50));
+    setLiveEvents(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 500));
+  };
+
+  const noteWarning = (level: string, message: string) => {
+    if (level !== 'warning' && level !== 'error') return;
+    const key = warningKey(message);
+    setWarningGroups(prev => {
+      const group = prev[key];
+      return {
+        ...prev,
+        [key]: {
+          label: group?.label ?? key,
+          count: (group?.count ?? 0) + 1,
+          samples: group && group.samples.length >= 5 ? group.samples : [...(group?.samples ?? []), message],
+        },
+      };
+    });
   };
 
   const addProgressLine = (message: string) => {
@@ -566,12 +581,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     addLiveEvent(message);
   };
 
-  const handlePhaseProgress = (e: MessageEvent) => {
-    const data = JSON.parse(e.data);
-    const phase = jobStatusRef.current?.phases?.find(p => p.id === data.phase_id);
-    const unit = data.unit_id ? ` (${data.unit_id})` : '';
-    const detail = data.detail ? `: ${data.detail}` : '';
-    addLiveEvent(`📈 ${phase?.name || data.phase_id}${unit}: ${formatPhaseProgress(data)}${detail}`);
+  // The counts are in the Status panel, read back from the job.
+  const handlePhaseProgress = () => {
     refreshJobStatus();
   };
 
@@ -636,6 +647,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       const data = JSON.parse(e.data);
       const icons: Record<string, string> = { info: 'ℹ️', warning: '⚠️', error: '❌', success: '✅' };
       addLiveEvent(`${icons[data.level] || 'ℹ️'} ${data.message}`);
+      noteWarning(data.level, data.message);
     });
 
     newEventSource.addEventListener('phase_started', (e) => {
@@ -1369,21 +1381,16 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                         ))}
 
                         {/* Phase Result Summary */}
-                        {phase.result && Object.keys(phase.result).length > 0 && (
+                        {resultCounts(phase.result).length > 0 && (
                           <div className="p-3 bg-blue-50 rounded border border-blue-200">
                             <p className="text-xs font-medium text-blue-900 mb-2">Phase Summary:</p>
                             <div className="text-xs text-blue-800 space-y-1">
-                              {Object.entries(phase.result).map(([key, value]) => {
-                                if (key === 'created_count' || key === 'total_count' || key === 'processed_count') {
-                                  return (
-                                    <div key={key} className="flex justify-between">
-                                      <span className="font-medium">{key.replace(/_/g, ' ')}:</span>
-                                      <span>{String(value)}</span>
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })}
+                              {resultCounts(phase.result).map(([label, count]) => (
+                                <div key={label} className="flex justify-between">
+                                  <span className="font-medium">{label}:</span>
+                                  <span>{count.toLocaleString()}</span>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -1510,12 +1517,12 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
           )}
         </div>
 
-        {/* Live Events Panel */}
+        {/* Status Panel */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow h-fit sticky top-6">
             <div className="p-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">Live Events</h2>
+                <h2 className="text-lg font-bold text-gray-900">Status</h2>
                 <div className="flex items-center gap-2">
                   {/* SSE connection indicator */}
                   <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded ${
@@ -1547,17 +1554,12 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
               )}
             </div>
             <div className="p-4">
-              <div className="max-h-[400px] overflow-y-auto space-y-1">
-                {liveEvents.length === 0 ? (
-                  <p className="text-sm text-gray-500">Waiting for events...</p>
-                ) : (
-                  liveEvents.map((event, idx) => (
-                    <div key={idx} className="text-xs font-mono text-gray-700 py-1">
-                      {event}
-                    </div>
-                  ))
-                )}
-              </div>
+              <JobStatusPanel
+                phases={jobStatus.phases}
+                phaseStats={jobStatus.progress?.phase_stats}
+                createdResources={jobStatus.created_resources}
+                warnings={warningGroups}
+              />
             </div>
           </div>
 
@@ -1568,20 +1570,6 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
               <div className="space-y-1">
                 {jobStatus.errors.map((error, idx) => (
                   <p key={idx} className="text-xs text-red-600">{error}</p>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Created Resources */}
-          {Object.keys(jobStatus.created_resources).length > 0 && (
-            <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
-              <h3 className="text-sm font-bold text-green-800 mb-2">Created Resources</h3>
-              <div className="space-y-1">
-                {Object.entries(jobStatus.created_resources).map(([type, resources]) => (
-                  <p key={type} className="text-xs text-green-700">
-                    {type}: {resources.length}
-                  </p>
                 ))}
               </div>
             </div>
@@ -1654,6 +1642,14 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
           )}
         </div>
       </div>
+
+      {/* Activity: full width, under the phases */}
+      <JobActivityLog
+        jobId={jobId}
+        live={!['COMPLETED', 'FAILED', 'PARTIAL', 'CANCELLED'].includes(jobStatus.status)}
+        phaseNames={Object.fromEntries(jobStatus.phases.map((p) => [p.id, p.name]))}
+        rawMessages={liveEvents}
+      />
     </div>
   );
 };
