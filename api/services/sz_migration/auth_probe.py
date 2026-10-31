@@ -26,7 +26,7 @@ caught rather than shipped.
 
 import asyncio
 import logging
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 # Re-exported for the audit: the migration writes it when SZ will not give
 # up a shared secret, and a profile still carrying it rejects every request.
@@ -44,6 +44,7 @@ async def collect_auth_facts(
     tenant_id: Optional[str],
     networks: Iterable[Dict[str, Any]],
     identity_groups: List[Dict[str, Any]],
+    on_progress: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
     """
     Gather auth-path facts for the given R1 network rows.
@@ -52,6 +53,7 @@ async def collect_auth_facts(
         networks: R1 network rows (from the venue inventory) to probe.
         identity_groups: The tenant's identity groups from the inventory; each
             carries dpskPoolId, which is how a pool finds its groups.
+        on_progress: Optional callback(message) for status lines.
 
     Returns:
         {
@@ -64,12 +66,17 @@ async def collect_auth_facts(
           "errors": [str],
         }
     """
+    def progress(message: str):
+        if on_progress:
+            on_progress(message)
+
     networks = [n for n in networks if n.get("id")]
     errors: List[str] = []
     semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
     wanted = {n["id"] for n in networks}
 
     # ── External RADIUS links (one tenant-wide query) ────────────────
+    progress("reading RADIUS server links...")
     radius_by_network: Dict[str, List[Dict[str, Any]]] = {}
     try:
         profiles = await r1_client.radius_profiles.query_radius_profiles(tenant_id)
@@ -155,6 +162,7 @@ async def collect_auth_facts(
             "error": None,
         }
 
+    progress(f"reading DPSK pool links for {len(dpsk_networks)} networks...")
     pools_by_network = dict(await asyncio.gather(*(pools_for(n) for n in dpsk_networks)))
 
     pool_ids = {
@@ -175,6 +183,7 @@ async def collect_auth_facts(
                 group_id, tenant_id
             )
 
+    progress(f"counting passphrases and identities in {len(pool_ids)} DPSK pools...")
     pp_counts = dict(await asyncio.gather(*(passphrase_count(p) for p in pool_ids)))
     group_ids = {ig["id"] for rows in groups_by_pool.values() for ig in rows}
     id_counts = dict(await asyncio.gather(*(identity_count(g) for g in group_ids)))
