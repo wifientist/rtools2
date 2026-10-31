@@ -118,6 +118,7 @@ const Sidebar = () => {
         { to: "/fileshare/admin", icon: <FolderOpen size={20} />, label: "Fileshare Admin", requiresAuth: true, rolesAllowed: ["super"] },
         { to: "/super", icon: <Settings size={20} />, label: "Super", requiresAuth: true, rolesAllowed: ["super"] },
         { to: "/testcalls", icon: <BookCheck size={20} />, label: "Test Calls", requiresAuth: true, rolesAllowed: ["admin","super"] },
+        { to: "/r1-call-timing", icon: <CloudCog size={20} />, label: "R1 Call Timing", requiresAuth: true, rolesAllowed: ["super"] },
       ],
     },
   ];

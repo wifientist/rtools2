@@ -6,6 +6,7 @@ import requests
 import threading
 import time
 import asyncio
+from r1api import call_metrics
 from r1api.token_cache import get_cached_token, store_token, invalidate_token
 from r1api.services.msp import MspService
 
@@ -338,14 +339,20 @@ class R1Client:
             token_used = self.token
             headers["Authorization"] = f"Bearer {token_used}"
 
-            response = self.session.request(
-                method,
-                url,
-                headers=headers,
-                json=payload,
-                params=params,
-                verify=True
-            )
+            call_started = time.monotonic()
+            try:
+                response = self.session.request(
+                    method,
+                    url,
+                    headers=headers,
+                    json=payload,
+                    params=params,
+                    verify=True
+                )
+            except Exception:
+                call_metrics.record_call_error(method, path, time.monotonic() - call_started)
+                raise
+            call_metrics.record_call(method, path, response, time.monotonic() - call_started)
 
             if verbose:
                 body = _mask_text_for_log(response.text)[:3000] if response.text else '(empty)'
@@ -436,12 +443,18 @@ class R1Client:
 
         logger.debug(f"R1Client Multipart POST: {path}")
 
-        response = self.session.post(
-            url,
-            headers=headers,
-            files=files,
-            verify=True
-        )
+        call_started = time.monotonic()
+        try:
+            response = self.session.post(
+                url,
+                headers=headers,
+                files=files,
+                verify=True
+            )
+        except Exception:
+            call_metrics.record_call_error("post", path, time.monotonic() - call_started)
+            raise
+        call_metrics.record_call("post", path, response, time.monotonic() - call_started)
 
         logger.debug(f"POST (multipart) {url} --> {response.status_code}")
         if not response.ok:
