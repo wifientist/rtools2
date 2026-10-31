@@ -3,11 +3,13 @@ RADIUS Standard: comparison and the reads it depends on.
 
     docker compose exec backend python scripts/test_radius_standard.py
 """
+import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from r1api.services.radius_attributes import RadiusAttributeService
 from services.radius_standard import analyze_consistency, compare_tenant, read_attribute_catalogue, read_tenant_groups
 
 failures = 0
@@ -143,6 +145,26 @@ fake.calls = []
 read_tenant_groups(fake, "ec1")
 check("a direct key sends no override", fake.calls[0][2] is None)
 check("catalogue asks per vendor", sorted(a["name"] for a in read_attribute_catalogue(fake, None)) == ["Ruckus-A", "WISPr-A"])
+
+print("\nshared group listing")
+fake = Fake()
+service = RadiusAttributeService(fake)
+listed = asyncio.run(service.get_radius_attribute_groups(tenant_id="ec1"))
+check("every page is listed, not GET's first 10", len(listed) == 230, str(len(listed)))
+check("listing uses /query", all(c[0] == "/radiusAttributeGroups/query" for c in fake.calls))
+check("listing is scoped to the EC", all(c[2] == "ec1" for c in fake.calls))
+check("listing starts at page 0", fake.calls[0][1]["page"] == 0)
+fake.status = 403
+try:
+    asyncio.run(service.get_radius_attribute_groups(tenant_id="ec1"))
+    check("a refused listing raises", False, "returned a list")
+except Exception as e:
+    check("a refused listing raises", "403" in str(e))
+fake.status = 200
+fake.ec_type = "EC"
+fake.calls = []
+asyncio.run(service.get_radius_attribute_groups(tenant_id="ec1"))
+check("listing on a direct key sends no override", fake.calls[0][2] is None)
 
 print(f"\n{'FAILED: ' + str(failures) if failures else 'All passed'}")
 sys.exit(1 if failures else 0)
