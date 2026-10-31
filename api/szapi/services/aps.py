@@ -45,11 +45,43 @@ class ApService:
         # Fallback to basic GET endpoint
         endpoint = f"/{self.client.api_version}/aps"
         params = {
-            "index": page,
+            "index": page * min(limit, 1000),
             "listSize": min(limit, 1000),
             "zoneId": zone_id
         }
         return await self.client._request("GET", endpoint, params=params)
+
+    async def get_all_aps_by_zone(self, zone_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all APs in a zone across all pages (a single page stops at 1000).
+
+        Args:
+            zone_id: Zone UUID
+
+        Returns:
+            List of all AP objects in the zone
+        """
+        all_aps: List[Dict[str, Any]] = []
+        page = 0
+
+        while True:
+            result = await self.get_aps_by_zone(zone_id, page=page)
+            aps = result.get("list", []) if isinstance(result, dict) else result
+            if not aps:
+                break
+
+            all_aps.extend(aps)
+            total = result.get("totalCount") if isinstance(result, dict) else None
+            if total is not None and len(all_aps) >= total:
+                break
+            page += 1
+
+            # Safety limit to prevent infinite loops
+            if page > 100:
+                logger.warning(f"Hit page limit (100) when fetching APs for zone {zone_id}")
+                break
+
+        return all_aps
 
     async def _query_aps_by_zone(
         self,

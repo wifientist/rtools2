@@ -446,8 +446,7 @@ async def _audit_zone(
     # Fetch APs
     aps = []
     try:
-        aps_result = await sz_client.aps.get_aps_by_zone(zone_id)
-        aps = aps_result.get("list", []) if isinstance(aps_result, dict) else aps_result
+        aps = await sz_client.aps.get_all_aps_by_zone(zone_id)
         logger.info(f"Zone '{zone_name}': Fetched {len(aps)} APs")
 
         online = 0
@@ -520,7 +519,7 @@ async def _audit_zone(
 
     # Fetch AP Groups
     try:
-        ap_groups_raw = await sz_client.apgroups.get_ap_groups_by_zone(zone_id)
+        ap_groups_raw = await sz_client.apgroups.get_all_ap_groups_paginated(zone_id)
         ap_group_counts = {}
         for ap in aps:
             gid = ap.get("apGroupId")
@@ -540,7 +539,7 @@ async def _audit_zone(
 
     # Fetch WLANs - parallelize detail fetching for performance
     try:
-        wlans_list = await sz_client.wlans.get_wlans_by_zone(zone_id)
+        wlans_list = await sz_client.wlans.get_all_wlans_paginated(zone_id)
         logger.info(f"Zone '{zone_name}': Fetching details for {len(wlans_list)} WLANs (parallel)")
         wlan_type_counter = Counter()
 
@@ -603,7 +602,7 @@ async def _audit_zone(
 
     # Fetch WLAN Groups
     try:
-        wlan_groups_raw = await sz_client.wlans.get_wlan_groups_by_zone(zone_id)
+        wlan_groups_raw = await sz_client.wlans.get_all_wlan_groups_paginated(zone_id)
         wlan_groups = [
             WlanGroupSummary(
                 id=g.get("id", ""),
