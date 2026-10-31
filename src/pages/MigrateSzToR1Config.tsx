@@ -297,6 +297,7 @@ export default function MigrateSzToR1Config() {
           {state.currentStep === 1 && (
             <Step1SourceSelection
               szControllerId={activeControllerId!}
+              r1ControllerName={secondaryControllerName}
               state={state}
               dispatch={dispatch}
             />
