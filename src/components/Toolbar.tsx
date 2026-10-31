@@ -4,7 +4,7 @@ import { Bell, UserCircle, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { apiFetch } from '@/utils/api';
 
-const Toolbar = () => {
+const Toolbar = ({ onControllerSwitched }: { onControllerSwitched: () => void }) => {
   const {
     isAuthenticated,
     activeControllerId,
@@ -55,8 +55,8 @@ const Toolbar = () => {
         setActiveControllerName(controllerName);
         setActiveDropdownOpen(false);
 
-        // Reload the page to refresh all components with new controller context
-        window.location.reload();
+        // Remount the page to refresh all components with new controller context
+        onControllerSwitched();
       } else {
         console.error('Failed to set active controller:', response.status);
       }
@@ -76,9 +76,11 @@ const Toolbar = () => {
         });
 
         if (response.ok) {
+          setSecondaryControllerId(null);
+          setSecondaryControllerName(null);
           setSecondaryDropdownOpen(false);
-          // Reload the page to refresh all components
-          window.location.reload();
+          // Remount the page to refresh all components
+          onControllerSwitched();
         } else {
           console.error('Failed to clear secondary controller:', response.status);
         }
@@ -97,8 +99,8 @@ const Toolbar = () => {
         setSecondaryControllerName(controllerName || "");
         setSecondaryDropdownOpen(false);
 
-        // Reload the page to refresh all components with new controller context
-        window.location.reload();
+        // Remount the page to refresh all components with new controller context
+        onControllerSwitched();
       } else {
         console.error('Failed to set secondary controller:', response.status);
       }

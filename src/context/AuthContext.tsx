@@ -29,8 +29,8 @@ interface AuthContextType {
   roleHierarchy: { [key: string]: number };
   setActiveControllerId: (id: number) => void;
   setActiveControllerName: (name: string) => void;
-  setSecondaryControllerId: (id: number) => void;
-  setSecondaryControllerName: (name: string) => void;
+  setSecondaryControllerId: (id: number | null) => void;
+  setSecondaryControllerName: (name: string | null) => void;
   setBetaEnabled: (enabled: boolean) => void;
   setAlphaEnabled: (enabled: boolean) => void;
   setDangerEnabled: (enabled: boolean) => void;
