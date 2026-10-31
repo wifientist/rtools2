@@ -31,6 +31,7 @@ Usage:
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Type, ClassVar, Callable, TypeVar, Tuple
 from pydantic import BaseModel
@@ -259,12 +260,56 @@ class PhaseExecutor(ABC):
                 activity_wait_listener.reset(token)
         return scope()
 
-    async def track_resource(self, resource_type: str, resource_data: Dict[str, Any]) -> None:
-        """Track a created resource for cleanup reference."""
+    async def track_resource(
+        self, resource_type: str, resource_data: Dict[str, Any], action: Optional[str] = None,
+    ) -> None:
+        """Track a created resource for cleanup reference, and log it for the monitor."""
         if self.context.state_manager:
             await self.context.state_manager.track_created_resource(
                 self.job_id, resource_type, resource_data
             )
+        # Named fields only: resource_data can hold anything a phase kept.
+        await self.record_change(
+            action or ("reused" if resource_data.get("reused") else "created"),
+            resource_type,
+            resource_data.get("name") or resource_data.get("username") or resource_data.get("id") or "",
+            resource_id=resource_data.get("id"),
+        )
+
+    async def record_change(
+        self,
+        action: str,
+        resource_type: str,
+        name: str,
+        resource_id: Optional[str] = None,
+        detail: str = "",
+    ) -> None:
+        """
+        Add a row to the job's activity log: one object and what happened to it.
+
+        Args:
+            action: "created", "reused", "updated", "skipped" or "failed"
+            resource_type: Plural snake_case, as in track_resource ("ap_groups")
+            name: The object's name
+            resource_id: R1's id, or a serial
+            detail: One line, shown to anyone who can see the job. Never a
+                passphrase, a shared secret or a request body.
+        """
+        # A report on the work, so failing to deliver it never fails the work.
+        try:
+            if self.context.state_manager:
+                await self.context.state_manager.append_activity(self.job_id, {
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "action": action,
+                    "type": resource_type,
+                    "name": str(name),
+                    "id": resource_id,
+                    "phase_id": self.phase_id,
+                    "unit_id": self.context.unit_id,
+                    "detail": str(detail)[:300],
+                })
+        except Exception as e:
+            logger.debug(f"  [{self.phase_id}] Could not record activity: {e}")
 
     async def emit(self, message: str, level: str = "info", details: Dict = None) -> None:
         """Emit a status message for frontend display."""

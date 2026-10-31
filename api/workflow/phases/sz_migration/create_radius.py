@@ -73,7 +73,8 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
         mappings: Dict[str, str] = {}
         created = reused = skipped = 0
 
-        for s in services:
+        for i, s in enumerate(services):
+            await self.emit_progress(i, len(services), item_name="RADIUS service")
             sid, sz_name = s["id"], s["name"]
             d = {"action": "create"} if decisions is None else decisions.get(sid)
             action = (d or {}).get("action")
@@ -81,6 +82,7 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
             if action == "skip" or d is None:
                 skipped += 1
                 await self.emit(f"RADIUS '{sz_name}' — not migrated (by choice)")
+                await self.record_change("skipped", "radius_profiles", sz_name, detail="Not migrated, by choice")
                 continue
 
             if action == "existing":
@@ -88,6 +90,8 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
                 mappings[sid] = profile_id
                 reused += 1
                 await self.emit(f"RADIUS '{sz_name}' → existing R1 profile (id={profile_id[:12]})")
+                await self.record_change("reused", "radius_profiles", sz_name, resource_id=profile_id,
+                                         detail="Existing R1 profile, chosen on Review")
                 continue
 
             # ── create ────────────────────────────────────────────────
@@ -98,6 +102,8 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
                     f"RADIUS '{sz_name}' has no server address in the snapshot — not created",
                     "warning",
                 )
+                await self.record_change("skipped", "radius_profiles", sz_name,
+                                         detail="No server address in the snapshot")
                 continue
 
             # Same name already in R1: link it rather than create a duplicate.
@@ -114,6 +120,8 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
                     "shared secret was left unchanged",
                     "warning",
                 )
+                await self.record_change("reused", "radius_profiles", details["name"], resource_id=existing["id"],
+                                         detail="Same name already in R1; its shared secret was left unchanged")
                 continue
 
             raw_secret = await redis.hget(secret_key, sid)
@@ -152,6 +160,7 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
                 "id": profile_id, "name": details["name"], "sz_service_id": sid,
             })
 
+        await self.emit_progress(len(services), len(services), item_name="RADIUS service")
         await self.emit(
             f"RADIUS profiles: {created} created, {reused} linked existing, {skipped} not migrated",
             "success",

@@ -66,6 +66,7 @@ class CreateNetworksPhase(PhaseExecutor):
         # Fast path: already resolved from validation
         if inputs.network_id:
             await self.emit(f"[{wlan_name}] Network already exists (reused)")
+            await self.record_change("reused", "wifi_networks", r1_name, resource_id=inputs.network_id)
             return self.Outputs(network_id=inputs.network_id, reused=True)
 
         # Check if network exists by name (idempotent)

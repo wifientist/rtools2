@@ -94,6 +94,8 @@ class ActivateSSIDsPhase(PhaseExecutor):
         already = len(targets) - len(todo)
         if not todo:
             await self.emit(f"[{wlan_name}] Already active on all {len(targets)} AP Group(s)")
+            await self.record_change("skipped", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                     detail=f"Already active on all {len(targets)} AP Group(s)")
             return self.Outputs(activated=True, activations_attempted=len(targets), already_active=already)
 
         await self.emit(f"[{wlan_name}] Activating on {len(todo)} AP Group(s)...")
@@ -139,6 +141,8 @@ class ActivateSSIDsPhase(PhaseExecutor):
             raise RuntimeError(f"[{wlan_name}] Not active on AP Group(s) {', '.join(missing)}{detail}")
 
         await self.emit(f"[{wlan_name}] Active on all {len(targets)} AP Group(s)", "success")
+        await self.record_change("updated", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                 detail="Activated on " + ", ".join(t["name"] for t in todo))
         return self.Outputs(
             activated=True,
             activations_attempted=len(targets),
@@ -151,6 +155,8 @@ class ActivateSSIDsPhase(PhaseExecutor):
         state, bound = await self._venue_state(inputs.network_id)
         if state == "venue_wide":
             await self.emit(f"[{wlan_name}] Already on All AP Groups")
+            await self.record_change("skipped", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                     detail="Already on All AP Groups")
             return self.Outputs(activated=True, activations_attempted=1, already_active=1)
         if state == "specific":
             raise RuntimeError(
@@ -189,6 +195,8 @@ class ActivateSSIDsPhase(PhaseExecutor):
             raise RuntimeError(f"[{wlan_name}] Not on All AP Groups after activation (R1 still "
                                f"reports '{state}')" + (f"; R1: {error}" if error else ""))
         await self.emit(f"[{wlan_name}] Active on All AP Groups", "success")
+        await self.record_change("updated", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                 detail=f"Activated on All AP Groups ({', '.join(radio_types)})")
         return self.Outputs(activated=True, activations_attempted=1, activations_succeeded=1)
 
     async def _activate_venue_wide(self, inputs: "ActivateSSIDsPhase.Inputs", radio_types: List[str]) -> Optional[str]:

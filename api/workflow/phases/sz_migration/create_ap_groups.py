@@ -63,6 +63,8 @@ class CreateApGroupsPhase(PhaseExecutor):
                 todo.append(name)
         if ids:
             await self.emit(f"{len(ids)} AP Group(s) already exist — reused")
+            for name, gid in ids.items():
+                await self.record_change("reused", "ap_groups", name, resource_id=gid)
         if not todo:
             return self.Outputs(ap_group_ids=ids)
 
@@ -70,6 +72,7 @@ class CreateApGroupsPhase(PhaseExecutor):
         sem = asyncio.Semaphore(CREATE_CONCURRENCY)
         failed: Dict[str, str] = {}
         created = 0
+        await self.emit_progress(0, len(todo), item_name="AP Group")
 
         async def one(name: str):
             nonlocal created
@@ -83,12 +86,15 @@ class CreateApGroupsPhase(PhaseExecutor):
                         raise RuntimeError("R1 accepted it but returned no id")
                     ids[name] = group_id
                     created += 1
+                    # Read before awaiting: the other workers move these on.
+                    done, failures = created + len(failed), len(failed)
                     await self.track_resource("ap_groups", {"id": group_id, "name": name})
-                    if created % 25 == 0 or created == len(todo):
-                        await self.emit(f"Created {created}/{len(todo)} AP Group(s)")
                 except Exception as e:
                     failed[name] = str(e)[:300]
+                    done, failures = created + len(failed), len(failed)
+                    await self.record_change("failed", "ap_groups", name, detail=failed[name])
                     await self.emit(f"AP Group '{name}' not created: {e}", "warning")
+                await self.emit_progress(done, len(todo), failures, "AP Group")
 
         await asyncio.gather(*(one(n) for n in todo))
         if failed:

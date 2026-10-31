@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 # TTL Settings
 JOB_TTL_SECONDS = 604800      # 7 days
+ACTIVITY_MAX_ROWS = 10000     # per job; the oldest go first
 # Liveness key TTL. Must comfortably exceed the Brain's heartbeat interval
 # so a busy-but-slow job is never mistaken for a dead one.
 JOB_HEARTBEAT_TTL = 120
@@ -656,6 +657,43 @@ class RedisStateManagerV2:
             pipe.hset(key, f"{phase_id}|{unit_id or ''}|{item_name}", json.dumps(counts))
             pipe.expire(key, JOB_TTL_SECONDS)
             await pipe.execute()
+
+    async def append_activity(self, job_id: str, row: Dict[str, Any]) -> None:
+        """
+        One object a phase created or changed. A list beside the job blob, like
+        phase progress: the Brain saves its in-memory job whole, and rewriting
+        that blob per object would not hold up at thousands of rows.
+        """
+        key = f"{PREFIX}:jobs:{job_id}:activity"
+        total_key = f"{key}:total"
+        async with self.redis.pipeline() as pipe:
+            pipe.rpush(key, json.dumps(row))
+            pipe.ltrim(key, -ACTIVITY_MAX_ROWS, -1)
+            pipe.incr(total_key)
+            pipe.expire(key, JOB_TTL_SECONDS)
+            pipe.expire(total_key, JOB_TTL_SECONDS)
+            await pipe.execute()
+
+    async def get_activity(self, job_id: str, position: int = 0, limit: int = 2000) -> Dict[str, Any]:
+        """
+        Rows from a position in everything ever recorded, oldest first. A
+        position survives trimming, so a client can keep asking from its last
+        next_position. dropped = rows trimmed away for good.
+        """
+        key = f"{PREFIX}:jobs:{job_id}:activity"
+        raw_total = await self.redis.get(f"{key}:total")
+        total = int(raw_total or 0)
+        kept = await self.redis.llen(key)
+        dropped = max(0, total - kept)
+        start = max(0, position - dropped)
+        rows = await self.redis.lrange(key, start, start + limit - 1) if limit > 0 else []
+        return {
+            "rows": [json.loads(r) for r in rows],
+            "first_position": dropped + start,
+            "next_position": dropped + start + len(rows),
+            "total": total,
+            "dropped": dropped,
+        }
 
     async def get_phase_progress(self, job_id: str) -> Dict[str, List[Dict[str, Any]]]:
         """phase id -> one row per kind of item, summed across units."""

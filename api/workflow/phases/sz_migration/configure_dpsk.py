@@ -69,6 +69,8 @@ class ConfigureDPSKPhase(PhaseExecutor):
                 logger.debug(f"[{wlan_name}] Could not read linked DPSK services, linking anyway: {e}")
             if pool_id in linked_ids:
                 await self.emit(f"[{wlan_name}] DPSK service already linked")
+                await self.record_change("skipped", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                         detail="DPSK service already linked")
                 return self.Outputs(dpsk_pool_id=pool_id)
             await self.emit(f"[{wlan_name}] Linking DPSK service...")
             await self.r1_client.networks.activate_dpsk_service_on_network(
@@ -77,6 +79,8 @@ class ConfigureDPSKPhase(PhaseExecutor):
                 dpsk_service_id=pool_id,
             )
             await self.emit(f"[{wlan_name}] DPSK service linked (id={pool_id[:12]})", "success")
+            await self.record_change("updated", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                     detail=f"Linked DPSK service {pool_key}")
             return self.Outputs(dpsk_pool_id=pool_id)
 
         # Older plan (no DPSK choices): per-WLAN {wlan}-pool, as before.
@@ -99,7 +103,8 @@ class ConfigureDPSKPhase(PhaseExecutor):
         await self.emit(
             f"[{wlan_name}] {'Reused' if reused_ig else 'Created'} identity group (id={ig_id[:12]})"
         )
-        await self.track_resource("identity_groups", {"id": ig_id, "name": ig_name})
+        await self.track_resource("identity_groups", {"id": ig_id, "name": ig_name},
+                                  action="reused" if reused_ig else "created")
 
         # ── Create/reuse DPSK pool ────────────────────────────────────
         pool_name = f"{wlan_name}-pool"
@@ -118,7 +123,8 @@ class ConfigureDPSKPhase(PhaseExecutor):
         await self.emit(
             f"[{wlan_name}] {'Reused' if reused_pool else 'Created'} DPSK pool (id={pool_id[:12]})"
         )
-        await self.track_resource("dpsk_pools", {"id": pool_id, "name": pool_name})
+        await self.track_resource("dpsk_pools", {"id": pool_id, "name": pool_name},
+                                  action="reused" if reused_pool else "created")
 
         # ── Link DPSK service to network ──────────────────────────────
         await self.emit(f"[{wlan_name}] Linking DPSK service to network...")
@@ -128,6 +134,8 @@ class ConfigureDPSKPhase(PhaseExecutor):
             dpsk_service_id=pool_id,
         )
         await self.emit(f"[{wlan_name}] DPSK configured", "success")
+        await self.record_change("updated", "wifi_networks", wlan_name, resource_id=inputs.network_id,
+                                 detail=f"Linked DPSK pool {pool_name}")
 
         return self.Outputs(
             dpsk_pool_id=pool_id,

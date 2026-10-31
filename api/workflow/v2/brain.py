@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 from typing import Dict, Any, Optional, List, Set, Tuple, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 
 from workflow.v2.models import (
     WorkflowJobV2,
@@ -1549,6 +1550,8 @@ class WorkflowBrain:
                 f"Job {job.id}: Phase {phase_id} failed for {unit_id}: {error_msg}"
             )
 
+            await self._record_failure(job, phase_id, unit_id, error_msg)
+
             updated = await self.state.update_unit_phase_status(
                 job.id, unit_id, phase_id, failed=True, error=error_msg
             )
@@ -1644,6 +1647,7 @@ class WorkflowBrain:
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Job {job.id}: Global phase {phase_id} failed: {error_msg}")
+            await self._record_failure(job, phase_id, None, error_msg)
 
             # Kept with the phase, not only in the log: the step that ran the
             # job shows why it stopped.
@@ -1656,6 +1660,27 @@ class WorkflowBrain:
                 phase_id=phase_id,
                 error=error_msg,
             )
+
+    async def _record_failure(
+        self, job: WorkflowJobV2, phase_id: str, unit_id: Optional[str], error: str
+    ) -> None:
+        """A failed phase, as a row in the job's activity log."""
+        unit = job.units.get(unit_id) if unit_id else None
+        # A pydantic error quotes the values it rejected, passphrases included.
+        detail = re.sub(r"input_value=.*?(?=, input_type=)", "input_value=(hidden)", error)
+        try:
+            await self.state.append_activity(job.id, {
+                "time": datetime.now(timezone.utc).isoformat(),
+                "action": "failed",
+                "type": "units" if unit_id else "phases",
+                "name": str(getattr(unit, "unit_number", None) or unit_id or phase_id),
+                "id": None,
+                "phase_id": phase_id,
+                "unit_id": unit_id,
+                "detail": detail[:300],
+            })
+        except Exception as e:
+            logger.debug(f"Job {job.id}: Could not record activity: {e}")
 
     # =========================================================================
     # Input/Output Wiring
