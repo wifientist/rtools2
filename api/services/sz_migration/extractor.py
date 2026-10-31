@@ -158,8 +158,7 @@ async def extract_zone_snapshot(
 
     # Pre-fetch all APs for counting (we'll reuse this in step 5)
     progress("aps", "Fetching AP list for counts...")
-    aps_result = await sz_client.aps.get_aps_by_zone(zone_id)
-    all_aps_raw = aps_result.get("list", []) if isinstance(aps_result, dict) else aps_result
+    all_aps_raw = await sz_client.aps.get_all_aps_by_zone(zone_id)
 
     # Count APs per group
     ap_counts: Dict[str, int] = {}
@@ -196,22 +195,6 @@ async def extract_zone_snapshot(
     progress("ap_groups", f"Extracted {len(ap_groups)} AP Groups")
 
     # ── Step 5: APs (already fetched above) ──────────────────────────
-    # Paginate through all APs if needed (the initial fetch may be truncated)
-    total_ap_count = aps_result.get("totalCount", len(all_aps_raw)) if isinstance(aps_result, dict) else len(all_aps_raw)
-
-    if len(all_aps_raw) < total_ap_count:
-        progress("aps", f"Fetching remaining APs ({len(all_aps_raw)}/{total_ap_count})...")
-        page = 1
-        while len(all_aps_raw) < total_ap_count:
-            more_result = await sz_client.aps.get_aps_by_zone(zone_id, page=page)
-            more_aps = more_result.get("list", []) if isinstance(more_result, dict) else more_result
-            if not more_aps:
-                break
-            all_aps_raw.extend(more_aps)
-            page += 1
-            if page > 100:
-                break
-
     progress("aps", f"Extracted {len(all_aps_raw)} APs")
 
     # ── Step 5b: Per-AP radio config (WLAN Group overrides) ──────────

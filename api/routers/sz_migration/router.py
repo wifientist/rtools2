@@ -420,13 +420,12 @@ async def zone_census(
         # Parallel cheap list calls
         zone_detail, wlans, wlan_groups, ap_groups, aps = await asyncio.gather(
             sz_client.zones.get_zone_details(request.zone_id),
-            sz_client.wlans.get_wlans_by_zone(request.zone_id),
-            sz_client.wlans.get_wlan_groups_by_zone(request.zone_id),
-            sz_client.apgroups.get_ap_groups_by_zone(request.zone_id),
-            sz_client.aps.get_aps_by_zone(request.zone_id),
+            sz_client.wlans.get_all_wlans_paginated(request.zone_id),
+            sz_client.wlans.get_all_wlan_groups_paginated(request.zone_id),
+            sz_client.apgroups.get_all_ap_groups_paginated(request.zone_id),
+            sz_client.aps.get_all_aps_by_zone(request.zone_id),
         )
 
-    ap_list = aps.get("list", []) if isinstance(aps, dict) else aps
 
     return CensusResponse(
         zone_id=request.zone_id,
@@ -434,7 +433,7 @@ async def zone_census(
         wlan_count=len(wlans),
         wlan_group_count=len(wlan_groups),
         ap_group_count=len(ap_groups),
-        ap_count=len(ap_list),
+        ap_count=len(aps),
     )
 
 
