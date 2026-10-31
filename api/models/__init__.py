@@ -33,6 +33,7 @@ from models.data_studio_export import DataStudioExportConfig, DataStudioExportRu
 
 # Migration Tracker
 from models.migration_tracker import TrackerSite
+from models.radius_standard import RadiusStandard
 
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
@@ -50,4 +51,5 @@ __all__ = [
     'DataStudioExportConfig', 'DataStudioExportRun',
     # Migration Tracker
     'TrackerSite',
+    'RadiusStandard',
 ]

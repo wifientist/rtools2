@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes, CalendarRange, Stethoscope, ArrowRightLeft, LayoutTemplate } from "lucide-react";
+import { Home, Users, CloudCog, Camera, BookCheck, Settings, GitCompareArrows, ChevronRight, ChevronLeft, ArrowRightFromLine, Wifi, RedoDot, Activity, Table2, Network, Info, Lightbulb, Wrench, Shield, ChevronDown, Key, ListTodo, ClipboardList, AlertTriangle, PenLine, FolderOpen, BarChart3, SearchCheck, Tag, Download, Radio, Map, Cable, ClipboardCheck, Trash2, Layers, Import, Boxes, CalendarRange, Stethoscope, ArrowRightLeft, LayoutTemplate, Gauge } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
@@ -97,6 +97,7 @@ const Sidebar = () => {
         { to: "/per-unit-ssid", icon: <Wifi size={20} />, label: "Per-Unit SSID", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/apg-cleanup", icon: <Boxes size={20} />, label: "APG Cleanup", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/venue-checkup", icon: <Stethoscope size={20} />, label: "Venue Checkup", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
+        { to: "/radius-standard", icon: <Gauge size={20} />, label: "RADIUS Standard", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/ap-port-config", icon: <Network size={20} />, label: "AP Port Config", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/ap-rename", icon: <PenLine size={20} />, label: "AP Rename", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/bulk-ap-tagging", icon: <Tag size={20} />, label: "Bulk AP Tagging", requiresAuth: true, rolesAllowed: ["user","admin"] },

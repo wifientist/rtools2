@@ -44,6 +44,7 @@ import CloudpathImport from "@/pages/CloudpathImport";
 import WlanActivator from "@/pages/WlanActivator";
 import WlanVlan from "@/pages/WlanVlan";
 import WlanRename from "@/pages/WlanRename";
+import RadiusStandard from "@/pages/RadiusStandard";
 import WlanGrabber from "@/pages/WlanGrabber";
 import ApgCleanup from "@/pages/ApgCleanup";
 import VenueCheckup from "@/pages/VenueCheckup";
@@ -114,6 +115,7 @@ const App = () => {
           <Route path="/migration-audit" element={<ProtectedRoute element={<MigrationAudit />} />} />
           <Route path="/wlan-vlan" element={<ProtectedRoute element={<WlanVlan />} />} />
           <Route path="/wlan-rename" element={<AlphaRoute element={<WlanRename />} />} />
+          <Route path="/radius-standard" element={<BetaRoute element={<RadiusStandard />} />} />
           <Route path="/wlan-grabber" element={<ProtectedRoute element={<WlanGrabber />} />} />
           <Route path="/apg-cleanup" element={<ProtectedRoute element={<ApgCleanup />} />} />
           <Route path="/venue-checkup" element={<BetaRoute element={<VenueCheckup />} />} />
