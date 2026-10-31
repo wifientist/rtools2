@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import HTTPException
@@ -44,7 +45,7 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_EC']}
         }
-        return self._json(self.client.post("/mspecs/query", payload=body), "the MSP-EC list")
+        return self._json(await asyncio.to_thread(self.client.post, "/mspecs/query", payload=body), "the MSP-EC list")
 
     async def get_msp_tech_partners(self):
         if self.client.ec_type != "MSP":
@@ -55,13 +56,13 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_INSTALLER', 'MSP_INTEGRATOR']}
         }
-        return self._json(self.client.post("/techpartners/mspecs/query", payload=body), "the tech-partner list")
+        return self._json(await asyncio.to_thread(self.client.post, "/techpartners/mspecs/query", payload=body), "the tech-partner list")
 
     async def get_msp_labels(self):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
         logger.debug("Fetching MSP labels")
-        response = self.client.get("/mspLabels")
+        response = await asyncio.to_thread(self.client.get, "/mspLabels")
         logger.debug(f"MSP labels response: {response.status_code}")
 
         if response.ok:
@@ -77,23 +78,23 @@ class MspService:
     async def get_entitlements(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self._json(self.client.get("/entitlements"), "entitlements")
+        return self._json(await asyncio.to_thread(self.client.get, "/entitlements"), "entitlements")
 
     async def get_msp_entitlements(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self._json(self.client.get("/mspEntitlements"), "MSP entitlements")
+        return self._json(await asyncio.to_thread(self.client.get, "/mspEntitlements"), "MSP entitlements")
 
     async def get_msp_admins(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self._json(self.client.get("/admins"), "MSP admins")
+        return self._json(await asyncio.to_thread(self.client.get, "/admins"), "MSP admins")
 
     async def get_msp_customer_admins(self, tenant_id: str): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
         return self._json(
-            self.client.get(f"/mspCustomers/{tenant_id}/admins", override_tenant_id=tenant_id),
+            await asyncio.to_thread(self.client.get, f"/mspCustomers/{tenant_id}/admins", override_tenant_id=tenant_id),
             "customer admins",
         )
 

@@ -1,3 +1,4 @@
+import asyncio
 """
 Ethernet Port Profile Service
 
@@ -44,9 +45,9 @@ class EthernetPortProfileService:
             body['filters'] = filters
 
         if self.client.ec_type == "MSP":
-            response = self.client.post("/ethernetPortProfiles/query", payload=body, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/ethernetPortProfiles/query", payload=body, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/ethernetPortProfiles/query", payload=body)
+            response = await asyncio.to_thread(self.client.post, "/ethernetPortProfiles/query", payload=body)
 
         if response.ok:
             return response.json()
@@ -66,9 +67,9 @@ class EthernetPortProfileService:
             Profile object or None
         """
         if self.client.ec_type == "MSP":
-            response = self.client.get(f"/ethernetPortProfiles/{profile_id}", override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.get, f"/ethernetPortProfiles/{profile_id}", override_tenant_id=tenant_id)
         else:
-            response = self.client.get(f"/ethernetPortProfiles/{profile_id}")
+            response = await asyncio.to_thread(self.client.get, f"/ethernetPortProfiles/{profile_id}")
 
         if response.ok:
             return response.json()
@@ -224,9 +225,9 @@ class EthernetPortProfileService:
         logger.info(f"Creating ethernet port profile: {name} (type={profile_type}, vlan={untag_id})")
 
         if self.client.ec_type == "MSP":
-            response = self.client.post("/ethernetPortProfiles", payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/ethernetPortProfiles", payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/ethernetPortProfiles", payload=payload)
+            response = await asyncio.to_thread(self.client.post, "/ethernetPortProfiles", payload=payload)
 
         if response.status_code in [200, 201, 202]:
             result = response.json() if response.content else {"status": "accepted"}
@@ -294,12 +295,14 @@ class EthernetPortProfileService:
         logger.debug(f"Activating profile {profile_id_with_suffix} on AP {serial_number} port {port_number}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/ethernetPortProfiles/{profile_id_with_suffix}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/ethernetPortProfiles/{profile_id_with_suffix}"
             )
 
@@ -355,12 +358,14 @@ class EthernetPortProfileService:
         logger.debug(f"Deactivating profile {profile_id_with_suffix} from AP {serial_number} port {port_number}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/ethernetPortProfiles/{profile_id_with_suffix}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/ethernetPortProfiles/{profile_id_with_suffix}"
             )
 

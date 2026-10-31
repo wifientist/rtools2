@@ -141,7 +141,7 @@ class NetworksService:
                 f"retry the request."
             )
 
-        first_response = fetch_page(body)
+        first_response = await asyncio.to_thread(fetch_page, body)
 
         all_networks = first_response.get('data', [])
         total_count = first_response.get('totalCount', len(all_networks))
@@ -157,7 +157,7 @@ class NetworksService:
 
             for page_num in range(2, pages_needed + 1):
                 body['page'] = page_num
-                page_data = fetch_page(body).get('data', [])
+                page_data = (await asyncio.to_thread(fetch_page, body)).get('data', [])
 
                 logger.debug(f"WiFi Networks page {page_num} returned: {len(page_data)} networks")
 
@@ -175,9 +175,9 @@ class NetworksService:
         If you need venue/AP group info, use query_wifi_network_by_id() instead.
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/wifiNetworks/{network_id}").json()
+            return (await asyncio.to_thread(self.client.get, f"/wifiNetworks/{network_id}")).json()
 
     async def query_wifi_network_by_id(self, network_id: str, tenant_id: str = None):
         """
@@ -196,9 +196,9 @@ class NetworksService:
             'pageSize': 1,
         }
         if self.client.ec_type == "MSP" and tenant_id:
-            resp = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id)
+            resp = await asyncio.to_thread(self.client.post, "/wifiNetworks/query", payload=body, override_tenant_id=tenant_id)
         else:
-            resp = self.client.post("/wifiNetworks/query", payload=body)
+            resp = await asyncio.to_thread(self.client.post, "/wifiNetworks/query", payload=body)
 
         data = resp.json() if resp.status_code == 200 else {}
         networks = data.get('data', [])
@@ -251,12 +251,14 @@ class NetworksService:
             )
 
             if self.client.ec_type == "MSP" and tenant_id:
-                response = self.client.delete(
+                response = await asyncio.to_thread(
+                    self.client.delete,
                     f"/venues/{venue_id}/wifiNetworks/{network_id}",
                     override_tenant_id=tenant_id,
                 )
             else:
-                response = self.client.delete(
+                response = await asyncio.to_thread(
+                    self.client.delete,
                     f"/venues/{venue_id}/wifiNetworks/{network_id}",
                 )
 
@@ -311,9 +313,9 @@ class NetworksService:
             Deletion response (includes requestId if wait_for_completion=False)
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.delete, f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id)
         else:
-            response = self.client.delete(f"/wifiNetworks/{network_id}")
+            response = await asyncio.to_thread(self.client.delete, f"/wifiNetworks/{network_id}")
 
         if response.status_code == R1StatusCode.ACCEPTED:
             result = response.json() if response.content else {"status": "accepted"}
@@ -346,9 +348,9 @@ class NetworksService:
         }
 
         if self.client.ec_type == "MSP":
-            response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+            response = (await asyncio.to_thread(self.client.post, "/wifiNetworks/query", payload=body, override_tenant_id=tenant_id)).json()
         else:
-            response = self.client.post("/wifiNetworks/query", payload=body).json()
+            response = (await asyncio.to_thread(self.client.post, "/wifiNetworks/query", payload=body)).json()
 
         # Matched HERE, exactly. R1's name filter ignores case: asking for
         # "Community" returned another property's "community", data[0] was
@@ -379,9 +381,9 @@ class NetworksService:
         }
 
         if self.client.ec_type == "MSP":
-            response = self.client.post("/wifiNetworks/query", payload=body, override_tenant_id=tenant_id).json()
+            response = (await asyncio.to_thread(self.client.post, "/wifiNetworks/query", payload=body, override_tenant_id=tenant_id)).json()
         else:
-            response = self.client.post("/wifiNetworks/query", payload=body).json()
+            response = (await asyncio.to_thread(self.client.post, "/wifiNetworks/query", payload=body)).json()
 
         # Response format: {"data": [...], "totalCount": N}
         networks = response.get('data', [])
@@ -464,13 +466,15 @@ class NetworksService:
 
         # Make API call
         if self.client.ec_type == "MSP":
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/wifiNetworks",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/wifiNetworks",
                 payload=payload
             )
@@ -546,9 +550,9 @@ class NetworksService:
             payload["description"] = description
 
         if self.client.ec_type == "MSP":
-            response = self.client.post("/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/wifiNetworks", payload=payload)
+            response = await asyncio.to_thread(self.client.post, "/wifiNetworks", payload=payload)
 
         if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
             result = response.json() if response.content else {"status": "accepted"}
@@ -622,9 +626,9 @@ class NetworksService:
             payload["description"] = description
 
         if self.client.ec_type == "MSP":
-            response = self.client.post("/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/wifiNetworks", payload=payload)
+            response = await asyncio.to_thread(self.client.post, "/wifiNetworks", payload=payload)
 
         if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
             result = response.json() if response.content else {"status": "accepted"}
@@ -669,13 +673,15 @@ class NetworksService:
             dict with requestId (if 202) or the response body
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}",
                 payload=payload
             )
@@ -727,13 +733,15 @@ class NetworksService:
 
         # PUT the updated network object
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}",
                 payload=current_network,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}",
                 payload=current_network
             )
@@ -849,13 +857,15 @@ class NetworksService:
 
         # PUT the updated network object
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}",
                 payload=current_network,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}",
                 payload=current_network
             )
@@ -945,13 +955,15 @@ class NetworksService:
 
         # Make API call
         if self.client.ec_type == "MSP":
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/wifiNetworks",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/wifiNetworks",
                 payload=payload
             )
@@ -1023,9 +1035,9 @@ class NetworksService:
         network copied from another), then find it by name for its id.
         """
         if self.client.ec_type == "MSP":
-            response = self.client.post("/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/wifiNetworks", payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/wifiNetworks", payload=payload)
+            response = await asyncio.to_thread(self.client.post, "/wifiNetworks", payload=payload)
 
         if response.status_code not in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
             logger.error(f"Failed to create network: {response.status_code} - {response.text}")
@@ -1112,13 +1124,15 @@ class NetworksService:
 
         # Make API call - PUT with empty body to link the service
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}/dpskServices/{dpsk_service_id}",
                 payload={},
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{network_id}/dpskServices/{dpsk_service_id}",
                 payload={}
             )

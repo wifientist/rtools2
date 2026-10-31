@@ -41,13 +41,15 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 "/identityGroups",
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 "/identityGroups",
                 params=params
             )
@@ -88,14 +90,16 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identityGroups/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identityGroups/query",
                 payload=body,
                 params=params
@@ -118,12 +122,14 @@ class IdentityService:
             Identity group details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/identityGroups/{group_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/identityGroups/{group_id}"
             )
         return self.client.safe_json(response)
@@ -156,13 +162,15 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP":
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identityGroups",
                 override_tenant_id=tenant_id,
                 payload=body
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identityGroups",
                 payload=body
             )
@@ -229,12 +237,14 @@ class IdentityService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}"
             )
 
@@ -263,13 +273,15 @@ class IdentityService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identityGroups/csvFile",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identityGroups/csvFile",
                 payload=body
             )
@@ -302,13 +314,15 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 "/identities",
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 "/identities",
                 params=params
             )
@@ -348,14 +362,16 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identities/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/identities/query",
                 payload=body,
                 params=params
@@ -506,8 +522,6 @@ class IdentityService:
         if phone_number:
             payload["phoneNumber"] = phone_number
 
-        logger.info(f"🔍 DEBUG IDENTITY API - create_identity payload: {payload}")
-
         if self.client.ec_type == "MSP" and tenant_id:
             response = await asyncio.to_thread(
                 self.client.post,
@@ -533,10 +547,17 @@ class IdentityService:
         display_name: str = None,
         description: str = None,
         vlan: int = None,
-        phone_number: str = None
+        phone_number: str = None,
+        wait_for_task: bool = False,
+        on_accepted=None
     ):
         """
         Update an existing identity
+
+        R1 answers 202 and applies it afterwards, so a read straight after can
+        still show the old values. wait_for_task waits until R1 says it is done;
+        on_accepted is then called once R1 has taken the request, so a caller
+        limiting sends can free its place during the wait.
 
         Args:
             group_id: Identity group ID
@@ -564,8 +585,6 @@ class IdentityService:
         if phone_number:
             payload["phoneNumber"] = phone_number
 
-        logger.info(f"🔍 DEBUG IDENTITY API - update_identity payload: {payload}")
-
         if self.client.ec_type == "MSP" and tenant_id:
             response = await asyncio.to_thread(
                 self.client.patch,
@@ -580,7 +599,15 @@ class IdentityService:
                 payload=payload
             )
 
-        return self.client.safe_json(response)
+        if on_accepted:
+            on_accepted()
+        result = self.client.safe_json(response)
+        if wait_for_task and response.status_code == 202 and result.get('requestId'):
+            await self.client.await_task_completion(
+                request_id=result['requestId'],
+                override_tenant_id=tenant_id,
+            )
+        return result
 
     async def set_identity_passphrase(
         self,
@@ -749,13 +776,15 @@ class IdentityService:
             This operation returns 202 Accepted and must be polled for completion
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/identities",
                 payload=identity_ids,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/identities",
                 payload=identity_ids
             )
@@ -800,12 +829,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/policySets/{policy_set_id}"
             )
 
@@ -831,12 +862,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/policySets/{policy_set_id}"
             )
 
@@ -862,12 +895,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/dpskPools/{dpsk_pool_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/dpskPools/{dpsk_pool_id}"
             )
 
@@ -893,12 +928,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/macRegistrationPools/{pool_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/macRegistrationPools/{pool_id}"
             )
 
@@ -940,14 +977,16 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/venues/{venue_id}/units/identities/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/venues/{venue_id}/units/identities/query",
                 payload=body,
                 params=params
@@ -974,12 +1013,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/units/{unit_id}/identities/{identity_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/units/{unit_id}/identities/{identity_id}"
             )
 
@@ -1007,12 +1048,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/units/{unit_id}/identities/{identity_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/units/{unit_id}/identities/{identity_id}"
             )
 
@@ -1046,13 +1089,15 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/identities/{identity_id}/venues/{venue_id}/ethernetPorts",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/identityGroups/{group_id}/identities/{identity_id}/venues/{venue_id}/ethernetPorts",
                 payload=payload
             )
@@ -1077,12 +1122,14 @@ class IdentityService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/identities/{identity_id}/vnis",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/identityGroups/{group_id}/identities/{identity_id}/vnis"
             )
 
@@ -1122,14 +1169,16 @@ class IdentityService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/externalIdentities/query",
                 payload=body,
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/externalIdentities/query",
                 payload=body,
                 params=params

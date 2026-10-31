@@ -106,6 +106,33 @@ class V2PlanResult(BaseModel):
     headline: str = ""
 
 
+class V2ConfirmRequest(BaseModel):
+    """What the user chose while reviewing the plan."""
+    # tier -> {"action": "create"} or {"action": "use", "group": "<name>"}
+    radius_tier_choices: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+
+
+def resolve_radius_tier_choices(
+    summary: Dict[str, Any], choices: Dict[str, Dict[str, str]]
+) -> Dict[str, Dict[str, str]]:
+    """Every missing tier needs a usable choice. Returned keyed by lowercase tier."""
+    chosen = {tier.lower(): choice for tier, choice in choices.items()}
+    groups = {name.lower() for name in summary.get('available_radius_groups') or []}
+    resolved: Dict[str, Dict[str, str]] = {}
+    for gap in summary.get('missing_radius_tiers') or []:
+        tier = gap['tier']
+        choice = chosen.get(tier.lower()) or {}
+        if choice.get('action') == 'create':
+            resolved[tier.lower()] = {'action': 'create'}
+        elif choice.get('action') == 'use' and (choice.get('group') or '').lower() in groups:
+            resolved[tier.lower()] = {'action': 'use', 'group': choice['group']}
+        else:
+            raise ValueError(
+                f"Choose an existing RADIUS group, or to create one, for tier '{tier}'"
+            )
+    return resolved
+
+
 class V2ConfirmResponse(BaseModel):
     """Response from confirm endpoint"""
     job_id: str
@@ -432,6 +459,19 @@ async def get_plan(
             f"imported. {untouched} already in RuckusONE will not be touched."
             + (f" {s.skipped_nonnumeric_usernames} entr(ies) skipped: username "
                f"is not an account number." if s.skipped_nonnumeric_usernames else "")
+            + (f" Exception: their {s.policies_to_create} missing adaptive "
+               f"policies will be created and leftover tier suffixes stripped."
+               if s.policies_to_create else "")
+            + "".join(
+                f" {a.name} with a blank description will get their Cloudpath GUID."
+                for a in job.validation_result.actions
+                if a.resource_type == "blank identity descriptions (adds only)"
+            )
+            + "".join(
+                f" Existing residents: {a.name}."
+                for a in job.validation_result.actions
+                if a.resource_type == "existing residents (adds only)"
+            )
         )
 
     # Build descriptive message based on scenario
@@ -454,6 +494,7 @@ async def get_plan(
 @router.post("/{job_id}/confirm", response_model=V2ConfirmResponse)
 async def confirm_plan(
     job_id: str,
+    request: V2ConfirmRequest = Body(default_factory=V2ConfirmRequest),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_user),
 ):
@@ -485,6 +526,19 @@ async def confirm_plan(
             status_code=400,
             detail="Cannot confirm: validation found errors",
         )
+
+    if job.validation_result:
+        try:
+            radius_choices = resolve_radius_tier_choices(
+                job.validation_result.summary.model_dump(),
+                request.radius_tier_choices,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if radius_choices:
+            job.options['radius_tier_choices'] = radius_choices
+            job.input_data['options']['radius_tier_choices'] = radius_choices
+            await state_manager.save_job(job)
 
     # Start execution in background
     background_tasks.add_task(

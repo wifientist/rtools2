@@ -4,7 +4,7 @@ import SingleVenueSelector from "@/components/SingleVenueSelector";
 import MspEcPicker from "@/components/MspEcPicker";
 import DpskPoolSelector from "@/components/DpskPoolSelector";
 import JobMonitorModal from "@/components/JobMonitorModal";
-import V2PlanConfirmModal from "@/components/V2PlanConfirmModal";
+import V2PlanConfirmModal, { type RadiusTierChoice } from "@/components/V2PlanConfirmModal";
 import type { JobResult } from "@/components/JobMonitorModal";
 import { apiFetch, responseErrorMessage } from "@/utils/api";
 
@@ -731,6 +731,7 @@ function CloudpathImport() {
   // Access Policy Options
   const [enableAccessPolicies, setEnableAccessPolicies] = useState(true);
   const [policySetName, setPolicySetName] = useState("");
+  const [radiusTierGroups, setRadiusTierGroups] = useState<Record<string, string>>({});
   const [detectedSuffixes, setDetectedSuffixes] = useState<{patterns: string[], withSuffix: number, withoutSuffix: number} | null>(null);
 
   // Scenario Detection (for unit count / coverage info)
@@ -1364,6 +1365,7 @@ function CloudpathImport() {
     setExportMetadata(null);
     setScenarioDetection(null);
     setDetectedSuffixes(null);
+    setRadiusTierGroups({});
     setUsernameFixes({});
     setUploadError("");
 
@@ -1601,7 +1603,13 @@ function CloudpathImport() {
     }
   };
 
-  const handleV2Confirm = (confirmedJobId: string) => {
+  const handleV2Confirm = (confirmedJobId: string, choices?: Record<string, RadiusTierChoice>) => {
+    // A chosen group is not a mismatch when the identity audit checks this import.
+    const groups: Record<string, string> = {};
+    Object.entries(choices ?? {}).forEach(([tier, choice]) => {
+      if (choice.action === 'use' && choice.group) groups[tier.toLowerCase()] = choice.group;
+    });
+    setRadiusTierGroups(groups);
     setShowV2PlanModal(false);
     setCurrentJobId(confirmedJobId);
     setShowJobModal(true);
@@ -1711,6 +1719,7 @@ function CloudpathImport() {
           tenant_id: effectiveTenantId,
           identities: fileIdentities,
           policy_set_name: policySetName || null,
+          radius_tier_groups: radiusTierGroups,
           verify_conditions: identityAuditVerifyConditions,
           evaluate_policies: identityAuditEvaluate,
         }),
@@ -3041,8 +3050,11 @@ function CloudpathImport() {
                 <span className="text-sm font-medium text-gray-900">Adds Only</span>
                 <p className="text-xs text-gray-500">
                   For re-running a newer export. Imports only residents RuckusONE does not have;
-                  anyone already there is left exactly as it is. Matched by Cloudpath GUID, then
-                  by account number with or without its tier suffix. Nothing is ever deleted.
+                  anyone already there keeps their passphrase and VLAN. A blank description gets its
+                  Cloudpath GUID, and with access policies on, a policy they are missing is still
+                  created and a leftover tier suffix stripped, so a re-run finishes an earlier one.
+                  Matched by Cloudpath GUID,
+                  then by account number with or without its tier suffix. Nothing is ever deleted.
                 </p>
                 {priorImportMatch && (
                   <p className="text-xs text-blue-700 mt-1">

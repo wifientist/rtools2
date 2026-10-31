@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import time
+
+from r1api import call_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +56,15 @@ class PolicySetService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policySets/query",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policySets/query",
                 payload=body
             )
@@ -81,12 +86,14 @@ class PolicySetService:
             Policy set details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}"
             )
         return self.client.safe_json(response)
@@ -116,13 +123,15 @@ class PolicySetService:
             payload["description"] = description
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policySets",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policySets",
                 payload=payload
             )
@@ -156,13 +165,15 @@ class PolicySetService:
             payload["description"] = description
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/policySets/{policy_set_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/policySets/{policy_set_id}",
                 payload=payload
             )
@@ -185,12 +196,14 @@ class PolicySetService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policySets/{policy_set_id}"
             )
 
@@ -216,12 +229,14 @@ class PolicySetService:
             List of assignments
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/assignments",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/assignments"
             )
         return self.client.safe_json(response)
@@ -256,13 +271,15 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policySets/{policy_set_id}/assignments/query",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policySets/{policy_set_id}/assignments/query",
                 payload=body
             )
@@ -286,12 +303,14 @@ class PolicySetService:
             Assignment details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/assignments/{assignment_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/assignments/{assignment_id}"
             )
         return self.client.safe_json(response)
@@ -314,12 +333,14 @@ class PolicySetService:
             List of prioritized policies
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/prioritizedPolicies",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/prioritizedPolicies"
             )
         return self.client.safe_json(response)
@@ -342,12 +363,14 @@ class PolicySetService:
             Policy details with priority
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}"
             )
         return self.client.safe_json(response)
@@ -377,18 +400,21 @@ class PolicySetService:
             payload["priority"] = priority
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
                 payload=payload
             )
 
-        if not response.content:
+        # R1's 429s have empty bodies too; only a success is "assigned".
+        if response.ok and not response.content:
             return {"status": "assigned"}
         return self.client.safe_json(response)
 
@@ -410,12 +436,14 @@ class PolicySetService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policySets/{policy_set_id}/prioritizedPolicies/{policy_id}"
             )
 
@@ -470,13 +498,15 @@ class PolicySetService:
         payload = criteria
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policySets/{policy_set_id}/evaluationReports",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policySets/{policy_set_id}/evaluationReports",
                 payload=payload
             )
@@ -513,13 +543,15 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policyTemplates/query",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policyTemplates/query",
                 payload=body
             )
@@ -541,12 +573,14 @@ class PolicySetService:
             Policy template details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}"
             )
         return self.client.safe_json(response)
@@ -567,12 +601,14 @@ class PolicySetService:
             List of template attributes
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/attributes",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/attributes"
             )
         return self.client.safe_json(response)
@@ -607,13 +643,15 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/attributes/query",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/attributes/query",
                 payload=body
             )
@@ -637,12 +675,14 @@ class PolicySetService:
             Attribute details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/attributes/{attribute_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/attributes/{attribute_id}"
             )
         return self.client.safe_json(response)
@@ -665,12 +705,14 @@ class PolicySetService:
             List of policies
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies"
             )
         return self.client.safe_json(response)
@@ -710,13 +752,15 @@ class PolicySetService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/policies/query",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/policies/query",
                 payload=body
             )
@@ -740,13 +784,15 @@ class PolicySetService:
             Created policy response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/policies",
                 payload=policy_data,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/policies",
                 payload=policy_data
             )
@@ -762,8 +808,8 @@ class PolicySetService:
         """
         Poll for policy creation completion with ramping retry intervals.
 
-        The POST /policyTemplates/{templateId}/policies endpoint returns 202
-        with the policy object but no requestId for /activities polling.
+        For callers without the create's requestId. It cannot tell a failed
+        create from a slow one, so prefer waiting on that requestId.
         This method polls the GET endpoint until the policy is fully created
         with its radius attribute group association complete.
 
@@ -786,6 +832,7 @@ class PolicySetService:
         # Initial delay before first poll — R1 returns 202 but the policy
         # resource isn't immediately available via GET (race condition).
         # Without this, the first GET always returns 404.
+        started = time.monotonic()
         await asyncio.sleep(0.5)
         elapsed = 0.5
 
@@ -799,12 +846,14 @@ class PolicySetService:
                 sleep_interval = 2.0
 
             if self.client.ec_type == "MSP" and tenant_id:
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/policyTemplates/{template_id}/policies/{policy_id}",
                     override_tenant_id=tenant_id
                 )
             else:
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/policyTemplates/{template_id}/policies/{policy_id}"
                 )
 
@@ -813,11 +862,17 @@ class PolicySetService:
                 # Check if onMatchResponse is populated (radius attr group associated)
                 if data.get("onMatchResponse"):
                     logger.debug(f"Policy {policy_id} creation completed after {elapsed:.1f}s")
+                    call_metrics.record(
+                        call_metrics.KIND_READY, "create policy", "ready", time.monotonic() - started
+                    )
                     return data
 
             await asyncio.sleep(sleep_interval)
             elapsed += sleep_interval
 
+        call_metrics.record(
+            call_metrics.KIND_READY, "create policy", "timed out", time.monotonic() - started
+        )
         raise TimeoutError(
             f"Policy {policy_id} did not complete within 30 seconds"
         )
@@ -840,12 +895,14 @@ class PolicySetService:
             Policy details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies/{policy_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies/{policy_id}"
             )
         return self.client.safe_json(response)
@@ -870,13 +927,15 @@ class PolicySetService:
             Updated policy response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/policyTemplates/{template_id}/policies/{policy_id}",
                 payload=policy_data,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/policyTemplates/{template_id}/policies/{policy_id}",
                 payload=policy_data
             )
@@ -901,12 +960,14 @@ class PolicySetService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policyTemplates/{template_id}/policies/{policy_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policyTemplates/{template_id}/policies/{policy_id}"
             )
 
@@ -974,12 +1035,14 @@ class PolicySetService:
             Condition details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}"
             )
         return self.client.safe_json(response)
@@ -1015,13 +1078,15 @@ class PolicySetService:
             Created condition response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
                 payload=condition_data,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions",
                 payload=condition_data
             )
@@ -1075,8 +1140,6 @@ class PolicySetService:
             },
             "policyId": policy_id
         }
-        logger.info(f"create_string_condition: policy={policy_id}, attr={attribute_id}, pattern='{regex_pattern}'")
-        logger.debug(f"create_string_condition full payload: {condition_data}")
         return await self.create_policy_condition(
             template_id=template_id,
             policy_id=policy_id,
@@ -1106,13 +1169,15 @@ class PolicySetService:
             Updated condition response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
                 payload=condition_data,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
                 payload=condition_data
             )
@@ -1139,12 +1204,14 @@ class PolicySetService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/policyTemplates/{template_id}/policies/{policy_id}/conditions/{condition_id}"
             )
 
@@ -1188,13 +1255,15 @@ class PolicySetService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policyTemplates/policies/query",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/policyTemplates/policies/query",
                 payload=body
             )

@@ -55,11 +55,14 @@ class DeleteDPSKPoolsPhase(PhaseExecutor):
                 return (False, pool_name, "missing id")
 
             async with semaphore:
+                if await self.stop_requested():
+                    return (False, pool_name, "stopped by request")
                 try:
-                    await self.r1_client.dpsk.delete_dpsk_pool(
+                    deleted = await self.r1_client.dpsk.delete_dpsk_pool(
                         pool_id=pool_id,
                         tenant_id=self.tenant_id,
                     )
+                    await self.confirm_r1_result(deleted)
                     logger.info(f"Deleted DPSK pool: {pool_name}")
                     return (True, pool_name, None)
                 except Exception as e:
@@ -100,10 +103,11 @@ class DeleteDPSKPoolsPhase(PhaseExecutor):
                             for attempt in range(4):
                                 await asyncio.sleep(3 * (attempt + 1))  # 3s, 6s, 9s, 12s
                                 try:
-                                    await self.r1_client.dpsk.delete_dpsk_pool(
+                                    deleted = await self.r1_client.dpsk.delete_dpsk_pool(
                                         pool_id=pool_id,
                                         tenant_id=self.tenant_id,
                                     )
+                                    await self.confirm_r1_result(deleted)
                                     logger.info(
                                         f"Deleted DPSK pool: {pool_name} "
                                         f"(after cleaning {len(passphrases)} passphrases)"

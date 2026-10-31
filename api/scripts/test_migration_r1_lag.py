@@ -284,8 +284,8 @@ async def test_shared_poller():
         f += check("200 concurrent waits share one bulk query per cycle",
                    all(o["status"] == "SUCCESS" for o in out) and calls["bulk"] <= 4,
                    f"bulk={calls['bulk']} gets={len(calls['get'])}")
-        f += check("each finished task read on its own once (for R1's full record), no more",
-                   len(calls["get"]) == 200, str(len(calls["get"])))
+        f += check("a task that succeeds is answered from the bulk query, with no read of its own",
+                   len(calls["get"]) == 0, str(len(calls["get"])))
 
         # FAIL carries R1's error from the full record
         c, _ = fake_r1({"ok": ["SUCCESS"], "bad": ["INPROGRESS", "FAIL"]})

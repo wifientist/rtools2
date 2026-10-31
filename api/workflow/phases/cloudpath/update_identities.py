@@ -17,13 +17,20 @@ The VLAN on the identity allows:
 """
 
 import logging
+from collections import Counter
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
 from workflow.phases.registry import register_phase
+from workflow.phases.dpsk_usernames import DEFAULT_SUFFIX, split_account_suffix
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
+from workflow.phases.cloudpath.passphrases import with_send_limit
 
 logger = logging.getLogger(__name__)
+
+# How many may be sent or waiting on R1 at once. A rename waits about 4s on the
+# activity poll, so 50 capped the phase near 750 a minute, under the pacer.
+IDENTITY_UPDATES_IN_FLIGHT = 100
 
 
 class IdentityUpdateResult(BaseModel):
@@ -57,10 +64,20 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
             default_factory=list,
             description="Passphrases created in previous phase"
         )
+        # Adds only: existing identities with a blank description. Set by
+        # validate on one unit only. Carries no VLAN, so none is written.
+        description_backfill: List[Dict[str, Any]] = Field(default_factory=list)
         options: Dict[str, Any] = Field(default_factory=dict)
+        # By name: the Brain fills a per-unit phase's fields from job.options one
+        # at a time, and there is no "options" key, so `options` above stays empty.
+        enable_access_policies: bool = False
+        default_suffix: Optional[str] = None
 
     class Outputs(BaseModel):
         updated_count: int = 0
+        # Suffix stripped in the same write as the GUID.
+        renamed_count: int = 0
+        renamed_identity_ids: List[str] = Field(default_factory=list)
         vlan_updated_count: int = 0
         failed_count: int = 0
         skipped_count: int = 0
@@ -68,7 +85,7 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Update identity descriptions with Cloudpath GUIDs and set VLANs."""
-        passphrases = inputs.created_passphrases
+        passphrases = [*inputs.created_passphrases, *inputs.description_backfill]
 
         # Filter to passphrases that need identity description updates:
         # 1. Newly created passphrases (not skipped) with identity_id
@@ -157,20 +174,59 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
             f"(max {max_concurrent} concurrent)"
         )
 
-        async def update_one(pp: Dict[str, Any]) -> IdentityUpdateResult:
+        # The rename and the GUID are one PATCH, which saves a call per resident
+        # and cannot leave a renamed identity without the GUID that finds it.
+        # create_access_policies still reads the group and renames, and reports,
+        # anything left suffixed: names shared by two tiers of one account are
+        # left to it, and it does not run when policies are off, so neither is
+        # renamed here.
+        new_names: Dict[str, str] = {}
+        if inputs.enable_access_policies:
+            default_suffix = inputs.default_suffix or DEFAULT_SUFFIX
+            for p in to_update:
+                username = p.get('username')
+                if username and p.get('success', True):
+                    account = split_account_suffix(username, default_suffix)[0]
+                    if account and account != username:
+                        new_names[p['identity_id']] = account
+            shared = Counter(new_names.values())
+            new_names = {i: n for i, n in new_names.items() if shared[n] == 1}
+        renamed_identity_ids: List[str] = []
+
+        async def update_one(pp: Dict[str, Any], release=None) -> IdentityUpdateResult:
             identity_id = pp.get('identity_id')
             guid = pp.get('cloudpath_guid')
             vlan_id = pp.get('vlan_id')
+            new_name = new_names.get(identity_id)
 
             try:
                 # Update identity with description and VLAN (if present)
-                await self.r1_client.identity.update_identity(
+                update = dict(
                     group_id=group_id,
                     identity_id=identity_id,
                     tenant_id=self.tenant_id,
                     description=guid,
                     vlan=vlan_id,  # Will be None if not present, which is fine
                 )
+                if new_name:
+                    try:
+                        # Waited on: without this, the read in
+                        # create_access_policies saw 1,171 of 2,035 accepted
+                        # renames still showing the old name, and resent them.
+                        await self.r1_client.identity.update_identity(
+                            **update, name=new_name,
+                            wait_for_task=True, on_accepted=release,
+                        )
+                        renamed_identity_ids.append(identity_id)
+                    except Exception as e:
+                        # R1 refuses the whole PATCH if the name is taken. Keep
+                        # the GUID; create_access_policies reports the name.
+                        logger.warning(
+                            f"Identity {identity_id} kept its name for now: {e}"
+                        )
+                        await self.r1_client.identity.update_identity(**update)
+                else:
+                    await self.r1_client.identity.update_identity(**update)
 
                 return IdentityUpdateResult(
                     identity_id=identity_id,
@@ -195,11 +251,10 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
         # Execute with parallel_map
         results = await self.parallel_map(
             items=to_update,
-            fn=update_one,
-            max_concurrent=max_concurrent,
+            fn=with_send_limit(update_one, max_concurrent),
+            max_concurrent=max(max_concurrent, IDENTITY_UPDATES_IN_FLIGHT),
             item_name="identity",
             emit_progress=True,
-            progress_interval=max(1, len(to_update) // 20),
         )
 
         # Categorize results
@@ -229,12 +284,14 @@ class UpdateIdentityDescriptionsPhase(PhaseExecutor):
         vlan_msg = f", {vlan_updated} with VLAN" if vlan_updated else ""
         await self.emit(
             f"Identities: {len(updated)} updated{vlan_msg}, "
-            f"{skipped} skipped, {len(failed)} failed",
+            f"{len(renamed_identity_ids)} renamed, {skipped} skipped, {len(failed)} failed",
             "success" if not failed else "warning"
         )
 
         return self.Outputs(
             updated_count=len(updated),
+            renamed_count=len(renamed_identity_ids),
+            renamed_identity_ids=renamed_identity_ids,
             vlan_updated_count=vlan_updated,
             failed_count=len(failed),
             skipped_count=skipped,

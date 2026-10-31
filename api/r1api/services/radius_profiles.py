@@ -122,13 +122,14 @@ class RadiusProfileService:
             }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/radiusServerProfiles",
                 payload=payload,
                 override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.post("/radiusServerProfiles", payload=payload)
+            response = await asyncio.to_thread(self.client.post, "/radiusServerProfiles", payload=payload)
 
         if response.status_code in [R1StatusCode.OK, R1StatusCode.CREATED, R1StatusCode.ACCEPTED]:
             result = response.json() if response.content else {"status": "accepted"}
@@ -214,9 +215,9 @@ class RadiusProfileService:
         endpoint = f"/wifiNetworks/{network_id}/radiusServerProfiles/{radius_profile_id}"
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(endpoint, payload={}, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.put, endpoint, payload={}, override_tenant_id=tenant_id)
         else:
-            response = self.client.put(endpoint, payload={})
+            response = await asyncio.to_thread(self.client.put, endpoint, payload={})
 
         if response.status_code in [R1StatusCode.OK, R1StatusCode.ACCEPTED]:
             result = response.json() if response.content else {"status": "accepted"}
@@ -255,9 +256,9 @@ class RadiusProfileService:
         endpoint = f"/wifiNetworks/{network_id}/radiusServerProfiles/{radius_profile_id}"
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(endpoint, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.delete, endpoint, override_tenant_id=tenant_id)
         else:
-            response = self.client.delete(endpoint)
+            response = await asyncio.to_thread(self.client.delete, endpoint)
 
         if response.status_code in [R1StatusCode.OK, R1StatusCode.ACCEPTED]:
             result = response.json() if response.content else {"status": "accepted"}

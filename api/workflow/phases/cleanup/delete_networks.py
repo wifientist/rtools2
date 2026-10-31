@@ -66,6 +66,8 @@ class DeleteNetworksPhase(PhaseExecutor):
                 return (False, nw_name, "missing id")
 
             async with semaphore:
+                if await self.stop_requested():
+                    return (False, nw_name, "stopped by request")
                 try:
                     # Phase 1: Dispatch all venue deactivations
                     deactivation_request_ids = []
@@ -131,13 +133,7 @@ class DeleteNetworksPhase(PhaseExecutor):
 
                             # Phase 4: Wait for deletion (bulk)
                             if use_bulk:
-                                delete_req_id = delete_result.get('requestId') if isinstance(delete_result, dict) else None
-                                if delete_req_id:
-                                    await tracker.register(
-                                        delete_req_id, self.job_id,
-                                        unit_id=None, phase_id=self.phase_id
-                                    )
-                                    await tracker.wait(delete_req_id)
+                                await self.confirm_r1_result(delete_result)
 
                             logger.info(f"Deleted WiFi network: {nw_name}")
                             return (True, nw_name, None)
@@ -163,8 +159,19 @@ class DeleteNetworksPhase(PhaseExecutor):
                     )
                     return (False, nw_name, str(e))
 
+        finished = 0
+
+        async def delete_and_count(nw):
+            nonlocal finished
+            result = await delete_one(nw)
+            finished += 1
+            await self.emit_progress(
+                current=finished, total=len(networks), item_name="network"
+            )
+            return result
+
         results = await asyncio.gather(
-            *[delete_one(nw) for nw in networks]
+            *[delete_and_count(nw) for nw in networks]
         )
 
         deleted = sum(1 for ok, _, _ in results if ok)

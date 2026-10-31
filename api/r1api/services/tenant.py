@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,22 +12,22 @@ class TenantService:
         """
         Get tenant self information
         """
-        return self.client.safe_json(self.client.get("/tenants/self"))
+        return self.client.safe_json(await asyncio.to_thread(self.client.get, "/tenants/self"))
 
     async def get_tenant_user_profiles(self):
         """
         Get all user profiles for a tenant
         """
-        return self.client.safe_json(self.client.get("/tenants/userProfiles"))
+        return self.client.safe_json(await asyncio.to_thread(self.client.get, "/tenants/userProfiles"))
 
     async def get_tenant_venues(self, tenant_id: str):
         """
         Get all venues for a tenant
         """
         if self.client.ec_type == "MSP":
-            return self.client.safe_json(self.client.get("/venues", override_tenant_id=tenant_id))
+            return self.client.safe_json(await asyncio.to_thread(self.client.get, "/venues", override_tenant_id=tenant_id))
         else:
-            return self.client.safe_json(self.client.get("/venues"))
+            return self.client.safe_json(await asyncio.to_thread(self.client.get, "/venues"))
 
     async def get_tenant_aps(self, tenant_id: str):
         """
@@ -38,7 +39,7 @@ class TenantService:
             'sortOrder': 'ASC',
         }
         if self.client.ec_type == "MSP":
-            return self.client.safe_json(self.client.post("/venues/aps/query", payload=body, override_tenant_id=tenant_id))
+            return self.client.safe_json(await asyncio.to_thread(self.client.post, "/venues/aps/query", payload=body, override_tenant_id=tenant_id))
         else:
-            return self.client.safe_json(self.client.post("/venues/aps/query", payload=body))
+            return self.client.safe_json(await asyncio.to_thread(self.client.post, "/venues/aps/query", payload=body))
 

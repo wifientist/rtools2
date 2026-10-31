@@ -37,6 +37,7 @@ from workflow.v2.models import (
 )
 from utils.safe_eval import safe_eval
 from workflow.v2.graph import DependencyGraph
+from workflow.v2.phase_limits import PhaseTimedOut, run_with_phase_limits
 from workflow.v2.state_manager import RedisStateManagerV2
 from workflow.v2.activity_tracker import ActivityTracker
 
@@ -74,7 +75,9 @@ SSID_LIMIT_PER_AP_GROUP = 15
 SSID_SAFETY_BUFFER = 1
 DEFAULT_VENUE_WIDE_LIMIT = SSID_LIMIT_PER_AP_GROUP - SSID_SAFETY_BUFFER  # 14
 
-# Phase execution timeout (seconds) - prevents indefinite hangs on stuck API calls
+# Phase execution timeout (seconds) - prevents indefinite hangs on stuck API calls.
+# Applies to phases that report no progress; one that does is judged on whether
+# its counts are moving instead (see phase_limits).
 # The sequential 3-step SSID config can take 15 minutes: each step's R1 task
 # is waited on until R1 finishes it, up to 5 min (r1api.client ACTIVITY_TIMEOUT_SECONDS)
 # plus AP assignment time. Set high enough to allow these legitimate slow operations.
@@ -1234,19 +1237,16 @@ class WorkflowBrain:
         if needs_recovery:
             async with self._phase_semaphore:
                 try:
-                    result = await asyncio.wait_for(
+                    result = await run_with_phase_limits(
                         self._execute_phase_for_unit(job, unit_id, phase_id),
-                        timeout=PHASE_EXECUTION_TIMEOUT
+                        PHASE_EXECUTION_TIMEOUT,
                     )
-                except asyncio.TimeoutError:
+                except PhaseTimedOut as e:
                     logger.error(
                         f"Job {job.id}: Phase {phase_id} timed out for {unit_id} "
-                        f"(recovery) after {PHASE_EXECUTION_TIMEOUT}s"
+                        f"(recovery): {e}"
                     )
-                    raise RuntimeError(
-                        f"Recovery 3-step config timed out after "
-                        f"{PHASE_EXECUTION_TIMEOUT}s"
-                    )
+                    raise RuntimeError(f"Recovery 3-step config: {e}")
 
             if result.success:
                 # 3-step config completed — SSID moved off venue-wide.
@@ -1301,18 +1301,15 @@ class WorkflowBrain:
             async with self._phase_semaphore:
                 # Wrap execution in timeout to prevent indefinite hangs
                 try:
-                    result = await asyncio.wait_for(
+                    result = await run_with_phase_limits(
                         self._execute_phase_for_unit(job, unit_id, phase_id),
-                        timeout=PHASE_EXECUTION_TIMEOUT
+                        PHASE_EXECUTION_TIMEOUT,
                     )
-                except asyncio.TimeoutError:
+                except PhaseTimedOut as e:
                     logger.error(
-                        f"Job {job.id}: Phase {phase_id} timed out for unit {unit_id} "
-                        f"after {PHASE_EXECUTION_TIMEOUT}s"
+                        f"Job {job.id}: Phase {phase_id} timed out for unit {unit_id}: {e}"
                     )
-                    raise RuntimeError(
-                        f"Phase execution timed out after {PHASE_EXECUTION_TIMEOUT}s"
-                    )
+                    raise RuntimeError(str(e))
 
             # Phase failed: release the slot immediately to prevent leak.
             #
@@ -1421,24 +1418,19 @@ class WorkflowBrain:
         Redis connection pool exhaustion.
 
         Uses GLOBAL_PHASE_EXECUTION_TIMEOUT (60 min) instead of
-        PHASE_EXECUTION_TIMEOUT (10 min) because global phases can
+        PHASE_EXECUTION_TIMEOUT (20 min) because global phases can
         process hundreds of resources (e.g., deleting 274 WiFi networks).
+        A phase that reports progress is judged on that instead.
         """
         async with self._phase_semaphore:
             try:
-                return await asyncio.wait_for(
+                return await run_with_phase_limits(
                     self._execute_global_phase(job, phase_id),
-                    timeout=GLOBAL_PHASE_EXECUTION_TIMEOUT
+                    GLOBAL_PHASE_EXECUTION_TIMEOUT,
                 )
-            except asyncio.TimeoutError:
-                logger.error(
-                    f"Job {job.id}: Global phase {phase_id} timed out "
-                    f"after {GLOBAL_PHASE_EXECUTION_TIMEOUT}s"
-                )
-                raise RuntimeError(
-                    f"Phase execution timed out after "
-                    f"{GLOBAL_PHASE_EXECUTION_TIMEOUT}s"
-                )
+            except PhaseTimedOut as e:
+                logger.error(f"Job {job.id}: Global phase {phase_id} timed out: {e}")
+                raise RuntimeError(str(e))
 
     async def _execute_phase_for_unit(
         self,

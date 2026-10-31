@@ -124,6 +124,8 @@ CloudpathImportWorkflow = Workflow(
         # Access policy options
         "enable_access_policies": False,  # Create adaptive policies for rate limiting
         "policy_set_name": "",  # Name for the policy set (defaults to property name)
+        "policy_workers": 16,  # Residents at once: each waits about 3s on the activity poll, and the pacer holds the call rate
+        "set_add_workers": 1,  # Adds to the policy set at once; R1 500s when parallel
     },
     phases=[
         # =====================================================================
@@ -150,6 +152,7 @@ CloudpathImportWorkflow = Workflow(
                 "unit_mappings",
                 "validation_result",
                 "all_venue_aps",  # Pre-fetched for assign_aps phase
+                "policy_backfill",  # Adds only: existing residents, policies only
             ],
             api_calls_per_unit=0,
         ),
@@ -229,9 +232,9 @@ CloudpathImportWorkflow = Workflow(
             skip_if="options.get('skip_identity_descriptions', False)",
             inputs=[
                 "import_mode", "identity_group_id", "identity_group_ids",
-                "created_passphrases", "options"
+                "created_passphrases", "description_backfill", "options"
             ],
-            outputs=["updated_count", "update_results"],
+            outputs=["updated_count", "renamed_count", "renamed_identity_ids", "update_results"],
             api_calls_per_unit="dynamic",
             effect_field="updated_count",
             effect_label="identities updated",
@@ -247,7 +250,8 @@ CloudpathImportWorkflow = Workflow(
             description=(
                 "Create adaptive policies for rate limiting based on "
                 "username suffix patterns (e.g., _fast, _gigabit). "
-                "Strips suffix from identity names after creating policies."
+                "Works resident by resident: strips the suffix from the identity "
+                "name, then creates and assigns its policy."
             ),
             executor="create_access_policies",
             # Also waits on update_identity_descriptions: this phase STRIPS the
@@ -264,7 +268,8 @@ CloudpathImportWorkflow = Workflow(
             skip_if="not options.get('enable_access_policies', False)",
             inputs=[
                 "created_passphrases", "passphrases", "options",
-                "identity_group_id", "identity_group_ids"
+                "identity_group_id", "identity_group_ids", "policy_backfill",
+                "renamed_identity_ids",
             ],
             outputs=[
                 "radius_groups_created", "policies_created", "policy_set_id",

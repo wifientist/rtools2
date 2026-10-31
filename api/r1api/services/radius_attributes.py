@@ -1,3 +1,4 @@
+import asyncio
 """
 RADIUS Attribute Group Management Service
 
@@ -44,12 +45,13 @@ class RadiusAttributeService:
             List of available RADIUS attributes
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 "/radiusAttributes",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get("/radiusAttributes").json()
+            return (await asyncio.to_thread(self.client.get, "/radiusAttributes")).json()
 
     async def query_radius_attributes(
         self,
@@ -83,16 +85,18 @@ class RadiusAttributeService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            return (await asyncio.to_thread(
+                self.client.post,
                 "/radiusAttributes/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.post(
+            return (await asyncio.to_thread(
+                self.client.post,
                 "/radiusAttributes/query",
                 payload=body
-            ).json()
+            )).json()
 
     async def get_radius_attribute(
         self,
@@ -110,14 +114,16 @@ class RadiusAttributeService:
             RADIUS attribute details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributes/{attribute_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributes/{attribute_id}"
-            ).json()
+            )).json()
 
     async def get_radius_attribute_vendors(
         self,
@@ -133,12 +139,13 @@ class RadiusAttributeService:
             List of vendor names/IDs
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 "/radiusAttributes/vendors",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get("/radiusAttributes/vendors").json()
+            return (await asyncio.to_thread(self.client.get, "/radiusAttributes/vendors")).json()
 
     # ========== RADIUS Attribute Groups ==========
 
@@ -156,12 +163,13 @@ class RadiusAttributeService:
             List of RADIUS attribute groups
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 "/radiusAttributeGroups",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get("/radiusAttributeGroups").json()
+            return (await asyncio.to_thread(self.client.get, "/radiusAttributeGroups")).json()
 
     async def query_radius_attribute_groups(
         self,
@@ -195,16 +203,18 @@ class RadiusAttributeService:
             body["searchString"] = search_string
 
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.post(
+            return (await asyncio.to_thread(
+                self.client.post,
                 "/radiusAttributeGroups/query",
                 payload=body,
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.post(
+            return (await asyncio.to_thread(
+                self.client.post,
                 "/radiusAttributeGroups/query",
                 payload=body
-            ).json()
+            )).json()
 
     async def get_radius_attribute_group(
         self,
@@ -222,14 +232,16 @@ class RadiusAttributeService:
             RADIUS attribute group details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributeGroups/{group_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributeGroups/{group_id}"
-            ).json()
+            )).json()
 
     async def create_radius_attribute_group(
         self,
@@ -268,13 +280,15 @@ class RadiusAttributeService:
             payload["description"] = description
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/radiusAttributeGroups",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/radiusAttributeGroups",
                 payload=payload
             )
@@ -363,13 +377,15 @@ class RadiusAttributeService:
             payload["description"] = description
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/radiusAttributeGroups/{group_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/radiusAttributeGroups/{group_id}",
                 payload=payload
             )
@@ -399,12 +415,14 @@ class RadiusAttributeService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/radiusAttributeGroups/{group_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/radiusAttributeGroups/{group_id}"
             )
 
@@ -431,14 +449,16 @@ class RadiusAttributeService:
             List of assignments (policies, DPSK pools, etc.)
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributeGroups/{group_id}/assignments",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributeGroups/{group_id}/assignments"
-            ).json()
+            )).json()
 
     async def get_group_assignment(
         self,
@@ -458,14 +478,16 @@ class RadiusAttributeService:
             Assignment details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributeGroups/{group_id}/assignments/{assignment_id}",
                 override_tenant_id=tenant_id
-            ).json()
+            )).json()
         else:
-            return self.client.get(
+            return (await asyncio.to_thread(
+                self.client.get,
                 f"/radiusAttributeGroups/{group_id}/assignments/{assignment_id}"
-            ).json()
+            )).json()
 
     async def create_group_assignment(
         self,
@@ -485,13 +507,15 @@ class RadiusAttributeService:
             Created assignment
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/radiusAttributeGroups/{group_id}/assignments",
                 payload=assignment_data,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/radiusAttributeGroups/{group_id}/assignments",
                 payload=assignment_data
             )
@@ -516,12 +540,14 @@ class RadiusAttributeService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/radiusAttributeGroups/{group_id}/assignments/{assignment_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/radiusAttributeGroups/{group_id}/assignments/{assignment_id}"
             )
 

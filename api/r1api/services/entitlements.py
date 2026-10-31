@@ -225,14 +225,16 @@ class EntitlementsService:
         # Make API call
         if self.client.ec_type == "MSP" and tenant_id:
             logger.debug(f"Making MSP request with tenant_id override: {tenant_id}")
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/entitlements/availabilityReports/query",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
             logger.debug(f"Making EC request (no tenant_id override)")
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/entitlements/availabilityReports/query",
                 payload=payload
             )
@@ -272,14 +274,16 @@ class EntitlementsService:
         # Make API call
         if self.client.ec_type == "MSP" and tenant_id:
             logger.debug(f"Making MSP utilization request with tenant_id override: {tenant_id}")
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/entitlements/utilizations/query",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
             logger.debug(f"Making EC utilization request (no tenant_id override)")
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/entitlements/utilizations/query",
                 payload=payload
             )

@@ -372,6 +372,11 @@ async def main() -> int:
         and not any("description" in i for i in rows["4021_ultrafast"].issues),
         f"4026 issues={rows['4026_fast'].issues}",
     )
+    failures += check(
+        "a blank description is not also counted as a wrong guid",
+        rows["4026_fast"].description_matches_guid is None,
+        f"matches={rows['4026_fast'].description_matches_guid}",
+    )
 
     # 7a. an R1-only identity must NOT be judged against a tier nobody set.
     #     "4099" is already processed, so splitting it yields the DEFAULT

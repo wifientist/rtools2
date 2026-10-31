@@ -91,6 +91,8 @@ const JobMonitor = () => {
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [expandedChildJobs, setExpandedChildJobs] = useState<Set<string>>(new Set());
   const [liveEvents, setLiveEvents] = useState<string[]>([]);
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
 
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [retryCount, setRetryCount] = useState(0);
@@ -407,13 +409,35 @@ const JobMonitor = () => {
     );
   }
 
+  const stopJob = async () => {
+    setStopping(true);
+    setStopError(null);
+    try {
+      const response = await apiFetch(`${API_URL}/jobs/${jobId}/cancel`, { method: 'POST' });
+      if (!response.ok) throw new Error(`Could not stop the job (${response.status})`);
+    } catch (err) {
+      setStopError(err instanceof Error ? err.message : 'Could not stop the job');
+      setStopping(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-3xl font-bold text-gray-900">Job Monitor</h1>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {stopError && <span className="text-sm text-red-600">{stopError}</span>}
+            {(jobStatus.status === 'RUNNING' || jobStatus.status === 'PENDING') && (
+              <button
+                onClick={stopJob}
+                disabled={stopping}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {stopping ? 'Stopping...' : 'Stop Job'}
+              </button>
+            )}
             <button
               onClick={() => navigate('/jobs')}
               className="px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
