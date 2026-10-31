@@ -158,6 +158,9 @@ app.include_router(venue_checkup_router, tags=["Venue Checkup"])
 from routers.migration_tracker import router as migration_tracker_router
 app.include_router(migration_tracker_router)
 
+from routers.r1_call_timing import router as r1_call_timing_router
+app.include_router(r1_call_timing_router)
+
 app.include_router(status.router)
 app.include_router(opt43.router)
 app.include_router(users.router)

@@ -26,6 +26,7 @@ import Layout from "@/components/Layout";
 import Snapshot from "@/pages/Snapshot";
 import R1Details from "@/pages/R1Details";
 import TestCalls from "@/pages/TestCalls";
+import R1CallTiming from "@/pages/R1CallTiming";
 import Option43Calculator from "@/pages/Option43Calculator";
 import CompanyManager from "@/components/CompanyManager";
 import Users from "@/pages/Users";
@@ -142,6 +143,7 @@ const App = () => {
           <Route path="/template-tool" element={<BetaRoute element={<TemplateTool />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />
+          <Route path="/r1-call-timing" element={<AdminRoute element={<R1CallTiming />} />} />
           <Route path="/option43" element={<Option43Calculator />} />
           
           {/* Protected routes */}
