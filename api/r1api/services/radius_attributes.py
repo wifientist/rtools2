@@ -357,7 +357,8 @@ class RadiusAttributeService:
         if name:
             payload["name"] = name
         if attributes is not None:
-            payload["attributes"] = attributes
+            # API uses attributeAssignments; "attributes" gets a 200 and changes nothing
+            payload["attributeAssignments"] = attributes
         if description:
             payload["description"] = description
 
@@ -372,6 +373,13 @@ class RadiusAttributeService:
                 f"/radiusAttributeGroups/{group_id}",
                 payload=payload
             )
+
+        # Raise exception on HTTP errors so callers can handle failures properly
+        if not response.ok:
+            error_data = response.json()
+            error_msg = error_data.get('message', error_data.get('error', response.text[:200]))
+            status = error_data.get('status', response.status_code)
+            raise Exception(f"Failed to update RADIUS group ({status}): {error_msg}")
 
         return response.json()
 

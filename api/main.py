@@ -145,6 +145,8 @@ app.include_router(wlan_vlan_router, tags=["WLAN VLAN"])
 # WLAN Rename — bulk find/replace on R1 network names (alpha-gated)
 from routers.wlan_rename.router import router as wlan_rename_router
 app.include_router(wlan_rename_router, tags=["WLAN Rename"])
+from routers.radius_standard.router import router as radius_standard_router
+app.include_router(radius_standard_router, tags=["RADIUS Standard"])
 # WLAN Grabber — create in R1 the SZ WLANs it does not have yet (beta-gated)
 from routers.wlan_grabber.router import router as wlan_grabber_router
 app.include_router(wlan_grabber_router, tags=["WLAN Grabber"])
