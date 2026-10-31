@@ -156,20 +156,35 @@ class RadiusAttributeService:
         """
         Get all RADIUS attribute groups
 
+        GET /radiusAttributeGroups stops at 10, so this pages /query instead.
+
         Args:
             tenant_id: Tenant/EC ID (required for MSP)
 
         Returns:
             List of RADIUS attribute groups
+
+        Raises:
+            Exception: If R1 refuses a page, rather than returning a partial list
         """
-        if self.client.ec_type == "MSP" and tenant_id:
-            return (await asyncio.to_thread(
-                self.client.get,
-                "/radiusAttributeGroups",
-                override_tenant_id=tenant_id
-            )).json()
-        else:
-            return (await asyncio.to_thread(self.client.get, "/radiusAttributeGroups")).json()
+        kwargs = {"override_tenant_id": tenant_id} if self.client.ec_type == "MSP" and tenant_id else {}
+        groups = []
+        page = 0
+        while True:
+            response = await asyncio.to_thread(
+                self.client.post,
+                "/radiusAttributeGroups/query",
+                payload={"page": page, "pageSize": 100},
+                **kwargs
+            )
+            if not response.ok:
+                raise Exception(f"Failed to list RADIUS attribute groups ({response.status_code}): {response.text[:200]}")
+            body = response.json()
+            rows = body.get("data") or []
+            groups.extend(rows)
+            if not rows or len(groups) >= (body.get("totalCount") or 0):
+                return groups
+            page += 1
 
     async def query_radius_attribute_groups(
         self,
