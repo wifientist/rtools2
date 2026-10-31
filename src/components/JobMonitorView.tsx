@@ -21,6 +21,15 @@ interface Phase {
   duration_seconds?: number;
   tasks?: Task[];
   result?: Record<string, any>;
+  progress?: PhaseProgressRow[];
+}
+
+interface PhaseProgressRow {
+  item_name: string;
+  current: number;
+  total: number;
+  failed: number;
+  detail?: string;
 }
 
 interface PhaseStat {
@@ -128,6 +137,17 @@ interface JobMonitorViewProps {
   onJobComplete?: (result: JobResult) => void;
 }
 
+// "resident" -> "residents", "identity" -> "identities", "batch" -> "batches"
+function pluralize(word: string): string {
+  if (word.endsWith('y')) return `${word.slice(0, -1)}ies`;
+  return word.endsWith('ch') ? `${word}es` : `${word}s`;
+}
+
+function formatPhaseProgress(row: PhaseProgressRow): string {
+  const failed = row.failed ? `, ${row.failed.toLocaleString()} failed` : '';
+  return `${row.current.toLocaleString()}/${row.total.toLocaleString()} ${pluralize(row.item_name)}${failed}`;
+}
+
 // 75s -> "1:15", 3725s -> "1:02:05"
 function formatElapsed(ms: number): string {
   const total = Math.floor(ms / 1000);
@@ -160,6 +180,8 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
   const refreshPendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const jobStatusRef = useRef<JobStatus | null>(null);
+  // The backend heartbeat repeats progress whether or not it moved.
+  const lastProgressLineRef = useRef<string>('');
 
   // Keep ref in sync with state so event handlers always see latest
   useEffect(() => {
@@ -299,17 +321,17 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       if (progress.total_work !== undefined) {
         // V2 workflow - show work progress
         const failed = progress.units_failed ? ` (${progress.units_failed} failed)` : '';
-        addLiveEvent(`📈 Progress: ${progress.completed_work}/${progress.total_work} units${failed}`);
+        addProgressLine(`📈 Progress: ${progress.completed_work}/${progress.total_work} units${failed}`);
       } else if (progress.total_items !== undefined) {
         // Parallel job - show items progress
         const running = progress.running ? ` (${progress.running} running)` : '';
-        addLiveEvent(`📈 Progress: ${progress.completed}/${progress.total_items} items complete${running}`);
+        addProgressLine(`📈 Progress: ${progress.completed}/${progress.total_items} items complete${running}`);
       } else if (progress.total_phases) {
         // Sequential job - show phase progress
-        addLiveEvent(`📈 Progress: ${progress.completed_phases}/${progress.total_phases} phases complete`);
+        addProgressLine(`📈 Progress: ${progress.completed_phases}/${progress.total_phases} phases complete`);
       } else {
         // Fallback
-        addLiveEvent(`📈 Progress: ${progress.percent}% (${progress.completed}/${progress.total_tasks || progress.total || '?'})`);
+        addProgressLine(`📈 Progress: ${progress.percent}% (${progress.completed}/${progress.total_tasks || progress.total || '?'})`);
       }
       // Throttled refresh to keep phase stats / progress bar updated
       refreshJobStatus();
@@ -317,6 +339,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
 
     eventSource.addEventListener('progress', handleProgress);
     eventSource.addEventListener('progress_update', handleProgress);
+    eventSource.addEventListener('phase_progress', handlePhaseProgress);
 
     eventSource.addEventListener('message', (e) => {
       const data = JSON.parse(e.data);
@@ -537,6 +560,21 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
     setLiveEvents(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 50));
   };
 
+  const addProgressLine = (message: string) => {
+    if (message === lastProgressLineRef.current) return;
+    lastProgressLineRef.current = message;
+    addLiveEvent(message);
+  };
+
+  const handlePhaseProgress = (e: MessageEvent) => {
+    const data = JSON.parse(e.data);
+    const phase = jobStatusRef.current?.phases?.find(p => p.id === data.phase_id);
+    const unit = data.unit_id ? ` (${data.unit_id})` : '';
+    const detail = data.detail ? `: ${data.detail}` : '';
+    addLiveEvent(`📈 ${phase?.name || data.phase_id}${unit}: ${formatPhaseProgress(data)}${detail}`);
+    refreshJobStatus();
+  };
+
   const reconnectSSE = async () => {
     // Close existing connection
     if (eventSourceRef.current) {
@@ -583,15 +621,16 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
       const progress = data.progress || data;
       if (progress.total_work !== undefined) {
         const failed = progress.units_failed ? ` (${progress.units_failed} failed)` : '';
-        addLiveEvent(`📈 Progress: ${progress.completed_work}/${progress.total_work} units${failed}`);
+        addProgressLine(`📈 Progress: ${progress.completed_work}/${progress.total_work} units${failed}`);
       } else {
-        addLiveEvent(`📈 Progress: ${progress.percent || 0}%`);
+        addProgressLine(`📈 Progress: ${progress.percent || 0}%`);
       }
       refreshJobStatus();
     };
 
     newEventSource.addEventListener('progress', handleProgress);
     newEventSource.addEventListener('progress_update', handleProgress);
+    newEventSource.addEventListener('phase_progress', handlePhaseProgress);
 
     newEventSource.addEventListener('message', (e) => {
       const data = JSON.parse(e.data);
@@ -1200,6 +1239,11 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                                 )}
                               </span>
                             )}
+                            {phase.progress?.[0] && (
+                              <span className="text-xs text-gray-500">
+                                · {formatPhaseProgress(phase.progress[0])}
+                              </span>
+                            )}
                             {/* Units reached vs. work done: a unit the phase
                                 no-ops for still completes, so the unit count
                                 alone overstates what was created */}
@@ -1306,6 +1350,23 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                             </div>
                           </div>
                         )}
+
+                        {/* Counts the phase reports as it works */}
+                        {phase.progress?.map((row) => (
+                          <div key={row.item_name} className="p-3 bg-blue-50 rounded border border-blue-200">
+                            <div className="flex items-center justify-between gap-3 text-sm font-medium text-blue-900">
+                              <span>{formatPhaseProgress(row)}</span>
+                              <span>{row.total > 0 ? Math.floor((row.current / row.total) * 100) : 0}%</span>
+                            </div>
+                            <div className="mt-2 w-full bg-blue-100 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="h-full bg-blue-500 transition-all duration-300"
+                                style={{ width: `${row.total > 0 ? (row.current / row.total) * 100 : 0}%` }}
+                              />
+                            </div>
+                            {row.detail && <p className="mt-2 text-xs text-blue-800">{row.detail}</p>}
+                          </div>
+                        ))}
 
                         {/* Phase Result Summary */}
                         {phase.result && Object.keys(phase.result).length > 0 && (
@@ -1421,6 +1482,7 @@ const JobMonitorView = ({ jobId, onClose, showFullPageLink = false, onCleanup, o
                         {/* No details message - only show for pending/running phases without tasks and without per-unit stats */}
                         {(!phase.tasks || phase.tasks.length === 0) &&
                          !phase.result &&
+                         !phase.progress?.length &&
                          !isPerUnit &&
                          !(jobStatus.is_parallel && phase.id.includes('parallel')) &&
                          phase.status !== 'COMPLETED' && phase.status !== 'SKIPPED' && (

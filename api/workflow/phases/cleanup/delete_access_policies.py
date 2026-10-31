@@ -23,6 +23,7 @@ on each rate-limit policy.
 
 import asyncio
 import logging
+from collections import defaultdict
 from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
@@ -40,6 +41,8 @@ logger = logging.getLogger(__name__)
 # (plus retries), and a venue can hold hundreds — at 8-wide the burst
 # exhausted the Redis pool and the phase died with "No connection available".
 MAX_CONCURRENT_DELETES = 4
+REMOVE_ATTEMPTS = 3
+REMOVE_RETRY_SECONDS = 2
 
 
 @register_phase("delete_access_policies", "Delete Access Policies")
@@ -94,108 +97,11 @@ class DeleteAccessPoliciesPhase(PhaseExecutor):
                     })
                     return False
 
-        # --- 1a. Unassign policies from their policy sets ---------------------
-        # R1 refuses to delete an assigned policy:
-        #   409 "The policy is still assigned to a policy set"
-        # and the spec says as much: "Deletes the policy and conditions, may
-        # not be assigned to a service." So break the link first. Policies with
-        # no policy_set_id are already free and skip straight to deletion.
-        assigned = [
-            p for p in inv.policies if p.get('id') and p.get('policy_set_id')
-        ]
-        if assigned:
-            await self.emit(
-                f"Unassigning {len(assigned)} policies from their policy sets"
-            )
-            unassign_results = await asyncio.gather(*[
-                run(
-                    "policy assignment",
-                    p.get('name', p.get('id', '?')),
-                    lambda p=p: self.r1_client.policy_sets.remove_policy_from_policy_set(
-                        policy_set_id=p['policy_set_id'],
-                        policy_id=p['id'],
-                        tenant_id=self.tenant_id,
-                    ),
-                )
-                for p in assigned
-            ])
-            freed = sum(1 for r in unassign_results if r)
-            await self.emit(
-                f"Unassigned {freed}/{len(assigned)} policies",
-                "success" if freed == len(assigned) else "warning",
-            )
-
-        # --- 1b. Adaptive policies -------------------------------------------
-        # Even with the unassignment awaited, R1 can still report the policy as
-        # assigned for a moment afterwards. Treat that specific conflict as
-        # retryable rather than terminal — re-issuing the unassign and backing
-        # off clears it. Any other error fails the policy immediately.
-        async def delete_policy(p: Dict[str, Any]) -> bool:
-            pid = p['id']
-            pname = p.get('name', pid)
-            delays = [0, 2, 5, 10]
-
-            for attempt, delay in enumerate(delays):
-                if delay:
-                    await asyncio.sleep(delay)
-                async with sem:
-                    try:
-                        await self.r1_client.policy_sets.delete_template_policy(
-                            template_id=p.get('template_id', '100'),
-                            policy_id=pid,
-                            tenant_id=self.tenant_id,
-                        )
-                        if attempt:
-                            logger.info(
-                                f"Deleted policy '{pname}' on attempt {attempt + 1}"
-                            )
-                        else:
-                            logger.info(f"Deleted policy: {pname}")
-                        return True
-                    except Exception as e:
-                        msg = str(e)
-                        if '404' in msg or 'not found' in msg.lower():
-                            return True
-                        still_assigned = 'still assigned' in msg.lower()
-                        if not still_assigned or attempt == len(delays) - 1:
-                            logger.warning(
-                                f"Failed to delete policy '{pname}': {msg}"
-                            )
-                            failed.append({
-                                'type': 'policy', 'name': pname,
-                                'error': msg[:200],
-                            })
-                            return False
-
-                # Outside the semaphore: nudge the assignment again before the
-                # next attempt, in case the first unassign never landed.
-                if p.get('policy_set_id'):
-                    try:
-                        await self.r1_client.policy_sets.remove_policy_from_policy_set(
-                            policy_set_id=p['policy_set_id'],
-                            policy_id=pid,
-                            tenant_id=self.tenant_id,
-                        )
-                    except Exception:
-                        pass
-            return False
-
-        results = await asyncio.gather(*[
-            delete_policy(p) for p in inv.policies if p.get('id')
-        ])
-        policies_deleted = sum(1 for r in results if r)
-        if inv.policies:
-            await self.emit(
-                f"Deleted {policies_deleted}/{len(inv.policies)} adaptive policies",
-                "success" if policies_deleted == len(inv.policies) else "warning",
-            )
-
-        # --- 2. Policy sets --------------------------------------------------
         # A set carries the same constraint ("may not be assigned to a
         # service"): it can be attached to DPSK pools and identity groups.
         # Rather than issue pools x sets detach calls up front, try the delete
         # and only detach when R1 objects — the usual case needs neither.
-        async def delete_set(ps: Dict[str, Any]) -> bool:
+        async def delete_set(ps: Dict[str, Any], record_failure: bool = True) -> bool:
             ps_id, ps_name = ps.get('id'), ps.get('name', ps.get('id', '?'))
             try:
                 await self.r1_client.policy_sets.delete_policy_set(
@@ -209,9 +115,10 @@ class DeleteAccessPoliciesPhase(PhaseExecutor):
                     return True
                 if '409' not in msg and 'assigned' not in msg.lower():
                     logger.warning(f"Failed to delete policy set '{ps_name}': {msg}")
-                    failed.append({
-                        'type': 'policy set', 'name': ps_name, 'error': msg[:200]
-                    })
+                    if record_failure:
+                        failed.append({
+                            'type': 'policy set', 'name': ps_name, 'error': msg[:200]
+                        })
                     return False
 
             # Still attached — detach from this venue's pools and identity
@@ -252,11 +159,197 @@ class DeleteAccessPoliciesPhase(PhaseExecutor):
                 logger.warning(
                     f"Policy set '{ps_name}' still undeletable after detach: {e}"
                 )
-                failed.append({
-                    'type': 'policy set', 'name': ps_name, 'error': str(e)[:200]
-                })
+                if record_failure:
+                    failed.append({
+                        'type': 'policy set', 'name': ps_name, 'error': str(e)[:200]
+                    })
                 return False
 
+        # --- 1a. Clear each policy set -----------------------------------------
+        # R1 refuses to delete an assigned policy:
+        #   409 "The policy is still assigned to a policy set"
+        # and the spec says as much: "Deletes the policy and conditions, may
+        # not be assigned to a service." So break the link first. Policies with
+        # no policy_set_id are already free and skip straight to deletion.
+        #
+        # Deleting the whole set is tried first: a set being cleaned up anyway
+        # may take every link with it in one call. Otherwise each removal takes
+        # its turn per set, because R1 rejects parallel changes to one set
+        # ("Row was updated or deleted by another transaction", as a 500): at 4
+        # at once, 66% of removals on a 2,000-policy set failed.
+        assigned = [
+            p for p in inv.policies if p.get('id') and p.get('policy_set_id')
+        ]
+        set_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+        async def remove_from_set(p: Dict[str, Any], record_failure: bool = True) -> bool:
+            async with set_locks[p['policy_set_id']]:
+                async with sem:
+                    for attempt in range(1, REMOVE_ATTEMPTS + 1):
+                        try:
+                            await self.r1_client.policy_sets.remove_policy_from_policy_set(
+                                policy_set_id=p['policy_set_id'],
+                                policy_id=p['id'],
+                                tenant_id=self.tenant_id,
+                            )
+                            return True
+                        except Exception as e:
+                            msg = str(e)
+                            if '404' in msg or 'not found' in msg.lower():
+                                return True
+                            if '(500)' in msg and attempt < REMOVE_ATTEMPTS:
+                                await asyncio.sleep(REMOVE_RETRY_SECONDS * attempt)
+                                continue
+                            logger.warning(
+                                f"Failed to remove policy {p['id']} from its set: {msg}"
+                            )
+                            if record_failure:
+                                failed.append({
+                                    'type': 'policy assignment',
+                                    'name': p.get('name', p['id']),
+                                    'error': msg[:200],
+                                })
+                            return False
+            return False
+
+        if assigned:
+            members_per_set = defaultdict(int)
+            for p in assigned:
+                members_per_set[p['policy_set_id']] += 1
+            cleared_sets = set()
+            for ps in inv.policy_sets:
+                if ps.get('id') in members_per_set:
+                    if await delete_set(ps, record_failure=False):
+                        cleared_sets.add(ps['id'])
+                        await self.emit(
+                            f"Deleted policy set '{ps.get('name', ps['id'])}' with "
+                            f"its {members_per_set[ps['id']]} policies still in it"
+                        )
+
+            to_remove = [p for p in assigned if p['policy_set_id'] not in cleared_sets]
+            if to_remove:
+                await self.emit(
+                    f"Removing {len(to_remove)} policies from their policy sets, "
+                    f"one at a time per set"
+                )
+                removed = 0
+                remove_failures = 0
+
+                async def remove_and_count(p: Dict[str, Any]) -> None:
+                    nonlocal removed, remove_failures
+                    if await self.stop_requested():
+                        return
+                    if await remove_from_set(p):
+                        removed += 1
+                    else:
+                        remove_failures += 1
+                    await self.emit_progress(
+                        current=removed + remove_failures,
+                        total=len(to_remove),
+                        failed=remove_failures,
+                        item_name="policy removed from set",
+                    )
+
+                await asyncio.gather(*[remove_and_count(p) for p in to_remove])
+                await self.emit(
+                    f"Removed {removed}/{len(to_remove)} policies from their sets",
+                    "success" if removed == len(to_remove) else "warning",
+                )
+
+        if await self.stop_requested():
+            await self.emit("Stopped by request before deleting policies", "warning")
+            return self.Outputs(failed=failed)
+
+        # --- 1b. Adaptive policies -------------------------------------------
+        # Even with the unassignment awaited, R1 can still report the policy as
+        # assigned for a moment afterwards. Treat that specific conflict as
+        # retryable rather than terminal — re-issuing the unassign and backing
+        # off clears it. Any other error fails the policy immediately.
+        async def delete_policy(p: Dict[str, Any]) -> bool:
+            pid = p['id']
+            pname = p.get('name', pid)
+            if await self.stop_requested():
+                return False
+            delays = [0, 2, 5, 10]
+
+            for attempt, delay in enumerate(delays):
+                if delay:
+                    await asyncio.sleep(delay)
+                async with sem:
+                    try:
+                        deleted = await self.r1_client.policy_sets.delete_template_policy(
+                            template_id=p.get('template_id', '100'),
+                            policy_id=pid,
+                            tenant_id=self.tenant_id,
+                        )
+                    except Exception as e:
+                        msg = str(e)
+                        if '404' in msg or 'not found' in msg.lower():
+                            return True
+                        still_assigned = 'still assigned' in msg.lower()
+                        if not still_assigned or attempt == len(delays) - 1:
+                            logger.warning(
+                                f"Failed to delete policy {pid}: {msg}"
+                            )
+                            failed.append({
+                                'type': 'policy', 'name': pname,
+                                'error': msg[:200],
+                            })
+                            return False
+                        deleted = None
+
+                if deleted is not None:
+                    # Waiting holds no slot, or 4 slots would pace the whole
+                    # phase at the activity poll. Kept apart from the "not found"
+                    # check above: R1 fails these with "...assignments/{id} ...
+                    # was not found", and the policy is still there.
+                    try:
+                        await self.confirm_r1_result(deleted)
+                    except Exception as e:
+                        logger.warning(f"R1 did not delete policy {pid}: {e}")
+                        failed.append({
+                            'type': 'policy', 'name': pname, 'error': str(e)[:200],
+                        })
+                        return False
+                    if attempt:
+                        logger.info(f"Deleted policy {pid} on attempt {attempt + 1}")
+                    else:
+                        logger.info(f"Deleted policy: {pid}")
+                    return True
+
+                # Outside the semaphore: nudge the assignment again before the
+                # next attempt, in case the first unassign never landed.
+                if p.get('policy_set_id'):
+                    await remove_from_set(p, record_failure=False)
+            return False
+
+        to_delete = [p for p in inv.policies if p.get('id')]
+        finished = 0
+
+        async def delete_and_count(p: Dict[str, Any]) -> bool:
+            nonlocal finished
+            ok = await delete_policy(p)
+            finished += 1
+            await self.emit_progress(
+                current=finished, total=len(to_delete),
+                failed=len([f for f in failed if f['type'] == 'policy']),
+                item_name="policy deleted",
+            )
+            return ok
+
+        results = await asyncio.gather(*[delete_and_count(p) for p in to_delete])
+        policies_deleted = sum(1 for r in results if r)
+        if inv.policies:
+            await self.emit(
+                f"Deleted {policies_deleted}/{len(inv.policies)} adaptive policies",
+                "success" if policies_deleted == len(inv.policies) else "warning",
+            )
+
+        if await self.stop_requested():
+            await self.emit("Stopped by request before deleting policy sets", "warning")
+            return self.Outputs(policies_deleted=policies_deleted, failed=failed)
+
+        # --- 2. Policy sets ---------------------------------------------------
         results = await asyncio.gather(*[
             delete_set(ps) for ps in inv.policy_sets if ps.get('id')
         ])

@@ -18,6 +18,8 @@ from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
 
 logger = logging.getLogger(__name__)
 
+IDENTITY_PAGE_SIZE = 500
+
 # The DPSK policy "template" id. Despite the /policyTemplates/{id}/policies
 # path, the policies underneath are REAL entities, not MSP templates — this is
 # the same path create_access_policies posts to. Nothing here touches the
@@ -42,6 +44,27 @@ class ResourceInventory(BaseModel):
     policies: List[Dict[str, Any]] = Field(default_factory=list)
     policy_sets: List[Dict[str, Any]] = Field(default_factory=list)
     radius_attribute_groups: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+async def _all_identities_in_group(r1_client, group_id, tenant_id) -> List[Dict[str, Any]]:
+    """
+    Every identity in a group. One unpaged read returned R1's default 100, which
+    left 5,367 identities behind and their groups undeletable.
+    """
+    identities: List[Dict[str, Any]] = []
+    page = 0
+    while True:
+        response = await r1_client.identity.get_identities_in_group(
+            group_id=group_id, tenant_id=tenant_id, page=page, size=IDENTITY_PAGE_SIZE,
+        )
+        rows = (
+            response.get('content', response.get('data', []))
+            if isinstance(response, dict) else []
+        ) or []
+        identities.extend(rows)
+        if len(rows) < IDENTITY_PAGE_SIZE:
+            return identities
+        page += 1
 
 
 @register_phase("inventory", "Inventory Resources")
@@ -223,22 +246,9 @@ class InventoryPhase(PhaseExecutor):
                 if identity_group_id and identity_group_id not in fetched_identity_group_ids:
                     fetched_identity_group_ids.add(identity_group_id)
                     try:
-                        id_response = (
-                            await self.r1_client.identity
-                            .get_identities_in_group(
-                                group_id=identity_group_id,
-                                tenant_id=self.tenant_id,
-                            )
+                        identities = await _all_identities_in_group(
+                            self.r1_client, identity_group_id, self.tenant_id
                         )
-                        # GET endpoint returns {content: [...]} (Spring Boot)
-                        identities = (
-                            id_response.get(
-                                'content',
-                                id_response.get('data', [])
-                            )
-                            if isinstance(id_response, dict)
-                            else []
-                        ) or []
                         logger.info(
                             f"[Inventory]   Pool {pool_name}: "
                             f"{len(identities)} identities in "
@@ -294,21 +304,9 @@ class InventoryPhase(PhaseExecutor):
                 if ig_id and ig_id not in fetched_identity_group_ids:
                     fetched_identity_group_ids.add(ig_id)
                     try:
-                        id_response = (
-                            await self.r1_client.identity
-                            .get_identities_in_group(
-                                group_id=ig_id,
-                                tenant_id=self.tenant_id,
-                            )
+                        identities = await _all_identities_in_group(
+                            self.r1_client, ig_id, self.tenant_id
                         )
-                        identities = (
-                            id_response.get(
-                                'content',
-                                id_response.get('data', [])
-                            )
-                            if isinstance(id_response, dict)
-                            else []
-                        ) or []
                         if identities:
                             logger.info(
                                 f"[Inventory]   Group {ig_name}: "
@@ -423,7 +421,9 @@ class InventoryPhase(PhaseExecutor):
                 for ag in ag_items:
                     ag_name = ag.get('name', '')
                     # Skip the system Default AP group
-                    if ag_name == 'Default':
+                    # R1 returns a venue's implicit group with a blank name and
+                    # refuses to delete it (WIFI-10000).
+                    if ag_name == 'Default' or ag.get('isDefault') or not ag_name.strip():
                         continue
                     if pattern and not pattern.search(ag_name):
                         continue
@@ -770,13 +770,9 @@ async def _audit_venue_for_cloudpath(r1_client, tenant_id: str) -> Dict[str, Lis
             # Fetch identities
             if identity_group_id:
                 try:
-                    id_response = await r1_client.identity.get_identities_in_group(
-                        group_id=identity_group_id, tenant_id=tenant_id
+                    identities = await _all_identities_in_group(
+                        r1_client, identity_group_id, tenant_id
                     )
-                    identities = (
-                        id_response.get('content', id_response.get('data', []))
-                        if isinstance(id_response, dict) else []
-                    ) or []
                     for identity in identities:
                         inventory['identities'].append({
                             'id': identity.get('id'),

@@ -1,115 +1,100 @@
 """
 V2 Phase: Verify Cleanup
 
-Summarizes cleanup results from all delete phases.
-Always runs last to provide a final status report.
+Reads R1 again and reports what the inventory listed that is still there. The
+delete phases cannot be the judge: R1 can accept a delete and fail it afterwards.
 """
 
+import asyncio
 import logging
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Set
 
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
+from workflow.phases.cleanup.inventory import InventoryPhase, ResourceInventory
 
 logger = logging.getLogger(__name__)
 
+# R1's reads can lag its deletes, so a leftover gets one more look.
+SECOND_LOOK_SECONDS = 20
 
-class DeletePhaseResult(BaseModel):
-    """Result from a single delete phase."""
-    deleted_count: int = 0
-    failed_count: int = 0
-    skipped_count: int = 0
-    errors: List[str] = Field(default_factory=list)
+RESOURCE_TYPES = [
+    'passphrases', 'dpsk_pools', 'identities', 'identity_groups', 'wifi_networks',
+    'ap_groups', 'policies', 'policy_sets', 'radius_attribute_groups',
+]
 
 
 @register_phase("verify_cleanup", "Verify Cleanup")
 class VerifyCleanupPhase(PhaseExecutor):
-    """
-    Verify cleanup completion and emit summary.
-
-    Collects results from all delete phases and reports totals.
-    """
+    """Report what is really left of the inventory."""
 
     class Inputs(BaseModel):
-        delete_passphrases_result: DeletePhaseResult = Field(
-            default_factory=DeletePhaseResult
-        )
-        delete_dpsk_pools_result: DeletePhaseResult = Field(
-            default_factory=DeletePhaseResult
-        )
-        delete_identities_result: DeletePhaseResult = Field(
-            default_factory=DeletePhaseResult
-        )
-        delete_identity_groups_result: DeletePhaseResult = Field(
-            default_factory=DeletePhaseResult
-        )
-        delete_networks_result: DeletePhaseResult = Field(
-            default_factory=DeletePhaseResult
-        )
-        delete_ap_groups_result: DeletePhaseResult = Field(
-            default_factory=DeletePhaseResult
-        )
+        inventory: ResourceInventory = Field(default_factory=ResourceInventory)
 
     class Outputs(BaseModel):
         total_deleted: int = 0
         total_failed: int = 0
         total_skipped: int = 0
+        verified: bool = True
         summary: Dict[str, Dict[str, int]] = Field(
             default_factory=dict
         )
 
-    async def execute(self, inputs: 'Inputs') -> 'Outputs':
-        """Summarize cleanup results."""
-        await self.emit("Verifying cleanup results...")
-
-        results = {
-            'passphrases': inputs.delete_passphrases_result,
-            'dpsk_pools': inputs.delete_dpsk_pools_result,
-            'identities': inputs.delete_identities_result,
-            'identity_groups': inputs.delete_identity_groups_result,
-            'wifi_networks': inputs.delete_networks_result,
-            'ap_groups': inputs.delete_ap_groups_result,
-        }
-
-        total_deleted = 0
-        total_failed = 0
-        total_skipped = 0
-        summary = {}
-
-        for resource_type, result in results.items():
-            summary[resource_type] = {
-                'deleted': result.deleted_count,
-                'failed': result.failed_count,
-                'skipped': result.skipped_count,
+    async def _leftovers(self, inventory: ResourceInventory) -> Dict[str, int]:
+        current = await InventoryPhase(self.context)._audit_venue(None, True)
+        left = {}
+        for resource_type in RESOURCE_TYPES:
+            wanted: Set[str] = {
+                row['id'] for row in getattr(inventory, resource_type) if row.get('id')
             }
-            total_deleted += result.deleted_count
-            total_failed += result.failed_count
-            total_skipped += result.skipped_count
+            still_there = {
+                row['id'] for row in getattr(current, resource_type) if row.get('id')
+            }
+            left[resource_type] = len(wanted & still_there)
+        return left
 
-            if result.deleted_count or result.failed_count:
-                logger.info(
-                    f"  {resource_type}: "
-                    f"{result.deleted_count} deleted, "
-                    f"{result.failed_count} failed"
-                )
+    async def execute(self, inputs: 'Inputs') -> 'Outputs':
+        inventory = inputs.inventory
+        await self.emit("Checking R1 for anything left behind...")
 
-        # Summary message
-        parts = [f"{total_deleted} deleted"]
-        if total_failed:
-            parts.append(f"{total_failed} failed")
-        if total_skipped:
-            parts.append(f"{total_skipped} skipped")
+        try:
+            left = await self._leftovers(inventory)
+            if any(left.values()):
+                await asyncio.sleep(SECOND_LOOK_SECONDS)
+                left = await self._leftovers(inventory)
+        except Exception as e:
+            logger.warning(f"Could not verify cleanup: {e}")
+            await self.emit(f"Could not check R1 for leftovers: {e}", "warning")
+            return self.Outputs(verified=False)
 
-        level = "success" if total_failed == 0 else "warning"
-        await self.emit(
-            f"Cleanup complete: {', '.join(parts)}", level
-        )
+        summary = {}
+        total_deleted = 0
+        total_left = 0
+        for resource_type in RESOURCE_TYPES:
+            listed = len(getattr(inventory, resource_type))
+            if not listed:
+                continue
+            remaining = left[resource_type]
+            summary[resource_type] = {'deleted': listed - remaining, 'failed': remaining, 'skipped': 0}
+            total_deleted += listed - remaining
+            total_left += remaining
+
+        if total_left:
+            details = ", ".join(
+                f"{counts['failed']} {resource_type.replace('_', ' ')}"
+                for resource_type, counts in summary.items() if counts['failed']
+            )
+            await self.emit(
+                f"Cleanup incomplete: {total_deleted} deleted, still in R1: {details}",
+                "error",
+            )
+        else:
+            await self.emit(f"Cleanup verified: {total_deleted} deleted, none left", "success")
 
         return self.Outputs(
             total_deleted=total_deleted,
-            total_failed=total_failed,
-            total_skipped=total_skipped,
+            total_failed=total_left,
             summary=summary,
         )
 

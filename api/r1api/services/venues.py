@@ -15,10 +15,10 @@ class VenueService:
         Get all venues for a tenant
         """
         if self.client.ec_type == "MSP":
-            resp = self.client.get("/venues", override_tenant_id=tenant_id).json()
+            resp = (await asyncio.to_thread(self.client.get, "/venues", override_tenant_id=tenant_id)).json()
             return resp
         else:
-            resp = self.client.get("/venues").json()
+            resp = (await asyncio.to_thread(self.client.get, "/venues")).json()
             return resp
 
     async def get_venue(self, tenant_id: str, venue_id: str):
@@ -33,9 +33,9 @@ class VenueService:
             Venue details object
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}")).json()
 
     def query_all_aps_by_tenant(
         self,
@@ -146,9 +146,9 @@ class VenueService:
 
         # Fetch first page
         if self.client.ec_type == "MSP":
-            first_response = self.client.post(f"/venues/aps/query", payload=body, override_tenant_id=tenant_id).json()
+            first_response = (await asyncio.to_thread(self.client.post, f"/venues/aps/query", payload=body, override_tenant_id=tenant_id)).json()
         else:
-            first_response = self.client.post(f"/venues/aps/query", payload=body).json()
+            first_response = (await asyncio.to_thread(self.client.post, f"/venues/aps/query", payload=body)).json()
 
         all_aps = first_response.get('data', [])
         total_count = first_response.get('totalCount', len(all_aps))
@@ -193,9 +193,9 @@ class VenueService:
         #     }
         # }
         if self.client.ec_type == "MSP":
-            return self.client.post(f"/venues/{venue_id}/aps/{serial_number}", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.post, f"/venues/{venue_id}/aps/{serial_number}", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.post(f"/venues/{venue_id}/aps/{serial_number}").json()
+            return (await asyncio.to_thread(self.client.post, f"/venues/{venue_id}/aps/{serial_number}")).json()
 
     async def update_ap(
         self,
@@ -241,13 +241,15 @@ class VenueService:
         logger.info(f"Updating AP {serial_number}: {payload}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}",
                 payload=payload
             )
@@ -276,9 +278,9 @@ class VenueService:
         logger.debug(f"get_ap_groups called - tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get("/venues/apGroups", override_tenant_id=tenant_id).json()
+            response = (await asyncio.to_thread(self.client.get, "/venues/apGroups", override_tenant_id=tenant_id)).json()
         else:
-            response = self.client.get("/venues/apGroups").json()
+            response = (await asyncio.to_thread(self.client.get, "/venues/apGroups")).json()
 
         logger.debug(f"AP Groups Response Type: {type(response)}")
 
@@ -304,9 +306,9 @@ class VenueService:
             AP Group details object
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apGroups/{ap_group_id}", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apGroups/{ap_group_id}", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apGroups/{ap_group_id}").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apGroups/{ap_group_id}")).json()
 
     async def query_ap_groups(self, tenant_id: str, venue_id: str = None, fields: list = None, filters: dict = None, page: int = None, limit: int = None):
         """
@@ -355,9 +357,9 @@ class VenueService:
             body['filters'] = {'venueId': [venue_id]}
 
         if self.client.ec_type == "MSP":
-            return self.client.post("/venues/apGroups/query", payload=body, override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.post, "/venues/apGroups/query", payload=body, override_tenant_id=tenant_id)).json()
         else:
-            return self.client.post("/venues/apGroups/query", payload=body).json()
+            return (await asyncio.to_thread(self.client.post, "/venues/apGroups/query", payload=body)).json()
 
     async def delete_ap_group(
         self,
@@ -380,12 +382,14 @@ class VenueService:
             Deletion response (includes requestId if wait_for_completion=False)
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/apGroups/{ap_group_id}",
                 override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/apGroups/{ap_group_id}"
             )
 
@@ -405,72 +409,72 @@ class VenueService:
         Get AP load balancing settings for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apLoadBalancingSettings", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apLoadBalancingSettings", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apLoadBalancingSettings").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apLoadBalancingSettings")).json()
 
     async def get_ap_radio_settings(self, tenant_id: str, venue_id: str):
         """
         Get AP radio settings for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apRadioSettings", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apRadioSettings", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apRadioSettings").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apRadioSettings")).json()
 
     async def get_wifi_available_channels(self, tenant_id: str, venue_id: str):
         """
         Get WiFi available channels for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/wifiAvailableChannels", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/wifiAvailableChannels", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/wifiAvailableChannels").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/wifiAvailableChannels")).json()
 
     async def get_ap_model_band_mode_settings(self, tenant_id: str, venue_id: str):
         """
         Get AP model band mode settings for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apModelBandModeSettings", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelBandModeSettings", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apModelBandModeSettings").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelBandModeSettings")).json()
 
     async def get_ap_model_external_antenna_settings(self, tenant_id: str, venue_id: str):
         """
         Get AP model external antenna settings for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apModelExternalAntennaSettings", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelExternalAntennaSettings", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apModelExternalAntennaSettings").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelExternalAntennaSettings")).json()
 
     async def get_ap_client_admission_control_settings(self, tenant_id: str, venue_id: str):
         """
         Get AP client admission control settings for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apClientAdmissionControlSettings", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apClientAdmissionControlSettings", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apClientAdmissionControlSettings").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apClientAdmissionControlSettings")).json()
 
     async def get_ap_model_capabilities(self, tenant_id: str, venue_id: str):
         """
         Get AP model capabilities for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apModelCapabilities", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelCapabilities", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apModelCapabilities").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelCapabilities")).json()
 
     async def get_ap_model_antenna_type_settings(self, tenant_id: str, venue_id: str):
         """
         Get AP model antenna type settings for a venue
         """
         if self.client.ec_type == "MSP":
-            return self.client.get(f"/venues/{venue_id}/apModelAntennaTypeSettings", override_tenant_id=tenant_id).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelAntennaTypeSettings", override_tenant_id=tenant_id)).json()
         else:
-            return self.client.get(f"/venues/{venue_id}/apModelAntennaTypeSettings").json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apModelAntennaTypeSettings")).json()
 
     async def add_ap_to_venue(
         self,
@@ -525,13 +529,15 @@ class VenueService:
 
         # Make API call
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/venues/{venue_id}/aps",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/venues/{venue_id}/aps",
                 payload=payload
             )
@@ -614,13 +620,15 @@ class VenueService:
 
         # Make API call with multipart form data
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post_multipart(
+            response = await asyncio.to_thread(
+                self.client.post_multipart,
                 f"/venues/{venue_id}/aps",
                 files=files,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post_multipart(
+            response = await asyncio.to_thread(
+                self.client.post_multipart,
                 f"/venues/{venue_id}/aps",
                 files=files
             )
@@ -699,13 +707,15 @@ class VenueService:
         # Make API call with multipart form data
         # Endpoint: POST /venues/{venue_id}/switches/importRequests
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post_multipart(
+            response = await asyncio.to_thread(
+                self.client.post_multipart,
                 f"/venues/{venue_id}/switches/importRequests",
                 files=files,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post_multipart(
+            response = await asyncio.to_thread(
+                self.client.post_multipart,
                 f"/venues/{venue_id}/switches/importRequests",
                 files=files
             )
@@ -855,13 +865,15 @@ class VenueService:
 
         # Make API call
         if self.client.ec_type == "MSP":
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/venues/{venue_id}/apGroups",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/venues/{venue_id}/apGroups",
                 payload=payload
             )
@@ -921,12 +933,14 @@ class VenueService:
 
         # Make API call - PUT with no body
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/apGroups/{ap_group_id}/aps/{ap_serial_number}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/apGroups/{ap_group_id}/aps/{ap_serial_number}"
             )
 
@@ -997,13 +1011,15 @@ class VenueService:
             logger.info(f"[activate_ssid_on_venue] DPSK mode - including dpskServiceProfileId: {dpsk_service_id}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}",
                 payload=payload
             )
@@ -1091,13 +1107,15 @@ class VenueService:
         }
 
         if self.client.ec_type == "MSP":
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/networkActivations",
                 payload=payload,
                 override_tenant_id=tenant_id,
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 "/networkActivations",
                 payload=payload,
             )
@@ -1151,12 +1169,14 @@ class VenueService:
         )
 
         if self.client.ec_type == "MSP":
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}"
             )
 
@@ -1233,13 +1253,15 @@ class VenueService:
 
         # Make API call - PUT with activation payload
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
                 payload=payload
             )
@@ -1358,13 +1380,15 @@ class VenueService:
             logger.info(f"[Step 1/3] Skipped (association already carries this group)")
         else:
             if self.client.ec_type == "MSP":
-                response = self.client.put(
+                response = await asyncio.to_thread(
+                    self.client.put,
                     step1_path,
                     payload=settings_payload,
                     override_tenant_id=tenant_id
                 )
             else:
-                response = self.client.put(
+                response = await asyncio.to_thread(
+                    self.client.put,
                     step1_path,
                     payload=settings_payload
                 )
@@ -1384,12 +1408,14 @@ class VenueService:
         # Step 2: Bind AP Group to the network (no payload)
         logger.info(f"[Step 2/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}")
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}"
             )
 
@@ -1416,13 +1442,15 @@ class VenueService:
             ap_group_settings_payload["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
                 payload=ap_group_settings_payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
                 payload=ap_group_settings_payload
             )
@@ -1484,9 +1512,9 @@ class VenueService:
         if vlan_id is not None:
             payload["vlanId"] = int(vlan_id)
         if self.client.ec_type == "MSP":
-            response = self.client.put(path, payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.put, path, payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.put(path, payload=payload)
+            response = await asyncio.to_thread(self.client.put, path, payload=payload)
         if response.status_code not in [200, 201, 202]:
             logger.error(f"[ap_group_settings] FAILED: {response.status_code} - {response.text}")
             response.raise_for_status()
@@ -1576,13 +1604,15 @@ class VenueService:
             settings_payload["apGroups"][0]["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
                 payload=settings_payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/settings",
                 payload=settings_payload
             )
@@ -1611,12 +1641,14 @@ class VenueService:
         # Step 2: Activate AP Group on the SSID
         logger.info(f"[Step 2/3] PUT /venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}")
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}"
             )
 
@@ -1652,13 +1684,15 @@ class VenueService:
             ap_group_settings_payload["vlanId"] = int(vlan_id) if isinstance(vlan_id, str) else vlan_id
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
                 payload=ap_group_settings_payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/wifiNetworks/{wifi_network_id}/apGroups/{ap_group_id}/settings",
                 payload=ap_group_settings_payload
             )
@@ -2097,12 +2131,14 @@ class VenueService:
         try:
             logger.info(f"Fetching venue LAN port settings for venue {venue_id}")
             if self.client.ec_type == "MSP":
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/templates/venues/{venue_id}/apModelLanPortSettings",
                     override_tenant_id=tenant_id
                 )
             else:
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/templates/venues/{venue_id}/apModelLanPortSettings"
                 )
 
@@ -2146,12 +2182,14 @@ class VenueService:
         """
         try:
             if self.client.ec_type == "MSP":
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings",
                     override_tenant_id=tenant_id
                 )
             else:
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings"
                 )
 
@@ -2191,12 +2229,14 @@ class VenueService:
                 port_number = port_id
 
             if self.client.ec_type == "MSP":
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
                     override_tenant_id=tenant_id
                 )
             else:
-                response = self.client.get(
+                response = await asyncio.to_thread(
+                    self.client.get,
                     f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings"
                 )
 
@@ -2326,13 +2366,15 @@ class VenueService:
         logger.debug(f"Setting AP {serial_number} LAN port specific settings: useVenueSettings={use_venue_settings}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPortSpecificSettings",
                 payload=payload
             )
@@ -2402,13 +2444,15 @@ class VenueService:
         logger.debug(f"Setting AP {serial_number} port {port_id} VLAN: {untagged_vlan}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
                 payload=payload
             )
@@ -2464,13 +2508,15 @@ class VenueService:
         logger.debug(f"Setting AP {serial_number} port {port_id} enabled: {enabled}")
 
         if self.client.ec_type == "MSP":
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/venues/{venue_id}/aps/{serial_number}/lanPorts/{port_number}/settings",
                 payload=payload
             )
@@ -2496,9 +2542,9 @@ class VenueService:
         try:
             url = f"/venues/{venue_id}/aps/{serial_number}/{setting_path}"
             if self.client.ec_type == "MSP":
-                response = self.client.get(url, override_tenant_id=tenant_id)
+                response = await asyncio.to_thread(self.client.get, url, override_tenant_id=tenant_id)
             else:
-                response = self.client.get(url)
+                response = await asyncio.to_thread(self.client.get, url)
 
             if response.status_code == 200:
                 return response.json()
@@ -2514,9 +2560,9 @@ class VenueService:
         """Generic PUT for an AP-level setting endpoint. Handles 202 async tasks."""
         url = f"/venues/{venue_id}/aps/{serial_number}/{setting_path}"
         if self.client.ec_type == "MSP":
-            response = self.client.put(url, payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.put, url, payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.put(url, payload=payload)
+            response = await asyncio.to_thread(self.client.put, url, payload=payload)
 
         if response.status_code in [200, 201, 202]:
             result = response.json() if response.content else {"status": "accepted"}
@@ -2630,9 +2676,9 @@ class VenueService:
         """Provision a new AP into RuckusONE by serial number."""
         payload = {"serialNumbers": [serial_number]}
         if self.client.ec_type == "MSP":
-            response = self.client.post("/deviceProvisions/aps", payload=payload, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/deviceProvisions/aps", payload=payload, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/deviceProvisions/aps", payload=payload)
+            response = await asyncio.to_thread(self.client.post, "/deviceProvisions/aps", payload=payload)
 
         if response.status_code in [200, 201, 202]:
             return response.json() if response.content else {"status": "accepted"}

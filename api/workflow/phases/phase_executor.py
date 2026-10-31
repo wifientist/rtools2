@@ -30,6 +30,7 @@ Usage:
 
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Type, ClassVar, Callable, TypeVar, Tuple
 from pydantic import BaseModel
@@ -45,7 +46,14 @@ from workflow.v2.models import (
     ResourceAction,
 )
 
+from workflow.v2.phase_limits import current_phase_activity
+
 logger = logging.getLogger(__name__)
+
+# How often a phase's counts reach the monitor. The counts themselves are
+# noted on every call, for the stall check.
+PROGRESS_PUBLISH_SECONDS = 30
+STOP_CHECK_SECONDS = 5
 
 
 class PhaseValidation(BaseModel):
@@ -139,6 +147,7 @@ class PhaseExecutor(ABC):
         self.venue_id = context.venue_id
         self.tenant_id = context.tenant_id
         self.job_id = context.job_id
+        self._progress_published: Dict[str, float] = {}
 
     @abstractmethod
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
@@ -175,6 +184,37 @@ class PhaseExecutor(ABC):
     # =========================================================================
     # Helper Methods
     # =========================================================================
+
+    async def stop_requested(self) -> bool:
+        """
+        Has the user stopped this job? The brain only looks between phases, so
+        a phase with a long list has to ask for itself. Checked at most every
+        few seconds, so calling it per item is cheap.
+        """
+        now = time.monotonic()
+        if now - getattr(self, "_stop_checked_at", -STOP_CHECK_SECONDS) >= STOP_CHECK_SECONDS:
+            self._stop_checked_at = now
+            state = self.context.state_manager
+            if state:
+                try:
+                    self._stopped = await state.is_cancelled(self.job_id)
+                except Exception as e:
+                    logger.warning(f"Could not check for a stop request: {e}")
+        return getattr(self, "_stopped", False)
+
+    async def confirm_r1_result(self, result: Any) -> None:
+        """
+        Wait for what R1 finally did with a write, and raise if it failed. R1
+        answers 200 or 202 and can fail the work afterwards, so the response
+        alone does not mean it happened. A write with no request ID, or with no
+        tracker to watch it, cannot be confirmed here.
+        """
+        request_id = result.get('requestId') if isinstance(result, dict) else None
+        if not request_id or not self.context.activity_tracker:
+            return
+        outcome = await self.fire_and_wait(request_id)
+        if not outcome.success and not outcome.unverified:
+            raise RuntimeError(outcome.error or "R1 reported that the request failed")
 
     async def register_activity(self, activity_id: str) -> None:
         """Register an R1 activity for centralized bulk tracking."""
@@ -240,36 +280,54 @@ class PhaseExecutor(ABC):
         current: int,
         total: int,
         failed: int = 0,
-        item_name: str = "item"
+        item_name: str = "item",
+        detail: str = "",
     ) -> None:
         """
-        Emit structured intra-phase progress for long-running operations.
+        Report intra-phase progress for long-running operations.
 
-        Unlike emit() which sends text messages, this sends structured data
-        that clients can use for progress bars and accurate tracking.
+        Safe to call for every item: the stall check sees each call, and the
+        monitor gets the first, the last, and one every 30s between. Unlike
+        emit(), this is structured data clients can draw a progress bar from.
 
         Args:
             current: Items completed so far
             total: Total items to process
             failed: Items that failed
             item_name: What we're processing (e.g., "passphrase", "identity")
+            detail: Optional breakdown, e.g. "12 policies created, 3 failed"
         """
-        if self.context.event_publisher:
-            await self.context.event_publisher.phase_progress(
-                job_id=self.job_id,
-                phase_id=self.phase_id,
-                unit_id=self.context.unit_id,
-                current=current,
-                total=total,
-                failed=failed,
-                item_name=item_name,
-            )
-        # Also log for debugging (less verbose than emit)
-        if current == total or current % 50 == 0:
-            logger.debug(
-                f"  [{self.phase_id}] Progress: {current}/{total} {item_name}s "
-                f"({failed} failed)"
-            )
+        activity = current_phase_activity.get()
+        if activity is not None:
+            activity.report(item_name, current, total)
+
+        now = time.monotonic()
+        last = self._progress_published.get(item_name)
+        if last is not None and current < total and now - last < PROGRESS_PUBLISH_SECONDS:
+            return
+        self._progress_published[item_name] = now
+
+        # Progress is a report on the work, so failing to deliver it never
+        # fails the work.
+        try:
+            if self.context.state_manager:
+                await self.context.state_manager.save_phase_progress(
+                    self.job_id, self.phase_id, self.context.unit_id, item_name,
+                    {"current": current, "total": total, "failed": failed, "detail": detail},
+                )
+            if self.context.event_publisher:
+                await self.context.event_publisher.phase_progress(
+                    job_id=self.job_id,
+                    phase_id=self.phase_id,
+                    unit_id=self.context.unit_id,
+                    current=current,
+                    total=total,
+                    failed=failed,
+                    item_name=item_name,
+                    detail=detail,
+                )
+        except Exception as e:
+            logger.debug(f"  [{self.phase_id}] Could not publish progress: {e}")
 
     @classmethod
     def get_contract(cls) -> PhaseContract:
@@ -307,7 +365,6 @@ class PhaseExecutor(ABC):
         max_concurrent: int = 10,
         item_name: str = "item",
         emit_progress: bool = True,
-        progress_interval: int = 10,
     ) -> 'ParallelMapResult[R]':
         """
         Execute an async function across many items in parallel with semaphore control.
@@ -321,7 +378,6 @@ class PhaseExecutor(ABC):
             max_concurrent: Maximum concurrent operations (default 10)
             item_name: Name for progress messages (e.g., "passphrase", "identity")
             emit_progress: Whether to emit progress updates (default True)
-            progress_interval: Emit progress every N items (default 10)
 
         Returns:
             ParallelMapResult with successes, failures, and summary
@@ -360,14 +416,6 @@ class PhaseExecutor(ABC):
                     async with lock:
                         succeeded.append(result)
                         completed += 1
-                        if emit_progress and completed % progress_interval == 0:
-                            # Use structured progress instead of text message
-                            await self.emit_progress(
-                                current=completed,
-                                total=total,
-                                failed=len(failed),
-                                item_name=item_name,
-                            )
                 except Exception as e:
                     error_msg = str(e)
                     # Treat "not found" as success for idempotency
@@ -386,6 +434,14 @@ class PhaseExecutor(ABC):
                             logger.warning(
                                 f"[{self.phase_id}] Failed {item_name} {index}: {error_msg}"
                             )
+                if emit_progress:
+                    async with lock:
+                        await self.emit_progress(
+                            current=completed,
+                            total=total,
+                            failed=len(failed),
+                            item_name=item_name,
+                        )
 
         # Launch all tasks
         tasks = [process_one(item, i) for i, item in enumerate(items)]
@@ -449,7 +505,6 @@ class PhaseExecutor(ABC):
             process_batch,
             max_concurrent=max_concurrent,
             item_name=f"{item_name} batch",
-            progress_interval=1,  # Emit for each batch
         )
 
 

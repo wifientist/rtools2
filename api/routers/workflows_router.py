@@ -144,7 +144,10 @@ def _derive_phase_status(
         return "PENDING"
 
 
-def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
+def _job_to_status_response(
+    job: WorkflowJobV2,
+    phase_progress: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> JobStatusResponse:
     """Transform a V2 workflow job into the JobStatusResponse format.
 
     Optimized: derives phase statuses from get_progress() phase_stats
@@ -217,6 +220,8 @@ def _job_to_status_response(job: WorkflowJobV2) -> JobStatusResponse:
             # real job, re-sent on every poll of a screen that polls
             # continuously. The UI needs "is one set", never the value.
             phase_data["result"] = redact_passphrases(result)
+        if phase_progress and defn.id in phase_progress:
+            phase_data["progress"] = phase_progress[defn.id]
         phases.append(phase_data)
 
         if status == "RUNNING" and current_phase is None:
@@ -370,8 +375,7 @@ async def get_job_status(
     if job.user_id != current_user.id and job.user_id != 0:
         raise HTTPException(status_code=403, detail=f"Access denied to job {job_id}")
 
-    return _job_to_status_response(job
-    )
+    return _job_to_status_response(job, await state_manager.get_phase_progress(job_id))
 
 
 @router.get("/{job_id}/failures")

@@ -134,6 +134,11 @@ class IdentityAuditRequest(BaseModel):
         DEFAULT_SUFFIX,
         description="Speed tier assumed for usernames with no trailing _suffix",
     )
+    radius_tier_groups: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Lowercase tier -> the RADIUS group the user chose for it "
+                    "at import, so that choice is not reported as a mismatch.",
+    )
     evaluate_policies: bool = Field(
         False,
         description="Ask R1 which policy each identity actually lands on, via "
@@ -517,7 +522,7 @@ async def _evaluate_identities(
                 status = getattr(response, "status_code", 0)
                 body = r1_client.policy_sets.client.safe_json(response)
             except Exception as e:
-                logger.warning(f"Policy evaluation failed for {username}: {e}")
+                logger.warning(f"Policy evaluation failed: {e}")
                 results[case] = {"error": str(e)}
                 return
 
@@ -669,8 +674,9 @@ def _build_row(
         row.has_description = bool(row.description_r1)
         # Compared only when there is something on both sides to compare.
         # None means "not applicable", which is not the same as a mismatch --
-        # an R1-only identity has no file guid to be wrong about.
-        if guid_json:
+        # an R1-only identity has no file guid to be wrong about, and a blank
+        # description is its own finding, not a wrong guid.
+        if guid_json and row.has_description:
             row.description_matches_guid = (row.description_r1 == guid_json)
         # The group was reached BY its pool, so a group implies a service.
         row.in_dpsk_service = bool(identity.get('dpsk_service_name'))
@@ -976,7 +982,7 @@ async def run_identity_audit(
             suffix=suffix,
             # The file lists this resident, so its username -- explicit tier
             # or the default for one without -- is a real expectation.
-            expected_suffix=suffix,
+            expected_suffix=request.radius_tier_groups.get(suffix.lower(), suffix),
             in_file=True,
             identity=identity,
             matched_as=matched_as,

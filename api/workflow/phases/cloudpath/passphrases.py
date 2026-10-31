@@ -48,6 +48,35 @@ class PassphraseResult(BaseModel):
     replaced_existing: bool = False
 
 
+# How many may be sent or waiting on R1 at once.
+PASSPHRASES_IN_FLIGHT = 50
+
+
+def with_send_limit(fn, limit: int):
+    """
+    Run fn(item, release) with at most `limit` holding a place. fn may call
+    release once it no longer needs one; otherwise it is freed when fn ends.
+    """
+    places = asyncio.Semaphore(limit)
+
+    async def limited(item):
+        await places.acquire()
+        released = False
+
+        def release():
+            nonlocal released
+            if not released:
+                released = True
+                places.release()
+
+        try:
+            return await fn(item, release)
+        finally:
+            release()
+
+    return limited
+
+
 @register_phase("create_passphrases", "Create DPSK Passphrases")
 class CreatePassphrasesPhase(PhaseExecutor):
     """
@@ -279,7 +308,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
             )
 
         # Define the creation function for parallel_map
-        async def create_one(pp: Dict[str, Any]) -> PassphraseResult:
+        async def create_one(pp: Dict[str, Any], on_accepted=None) -> PassphraseResult:
             guid = pp.get('guid', '')
             username = pp.get('name', '')
             passphrase_value = pp.get('passphrase', '')
@@ -301,7 +330,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                             tenant_id=self.tenant_id,
                             vlan_id=vlan_id,
                         )
-                        logger.info(f"Updated VLAN to {vlan_id} for {username}")
+                        logger.info(f"Updated VLAN to {vlan_id} for passphrase {existing_id}")
                         return PassphraseResult(
                             cloudpath_guid=guid,
                             username=username,
@@ -314,7 +343,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                             needs_description_update=pp.get('needs_description_update', False),
                         )
                     except Exception as e:
-                        logger.error(f"Failed to update VLAN for {username}: {e}")
+                        logger.error(f"Failed to update VLAN for passphrase {existing_id}: {e}")
                         return PassphraseResult(
                             cloudpath_guid=guid,
                             username=username,
@@ -388,6 +417,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                     # Identity description is updated in the update_identity_descriptions phase
                     description=f"Imported from Cloudpath: {guid}",
                     vlan_id=vlan_id,
+                    on_accepted=on_accepted,
                 )
 
                 passphrase_id = result.get('id') if isinstance(result, dict) else None
@@ -462,7 +492,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 if name_taken:
                     # The name is taken and its identity is not in this
                     # group. That is not "already imported".
-                    logger.error(f"Failed to create passphrase {username}: {error_msg}")
+                    logger.error(f"Failed to create passphrase {guid}: {error_msg}")
                     return PassphraseResult(
                         cloudpath_guid=guid,
                         username=username,
@@ -480,7 +510,7 @@ class CreatePassphrasesPhase(PhaseExecutor):
                         skip_reason="Already exists"
                     )
 
-                logger.error(f"Failed to create passphrase {username}: {error_msg}")
+                logger.error(f"Failed to create passphrase {guid}: {error_msg}")
                 return PassphraseResult(
                     cloudpath_guid=guid,
                     username=username,
@@ -489,13 +519,15 @@ class CreatePassphrasesPhase(PhaseExecutor):
                 )
 
         # Execute with parallel_map for intra-phase parallelism
+        # max_concurrent limits sends. A new passphrase then frees its place
+        # while R1 works on it, or the phase runs at one batch per activity poll:
+        # 10 per 3.4s was most of a 2,035-resident import's first 13 minutes.
         results = await self.parallel_map(
             items=passphrases,
-            fn=create_one,
-            max_concurrent=max_concurrent,
+            fn=with_send_limit(create_one, max_concurrent),
+            max_concurrent=max(max_concurrent, PASSPHRASES_IN_FLIGHT),
             item_name="passphrase",
             emit_progress=True,
-            progress_interval=max(1, len(passphrases) // 20),  # ~5% intervals
         )
 
         # ------------------------------------------------------------------

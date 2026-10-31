@@ -6,7 +6,7 @@ import requests
 import threading
 import time
 import asyncio
-from r1api import call_metrics
+from r1api import call_metrics, pacer
 from r1api.token_cache import get_cached_token, store_token, invalidate_token
 from r1api.services.msp import MspService
 
@@ -147,9 +147,11 @@ class _ActivityWatch:
         now = self.loop.time()
         missed = [rid for rid in ids if rid not in found and (
             not bulk_ok or now - self.waiting[rid] >= ACTIVITY_BULK_MISS_SECONDS)]
-        # Finished ones too, once: the full record carries R1's error text.
-        done = [rid for rid in ids if str((found.get(rid) or {}).get("status")).upper() in _ACTIVITY_DONE]
-        single = done + missed[:ACTIVITY_SINGLE_READS_PER_CYCLE]
+        # Failures too, once, for anything the row leaves out. A success needs no
+        # second read: the row differs from the full record only by child and
+        # step totals, and reading each one was a third of a big import's calls.
+        failed = [rid for rid in ids if str((found.get(rid) or {}).get("status")).upper() == "FAIL"]
+        single = failed + missed[:ACTIVITY_SINGLE_READS_PER_CYCLE]
         if single:
             reads = await asyncio.gather(*(
                 self.loop.run_in_executor(None, self.client._read_activity, rid, self.tenant_id)
@@ -160,6 +162,47 @@ class _ActivityWatch:
         for rid in ids:
             if rid in found and rid in self.waiting:
                 self.latest[rid] = found[rid]
+
+
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_MAX_DELAY_SECONDS = 30
+
+
+def _on_worker_thread() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return False
+    except RuntimeError:
+        return True
+
+
+_warned_on_event_loop = set()
+
+
+def _warn_on_event_loop(method: str, path: str) -> None:
+    """A blocking call on the loop freezes every job and stream in the process."""
+    label = f"{method.upper()} {call_metrics.route_label(path)}"
+    if label not in _warned_on_event_loop:
+        _warned_on_event_loop.add(label)
+        logger.warning(f"R1 call blocking the event loop: {label}")
+
+
+def _retry_after_seconds(response):
+    """How long R1 asked us to wait. Its 429s use its own header, not Retry-After."""
+    for header in ("x-rate-limit-retry-after-seconds", "Retry-After"):
+        try:
+            return float(response.headers.get(header, ""))
+        except ValueError:
+            pass
+    return None
+
+
+def _rate_limit_delay(response, retry: int) -> float:
+    """The wait R1 asked for when it gives a usable one, else 2s, 4s, 8s."""
+    delay = _retry_after_seconds(response)
+    if delay is None:
+        delay = 2.0 ** retry
+    return min(max(delay, 1.0), RATE_LIMIT_MAX_DELAY_SECONDS)
 
 
 class R1Client:
@@ -335,10 +378,15 @@ class R1Client:
         # so an import outliving its token turned every call into a 401 --
         # which the activity tracker then read as "the work failed" and
         # failed 17 units for AP assignments R1 had already accepted.
-        for attempt in (1, 2):
+        token_refreshed = False
+        rate_limit_retries = 0
+        while True:
             token_used = self.token
             headers["Authorization"] = f"Bearer {token_used}"
 
+            if not _on_worker_thread():
+                _warn_on_event_loop(method, path)
+            self._wait_for_pacer(override_tenant_id)
             call_started = time.monotonic()
             try:
                 response = self.session.request(
@@ -353,6 +401,8 @@ class R1Client:
                 call_metrics.record_call_error(method, path, time.monotonic() - call_started)
                 raise
             call_metrics.record_call(method, path, response, time.monotonic() - call_started)
+            if response.status_code == 429:
+                self._note_rate_limited(response, override_tenant_id)
 
             if verbose:
                 body = _mask_text_for_log(response.text)[:3000] if response.text else '(empty)'
@@ -362,19 +412,54 @@ class R1Client:
 
             if (
                 response.status_code == 401
-                and attempt == 1
+                and not token_refreshed
                 and self._refresh_token(token_used)
             ):
+                token_refreshed = True
                 logger.info(
                     f"R1 session expired on {method.upper()} {path}; "
                     f"re-authenticated, retrying once"
                 )
                 continue
 
+            # R1 refused this before doing anything, so sending it again is
+            # safe. Only on a worker thread: sleeping on the event loop would
+            # stall every job and stream in the process.
+            if (
+                response.status_code == 429
+                and rate_limit_retries < RATE_LIMIT_RETRIES
+                and _on_worker_thread()
+            ):
+                rate_limit_retries += 1
+                delay = _rate_limit_delay(response, rate_limit_retries)
+                logger.warning(
+                    f"R1 rate limited {method.upper()} {path}; "
+                    f"retry {rate_limit_retries}/{RATE_LIMIT_RETRIES} in {delay:.0f}s"
+                )
+                time.sleep(delay)
+                continue
+
             if not response.ok:
                 logger.warning(f"Request error: {response.status_code} - {response.text[:500]}")
 
             return response
+
+    def _wait_for_pacer(self, override_tenant_id=None):
+        waited = pacer.wait_for_turn(
+            override_tenant_id or self.tenant_id, may_sleep=_on_worker_thread()
+        )
+        if waited:
+            call_metrics.record(call_metrics.KIND_PACED, "all calls", "waited", waited)
+
+    def _note_rate_limited(self, response, override_tenant_id=None):
+        retry_after = _retry_after_seconds(response)
+        limit_headers = {
+            k: v for k, v in response.headers.items()
+            if "ratelimit" in k.lower() or "rate-limit" in k.lower() or k.lower() == "retry-after"
+        }
+        if limit_headers:
+            logger.info(f"R1 rate limit headers: {limit_headers}")
+        pacer.note_rate_limited(override_tenant_id or self.tenant_id, retry_after)
 
     # Basic HTTP verbs
     def get(self, path, params=None, override_tenant_id=None, accept=None):
@@ -443,6 +528,7 @@ class R1Client:
 
         logger.debug(f"R1Client Multipart POST: {path}")
 
+        self._wait_for_pacer(override_tenant_id)
         call_started = time.monotonic()
         try:
             response = self.session.post(
@@ -455,6 +541,8 @@ class R1Client:
             call_metrics.record_call_error("post", path, time.monotonic() - call_started)
             raise
         call_metrics.record_call("post", path, response, time.monotonic() - call_started)
+        if response.status_code == 429:
+            self._note_rate_limited(response, override_tenant_id)
 
         logger.debug(f"POST (multipart) {url} --> {response.status_code}")
         if not response.ok:

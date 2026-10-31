@@ -132,6 +132,7 @@ class FakePolicySets:
 
     async def assign_policy_to_policy_set(self, policy_id, **kw):
         self.calls.append("assign_policy_to_policy_set")
+        self.w.setdefault("priorities", []).append(kw.get("priority"))
         self.w["assigned"].add(policy_id)
         return True
 
@@ -206,7 +207,11 @@ def make_phase(world, calls, messages):
     async def track_resource(kind, data):
         return None
 
+    async def emit_progress(current, total, failed=0, item_name="item", detail=""):
+        messages.append(("progress", f"{current}/{total} {item_name}: {detail}"))
+
     phase.emit = emit
+    phase.emit_progress = emit_progress
     phase.track_resource = track_resource
     return phase
 
@@ -330,6 +335,187 @@ async def main() -> int:
         "update_identity" not in calls and writes == []
         and out.renames_already_done == 2,
         f"writes={writes}, already_done={out.renames_already_done}",
+    )
+
+    # 9. Adds only found nothing new: the policies are still finished
+    world4 = new_world()
+    calls, messages = [], []
+    backfill = [
+        {"username": u, "identity_id": f"id-{u}", "ssid_list": ss,
+         "success": True, "skipped": True}
+        for u, ss in PAIRS
+    ]
+    backfill_inputs = CreateAccessPoliciesPhase.Inputs(
+        policy_backfill=backfill,
+        identity_group_id="ig-1",
+        options={"enable_access_policies": True,
+                 "policy_set_name": "TestProperty",
+                 "default_suffix": "gigabit"},
+    )
+    out = await make_phase(world4, calls, messages).execute(backfill_inputs)
+    failures += check(
+        "a re-run with no new residents creates the missing policies and renames",
+        out.policies_created == 2 and out.identities_renamed == 2
+        and out.policy_set_id == "set-1" and len(world4["assigned"]) == 2,
+        f"created={out.policies_created}, renamed={out.identities_renamed}",
+    )
+
+    # 10. and it adds what is missing without changing what exists
+    world4["policies_by_id"]["pol-1"]["onMatchResponse"] = "rg-hand-set"
+    world4["conditions"]["pol-1"][0]["evaluationRule"]["regexStringCriteria"] = "^hand$"
+    world4["conditions"]["pol-2"].pop()
+    world4["assigned"].discard("pol-2")
+    calls, messages = [], []
+    out = await make_phase(world4, calls, messages).execute(backfill_inputs)
+    writes = [c for c in calls if c in WRITE_CALLS]
+    failures += check(
+        "backfill finishes a half-made policy and leaves existing values alone",
+        sorted(writes) == ["assign_policy_to_policy_set", "create_string_condition"]
+        and world4["policies_by_id"]["pol-1"]["onMatchResponse"] == "rg-hand-set"
+        and world4["conditions"]["pol-1"][0]["evaluationRule"]["regexStringCriteria"] == "^hand$",
+        f"writes={writes}",
+    )
+
+    # 11. a finished policy costs a backfill no per-policy read
+    for rec in world4["policies"].values():
+        rec["conditionsCount"] = 2
+    calls, messages = [], []
+    await make_phase(world4, calls, messages).execute(backfill_inputs)
+    failures += check(
+        "backfill reads no conditions when the policy list shows both exist",
+        "get_policy_conditions" not in calls,
+        f"reads={calls.count('get_policy_conditions')}",
+    )
+
+    # 12. the list saying one is missing still gets it repaired
+    victim = world4["policies_by_id"]["pol-1"]
+    victim["conditionsCount"] = 1
+    world4["conditions"]["pol-1"].pop()
+    calls, messages = [], []
+    await make_phase(world4, calls, messages).execute(backfill_inputs)
+    failures += check(
+        "backfill still repairs a policy the list shows as incomplete",
+        calls.count("get_policy_conditions") == 1
+        and calls.count("create_string_condition") == 1,
+        f"calls={[c for c in calls if 'condition' in c]}",
+    )
+
+    # 13. each resident is finished in order: rename, then policy, then assign
+    world5 = new_world()
+    calls, messages = [], []
+    out = await make_phase(world5, calls, messages).execute(inputs_for(PAIRS))
+    writes = [c for c in calls if c in (
+        "update_identity", "create_template_policy", "assign_policy_to_policy_set",
+    )]
+    failures += check(
+        "a resident's rename, policy and assignment run together, rename first",
+        writes == ["update_identity", "create_template_policy", "assign_policy_to_policy_set"] * 2,
+        f"writes={writes}",
+    )
+    progress = [m for level, m in messages if level == "progress"]
+    failures += check(
+        "progress counts residents with a breakdown",
+        progress[0].startswith("0/2 resident") and progress[-1].startswith("2/2 resident")
+        and "2 policies created" in progress[-1] and "2 renamed" in progress[-1],
+        f"last={progress[-1]}",
+    )
+
+    # 14. a run cut off part way: the first resident is done, the second is not
+    world6 = new_world()
+    calls, messages = [], []
+    await make_phase(world6, calls, messages).execute(inputs_for(PAIRS[:1]))
+    calls, messages = [], []
+    out = await make_phase(world6, calls, messages).execute(inputs_for(PAIRS))
+    failures += check(
+        "the next run picks up only the unfinished resident",
+        out.policies_created == 1 and out.policies_unchanged == 1
+        and out.identities_renamed == 1 and out.renames_already_done == 1
+        and calls.count("update_identity") == 1
+        and calls.count("assign_policy_to_policy_set") == 1,
+        f"created={out.policies_created}, renamed={out.identities_renamed}",
+    )
+
+    # 15. an identity with no unit SSID still gets its rename
+    world7 = new_world()
+    calls, messages = [], []
+    out = await make_phase(world7, calls, messages).execute(inputs_for(
+        [("2001_gigabit", ["101@Prop"]), ("2002_fast", ["Prop WiFi"])]
+    ))
+    failures += check(
+        "a resident with no policy to build is still renamed",
+        out.policies_created == 1 and out.identities_renamed == 2,
+        f"created={out.policies_created}, renamed={out.identities_renamed}",
+    )
+
+    # 16. workers finish everything, and a failed policy does not undo a rename
+    world8 = new_world()
+    pairs = [("2001_gigabit", ["101@Prop"]), ("2002_fast", ["102@Prop"]),
+             ("3001_gigabit", ["103@Prop"])]
+    calls, messages = [], []
+    phase = make_phase(world8, calls, messages)
+    create = phase.r1_client.policy_sets.create_template_policy
+
+    async def flaky(policy_data, **kw):
+        if policy_data["name"] == "2002":
+            raise RuntimeError("R1 said no")
+        return await create(policy_data=policy_data, **kw)
+
+    phase.r1_client.policy_sets.create_template_policy = flaky
+    inputs = inputs_for(pairs)
+    inputs.options["policy_workers"] = 3
+    out = await phase.execute(inputs)
+    failures += check(
+        "with 3 workers one failure stays with its own resident",
+        out.policies_created == 2 and out.policies_failed == 1
+        and out.identities_renamed == 3,
+        f"created={out.policies_created}, failed={out.policies_failed}, "
+        f"renamed={out.identities_renamed}",
+    )
+
+    print("\n17. Set adds: turns, retries, explicit priority, honest failure")
+    pairs = [("2001_gigabit", ["101@Prop"]), ("2002_fast", ["102@Prop"]),
+             ("3001_gigabit", ["103@Prop"])]
+    world, calls, messages = new_world(), [], []
+    phase = make_phase(world, calls, messages)
+    real_assign = phase.r1_client.policy_sets.assign_policy_to_policy_set
+    state = {"now": 0, "peak": 0, "fail_once": True}
+
+    async def counted(policy_id, **kw):
+        state["now"] += 1
+        state["peak"] = max(state["peak"], state["now"])
+        await asyncio.sleep(0)
+        state["now"] -= 1
+        if state["fail_once"]:
+            state["fail_once"] = False
+            raise RuntimeError("R1 API error (500): Internal Server Error")
+        return await real_assign(policy_id=policy_id, **kw)
+
+    phase.r1_client.policy_sets.assign_policy_to_policy_set = counted
+    inputs = inputs_for(pairs)
+    inputs.options.update(policy_workers=3, set_add_priority="explicit")
+    out = await phase.execute(inputs)
+    failures += check(
+        "adds take turns, a 500 is retried, and priorities are unique",
+        state["peak"] == 1 and out.policies_failed == 0
+        and out.tuning["set_add_500s"] == 1
+        and sorted(world["priorities"]) == [0, 1, 2],
+        f"peak={state['peak']}, failed={out.policies_failed}, "
+        f"tuning={out.tuning.get('set_add_500s')}, p={world.get('priorities')}",
+    )
+
+    world, calls, messages = new_world(), [], []
+    phase = make_phase(world, calls, messages)
+
+    async def always_500(policy_id, **kw):
+        raise RuntimeError("R1 API error (500): Internal Server Error")
+
+    phase.r1_client.policy_sets.assign_policy_to_policy_set = always_500
+    out = await phase.execute(inputs_for(pairs[:1]))
+    failures += check(
+        "an add that keeps failing counts as failed, not created-and-fine",
+        out.policies_failed == 1 and out.policies_not_in_set == 1
+        and out.policy_results[0].success is False,
+        f"failed={out.policies_failed}, not_in_set={out.policies_not_in_set}",
     )
 
     print(f"\n{'FAILED' if failures else 'All checks passed'}"

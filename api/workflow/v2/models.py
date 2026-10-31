@@ -177,6 +177,8 @@ class UnitResolved(BaseModel):
     failed_count: int = 0
     skipped_count: int = 0
     created_passphrases: List[Dict[str, Any]] = Field(default_factory=list)
+    # Renames R1 has confirmed, so a later phase need not send them again.
+    renamed_identity_ids: List[str] = Field(default_factory=list)
     failed_passphrases: List[Dict[str, Any]] = Field(default_factory=list)
 
     # Extensible: workflow-specific resolved data
@@ -386,6 +388,12 @@ class ValidationSummary(BaseModel):
     skipped_nonnumeric_usernames: int = 0
     radius_groups_to_create: int = 0
     radius_groups_existing: int = 0
+    # Tiers no RADIUS group answers to, and what could stand in for them. The
+    # user picks for each one before the job can be confirmed.
+    missing_radius_tiers: List[Dict[str, Any]] = Field(default_factory=list)
+    # Every tier this run touches, with the group it maps to and that group's speed.
+    radius_tiers: List[Dict[str, Any]] = Field(default_factory=list)
+    available_radius_groups: List[str] = Field(default_factory=list)
     total_api_calls: int = 0
 
 

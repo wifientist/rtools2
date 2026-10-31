@@ -642,6 +642,42 @@ class RedisStateManagerV2:
     # without trusting updated_at.
     # =========================================================================
 
+    async def save_phase_progress(
+        self, job_id: str, phase_id: str, unit_id: Optional[str],
+        item_name: str, counts: Dict[str, Any],
+    ) -> None:
+        """
+        Keep a phase's latest counts, so a reload or a late connect sees them
+        and they outlive a phase that gets cancelled. Beside the job blob, not
+        in it: the Brain saves its in-memory job whole, which would overwrite.
+        """
+        key = f"{PREFIX}:jobs:{job_id}:phase_progress"
+        async with self.redis.pipeline() as pipe:
+            pipe.hset(key, f"{phase_id}|{unit_id or ''}|{item_name}", json.dumps(counts))
+            pipe.expire(key, JOB_TTL_SECONDS)
+            await pipe.execute()
+
+    async def get_phase_progress(self, job_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """phase id -> one row per kind of item, summed across units."""
+        rows = await self.redis.hgetall(f"{PREFIX}:jobs:{job_id}:phase_progress")
+        merged: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for field, raw in rows.items():
+            field = field.decode() if isinstance(field, bytes) else field
+            phase_id, _unit, item_name = field.split("|", 2)
+            counts = json.loads(raw)
+            row = merged.get((phase_id, item_name))
+            if row is None:
+                merged[(phase_id, item_name)] = {"item_name": item_name, **counts}
+                continue
+            for name in ("current", "total", "failed"):
+                row[name] += counts[name]
+            row["detail"] = ""  # A breakdown describes one unit, not the sum.
+
+        by_phase: Dict[str, List[Dict[str, Any]]] = {}
+        for (phase_id, _item), row in merged.items():
+            by_phase.setdefault(phase_id, []).append(row)
+        return by_phase
+
     async def touch_job_heartbeat(self, job_id: str) -> None:
         """Refresh the liveness key for a job the engine is actively running."""
         try:

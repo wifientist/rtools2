@@ -58,11 +58,14 @@ class DeleteIdentityGroupsPhase(PhaseExecutor):
                 return (False, group_name, "missing id")
 
             async with semaphore:
+                if await self.stop_requested():
+                    return (False, group_name, "stopped by request")
                 try:
-                    await self.r1_client.identity.delete_identity_group(
+                    deleted = await self.r1_client.identity.delete_identity_group(
                         group_id=group_id,
                         tenant_id=self.tenant_id,
                     )
+                    await self.confirm_r1_result(deleted)
                     logger.info(
                         f"Deleted identity group: {group_name}"
                     )
@@ -134,10 +137,11 @@ class DeleteIdentityGroupsPhase(PhaseExecutor):
                             for attempt in range(4):
                                 await asyncio.sleep(3 * (attempt + 1))  # 3s, 6s, 9s, 12s
                                 try:
-                                    await self.r1_client.identity.delete_identity_group(
+                                    deleted = await self.r1_client.identity.delete_identity_group(
                                         group_id=group_id,
                                         tenant_id=self.tenant_id,
                                     )
+                                    await self.confirm_r1_result(deleted)
                                     logger.info(
                                         f"Deleted identity group: {group_name} "
                                         f"(after cleaning linked pools)"

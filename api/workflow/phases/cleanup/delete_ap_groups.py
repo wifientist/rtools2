@@ -62,6 +62,8 @@ class DeleteAPGroupsPhase(PhaseExecutor):
                 return (False, ag_name, "missing id")
 
             async with semaphore:
+                if await self.stop_requested():
+                    return (False, ag_name, "stopped by request")
                 # Retry with backoff for eventual consistency
                 # AP groups may still have SSIDs attached if network deactivation
                 # hasn't fully propagated
@@ -75,15 +77,8 @@ class DeleteAPGroupsPhase(PhaseExecutor):
                             wait_for_completion=not use_bulk,
                         )
 
-                        # Wait via tracker if using bulk polling
                         if use_bulk:
-                            req_id = result.get('requestId') if isinstance(result, dict) else None
-                            if req_id:
-                                await tracker.register(
-                                    req_id, self.job_id,
-                                    unit_id=None, phase_id=self.phase_id
-                                )
-                                await tracker.wait(req_id)
+                            await self.confirm_r1_result(result)
 
                         logger.info(f"Deleted AP group: {ag_name}")
                         return (True, ag_name, None)

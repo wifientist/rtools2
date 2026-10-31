@@ -68,9 +68,9 @@ class DpskService:
         logger.debug(f"query_dpsk_pools request body: {body}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post("/dpskServices/query", payload=body, override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.post, "/dpskServices/query", payload=body, override_tenant_id=tenant_id)
         else:
-            response = self.client.post("/dpskServices/query", payload=body)
+            response = await asyncio.to_thread(self.client.post, "/dpskServices/query", payload=body)
         return self.client.safe_json(response)
 
     async def get_dpsk_pool(self, pool_id: str, tenant_id: str = None):
@@ -85,9 +85,9 @@ class DpskService:
             DPSK pool details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(f"/dpskServices/{pool_id}", override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.get, f"/dpskServices/{pool_id}", override_tenant_id=tenant_id)
         else:
-            response = self.client.get(f"/dpskServices/{pool_id}")
+            response = await asyncio.to_thread(self.client.get, f"/dpskServices/{pool_id}")
         return self.client.safe_json(response)
 
     async def create_dpsk_pool(
@@ -164,13 +164,15 @@ class DpskService:
         logger.debug(f"create_dpsk_pool payload: {payload}")
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/identityGroups/{identity_group_id}/dpskServices",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/identityGroups/{identity_group_id}/dpskServices",
                 payload=payload
             )
@@ -218,13 +220,15 @@ class DpskService:
             payload["expirationOffset"] = expiration_days
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/dpskServices/{pool_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/dpskServices/{pool_id}",
                 payload=payload
             )
@@ -243,9 +247,9 @@ class DpskService:
             Deletion response
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(f"/dpskServices/{pool_id}", override_tenant_id=tenant_id)
+            response = await asyncio.to_thread(self.client.delete, f"/dpskServices/{pool_id}", override_tenant_id=tenant_id)
         else:
-            response = self.client.delete(f"/dpskServices/{pool_id}")
+            response = await asyncio.to_thread(self.client.delete, f"/dpskServices/{pool_id}")
 
         if not response.content:
             return {"status": "deleted"}
@@ -283,13 +287,15 @@ class DpskService:
             params["sort"] = sort
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/dpskServices/{pool_id}/passphrases",
                 params=params,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/dpskServices/{pool_id}/passphrases",
                 params=params
             )
@@ -409,12 +415,14 @@ class DpskService:
             Passphrase details
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}"
             )
         return self.client.safe_json(response)
@@ -430,10 +438,14 @@ class DpskService:
         expiration_date: str = None,
         max_devices: int = None,
         vlan_id: str = None,
-        identity_id: str = None
+        identity_id: str = None,
+        on_accepted=None
     ):
         """
         Create a new DPSK passphrase
+
+        on_accepted, if given, is called once R1 has answered the POST and before
+        the wait for its task, so a caller limiting sends can free its place.
 
         Args:
             pool_id: DPSK pool ID
@@ -513,7 +525,6 @@ class DpskService:
             except (ValueError, TypeError):
                 pass  # Skip invalid VLAN IDs
 
-        logger.debug(f"create_passphrase payload: {payload}")
 
         # to_thread: the R1 client is synchronous, and this runs in the
         # passphrase creation loop. Blocking here freezes every other
@@ -531,6 +542,9 @@ class DpskService:
                 f"/dpskServices/{pool_id}/passphrases",
                 payload=payload,
             )
+
+        if on_accepted:
+            on_accepted()
 
         # Raise exception on HTTP errors so callers can handle failures properly
         result = self.client.safe_json(response)
@@ -744,13 +758,15 @@ class DpskService:
             payload["vlanId"] = int(vlan_id)
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.patch(
+            response = await asyncio.to_thread(
+                self.client.patch,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}",
                 payload=payload
             )
@@ -802,13 +818,15 @@ class DpskService:
         payload = passphrase_ids
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/dpskServices/{pool_id}/passphrases",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/dpskServices/{pool_id}/passphrases",
                 payload=payload
             )
@@ -845,13 +863,15 @@ class DpskService:
         }
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/csvFiles",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/csvFiles",
                 payload=payload
             )
@@ -881,13 +901,15 @@ class DpskService:
             body["filters"] = filters
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/query/csvFiles",
                 payload=body,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/query/csvFiles",
                 payload=body
             )
@@ -915,12 +937,14 @@ class DpskService:
             List of devices using this passphrase
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.get(
+            response = await asyncio.to_thread(
+                self.client.get,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices"
             )
         return self.client.safe_json(response)
@@ -954,13 +978,15 @@ class DpskService:
             payload["deviceName"] = device_name
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices",
                 payload=payload,
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.post(
+            response = await asyncio.to_thread(
+                self.client.post,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices",
                 payload=payload
             )
@@ -990,12 +1016,14 @@ class DpskService:
         # Adjust based on actual API behavior
 
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/dpskServices/{pool_id}/passphrases/{passphrase_id}/devices"
             )
 
@@ -1023,12 +1051,14 @@ class DpskService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/dpskServices/{pool_id}/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/dpskServices/{pool_id}/policySets/{policy_set_id}"
             )
 
@@ -1054,12 +1084,14 @@ class DpskService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/dpskServices/{pool_id}/policySets/{policy_set_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.delete(
+            response = await asyncio.to_thread(
+                self.client.delete,
                 f"/dpskServices/{pool_id}/policySets/{policy_set_id}"
             )
 
@@ -1087,12 +1119,14 @@ class DpskService:
             Response from API
         """
         if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{wifi_network_id}/dpskServices/{dpsk_service_id}",
                 override_tenant_id=tenant_id
             )
         else:
-            response = self.client.put(
+            response = await asyncio.to_thread(
+                self.client.put,
                 f"/wifiNetworks/{wifi_network_id}/dpskServices/{dpsk_service_id}"
             )
 

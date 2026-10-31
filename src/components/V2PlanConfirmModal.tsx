@@ -56,13 +56,40 @@ interface PlanResult {
   headline?: string;
 }
 
+export interface RadiusTierChoice {
+  action: 'create' | 'use';
+  group?: string;
+}
+
+const CREATE_RADIUS_GROUP = '__create__';
+
+// Shown as their own section, not as summary counts.
+const SUMMARY_HIDDEN_KEYS = ['missing_radius_tiers', 'available_radius_groups', 'radius_tiers'];
+
+interface RadiusTier {
+  tier: string;
+  residents: number;
+  also_written_as: { tier: string; residents: number }[];
+  group: string | null;
+  down_bps: string | null;
+  up_bps: string | null;
+}
+
+const formatBps = (value: string | null) => {
+  const bps = Number(value);
+  if (!value || !Number.isFinite(bps)) return 'Not set';
+  if (bps >= 1e9) return `${bps / 1e9} Gbps`;
+  if (bps >= 1e6) return `${bps / 1e6} Mbps`;
+  return `${bps} bps`;
+};
+
 interface V2PlanConfirmModalProps {
   jobId: string;
   isOpen: boolean;
   workflowName: string;
   onClose: () => void;
   /** Called after confirm succeeds — parent should open JobMonitorModal */
-  onConfirm: (jobId: string) => void;
+  onConfirm: (jobId: string, radiusTierChoices?: Record<string, RadiusTierChoice>) => void;
   /** API prefix for plan/confirm endpoints (default: /per-unit-ssid/v2) */
   apiPrefix?: string;
 }
@@ -83,6 +110,8 @@ const V2PlanConfirmModal = ({
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(true);  // Expanded by default
+  // Tier -> a group name, or CREATE_RADIUS_GROUP.
+  const [tierPicks, setTierPicks] = useState<Record<string, string>>({});
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
@@ -116,7 +145,8 @@ const V2PlanConfirmModal = ({
 
         setPlan(data);
 
-        if (data.status === 'VALIDATING') {
+        // A new job is PENDING until validation picks it up; that is not a result.
+        if (data.status === 'VALIDATING' || data.status === 'PENDING') {
           pollRef.current = setTimeout(doPoll, POLL_INTERVAL);
         } else {
           setPolling(false);
@@ -139,6 +169,7 @@ const V2PlanConfirmModal = ({
       setPollError(null);
       setConfirmError(null);
       setPlan(null);
+      setTierPicks({});
       pollPlan();
     }
 
@@ -151,9 +182,22 @@ const V2PlanConfirmModal = ({
     };
   }, [isOpen, jobId, pollPlan]);
 
+  const missingTiers: { tier: string; residents: number }[] =
+    plan?.summary?.missing_radius_tiers ?? [];
+  const availableGroups: string[] = plan?.summary?.available_radius_groups ?? [];
+  const radiusTiers: RadiusTier[] = plan?.summary?.radius_tiers ?? [];
+  const tiersUnchosen = missingTiers.some(({ tier }) => !tierPicks[tier]);
+
   const handleConfirm = async () => {
     setConfirming(true);
     setConfirmError(null);
+
+    const radiusTierChoices: Record<string, RadiusTierChoice> = {};
+    for (const { tier } of missingTiers) {
+      const pick = tierPicks[tier];
+      radiusTierChoices[tier] =
+        pick === CREATE_RADIUS_GROUP ? { action: 'create' } : { action: 'use', group: pick };
+    }
 
     try {
       const response = await fetch(
@@ -162,6 +206,9 @@ const V2PlanConfirmModal = ({
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
+          ...(missingTiers.length > 0
+            ? { body: JSON.stringify({ radius_tier_choices: radiusTierChoices }) }
+            : {}),
         }
       );
 
@@ -172,7 +219,7 @@ const V2PlanConfirmModal = ({
         );
       }
 
-      onConfirm(jobId);
+      onConfirm(jobId, missingTiers.length > 0 ? radiusTierChoices : undefined);
     } catch (err) {
       setConfirmError(
         err instanceof Error ? err.message : 'Failed to confirm plan'
@@ -301,6 +348,84 @@ const V2PlanConfirmModal = ({
                 </div>
               )}
 
+              {radiusTiers.length > 0 && (
+                <div
+                  className={`border rounded-lg p-4 ${
+                    missingTiers.length > 0
+                      ? 'bg-amber-50 border-amber-300'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  <h4 className="text-sm font-semibold text-gray-800">
+                    RADIUS groups ({radiusTiers.length} tier{radiusTiers.length === 1 ? '' : 's'}
+                    {missingTiers.length > 0 ? `, ${missingTiers.length} missing` : ''})
+                  </h4>
+                  {missingTiers.length > 0 && (
+                    <p className="text-xs text-amber-800 mt-1">
+                      Choose what each missing tier should use before confirming.
+                    </p>
+                  )}
+                  <div className="overflow-x-auto mt-3">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500">
+                          <th className="pb-1 pr-4 font-medium">Tier in file</th>
+                          <th className="pb-1 pr-4 font-medium text-right">Residents</th>
+                          <th className="pb-1 pr-4 font-medium">Group in R1</th>
+                          <th className="pb-1 pr-4 font-medium">Speed (down / up)</th>
+                          <th className="pb-1 font-medium">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {radiusTiers.map((t) => (
+                          <tr key={t.tier} className="border-t border-gray-200">
+                            <td className="py-1.5 pr-4 font-medium text-gray-800">
+                              {t.tier}
+                              {t.also_written_as.map((other) => (
+                                <span key={other.tier} className="block text-xs font-normal text-gray-500">
+                                  also written as {other.tier}: {other.residents}
+                                </span>
+                              ))}
+                            </td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums">
+                              {t.residents.toLocaleString()}
+                            </td>
+                            <td className="py-1.5 pr-4">{t.group ?? 'None'}</td>
+                            <td className="py-1.5 pr-4 whitespace-nowrap">
+                              {t.group ? `${formatBps(t.down_bps)} / ${formatBps(t.up_bps)}` : 'n/a'}
+                            </td>
+                            <td className="py-1.5">
+                              {t.group ? (
+                                'Use existing'
+                              ) : (
+                                <select
+                                  aria-label={`RADIUS group for tier ${t.tier}`}
+                                  value={tierPicks[t.tier] ?? ''}
+                                  onChange={(e) =>
+                                    setTierPicks((picks) => ({ ...picks, [t.tier]: e.target.value }))
+                                  }
+                                  className="border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+                                >
+                                  <option value="">Choose...</option>
+                                  {availableGroups.map((group) => (
+                                    <option key={group} value={group}>
+                                      Use {group}
+                                    </option>
+                                  ))}
+                                  <option value={CREATE_RADIUS_GROUP}>
+                                    Create "{t.tier}" (10 Gbps placeholder)
+                                  </option>
+                                </select>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {/* AP Match Summary (for port config workflows) */}
               {apMatch && Object.keys(apMatch).length > 0 ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -368,7 +493,7 @@ const V2PlanConfirmModal = ({
                       {Object.entries(plan.summary)
                         // Empty strings are "not applicable to this plan"
                         // (e.g. no property-wide SSID), not a count of zero
-                        .filter(([, value]) => value !== '' && value !== null)
+                        .filter(([key, value]) => value !== '' && value !== null && !SUMMARY_HIDDEN_KEYS.includes(key))
                         .map(([key, value]) => (
                         <div key={key} className="text-sm">
                           <span className="text-gray-500">
@@ -609,9 +734,10 @@ const V2PlanConfirmModal = ({
             {!polling && isValid && !hasBlockingConflicts && (
               <button
                 onClick={handleConfirm}
-                disabled={confirming}
+                disabled={confirming || tiersUnchosen}
+                title={tiersUnchosen ? 'Choose a RADIUS group for each missing tier' : undefined}
                 className={`px-6 py-2 rounded font-semibold text-sm transition-colors ${
-                  confirming
+                  confirming || tiersUnchosen
                     ? 'bg-gray-400 cursor-not-allowed text-white'
                     : 'bg-green-600 hover:bg-green-700 text-white'
                 }`}

@@ -136,9 +136,9 @@ async def delete_network(r1_client, network_id: str, tenant_id: Optional[str]) -
     means it is already gone, which is the outcome we wanted.
     """
     if r1_client.ec_type == "MSP" and tenant_id:
-        response = r1_client.delete(f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id)
+        response = await asyncio.to_thread(r1_client.delete, f"/wifiNetworks/{network_id}", override_tenant_id=tenant_id)
     else:
-        response = r1_client.delete(f"/wifiNetworks/{network_id}")
+        response = await asyncio.to_thread(r1_client.delete, f"/wifiNetworks/{network_id}")
 
     if response.status_code == 404:
         return

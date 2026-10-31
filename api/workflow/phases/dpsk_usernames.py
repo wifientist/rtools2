@@ -33,10 +33,46 @@ identities and the tier suffix still attached.
 """
 
 import re
-from typing import Set, Tuple
+from collections import Counter
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 # Assumed tier for a username that carries none.
 DEFAULT_SUFFIX = "gigabit"
+
+
+def radius_tier_plan(
+    usernames: Iterable[str],
+    groups: Iterable[Dict[str, Any]],
+    default_suffix: str = DEFAULT_SUFFIX,
+) -> List[Dict[str, Any]]:
+    """
+    Each tier these usernames need, with its resident count, the RADIUS group
+    answering to it and that group's speed. Case is ignored, as
+    create_access_policies ignores it. Tiers with no group sort first.
+    """
+    counts: Dict[str, Counter] = {}
+    for username in usernames:
+        tier = split_account_suffix(username, default_suffix)[1]
+        counts.setdefault(tier.lower(), Counter())[tier] += 1
+    by_name = {(g.get('name') or '').lower(): g for g in groups}
+    plan: List[Dict[str, Any]] = []
+    for key, spellings in counts.items():
+        group = by_name.get(key)
+        speeds = {
+            a.get('attributeName'): a.get('attributeValue')
+            for a in (group or {}).get('attributeAssignments') or []
+        }
+        main, *others = [name for name, _ in spellings.most_common()]
+        plan.append({
+            "tier": main,
+            "residents": sum(spellings.values()),
+            "also_written_as": [{"tier": o, "residents": spellings[o]} for o in others],
+            "group": group.get('name') if group else None,
+            "down_bps": speeds.get('WISPr-Bandwidth-Max-Down'),
+            "up_bps": speeds.get('WISPr-Bandwidth-Max-Up'),
+        })
+    plan.sort(key=lambda t: (t["group"] is not None, -t["residents"], t["tier"].lower()))
+    return plan
 
 
 def split_account_suffix(

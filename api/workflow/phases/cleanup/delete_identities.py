@@ -23,6 +23,8 @@ from workflow.phases.cleanup.inventory import ResourceInventory
 logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT = 10
+# The most R1 accepts in one call is not documented; this is a cautious choice.
+BATCH_SIZE = 500
 
 
 @register_phase("delete_identities", "Delete Identities")
@@ -66,6 +68,8 @@ class DeleteIdentitiesPhase(PhaseExecutor):
 
         async def delete_group(group_id, identity_ids):
             async with semaphore:
+                if await self.stop_requested():
+                    return (False, len(identity_ids), group_id, "stopped by request")
                 try:
                     result = await self.r1_client.identity.delete_identities_bulk(
                         group_id=group_id,
@@ -74,15 +78,8 @@ class DeleteIdentitiesPhase(PhaseExecutor):
                         wait_for_completion=not use_bulk,
                     )
 
-                    # Wait via tracker if using bulk polling
                     if use_bulk:
-                        req_id = result.get('requestId') if isinstance(result, dict) else None
-                        if req_id:
-                            await tracker.register(
-                                req_id, self.job_id,
-                                unit_id=None, phase_id=self.phase_id
-                            )
-                            await tracker.wait(req_id)
+                        await self.confirm_r1_result(result)
 
                     logger.info(
                         f"Deleted {len(identity_ids)} identities "
@@ -102,8 +99,9 @@ class DeleteIdentitiesPhase(PhaseExecutor):
 
         results = await asyncio.gather(
             *[
-                delete_group(gid, ids)
+                delete_group(gid, ids[i:i + BATCH_SIZE])
                 for gid, ids in by_group.items()
+                for i in range(0, len(ids), BATCH_SIZE)
             ]
         )
 

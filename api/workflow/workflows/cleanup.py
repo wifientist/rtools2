@@ -225,7 +225,7 @@ VenueCleanupWorkflow = Workflow(
         Phase(
             id="verify_cleanup",
             name="Verify Cleanup",
-            description="Summarize cleanup results.",
+            description="Read R1 again and report anything left behind.",
             executor=(
                 "workflow.phases.cleanup.verify"
                 ".VerifyCleanupPhase"
@@ -233,14 +233,7 @@ VenueCleanupWorkflow = Workflow(
             depends_on=["delete_ap_groups"],
             per_unit=False,
             critical=False,
-            inputs=[
-                "delete_passphrases_result",
-                "delete_dpsk_pools_result",
-                "delete_identities_result",
-                "delete_identity_groups_result",
-                "delete_networks_result",
-                "delete_ap_groups_result",
-            ],
+            inputs=["inventory"],
             outputs=[
                 "total_deleted", "total_failed",
                 "total_skipped", "summary",

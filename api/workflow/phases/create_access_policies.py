@@ -8,16 +8,22 @@ REUSABLE across workflows:
 - Per-Unit DPSK: Apply policies to newly created passphrases
 - Any future workflow with DPSK + rate limiting needs
 
-For each identity:
-1. Parse suffix from username (default: "gigabit" if no suffix)
-2. Strip suffix and rename identity in R1
-3. Validate/create RADIUS attribute group matching suffix
-4. Create policy matching username + unit SSID
-5. Assign policy to property-level policy set
+Shared setup first: RADIUS attribute groups and the policy set. Then one chain
+per resident, each finished before it counts as done:
+1. Strip suffix and rename identity in R1
+2. Create policy matching username + unit SSID
+3. Assign policy to property-level policy set
+
+Every step checks live R1 before writing, so a run that stops part way is
+finished by running it again.
 """
 
+import asyncio
 import logging
 import re
+import statistics
+import time
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional, Set, Tuple
 
@@ -35,11 +41,36 @@ ATTR_DPSK_USERNAME = 1012
 ATTR_WIRELESS_SSID = 1013
 DEFAULT_BANDWIDTH = 10_000_000_000  # 10Gbps
 DEFAULT_SUFFIX = "gigabit"
+MAX_POLICY_WORKERS = 25
+MAX_SET_ADD_WORKERS = 8
+# R1 answers 500 on this call under parallel load, and the call is safe to repeat.
+SET_ADD_ATTEMPTS = 3
+SET_ADD_RETRY_SECONDS = 2
+# Set adds slow as the set grows, so tuning runs compare at the same size.
+SET_SIZE_BUCKET = 50
+# R1 can fail a create on its side ("Assign radius attribute group failed") and
+# take the same request a moment later.
+POLICY_CREATE_ATTEMPTS = 2
+POLICY_CREATE_RETRY_SECONDS = 2
 
 # Pattern to detect unit-specific SSIDs like "108@Property_Name"
 from workflow.phases.cloudpath.unit_ssid import (  # noqa: F401
     UNIT_SSID_PATTERN, unit_from_ssid, is_unit_ssid,
 )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _seconds_summary(samples: List[float]) -> Dict[str, Any]:
+    if not samples:
+        return {"count": 0, "median": None, "max": None}
+    return {
+        "count": len(samples),
+        "median": round(statistics.median(samples), 2),
+        "max": round(max(samples), 2),
+    }
 
 
 class PolicyResult(BaseModel):
@@ -103,11 +134,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
     """
     Create adaptive policies for DPSK access control.
 
-    For each identity with a suffix pattern (name_suffix):
+    Resolves the shared RADIUS groups and policy set, then for each resident:
     1. Strip suffix from username
-    2. Validate/create RADIUS attribute group matching suffix
-    3. Create policy matching username + unit SSID
-    4. Assign policy to property-level policy set
+    2. Create policy matching username + unit SSID
+    3. Assign policy to property-level policy set
     """
 
     class Inputs(BaseModel):
@@ -122,6 +152,13 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             default_factory=list,
             description="Original passphrases with ssid_list"
         )
+
+        # Adds only: residents already in R1. Missing policies are created and
+        # leftover suffixes stripped; a policy that exists is not changed.
+        policy_backfill: List[Dict[str, Any]] = Field(default_factory=list)
+
+        # Renames R1 confirmed in update_identity_descriptions.
+        renamed_identity_ids: List[str] = Field(default_factory=list)
 
         # Identity group ID (needed for identity renames)
         identity_group_id: Optional[str] = None
@@ -147,6 +184,9 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         policies_updated: int = 0
         policies_unchanged: int = 0
         policies_failed: int = 0
+        # Created, but the add to the set failed, so it does nothing yet. Also
+        # counted in policies_failed.
+        policies_not_in_set: int = 0
         identities_renamed: int = 0
         renames_no_identity: int = 0
         renames_failed: int = 0
@@ -160,6 +200,9 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         policy_set_id: Optional[str] = None
         policy_results: List[PolicyResult] = Field(default_factory=list)
         rename_results: List[IdentityRenameResult] = Field(default_factory=list)
+        # Seconds per step and per set size, kept on the job because the
+        # backend log rolls off before a long run can be compared.
+        tuning: Dict[str, Any] = Field(default_factory=dict)
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         """Create access policies for DPSK passphrases."""
@@ -170,8 +213,9 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             await self.emit("Access policies not enabled, skipping phase")
             return self.Outputs()
 
-        created_passphrases = inputs.created_passphrases
-        original_passphrases = inputs.passphrases
+        created_passphrases = [*inputs.created_passphrases, *inputs.policy_backfill]
+        original_passphrases = [*inputs.passphrases, *inputs.policy_backfill]
+        finish_only_usernames = {row["username"] for row in inputs.policy_backfill}
         default_suffix = options.get('default_suffix', DEFAULT_SUFFIX)
 
         # Get identity group ID for renames
@@ -195,7 +239,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 ssid_list = pp.ssid_list or []
             elif isinstance(pp, dict):
                 # Dict format
-                name = pp.get('name', '')
+                name = pp.get('name') or pp.get('username', '')
                 ssid_list = pp.get('ssid_list', pp.get('ssidList', []))
             else:
                 logger.warning(f"Unknown passphrase format: {type(pp)}")
@@ -203,7 +247,6 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             if name and ssid_list:
                 username_to_ssids[name] = ssid_list
-                logger.debug(f"Mapped {name} -> {len(ssid_list)} SSIDs: {ssid_list[:3]}...")
 
         await self.emit(f"Built SSID lookup with {len(username_to_ssids)} entries")
         if username_to_ssids:
@@ -284,7 +327,6 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             if not ssid_list:
                 skipped_no_ssid += 1
-                logger.warning(f"No SSID mapping found for username: {username}")
                 continue
 
             # Filter to unit SSIDs only (e.g., "101@PropertyName")
@@ -292,7 +334,6 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             if not unit_ssids:
                 skipped_no_unit_ssid += 1
-                logger.debug(f"No unit SSIDs for {username} (SSIDs: {ssid_list}), skipping policy creation")
                 continue
 
             for ssid in unit_ssids:
@@ -306,6 +347,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     "unit_number": unit_num,
                     "original_username": username,
                     "identity_id": identity_id,
+                    "finish_only": username in finish_only_usernames,
                 })
 
         if not parsed_entries:
@@ -350,24 +392,28 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         suffix_to_group_id: Dict[str, str] = {}
         groups_created = 0
         groups_existing = 0
+        radius_choices = options.get('radius_tier_choices') or {}
 
         for suffix in unique_suffixes:
             await self.emit(f"Checking RADIUS attribute group: {suffix}")
 
+            # What the user chose in the plan for a tier with no group.
+            choice = radius_choices.get(suffix.lower()) or {}
+            group_name = choice.get('group') if choice.get('action') == 'use' else suffix
             existing_group = None
 
             # Try to query existing groups first
             try:
                 groups_response = await self.r1_client.radius_attributes.query_radius_attribute_groups(
                     tenant_id=self.tenant_id,
-                    search_string=suffix,
+                    search_string=group_name,
                     limit=100
                 )
 
                 groups = groups_response.get('content', groups_response.get('data', []))
 
                 for group in groups:
-                    if group.get('name', '').lower() == suffix.lower():
+                    if group.get('name', '').lower() == group_name.lower():
                         existing_group = group
                         break
 
@@ -378,7 +424,15 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             if existing_group:
                 suffix_to_group_id[suffix] = existing_group['id']
                 groups_existing += 1
-                await self.emit(f"Found existing RADIUS group: {suffix} ({existing_group['id']})")
+                await self.emit(f"Found existing RADIUS group: {group_name} ({existing_group['id']})")
+                continue
+
+            if choice.get('action') == 'use':
+                await self.emit(
+                    f"RADIUS group '{group_name}' chosen for tier '{suffix}' was "
+                    f"not found, so those residents get no policy",
+                    "error",
+                )
                 continue
 
             # Try to create the group
@@ -449,13 +503,9 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 else:
                     logger.error(f"Failed to create RADIUS group {suffix}: {create_err}")
 
-                # Use default suffix as fallback if we still don't have this one
+                # Never another tier's group: that is the wrong speed, quietly.
                 if suffix not in suffix_to_group_id:
-                    if suffix != default_suffix and default_suffix in suffix_to_group_id:
-                        suffix_to_group_id[suffix] = suffix_to_group_id[default_suffix]
-                        await self.emit(f"Using {default_suffix} as fallback for {suffix}", "warning")
-                    else:
-                        await self.emit(f"Could not resolve RADIUS group for {suffix}", "error")
+                    await self.emit(f"Could not resolve RADIUS group for {suffix}", "error")
 
         # Step 3: Get/create Policy Set
         policy_set_name = options.get('policy_set_name', 'Adaptive Policies')
@@ -533,8 +583,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     "account": entry["account"],
                     "suffix": entry["suffix"],
                     "ssids": [entry["ssid"]],
+                    "finish_only": entry["finish_only"],
                 }
                 continue
+            plan["finish_only"] = plan["finish_only"] and entry["finish_only"]
             if entry["suffix"] != plan["suffix"]:
                 suffix_conflicts.append(
                     f"{entry['account']} ({plan['suffix']} vs {entry['suffix']})"
@@ -569,15 +621,24 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         # Build lookup of existing policies by name
         existing_policies: Dict[str, dict] = {}
         try:
-            policies_response = await self.r1_client.policy_sets.query_template_policies(
-                template_id=DPSK_POLICY_TEMPLATE_ID,
-                tenant_id=self.tenant_id,
-                limit=1000
-            )
-            for policy in policies_response.get('content', policies_response.get('data', [])):
-                name = policy.get('name', '')
-                if name:
-                    existing_policies[name] = policy
+            # Paged: the template is tenant-wide, so a tenant past one page would
+            # try to re-create what it already has and fail on the duplicate name.
+            page = 0
+            while page < 50:
+                policies_response = await self.r1_client.policy_sets.query_template_policies(
+                    template_id=DPSK_POLICY_TEMPLATE_ID,
+                    tenant_id=self.tenant_id,
+                    page=page,
+                    limit=1000
+                )
+                items = policies_response.get('content', policies_response.get('data', []))
+                for policy in items:
+                    name = policy.get('name', '')
+                    if name:
+                        existing_policies[name] = policy
+                if len(items) < 1000:
+                    break
+                page += 1
             if existing_policies:
                 await self.emit(f"Found {len(existing_policies)} existing policies in template")
         except Exception as e:
@@ -588,6 +649,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         # "already assigned" error, so a re-run of 200 policies made 200
         # pointless writes.
         assigned_policy_ids: Set[str] = set()
+        next_priority = 0
+        number_priorities = True
         try:
             prioritized = await self.r1_client.policy_sets.get_prioritized_policies(
                 policy_set_id=policy_set_id,
@@ -600,6 +663,8 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     pid = row.get('policyId') or row.get('id')
                     if pid:
                         assigned_policy_ids.add(pid)
+                    if isinstance(row.get('priority'), int):
+                        next_priority = max(next_priority, row['priority'] + 1)
             await self.emit(
                 f"Policy set already holds {len(assigned_policy_ids)} policies"
             )
@@ -607,17 +672,74 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             # Fall back to attempting the assign, as before.
             logger.warning(f"Could not list policy set members: {e}")
             assigned_policy_ids = set()
+            # The numbers in use are unknown, so R1 has to choose.
+            number_priorities = False
 
         policy_results: List[PolicyResult] = []
         policies_created = 0
         policies_updated = 0
         policies_unchanged = 0
         policies_failed = 0
+        policies_not_in_set = 0
 
-        for policy_name, plan in desired.items():
+        # Left to itself R1 hands parallel adds the same priority, slows as the
+        # set grows and deadlocks: one site's 1,480 policies held 673 distinct
+        # numbers, alongside the 500s. Numbered, adds hold about 0.2s at any size.
+        set_add_workers = max(
+            1, min(int(options.get('set_add_workers') or 1), MAX_SET_ADD_WORKERS)
+        )
+        set_add_slot = asyncio.Semaphore(set_add_workers)
+        step_seconds: Dict[str, List[float]] = {"rename": [], "policy": [], "set_add": []}
+        set_add_500s = 0
+        policy_create_retries = 0
+        by_set_size: Dict[int, Dict[str, Any]] = {}
+
+        async def add_to_set(policy_id: str) -> None:
+            """Add one policy to the set, in turn, retrying R1's 500s."""
+            nonlocal next_priority, set_add_500s
+            priority = None
+            if number_priorities:
+                priority = next_priority
+                next_priority += 1
+            async with set_add_slot:
+                bucket = by_set_size.setdefault(
+                    len(assigned_policy_ids) // SET_SIZE_BUCKET * SET_SIZE_BUCKET,
+                    {
+                        "seconds": [], "errors_500": 0, "first": time.monotonic(), "last": 0.0,
+                        "started_utc": _utc_now(), "ended_utc": None,
+                    },
+                )
+                for attempt in range(1, SET_ADD_ATTEMPTS + 1):
+                    started = time.monotonic()
+                    try:
+                        await self.r1_client.policy_sets.assign_policy_to_policy_set(
+                            policy_set_id=policy_set_id,
+                            policy_id=policy_id,
+                            tenant_id=self.tenant_id,
+                            priority=priority,
+                        )
+                        break
+                    except Exception as err:
+                        if '(500)' not in str(err):
+                            raise
+                        set_add_500s += 1
+                        bucket["errors_500"] += 1
+                        if attempt == SET_ADD_ATTEMPTS:
+                            raise
+                        await asyncio.sleep(SET_ADD_RETRY_SECONDS * attempt)
+                now = time.monotonic()
+                step_seconds["set_add"].append(now - started)
+                bucket["seconds"].append(now - started)
+                bucket["last"] = now
+                bucket["ended_utc"] = _utc_now()
+
+        async def run_policy(policy_name: str, plan: Dict[str, Any]) -> None:
+            nonlocal policies_created, policies_updated, policies_unchanged, policies_failed
+            nonlocal policies_not_in_set, policy_create_retries
             account = plan["account"]
             suffix = plan["suffix"]
             ssid = plan["ssids"][0]
+            finish_only = plan["finish_only"]
 
             # Get RADIUS group ID for this suffix
             radius_group_id = suffix_to_group_id.get(suffix)
@@ -630,11 +752,12 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     error=f"No RADIUS group for suffix: {suffix}"
                 ))
                 policies_failed += 1
-                continue
+                return
 
             want_user = regex_pattern_for_value(account)
             want_ssid = regex_pattern_for_value(ssid)
 
+            policy_started = time.monotonic()
             try:
                 existing_policy = existing_policies.get(policy_name)
                 policy_id = None
@@ -653,7 +776,11 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     policy_id = existing_policy.get('id')
 
                     current_response = existing_policy.get('onMatchResponse')
-                    if current_response is None and 'onMatchResponse' not in existing_policy:
+                    if (
+                        current_response is None
+                        and 'onMatchResponse' not in existing_policy
+                        and not finish_only
+                    ):
                         # The list payload does not carry it; ask for the policy.
                         try:
                             full = await self.r1_client.policy_sets.get_template_policy(
@@ -665,12 +792,12 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                                 current_response = full.get('onMatchResponse')
                         except Exception as e:
                             logger.debug(
-                                f"Could not read '{policy_name}' for comparison "
+                                f"Could not read a policy for comparison "
                                 f"({e}); treating the RADIUS group as unknown"
                             )
                             current_response = None
 
-                    if current_response != radius_group_id:
+                    if current_response != radius_group_id and not finish_only:
                         await self.r1_client.policy_sets.update_template_policy(
                             template_id=DPSK_POLICY_TEMPLATE_ID,
                             policy_id=policy_id,
@@ -679,11 +806,19 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         )
                         changes.append("RADIUS group")
 
-                    existing_conditions = await self.r1_client.policy_sets.get_policy_conditions(
-                        template_id=DPSK_POLICY_TEMPLATE_ID,
-                        policy_id=policy_id,
-                        tenant_id=self.tenant_id
+                    # Finishing an earlier run only adds what is missing, and the
+                    # policy list already says nothing is. One read per policy
+                    # here cost a large property thousands of calls per re-run.
+                    has_all_conditions = (
+                        finish_only and existing_policy.get('conditionsCount') == 2
                     )
+                    existing_conditions = []
+                    if not has_all_conditions:
+                        existing_conditions = await self.r1_client.policy_sets.get_policy_conditions(
+                            template_id=DPSK_POLICY_TEMPLATE_ID,
+                            policy_id=policy_id,
+                            tenant_id=self.tenant_id
+                        )
                     if isinstance(existing_conditions, dict):
                         existing_conditions = existing_conditions.get(
                             'content', existing_conditions.get('data', [])
@@ -707,8 +842,10 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         )
 
                     for attr_id, want, label in (
-                        (ATTR_DPSK_USERNAME, want_user, "username condition"),
-                        (ATTR_WIRELESS_SSID, want_ssid, "SSID condition"),
+                        () if has_all_conditions else (
+                            (ATTR_DPSK_USERNAME, want_user, "username condition"),
+                            (ATTR_WIRELESS_SSID, want_ssid, "SSID condition"),
+                        )
                     ):
                         cond_id, current = by_attr.get(attr_id, (None, None))
                         if cond_id is None:
@@ -720,7 +857,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                                 tenant_id=self.tenant_id
                             )
                             changes.append(f"added {label}")
-                        elif current != want:
+                        elif current != want and not finish_only:
                             await self.r1_client.policy_sets.update_policy_condition(
                                 template_id=DPSK_POLICY_TEMPLATE_ID,
                                 policy_id=policy_id,
@@ -738,12 +875,11 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                     if changes:
                         policies_updated += 1
                         logger.info(
-                            f"Policy '{policy_name}' ({policy_id}) updated: "
+                            f"Policy {policy_id} updated: "
                             f"{', '.join(changes)}"
                         )
                     else:
                         policies_unchanged += 1
-                        logger.debug(f"Policy '{policy_name}' already correct")
 
                 else:
                     # Create new policy
@@ -752,23 +888,46 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         "onMatchResponse": radius_group_id
                     }
 
-                    policy_response = await self.r1_client.policy_sets.create_template_policy(
-                        template_id=DPSK_POLICY_TEMPLATE_ID,
-                        policy_data=policy_data,
-                        tenant_id=self.tenant_id
-                    )
+                    for attempt in range(1, POLICY_CREATE_ATTEMPTS + 1):
+                        policy_response = await self.r1_client.policy_sets.create_template_policy(
+                            template_id=DPSK_POLICY_TEMPLATE_ID,
+                            policy_data=policy_data,
+                            tenant_id=self.tenant_id
+                        )
 
-                    policy_id = policy_response.get('id')
+                        policy_id = policy_response.get('id')
 
-                    if not policy_id:
-                        raise ValueError("No policy ID returned")
+                        if not policy_id:
+                            raise ValueError("No policy ID returned")
 
-                    # Wait for policy creation to complete (202 = async)
-                    await self.r1_client.policy_sets.await_policy_creation(
-                        template_id=DPSK_POLICY_TEMPLATE_ID,
-                        policy_id=policy_id,
-                        tenant_id=self.tenant_id
-                    )
+                        # Wait for R1's task (202 = async). A task that failed
+                        # left no policy, so asking again is safe; one still
+                        # running is never re-sent.
+                        try:
+                            request_id = policy_response.get('requestId')
+                            if request_id:
+                                await self.r1_client.await_task_completion(
+                                    request_id=request_id,
+                                    override_tenant_id=self.tenant_id,
+                                )
+                            else:
+                                await self.r1_client.policy_sets.await_policy_creation(
+                                    template_id=DPSK_POLICY_TEMPLATE_ID,
+                                    policy_id=policy_id,
+                                    tenant_id=self.tenant_id
+                                )
+                            break
+                        except TimeoutError:
+                            raise
+                        except Exception as create_err:
+                            if attempt == POLICY_CREATE_ATTEMPTS:
+                                raise
+                            policy_create_retries += 1
+                            logger.warning(
+                                f"Policy {policy_id} failed in R1, creating it "
+                                f"again: {create_err}"
+                            )
+                            await asyncio.sleep(POLICY_CREATE_RETRY_SECONDS)
 
                     # Username and SSID conditions, anchored for exact match
                     await self.r1_client.policy_sets.create_string_condition(
@@ -793,14 +952,13 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                         'template_id': DPSK_POLICY_TEMPLATE_ID,
                     })
 
+                if not existing_policy or changes:
+                    step_seconds["policy"].append(time.monotonic() - policy_started)
+
                 # Assign to the policy set only if it is not already a member.
                 if policy_id and policy_id not in assigned_policy_ids:
                     try:
-                        await self.r1_client.policy_sets.assign_policy_to_policy_set(
-                            policy_set_id=policy_set_id,
-                            policy_id=policy_id,
-                            tenant_id=self.tenant_id
-                        )
+                        await add_to_set(policy_id)
                         assigned_policy_ids.add(policy_id)
                     except Exception as assign_err:
                         if 'already' in str(assign_err).lower():
@@ -809,7 +967,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                             # A policy that is not in the set does nothing, so
                             # this is a real failure, not a footnote.
                             logger.error(
-                                f"Policy '{policy_name}' created but NOT assigned "
+                                f"Policy {policy_id} created but NOT assigned "
                                 f"to the policy set: {assign_err}"
                             )
                             await self.emit(
@@ -817,6 +975,18 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                                 f"and will not take effect: {assign_err}",
                                 "error",
                             )
+                            policies_failed += 1
+                            policies_not_in_set += 1
+                            policy_results.append(PolicyResult(
+                                account=account,
+                                ssid=ssid,
+                                suffix=suffix,
+                                policy_id=policy_id,
+                                policy_name=policy_name,
+                                success=False,
+                                error=f"Not in the policy set: {assign_err}",
+                            ))
+                            return
 
                 policy_results.append(PolicyResult(
                     account=account,
@@ -834,7 +1004,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
 
             except Exception as e:
                 error_msg = str(e)
-                logger.error(f"Failed to create/update policy {policy_name}: {error_msg}")
+                logger.error(f"Failed to create/update a policy: {error_msg}")
                 policy_results.append(PolicyResult(
                     account=account,
                     ssid=ssid,
@@ -845,13 +1015,12 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                 ))
                 policies_failed += 1
 
-        await self.emit(
-            f"Policies: {policies_created} created, {policies_updated} updated, "
-            f"{policies_unchanged} already correct, {policies_failed} failed",
-            "success" if policies_failed == 0 else "warning"
-        )
-
-        # Step 5: Rename identities (strip suffix)
+        # Step 5: One chain per resident, renames before the policy.
+        #
+        # They used to be two passes, policies then renames, so a run cut off
+        # during the policies left every identity suffixed: 2,296 of them on a
+        # site whose policies were otherwise nearly done. Renaming first loses
+        # nothing, since a suffixed identity cannot match its policy anyway.
         rename_results: List[IdentityRenameResult] = []
         identities_renamed = 0
         renames_no_identity = 0
@@ -860,129 +1029,236 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
         renames_would_collide = 0
         collision_examples: List[str] = []
 
-        if identities_to_rename:
-            await self.emit(f"Checking {len(identities_to_rename)} identities for suffix removal")
+        # What the group holds right now, so a re-run does not PATCH every
+        # identity it already renamed on the last one. One paged read replaces
+        # N writes.
+        current_names: Dict[str, str] = {}
+        names_taken: Dict[str, str] = {}
+        already_renamed = set(inputs.renamed_identity_ids)
+        still_to_rename = [
+            i for i in identities_to_rename if i["identity_id"] not in already_renamed
+        ]
+        if still_to_rename and identity_group_id:
+            await self.emit(f"Checking {len(still_to_rename)} identities for suffix removal")
+            current_names = await self._identity_names_by_id(identity_group_id)
+            # name -> id, to see a collision BEFORE asking R1 to make one.
+            names_taken = {n: i for i, n in current_names.items()}
+        elif still_to_rename and not identity_group_id:
+            logger.warning("No identity group ID available, skipping identity renames")
+            await self.emit("Skipping identity renames: no group ID available", "warning")
 
-            if not identity_group_id:
-                logger.warning("No identity group ID available, skipping identity renames")
-                await self.emit("Skipping identity renames: no group ID available", "warning")
-            else:
-                # What the group holds right now, so a re-run does not PATCH
-                # every identity it already renamed on the last one. One
-                # paged read replaces N writes.
-                current_names = await self._identity_names_by_id(identity_group_id)
-                # name -> id, to see a collision BEFORE asking R1 to make one.
-                names_taken = {n: i for i, n in current_names.items()}
+        async def run_rename(identity: Dict[str, Any]) -> None:
+            nonlocal identities_renamed, renames_no_identity, renames_failed
+            nonlocal renames_already_done, renames_would_collide
+            identity_id = identity["identity_id"]
+            old_name = identity["old_name"]
+            new_name = identity["new_name"]
 
-                for identity in identities_to_rename:
-                    identity_id = identity["identity_id"]
-                    old_name = identity["old_name"]
-                    new_name = identity["new_name"]
+            if identity_id in already_renamed or (
+                identity_id and current_names.get(identity_id) == new_name
+            ):
+                renames_already_done += 1
+                return
 
-                    if identity_id and current_names.get(identity_id) == new_name:
-                        renames_already_done += 1
-                        continue
+            # =====================================================
+            # Look before renaming onto a name someone else holds.
+            #
+            # Usually that someone else is THIS resident, imported
+            # on an earlier run and already stripped: the import
+            # failed to recognise its own output upstream, minted a
+            # second identity from the file name, and is now trying
+            # to rename the copy onto the original. R1 answers
+            # GENERAL-010 and the resident is left with a duplicate
+            # identity still carrying its tier suffix.
+            #
+            # Checking here turns that from a failed write into a
+            # named finding. The real repair is upstream -- validate
+            # now matches the stripped name -- so anything still
+            # reaching this point is a genuine duplicate worth
+            # reporting rather than retrying.
+            # =====================================================
+            holder = names_taken.get(new_name)
+            if holder and holder != identity_id:
+                renames_would_collide += 1
+                collision_examples.append(
+                    f"{old_name} -> {new_name} (held by {holder})"
+                )
+                return
 
-                    # =====================================================
-                    # Look before renaming onto a name someone else holds.
-                    #
-                    # Usually that someone else is THIS resident, imported
-                    # on an earlier run and already stripped: the import
-                    # failed to recognise its own output upstream, minted a
-                    # second identity from the file name, and is now trying
-                    # to rename the copy onto the original. R1 answers
-                    # GENERAL-010 and the resident is left with a duplicate
-                    # identity still carrying its tier suffix.
-                    #
-                    # Checking here turns that from a failed write into a
-                    # named finding. The real repair is upstream -- validate
-                    # now matches the stripped name -- so anything still
-                    # reaching this point is a genuine duplicate worth
-                    # reporting rather than retrying.
-                    # =====================================================
-                    holder = names_taken.get(new_name)
-                    if holder and holder != identity_id:
-                        renames_would_collide += 1
-                        collision_examples.append(
-                            f"{old_name} -> {new_name} (held by {holder})"
-                        )
-                        continue
+            if not identity_id:
+                # No identity id means we never learned which identity
+                # this passphrase belongs to, so the suffix stays on
+                # the name. Count it — this used to vanish silently.
+                renames_no_identity += 1
+                return
 
-                    if not identity_id:
-                        # No identity id means we never learned which identity
-                        # this passphrase belongs to, so the suffix stays on
-                        # the name. Count it — this used to vanish silently.
-                        renames_no_identity += 1
-                        continue
+            try:
+                rename_started = time.monotonic()
+                await self.r1_client.identity.update_identity(
+                    group_id=identity_group_id,
+                    identity_id=identity_id,
+                    name=new_name,
+                    tenant_id=self.tenant_id
+                )
+                step_seconds["rename"].append(time.monotonic() - rename_started)
 
-                    try:
-                        await self.r1_client.identity.update_identity(
-                            group_id=identity_group_id,
-                            identity_id=identity_id,
-                            name=new_name,
-                            tenant_id=self.tenant_id
-                        )
+                rename_results.append(IdentityRenameResult(
+                    identity_id=identity_id,
+                    old_name=old_name,
+                    new_name=new_name,
+                    success=True
+                ))
+                identities_renamed += 1
+                current_names[identity_id] = new_name
 
-                        rename_results.append(IdentityRenameResult(
-                            identity_id=identity_id,
-                            old_name=old_name,
-                            new_name=new_name,
-                            success=True
-                        ))
-                        identities_renamed += 1
-                        current_names[identity_id] = new_name
+            except Exception as e:
+                # The common cause is a base-name collision: two
+                # passphrases for one account on different tiers
+                # (acct_gigabit + acct_superfast) both strip to the
+                # same name, and R1 rejects the second with
+                # GENERAL-010. Non-fatal — that identity keeps its
+                # suffix, which is what keeps the two distinguishable.
+                renames_failed += 1
+                logger.warning(f"Failed to rename identity {identity_id}: {e}")
+                rename_results.append(IdentityRenameResult(
+                    identity_id=identity_id,
+                    old_name=old_name,
+                    new_name=new_name,
+                    success=False,
+                    error=str(e)
+                ))
 
-                    except Exception as e:
-                        # The common cause is a base-name collision: two
-                        # passphrases for one account on different tiers
-                        # (acct_gigabit + acct_superfast) both strip to the
-                        # same name, and R1 rejects the second with
-                        # GENERAL-010. Non-fatal — that identity keeps its
-                        # suffix, which is what keeps the two distinguishable.
-                        renames_failed += 1
-                        logger.warning(f"Failed to rename identity {old_name}: {e}")
-                        rename_results.append(IdentityRenameResult(
-                            identity_id=identity_id,
-                            old_name=old_name,
-                            new_name=new_name,
-                            success=False,
-                            error=str(e)
-                        ))
+        # Keyed by policy name: two tiers of one account share a policy, and an
+        # identity with no unit SSID has a rename and no policy.
+        chains: Dict[str, Dict[str, Any]] = {
+            name: {"policy": plan, "renames": []} for name, plan in desired.items()
+        }
+        if identity_group_id:
+            for identity in identities_to_rename:
+                chains.setdefault(
+                    sanitize_policy_name(identity["new_name"]),
+                    {"policy": None, "renames": []},
+                )["renames"].append(identity)
 
-                if renames_would_collide:
-                    await self.emit(
-                        f"{renames_would_collide} identity(s) NOT renamed: the "
-                        f"target name is already another identity in this group "
-                        f"— {'; '.join(collision_examples[:5])}"
-                        f"{'...' if len(collision_examples) > 5 else ''}. That "
-                        f"means this resident exists TWICE in R1: once from an "
-                        f"earlier run (already stripped) and once minted by this "
-                        f"one. The duplicate is left in place for you to review; "
-                        f"setting identity descriptions lets future runs match by "
-                        f"Cloudpath GUID and stop it recurring.",
-                        "warning",
-                    )
+        chains_done = 0
 
-                if renames_no_identity or renames_failed:
-                    detail = []
-                    if renames_no_identity:
-                        detail.append(
-                            f"{renames_no_identity} skipped with no identity id"
-                        )
-                    if renames_failed:
-                        detail.append(
-                            f"{renames_failed} rejected by R1 (usually two "
-                            f"tiers of one account colliding on the same "
-                            f"stripped name)"
-                        )
-                    await self.emit(
-                        f"Renamed {identities_renamed} identities; "
-                        + "; ".join(detail)
-                        + " — these keep their username suffix",
-                        "warning",
-                    )
-                else:
-                    await self.emit(f"Renamed {identities_renamed} identities")
+        async def run_chain(name: str) -> None:
+            nonlocal chains_done
+            chain = chains[name]
+            for identity in chain["renames"]:
+                await run_rename(identity)
+            if chain["policy"] is not None:
+                await run_policy(name, chain["policy"])
+            chains_done += 1
+            await self.emit_progress(
+                current=chains_done,
+                total=len(chains),
+                failed=policies_failed + renames_failed,
+                item_name="resident",
+                detail=(
+                    f"{policies_created} policies created, "
+                    f"{policies_unchanged} already correct, "
+                    f"{identities_renamed + renames_already_done} renamed"
+                ),
+            )
+
+        # Adds to the set take their own turns, so workers speed up the other steps.
+        workers = max(1, min(int(options.get('policy_workers') or 1), MAX_POLICY_WORKERS))
+        await self.emit(
+            f"Set adds: {set_add_workers} at a time, priority "
+            f"{'set by this job' if number_priorities else 'chosen by R1'}"
+        )
+        chains_started_utc = _utc_now()
+        await self.emit(f"Working through {len(chains)} residents with {workers} worker(s)")
+        await self.emit_progress(0, len(chains), item_name="resident")
+        await self.parallel_map(
+            list(chains), run_chain, max_concurrent=workers,
+            item_name="resident", emit_progress=False,
+        )
+
+        await self.emit(
+            f"Policies: {policies_created} created, {policies_updated} updated, "
+            f"{policies_unchanged} already correct, {policies_failed} failed",
+            "success" if policies_failed == 0 else "warning"
+        )
+
+        if policies_not_in_set:
+            await self.emit(
+                f"{policies_not_in_set} policies are NOT in the policy set and "
+                f"will not take effect. Run Adds only to finish them.",
+                "error",
+            )
+
+        tuning: Dict[str, Any] = {
+            "started_utc": chains_started_utc,
+            "finished_utc": _utc_now(),
+            "policy_workers": workers,
+            "set_add_workers": set_add_workers,
+            "priorities_numbered": number_priorities,
+            "set_add_500s": set_add_500s,
+            "policy_create_retries": policy_create_retries,
+            "steps": {
+                step: _seconds_summary(samples)
+                for step, samples in step_seconds.items() if samples
+            },
+            "by_set_size": [
+                {
+                    "set_size_from": size,
+                    "started_utc": bucket["started_utc"],
+                    "ended_utc": bucket["ended_utc"],
+                    **_seconds_summary(bucket["seconds"]),
+                    "errors_500": bucket["errors_500"],
+                    "adds_per_min": (
+                        round(len(bucket["seconds"]) / (bucket["last"] - bucket["first"]) * 60, 1)
+                        if bucket["last"] > bucket["first"] else None
+                    ),
+                }
+                for size, bucket in sorted(by_set_size.items())
+            ],
+        }
+        await self.emit(
+            "Timing: "
+            + ", ".join(
+                f"{step} median {summary['median']}s"
+                for step, summary in tuning["steps"].items()
+            )
+            + f", {set_add_500s} set-add 500s"
+        )
+
+        if renames_would_collide:
+            await self.emit(
+                f"{renames_would_collide} identity(s) NOT renamed: the "
+                f"target name is already another identity in this group "
+                f"— {'; '.join(collision_examples[:5])}"
+                f"{'...' if len(collision_examples) > 5 else ''}. That "
+                f"means this resident exists TWICE in R1: once from an "
+                f"earlier run (already stripped) and once minted by this "
+                f"one. The duplicate is left in place for you to review; "
+                f"setting identity descriptions lets future runs match by "
+                f"Cloudpath GUID and stop it recurring.",
+                "warning",
+            )
+
+        if renames_no_identity or renames_failed:
+            detail = []
+            if renames_no_identity:
+                detail.append(
+                    f"{renames_no_identity} skipped with no identity id"
+                )
+            if renames_failed:
+                detail.append(
+                    f"{renames_failed} rejected by R1 (usually two "
+                    f"tiers of one account colliding on the same "
+                    f"stripped name)"
+                )
+            await self.emit(
+                f"Renamed {identities_renamed} identities; "
+                + "; ".join(detail)
+                + " — these keep their username suffix",
+                "warning",
+            )
+        elif identities_to_rename and identity_group_id:
+            await self.emit(f"Renamed {identities_renamed} identities")
 
         await self.emit(
             f"Access policies complete: {policies_created} policies, "
@@ -998,6 +1274,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             policies_updated=policies_updated,
             policies_unchanged=policies_unchanged,
             policies_failed=policies_failed,
+            policies_not_in_set=policies_not_in_set,
             identities_renamed=identities_renamed,
             renames_no_identity=renames_no_identity,
             renames_failed=renames_failed,
@@ -1009,6 +1286,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
             policy_set_id=policy_set_id,
             policy_results=policy_results,
             rename_results=rename_results,
+            tuning=tuning,
         )
 
     async def _identity_names_by_id(self, group_id: str) -> Dict[str, str]:

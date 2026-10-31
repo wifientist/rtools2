@@ -157,6 +157,114 @@ async def main():
     ):
         check(f"listed: {needle.split(' →')[0]}", needle in lines, needle)
 
+    print("Unfinished policy work")
+    check("no backfill unless policies are on", out.policy_backfill == [])
+    ctx = PhaseContext(job_id="test", r1_client=fake_r1(), venue_id="v", tenant_id="t")
+    ctx.r1_client.radius_attributes = _NS()
+    ctx.r1_client.policy_sets = _NS()
+
+    async def no_rows(*a, **kw):
+        return {"content": []}
+
+    ctx.r1_client.radius_attributes.query_radius_attribute_groups = no_rows
+    ctx.r1_client.policy_sets.query_policy_sets = no_rows
+    phase = ValidateCloudpathPhase(ctx)
+    unit_export = {
+        "pool": EXPORT["pool"],
+        "dpsks": [{**d, "ssidList": ["101@Prop", "Prop WiFi"]} for d in EXPORT["dpsks"]],
+    }
+    out_p = await phase.execute(phase.Inputs(
+        cloudpath_data=unit_export,
+        options={"ssid_mode": "none", "passphrases_only": True, "adds_only": True,
+                 "enable_access_policies": True, "policy_set_name": "Prop",
+                 "identity_group_name": "Prop-IDG", "dpsk_service_name": "Prop-DPSK"},
+    ))
+    backfilled = {r["username"]: r["identity_id"] for r in out_p.policy_backfill}
+    check("resolved residents are handed to the policy phase",
+          backfilled.get("1003_ultrafast") == "i1003" and "1001_gigabit" in backfilled)
+    check("new rows are not backfilled", "2001_gigabit" not in backfilled)
+    check("an ambiguous account is not backfilled", "1007_ultrafast" not in backfilled)
+    check("the import list still holds adds only",
+          [p.name for p in out_p.passphrases] == ["2001_gigabit", "2002"])
+    check("the plan counts the policies to finish",
+          out_p.validation_result.summary.policies_to_create > 2,
+          str(out_p.validation_result.summary.policies_to_create))
+
+    print("Where each resident stands")
+    # 1001 is finished unless a description is pending; 1003 has a policy and an
+    # old name; 1006 has nothing done. Names as fake_r1 serves them.
+    policies = {
+        "1001": {"name": "1001", "conditionsCount": 2, "policySetNames": ["Prop"]},
+        "1003": {"name": "1003", "conditionsCount": 1, "policySetNames": []},
+    }
+
+    async def template_rows(*a, **kw):
+        return {"content": list(policies.values())}
+
+    ctx.r1_client.policy_sets.query_template_policies = template_rows
+    phase = ValidateCloudpathPhase(ctx)
+    status_options = {"ssid_mode": "none", "passphrases_only": True, "adds_only": True,
+                      "enable_access_policies": True, "policy_set_name": "Prop",
+                      "identity_group_name": "Prop-IDG", "dpsk_service_name": "Prop-DPSK"}
+    out_s = await phase.execute(phase.Inputs(cloudpath_data=unit_export, options=status_options))
+    statuses = [a for a in out_s.validation_result.actions
+                if a.resource_type == "existing residents (adds only)"]
+    check("the plan reports where residents stand", len(statuses) == 1,
+          str([a.name for a in statuses]))
+    remaining = {r["username"] for r in out_s.policy_backfill}
+    check("the partly done stay on the work list", "1003_ultrafast" in remaining, str(remaining))
+    check("the not started stay on the work list", "1006_gigabit" in remaining, str(remaining))
+
+    # Everyone finished as far as R1 can show: renamed, policy complete, in the set.
+    async def finished_rows(*a, **kw):
+        return {"content": [
+            {"name": r["username"].rsplit("_", 1)[0], "conditionsCount": 2, "policySetNames": ["Prop"]}
+            for r in out_p.policy_backfill
+        ]}
+
+    ctx.r1_client.policy_sets.query_template_policies = finished_rows
+    phase = ValidateCloudpathPhase(ctx)
+    out_f = await phase.execute(phase.Inputs(cloudpath_data=unit_export, options=status_options))
+    remaining = {r["username"] for r in out_f.policy_backfill}
+    check("a blank description still counts as unfinished",
+          "1002_gigabit" in remaining, str(sorted(remaining)))
+    no_desc = await phase.execute(phase.Inputs(
+        cloudpath_data=unit_export,
+        options={**status_options, "skip_identity_descriptions": True},
+    ))
+    check("a renamed resident with its policy complete leaves the work list",
+          "1002_gigabit" not in {r["username"] for r in no_desc.policy_backfill},
+          str(sorted(r["username"] for r in no_desc.policy_backfill)))
+    check("one still suffixed stays on it despite a complete policy",
+          "1003_ultrafast" in remaining, str(sorted(remaining)))
+    check("the plan no longer calls every existing policy new",
+          out_f.validation_result.summary.policies_to_create < out_p.validation_result.summary.policies_to_create,
+          f"{out_f.validation_result.summary.policies_to_create} vs {out_p.validation_result.summary.policies_to_create}")
+
+    # A short read must not mark anyone finished.
+    async def broken_rows(*a, **kw):
+        raise RuntimeError("R1 down")
+
+    ctx.r1_client.policy_sets.query_template_policies = broken_rows
+    phase = ValidateCloudpathPhase(ctx)
+    out_b = await phase.execute(phase.Inputs(cloudpath_data=unit_export, options=status_options))
+    check("if the read fails nobody is judged finished",
+          len(out_b.policy_backfill) == len(out_p.policy_backfill))
+
+    print("Blank descriptions")
+    filled = {r["identity_id"]: r["cloudpath_guid"] for r in
+              next(iter(out.unit_mappings.values())).input_config.get("description_backfill", [])}
+    check("a blank description gets its GUID", filled.get("i1006") == "guid-1006", str(filled))
+    check("a set description is never overwritten", "i1001" not in filled, str(filled))
+    check("an account on two identities is left alone", "i1004a" not in filled, str(filled))
+    check("new rows are not in the backfill", not any(g == "guid-2001" for g in filled.values()))
+    check("only one unit carries the list", sum(
+        1 for u in out.unit_mappings.values() if u.input_config.get("description_backfill")
+    ) == 1)
+    full = await validate(False)
+    check("a full import has no description backfill", not any(
+        u.input_config.get("description_backfill") for u in full.unit_mappings.values()))
+
     print("Full import")
     rows = {p["name"]: p for p in unit_rows(await validate(False))}
     check("tier change resolves by account number",

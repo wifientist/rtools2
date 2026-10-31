@@ -1,3 +1,4 @@
+import asyncio
 """
 R1 API Service for Network Clients (Wireless/Wired Clients)
 Handles all client-related API calls to RuckusONE
@@ -247,9 +248,9 @@ class ClientsService:
         try:
             # Use override_tenant_id for MSP accounts
             if self.client.ec_type == "MSP" and tenant_id:
-                response = self.client.post("/venues/aps/clients/query", payload=payload, override_tenant_id=tenant_id)
+                response = await asyncio.to_thread(self.client.post, "/venues/aps/clients/query", payload=payload, override_tenant_id=tenant_id)
             else:
-                response = self.client.post("/venues/aps/clients/query", payload=payload)
+                response = await asyncio.to_thread(self.client.post, "/venues/aps/clients/query", payload=payload)
 
             data = response.json()
             return data.get('data', [])

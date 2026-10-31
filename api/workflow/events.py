@@ -159,6 +159,7 @@ class WorkflowEventPublisher:
         total: int = 0,
         failed: int = 0,
         item_name: str = "item",
+        detail: str = "",
         **kwargs
     ):
         """
@@ -175,6 +176,7 @@ class WorkflowEventPublisher:
             total: Total items to process
             failed: Items that failed
             item_name: What we're processing (e.g., "passphrase", "identity")
+            detail: Optional breakdown, e.g. "12 policies created, 3 failed"
         """
         await self._publish_event(job_id, "phase_progress", {
             "phase_id": phase_id,
@@ -183,6 +185,7 @@ class WorkflowEventPublisher:
             "total": total,
             "failed": failed,
             "item_name": item_name,
+            "detail": detail,
             "percent": round((current / total * 100), 1) if total > 0 else 0,
         })
 

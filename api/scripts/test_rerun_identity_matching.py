@@ -248,6 +248,11 @@ async def run_phase(world, roster):
         return None
 
     phase.emit = emit
+
+    async def emit_progress(*args, **kwargs):
+        return None
+
+    phase.emit_progress = emit_progress
     phase.track_resource = track_resource
 
     created = [{"username": u, "identity_id": i, "success": True}
