@@ -2316,6 +2316,70 @@ class AuditRequest(BaseModel):
     sz_refresh: bool = False
     r1_refresh: bool = False
 
+    # Client-chosen id for reading this run's status from /audit/progress/{id}
+    progress_id: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9-]{8,64}$")
+
+
+AUDIT_PROGRESS_TTL = 3600
+
+
+def _audit_progress_key(progress_id: str) -> str:
+    return f"sz_migration:audit_progress:{progress_id}"
+
+
+class _AuditProgress:
+    """A running audit's latest status line, kept in Redis for the page to poll.
+
+    say() is synchronous for the extractor/capture callbacks. Writes run one at
+    a time and skip to the newest line, and a failed write never fails the audit.
+    """
+
+    def __init__(self, progress_id: Optional[str], user_id: int):
+        self.progress_id = progress_id
+        self.user_id = user_id
+        self.message: Optional[str] = None
+        self._written: Optional[str] = None
+        self._task: Optional[asyncio.Task] = None
+
+    def say(self, message: str) -> None:
+        if not self.progress_id:
+            return
+        self.message = message
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._flush())
+
+    async def _flush(self) -> None:
+        while self._written != self.message:
+            self._written = self.message
+            try:
+                redis = await get_redis_client()
+                await redis.set(
+                    _audit_progress_key(self.progress_id),
+                    json.dumps({"user_id": self.user_id, "message": self._written}),
+                    ex=AUDIT_PROGRESS_TTL,
+                )
+            except Exception as e:
+                logger.debug(f"Could not save audit progress: {type(e).__name__}")
+
+    async def settle(self) -> None:
+        """Wait for the latest line to land, before work that blocks the event loop."""
+        if self._task is not None:
+            await self._task
+
+
+@router.get("/audit/progress/{progress_id}")
+async def get_audit_progress(
+    progress_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Latest status line of a running audit; null if none yet or not this user's."""
+    redis = await get_redis_client()
+    raw = await redis.get(_audit_progress_key(progress_id))
+    state = json.loads(raw) if raw else None
+    if not state or state.get("user_id") != current_user.id:
+        return {"message": None}
+    return {"message": state.get("message")}
+
 
 @router.get("/audit-cache")
 async def get_audit_cache_status(
@@ -2434,6 +2498,7 @@ async def run_audit_endpoint(
     # Where each side's data came from (cache or live), shown on the report.
     data_sources: Dict[str, Any] = {}
     snapshot: Optional[SZMigrationSnapshot] = None
+    progress = _AuditProgress(request.progress_id, current_user.id)
 
     # ── SZ snapshot: existing snapshot, else capture cache, else extract inline ──
     if request.sz_snapshot_job_id:
@@ -2460,13 +2525,18 @@ async def run_audit_endpoint(
             if snapshot is not None:
                 sz_job_id = f"cache:{audit_cache.sz_key(request.sz_controller_id, request.zone_id)}"
                 data_sources["sz"] = {"cached": True, **(sz_meta or {})}
+                progress.say("SmartZone: using the cached capture")
 
     if snapshot is None and request.sz_controller_id and request.zone_id and not request.sz_snapshot_job_id:
         # Path B2: inline extraction (then cached)
         sz_client = create_sz_client_from_controller(request.sz_controller_id, db)
         try:
+            progress.say("SmartZone: logging in...")
             await sz_client.login()
-            snapshot = await extract_zone_snapshot(sz_client, request.zone_id)
+            snapshot = await extract_zone_snapshot(
+                sz_client, request.zone_id,
+                on_progress=lambda _phase, message, _data: progress.say(f"SmartZone: {message}"),
+            )
         except Exception as e:
             logger.exception(f"Inline SZ extraction failed: {e}")
             raise HTTPException(status_code=500, detail=f"SZ extraction failed: {e}")
@@ -2538,10 +2608,14 @@ async def run_audit_endpoint(
             r1_job_id = f"cache:{audit_cache.r1_key(request.r1_controller_id, tenant_id, request.venue_id)}"
             cached_r1 = bundle
             data_sources["r1"] = {"cached": True, **(r1_meta or {})}
+            progress.say("RuckusONE: using the cached capture")
         else:
             r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
             try:
-                r1_inventory = await capture_venue_inventory(r1_client, tenant_id, request.venue_id)
+                r1_inventory = await capture_venue_inventory(
+                    r1_client, tenant_id, request.venue_id,
+                    on_progress=lambda _phase, message, _data: progress.say(f"RuckusONE: {message}"),
+                )
             except Exception as e:
                 logger.exception(f"R1 snapshot failed during audit: {e}")
                 raise HTTPException(status_code=500, detail=f"Failed to capture R1 inventory: {e}")
@@ -2562,8 +2636,12 @@ async def run_audit_endpoint(
         # Concurrent and off the event loop: the R1 client is synchronous,
         # and 600+ sequential GETs both took minutes and blocked the server.
         sem = asyncio.Semaphore(8)
+        network_ids = [n["id"] for n in r1_inventory.wifi_networks if n.get("id")]
+        details_done = 0
+        progress.say(f"RuckusONE: reading details for {len(network_ids)} networks...")
 
         async def detail(net_id: str):
+            nonlocal details_done
             async with sem:
                 try:
                     d = await asyncio.to_thread(
@@ -2574,8 +2652,11 @@ async def run_audit_endpoint(
                         r1_network_details[net_id] = d.json()
                 except Exception as e:
                     logger.debug(f"Could not fetch full detail for R1 network {net_id}: {e}")
+            details_done += 1
+            if details_done % 25 == 0:
+                progress.say(f"RuckusONE: network details {details_done}/{len(network_ids)}")
 
-        await asyncio.gather(*(detail(n["id"]) for n in r1_inventory.wifi_networks if n.get("id")))
+        await asyncio.gather(*(detail(n) for n in network_ids))
 
         # ── Auth-path facts: external RADIUS links, DPSK pools, counts ──
         try:
@@ -2583,12 +2664,14 @@ async def run_audit_endpoint(
                 r1_client, tenant_id,
                 networks=r1_inventory.wifi_networks,
                 identity_groups=r1_inventory.identity_groups,
+                on_progress=lambda message: progress.say(f"RuckusONE: {message}"),
             )
         except Exception as e:
             logger.exception(f"Auth-path probe failed during audit: {e}")
 
         # ── Where the SZ APs this venue lacks are: elsewhere in the tenant, or not in R1 ──
         # Rides on the inventory, so a cached run keeps it.
+        progress.say("RuckusONE: locating SmartZone APs missing from this venue...")
         try:
             r1_inventory.tenant_ap_lookup = await locate_aps_in_tenant(
                 r1_client, tenant_id, sz_serials_missing_from_venue(snapshot, r1_inventory))
@@ -2596,6 +2679,7 @@ async def run_audit_endpoint(
             logger.exception(f"Tenant AP lookup failed during audit: {e}")
 
         # ── Venue-level Wi-Fi settings (as the EC tenant for MSP) ──
+        progress.say("RuckusONE: reading venue settings...")
         try:
             r1_venue_settings = await fetch_r1_venue_settings(r1_client, tenant_id, r1_inventory.venue_id)
         except Exception as e:
@@ -2625,6 +2709,8 @@ async def run_audit_endpoint(
             logger.warning(f"Could not read the saved portal key: {type(e).__name__}")
 
     # ── Run audit ──
+    progress.say("Comparing SmartZone and RuckusONE...")
+    await progress.settle()
     report = run_migration_audit(
         snapshot=snapshot,
         r1_inventory=r1_inventory,

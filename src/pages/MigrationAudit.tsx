@@ -6,7 +6,7 @@ import {
   CheckCircle, AlertTriangle, XCircle, Plus, Ban,
   ChevronDown, ChevronRight, Wifi, Shield, Key, Users, Search,
 } from 'lucide-react';
-import { apiPost } from '@/utils/api';
+import { apiGet, apiPost } from '@/utils/api';
 import SzZonePicker from '@/components/migration-audit/SzZonePicker';
 import SingleVenueSelector from '@/components/SingleVenueSelector';
 import SingleEcSelector from '@/components/SingleEcSelector';
@@ -77,6 +77,35 @@ export default function MigrationAudit() {
   const [report, setReport] = useState<MigrationAuditReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<AuditStatus | null>(null);
+  const [progressId, setProgressId] = useState<string | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  // While the audit request is open: tick the clock, read its status line every 2s
+  useEffect(() => {
+    if (!running || !progressId) return;
+    let stopped = false;
+    let seconds = 0;
+    setElapsed(0);
+    setProgressMessage(null);
+    const timer = setInterval(async () => {
+      seconds += 1;
+      setElapsed(seconds);
+      if (seconds % 2) return;
+      try {
+        const { message } = await apiGet<{ message: string | null }>(
+          `${API_URL}/sz-migration/audit/progress/${progressId}`
+        );
+        if (!stopped && message) setProgressMessage(message);
+      } catch {
+        // A missed status read is harmless; the next tick tries again
+      }
+    }, 1000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [running, progressId]);
 
   const szReady = !!szSlot;
   const r1Ready = !!r1Slot;
@@ -144,6 +173,8 @@ export default function MigrationAudit() {
     } else if (effectiveTenantId) {
       body.tenant_id = effectiveTenantId;
     }
+    body.progress_id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    setProgressId(body.progress_id);
 
     try {
       const data = await apiPost<MigrationAuditReport>(`${API_URL}/sz-migration/audit`, body);
@@ -334,10 +365,13 @@ export default function MigrationAudit() {
           {/* Loading overlay */}
           {running && !report && (
             <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6 mb-6 flex items-center justify-center gap-3">
-              <Loader2 size={20} className="animate-spin text-indigo-600" />
-              <div>
-                <p className="text-sm font-medium text-indigo-800">Running audit...</p>
-                <p className="text-xs text-indigo-600">Extracting SZ zone data + capturing R1 inventory. This may take 15-30 seconds.</p>
+              <Loader2 size={20} className="animate-spin text-indigo-600 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-indigo-800">
+                  Running audit... <span className="font-normal tabular-nums">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
+                </p>
+                <p className="text-sm text-indigo-700 break-words">{progressMessage || 'Starting...'}</p>
+                <p className="text-xs text-indigo-600">Cached captures load in seconds; capturing a very large site live can take several minutes.</p>
               </div>
             </div>
           )}
