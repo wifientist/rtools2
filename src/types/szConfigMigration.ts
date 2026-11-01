@@ -349,6 +349,8 @@ export interface WizardState {
   extractionStatus: 'idle' | 'running' | 'completed' | 'failed';
   extractionProgress: ExtractionProgress | null;
   snapshotSummary: SnapshotSummary | null;
+  // The zone everything from Step 2 on was built for.
+  extractedZoneId: string | null;
 
   // Step 3: Destination
   r1ControllerId: number | null;
@@ -386,6 +388,10 @@ export interface WizardState {
 
   // Session persistence (M6b)
   sessionId: number | null;
+
+  // Goes up when the run is dropped, so answers still on their way to the old
+  // run can be told apart and ignored.
+  runId: number;
 
   // Global
   error: string | null;
@@ -431,6 +437,7 @@ export const INITIAL_STATE: WizardState = {
   extractionStatus: 'idle',
   extractionProgress: null,
   snapshotSummary: null,
+  extractedZoneId: null,
   r1ControllerId: null,
   tenantId: null,
   destVenueId: null,
@@ -454,6 +461,7 @@ export const INITIAL_STATE: WizardState = {
   executionStarted: false,
   finalJobId: null,
   sessionId: null,
+  runId: 0,
   error: null,
 };
 
@@ -502,6 +510,8 @@ export function loadWizardState(): WizardState | null {
       extractionStatus: saved.extractionStatus,
       // Backwards compat: old saved state won't have this field
       highestStepReached: saved.highestStepReached || saved.currentStep || 1,
+      // Backwards compat: a run saved before this field was built for its zone
+      extractedZoneId: saved.extractedZoneId ?? (saved.extractionJobId ? saved.selectedZoneId : null),
     };
   } catch {
     return null;
@@ -526,6 +536,12 @@ export function wizardReducer(state: WizardState, action: WizardAction): WizardS
   return next;
 }
 
+// A different source is a different migration: nothing from Step 2 on carries
+// over, the destination venue least of all. The old session stays in History.
+function dropRun(state: WizardState): WizardState {
+  return { ...INITIAL_STATE, runId: state.runId + 1 };
+}
+
 function wizardReducerInner(state: WizardState, action: WizardAction): WizardState {
   switch (action.type) {
     case 'SET_STEP':
@@ -536,9 +552,11 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         error: null,
       };
 
-    case 'SET_SOURCE':
+    case 'SET_SOURCE': {
+      const sameSource = action.domainId === state.selectedDomainId
+        && action.szControllerId === state.szControllerId;
       return {
-        ...state,
+        ...(state.extractedZoneId && !sameSource ? dropRun(state) : state),
         szControllerId: action.szControllerId,
         selectedDomainId: action.domainId,
         selectedDomainName: action.domainName,
@@ -546,10 +564,13 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         selectedZoneName: null,
         census: null,
       };
+    }
 
     case 'SET_ZONE':
       return {
-        ...state,
+        ...(state.extractedZoneId && action.zoneId !== state.extractedZoneId
+          ? { ...dropRun(state), szControllerId: state.szControllerId, selectedDomainId: state.selectedDomainId, selectedDomainName: state.selectedDomainName }
+          : state),
         selectedZoneId: action.zoneId,
         selectedZoneName: action.zoneName,
         census: null,
@@ -573,6 +594,7 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
       return {
         ...state,
         extractionJobId: action.jobId,
+        extractedZoneId: state.selectedZoneId,
         extractionStatus: 'running',
         extractionProgress: null,
         snapshotSummary: null,
@@ -709,7 +731,7 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
       return { ...state, error: action.error };
 
     case 'RESET':
-      return { ...INITIAL_STATE };
+      return dropRun(state);
 
     default:
       return state;
