@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -6,6 +8,7 @@ from models.user import User, RoleEnum
 from security import require_admin_company, create_user_token, is_production
 from dependencies import get_current_user, get_db
 from decorators import require_role
+from utils.slack import is_slack_webhook_url, send_slack_message
 
 router = APIRouter() #dependencies=[Depends(get_current_user)])
 
@@ -85,6 +88,72 @@ def toggle_alpha(
     )
 
     return response
+
+
+class SlackSettingsRequest(BaseModel):
+    # Omitted keeps the saved webhook, which the page can never read back.
+    webhook_url: Optional[str] = None
+    notify_completed: bool = True
+    notify_failed: bool = True
+    notify_confirmation: bool = True
+
+
+def _slack_settings(user: User) -> dict:
+    return {
+        "configured": bool(user.encrypted_slack_webhook),
+        "notify_completed": user.slack_notify_completed,
+        "notify_failed": user.slack_notify_failed,
+        "notify_confirmation": user.slack_notify_confirmation,
+    }
+
+
+@router.get("/slack_settings")
+def get_slack_settings(user: User = Depends(get_current_user)):
+    return _slack_settings(user)
+
+
+@router.put("/slack_settings")
+def update_slack_settings(
+    request: SlackSettingsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    webhook_url = (request.webhook_url or "").strip()
+    if webhook_url:
+        if not is_slack_webhook_url(webhook_url):
+            raise HTTPException(
+                status_code=400,
+                detail="Enter a Slack incoming webhook URL (https://hooks.slack.com/services/...)",
+            )
+        user.set_slack_webhook(webhook_url)
+    user.slack_notify_completed = request.notify_completed
+    user.slack_notify_failed = request.notify_failed
+    user.slack_notify_confirmation = request.notify_confirmation
+    db.commit()
+    db.refresh(user)
+    return _slack_settings(user)
+
+
+@router.delete("/slack_settings")
+def delete_slack_webhook(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    user.encrypted_slack_webhook = None
+    db.commit()
+    db.refresh(user)
+    return _slack_settings(user)
+
+
+@router.post("/slack_settings/test")
+async def test_slack_webhook(user: User = Depends(get_current_user)):
+    webhook_url = user.get_slack_webhook()
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="No Slack webhook saved")
+    sent = await send_slack_message(webhook_url, ":wave: Test message from RUCKUS Tools job notifications")
+    if not sent:
+        raise HTTPException(status_code=502, detail="Slack did not accept the message. Check the webhook URL.")
+    return {"sent": True}
 
 
 @router.get("/admin")

@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, Enum, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, Enum, Boolean, true
 from sqlalchemy.orm import relationship
 import datetime
 from database import Base
+from utils.encryption import encrypt_value, decrypt_value
 import enum
 
 
@@ -30,6 +31,13 @@ class User(Base):
     # super admins; independent of role and of beta/alpha.
     danger_enabled = Column(Boolean, default=False, nullable=False)
 
+    # Slack job notifications. The webhook URL is a credential: anyone holding
+    # it can post to the channel, so it is encrypted and never returned.
+    encrypted_slack_webhook = Column(String, nullable=True)
+    slack_notify_completed = Column(Boolean, default=True, server_default=true(), nullable=False)
+    slack_notify_failed = Column(Boolean, default=True, server_default=true(), nullable=False)
+    slack_notify_confirmation = Column(Boolean, default=True, server_default=true(), nullable=False)
+
     # 🔹 Add ForeignKey to link Users to Companies
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
 
@@ -44,4 +52,14 @@ class User(Base):
     controllers = relationship("Controller", back_populates="user", cascade="all, delete", foreign_keys="[Controller.user_id]")
     active_controller = relationship("Controller", foreign_keys=[active_controller_id], post_update=True)
     secondary_controller = relationship("Controller", foreign_keys=[secondary_controller_id], post_update=True)
+
+    def set_slack_webhook(self, raw_value: str):
+        """Encrypt and store the Slack webhook URL"""
+        self.encrypted_slack_webhook = encrypt_value(raw_value)
+
+    def get_slack_webhook(self) -> str:
+        """Decrypt and return the Slack webhook URL"""
+        if not self.encrypted_slack_webhook:
+            return ""
+        return decrypt_value(self.encrypted_slack_webhook)
 
