@@ -2,9 +2,22 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost } from "@/utils/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/utils/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+interface SlackSettings {
+    configured: boolean;
+    notify_completed: boolean;
+    notify_failed: boolean;
+    notify_confirmation: boolean;
+}
+
+const SLACK_EVENTS = [
+    { key: "notify_completed", label: "Job completed" },
+    { key: "notify_failed", label: "Job failed, partially completed or cancelled" },
+    { key: "notify_confirmation", label: "Job waiting for my confirmation" },
+] as const;
 
 const Profile = () => {
     const { userRole, betaEnabled, setBetaEnabled, alphaEnabled, setAlphaEnabled, checkAuth } = useAuth();
@@ -13,6 +26,10 @@ const Profile = () => {
     const [company, setCompany] = useState<{ id: number; name: string } | null>(null);
     const [error, setError] = useState("");
     const [updating, setUpdating] = useState(false);
+    const [slack, setSlack] = useState<SlackSettings | null>(null);
+    const [webhookInput, setWebhookInput] = useState("");
+    const [slackBusy, setSlackBusy] = useState(false);
+    const [slackMessage, setSlackMessage] = useState("");
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -40,8 +57,17 @@ const Profile = () => {
             }
         };
 
+        const fetchSlack = async () => {
+            try {
+                setSlack(await apiGet<SlackSettings>(`${API_BASE_URL}/slack_settings`));
+            } catch (err: any) {
+                console.error("Slack settings fetch error:", err.message);
+            }
+        };
+
         fetchCompany();
         fetchProfile();
+        fetchSlack();
     }, []);
 
     const handleAlphaToggle = async () => {
@@ -80,6 +106,40 @@ const Profile = () => {
             setUpdating(false);
         }
     };
+
+    const runSlackAction = async (action: () => Promise<void>) => {
+        setSlackBusy(true);
+        setSlackMessage("");
+        try {
+            await action();
+        } catch (err: any) {
+            setSlackMessage(err.message);
+        } finally {
+            setSlackBusy(false);
+        }
+    };
+
+    const handleSlackSave = () => runSlackAction(async () => {
+        const data = await apiPut<SlackSettings>(`${API_BASE_URL}/slack_settings`, {
+            webhook_url: webhookInput.trim() || undefined,
+            notify_completed: slack!.notify_completed,
+            notify_failed: slack!.notify_failed,
+            notify_confirmation: slack!.notify_confirmation,
+        });
+        setSlack(data);
+        setWebhookInput("");
+        setSlackMessage("Saved");
+    });
+
+    const handleSlackTest = () => runSlackAction(async () => {
+        await apiPost(`${API_BASE_URL}/slack_settings/test`);
+        setSlackMessage("Test message sent");
+    });
+
+    const handleSlackRemove = () => runSlackAction(async () => {
+        setSlack(await apiDelete<SlackSettings>(`${API_BASE_URL}/slack_settings`));
+        setSlackMessage("Webhook removed");
+    });
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen">
@@ -142,6 +202,66 @@ const Profile = () => {
                                     />
                                 </button>
                             </div>
+                        </div>
+                    )}
+
+                    {/* Slack job notifications */}
+                    {slack && (
+                        <div className="border-t pt-4 space-y-3">
+                            <div>
+                                <p className="font-semibold">Slack Notifications</p>
+                                <p className="text-sm text-gray-600">
+                                    Post to your own Slack channel when your jobs change state
+                                </p>
+                            </div>
+                            <input
+                                type="password"
+                                autoComplete="off"
+                                value={webhookInput}
+                                onChange={(e) => setWebhookInput(e.target.value)}
+                                placeholder={slack.configured ? "Webhook saved. Paste a new one to replace it" : "https://hooks.slack.com/services/..."}
+                                className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                            <div className="space-y-1 text-sm">
+                                {SLACK_EVENTS.map(({ key, label }) => (
+                                    <label key={key} className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={slack[key]}
+                                            onChange={(e) => setSlack({ ...slack, [key]: e.target.checked })}
+                                        />
+                                        {label}
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleSlackSave}
+                                    disabled={slackBusy}
+                                    className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded disabled:opacity-50"
+                                >
+                                    Save
+                                </button>
+                                {slack.configured && (
+                                    <>
+                                        <button
+                                            onClick={handleSlackTest}
+                                            disabled={slackBusy}
+                                            className="bg-gray-200 text-sm px-3 py-1.5 rounded disabled:opacity-50"
+                                        >
+                                            Send test
+                                        </button>
+                                        <button
+                                            onClick={handleSlackRemove}
+                                            disabled={slackBusy}
+                                            className="text-red-600 text-sm px-3 py-1.5 rounded disabled:opacity-50"
+                                        >
+                                            Remove
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                            {slackMessage && <p className="text-sm text-gray-700">{slackMessage}</p>}
                         </div>
                     )}
 

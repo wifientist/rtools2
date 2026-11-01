@@ -35,6 +35,7 @@ from workflow.v2.models import (
     UnitStatus,
     ActivityRef,
 )
+from workflow.v2.notifications import notify_job_status
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,8 @@ class RedisStateManagerV2:
                 pipe.srem(f"{PREFIX}:jobs:active", job.id)
 
             await pipe.execute()
+
+        notify_job_status(self.redis, job)
         return True
 
     async def get_job(self, job_id: str) -> Optional[WorkflowJobV2]:
