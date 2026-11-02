@@ -45,6 +45,7 @@ import WlanActivator from "@/pages/WlanActivator";
 import WlanVlan from "@/pages/WlanVlan";
 import WlanRename from "@/pages/WlanRename";
 import RadiusStandard from "@/pages/RadiusStandard";
+import ConfigRules from "@/pages/ConfigRules";
 import WlanGrabber from "@/pages/WlanGrabber";
 import ApgCleanup from "@/pages/ApgCleanup";
 import VenueCheckup from "@/pages/VenueCheckup";
@@ -119,6 +120,7 @@ const App = () => {
           <Route path="/wlan-grabber" element={<ProtectedRoute element={<WlanGrabber />} />} />
           <Route path="/apg-cleanup" element={<ProtectedRoute element={<ApgCleanup />} />} />
           <Route path="/venue-checkup" element={<BetaRoute element={<VenueCheckup />} />} />
+          <Route path="/config-rules" element={<BetaRoute element={<ConfigRules />} />} />
           <Route path="/data-studio-export" element={<AlphaRoute element={<DataStudioExport />} />} />
           <Route path="/maps" element={<AlphaRoute element={<Maps />} />} />
           <Route path="/wiredwiz" element={<AlphaRoute element={<WiredWiz />} />} />
