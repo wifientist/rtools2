@@ -24,9 +24,15 @@ It is reported, and verify lists it apart instead of failing on it.
 
 By name (place_by_name, off by default): when SZ had APs in the wrong AP
 Groups, their broadcast -- and so their derived group -- is wrong too, but
-their names still say where they belong. An AP named after an R1 AP Group
+their names still say where they belong. An AP named after an AP Group
 ("4-124"), or after the unit part of exactly one group's "unit@property"
-SSID ("4-124@Site"), is found that group whether or not it is the SZ one. An AP with no group of
+SSID ("4-124@Site"), is found that group whether or not it is the SZ one --
+and the unit may sit anywhere in the name as its own token, the way WLAN
+Activator reads names ("*20102-NEW" and "*2004" are units 20102 and 2004).
+No group anywhere for it (a zone with no unit WLANs, Echo Lake SG): the
+group is named after the unit number in the AP's name and created.
+Candidates are every group the placement derives, built or not, plus R1's
+own; one that isn't in R1 is created by AP Mapping. An AP with no group of
 its own sitting in another AP's unit group (Novo: 223 APs fell back to the
 AP Group's WLAN Group "3109") is found the default group. "3109-B" counts
 as unit 3109's own.
@@ -47,6 +53,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
 from services.r1_activation import state_from_network
+from services.wlan_activator import unit_for_name
 from services.sz_migration.audit_matching import match_wlans
 from services.sz_migration.broadcast_model import r1_ssids_by_group
 from services.sz_migration.r1_layout import build_layout, r1_group_name, wlan_activations, without_wlans
@@ -188,7 +195,10 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
     add_targets(layout["silent_aps"], {**dflt, "silent": True})
 
     # ── By name ────────────────────────────────────────────────────
-    by_name = _name_targets(groups, inv, default.get("id"), r1_group_ssids, all_ap_ssids)
+    # Every derived group is a candidate, built or not: one that isn't in R1
+    # (or ticked) is created by AP Mapping when an AP lands in it by name.
+    by_name = _name_targets(groups + [_unbuilt(g) for g in layout["groups"] if not (g["exists"] or g["create"])],
+                            inv, default.get("id"), r1_group_ssids, all_ap_ssids)
     # A group named after an AP -- by its name or a "unit@..." SSID -- is that
     # AP's unit group. Another AP in it with no group of its own was put
     # there by mistake: by name it goes to the default group instead.
@@ -196,14 +206,28 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
     ap_names = {fold_(t["ap"].get("name")) for t in target.values()} - {""}
     owners = {g["key"]: ({fold_(g["name"])} | {fold_(s.rsplit("@", 1)[0]) for s in g["ssids"] if "@" in s}) & ap_names
               for g in layout["groups"] + layout["staged"]["groups"]}
+    # every group name by-name could already mean: a unit name among them is not invented again
+    known_groups = ({fold_(g.get("name")) for g in inv.ap_groups}
+                    | {fold_(g["name"]) for g in layout["groups"] + layout["staged"]["groups"]}) - {""}
     name_differs = 0
     for key, t in list(target.items()):
         own = fold_(t["ap"].get("name"))
         hit = by_name(t["ap"].get("name"))
+        if hit is None:
+            # No group anywhere is named after it: a group named after the
+            # unit in its name ("*2004" -> "2004"), created by AP Mapping.
+            u = unit_in_ap_name(t["ap"].get("name"))
+            if u and fold_(u) not in known_groups:
+                hit = {"key": f"name:{fold_(u)}", "name": r1_group_name(u), "id": None, "ready": True,
+                       "create": True, "staged": False, "broadcast": all_ap_ssids, "from_name": True}
         # "3109-B" / "3109 Bedroom" is a second AP in unit 3109, not a stray
         mine = any(re.search(rf"(?<![0-9a-z]){re.escape(o)}(?![0-9a-z])", own) for o in owners.get(t["key"], ()))
         if hit is None and owners.get(t["key"]) and not mine:
             hit = {**dflt, "silent": False}
+        if hit is not None and hit["key"] == t["key"] and not t["ready"] and place_by_name:
+            # its own SZ group, not built in Create WLANs: by name it is built here
+            target[key] = {**hit, "ap": t["ap"], "by_name": True, "sz_group_name": t["name"]}
+            continue
         if hit is None or hit["key"] == t["key"] or (hit["id"] and hit["id"] == t["id"]):
             continue
         name_differs += 1
@@ -215,8 +239,9 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
     # ── Manual ─────────────────────────────────────────────────────
     # {serial: AP Group name} typed by the operator: beats SZ and by-name.
     # An R1 group by that name (any case) "exists"; one this plan builds is
-    # "planned"; anything else is "missing" -- its APs wait (group_missing)
-    # until the group is created. "(default)" is the venue's default group.
+    # "planned"; anything else is "missing" -- AP Mapping creates it (empty,
+    # nothing activated) before placing its APs. "(default)" is the venue's
+    # default group.
     r1_by_name = {fold_(g.get("name")): g for g in inv.ap_groups if (g.get("name") or "").strip()}
     plan_by_name = {fold_(g["name"]): g for g in groups}
     manual_missing: List[str] = []
@@ -318,9 +343,6 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
                     row["action"] = "already"
                 else:
                     row["action"] = "move"
-        elif not t["id"]:
-            # Ticked or staged, but not in R1: Create WLANs builds every group.
-            row["action"] = "group_missing"
         elif cur is None:
             wanted = (serial in picked) if picked is not None else add_new_aps
             row["action"] = "add" if wanted else "not_in_r1"
@@ -335,6 +357,9 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
             row["action"] = "not_selected"
         else:
             row["action"] = "move"
+        # A group not in R1 yet (manual, by name, or ticked but not built by
+        # Create WLANs): map_aps creates it, empty, then places the AP.
+        row["group_create"] = bool(serial) and not row["group_id"] and row["action"] not in ("blocked", "unmapped")
         aps.append(row)
     aps.sort(key=lambda r: (r["group_name"] or "", r["name"] or ""))
 
@@ -395,14 +420,17 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         "groups_to_create": [g["name"] for g in groups if g["create"] and not g["exists"]],
         "unmapped_groups": unmapped_groups,
         "manual_missing": manual_missing,
+        # AP Groups map_aps creates (empty) because APs it moves or adds go into them
+        "create_groups": sorted({r["group_name"] for r in aps if r["group_create"] and r["action"] in ("move", "add")},
+                                key=str.casefold),
         "staged": {"unpaired": layout["staged"]["unpaired"], "conflicts": layout["staged"]["conflicts"]},
         "aps": aps,
         "activations": activations,
         "counts": {
             "aps": len(aps),
             **{f"aps_{a}": count(aps, "action", a)
-               for a in ("already", "move", "add", "not_in_r1", "not_selected", "group_missing", "keep",
-                         "unmapped", "blocked")},
+               for a in ("already", "move", "add", "not_in_r1", "not_selected", "keep", "unmapped", "blocked")},
+            "aps_group_create": sum(1 for r in aps if r["group_create"] and r["action"] in ("move", "add")),
             "aps_fallback_default": sum(1 for r in aps if r.get("fallback_default")),
             "aps_name_clash": sum(1 for r in aps if r.get("name_clash")),
             "aps_name_too_long": sum(1 for r in aps if r.get("name_fix") in ("split", "cut") and not r["in_r1"]),
@@ -425,8 +453,8 @@ def _name_targets(groups: List[Dict[str, Any]], inv: R1VenueInventory, default_i
                   r1_group_ssids: Dict[str, Any], all_ap_ssids: List[str]):
     """
     AP name -> the group it is named after, or None. Candidates: the plan's
-    groups (built or to be built) and every other non-default R1 group. An
-    exact group name wins; else the one group carrying a "<name>@..." SSID.
+    groups (built, to be built, or derived but not built) and every other
+    non-default R1 group.
     """
     fold = lambda n: (n or "").strip().casefold()
     unit = lambda ssid: fold(ssid.rsplit("@", 1)[0]) if "@" in (ssid or "") else None
@@ -435,7 +463,9 @@ def _name_targets(groups: List[Dict[str, Any]], inv: R1VenueInventory, default_i
     for g in groups:
         cands.append({"key": g["key"], "name": g["name"], "id": g["r1_id"], "ready": True, "create": g["create"],
                       "staged": g["staged"],
-                      "broadcast": sorted(set(all_ap_ssids) | (set() if g["staged"] else set(g["ssids"]))),
+                      # staged or not built in Create WLANs: nothing is activated on it
+                      "broadcast": sorted(set(all_ap_ssids) | (set() if g["staged"] or g.get("unbuilt")
+                                                               else set(g["ssids"]))),
                       "ssids": g["ssids"]})
         if g["r1_id"]:
             seen_ids.add(g["r1_id"])
@@ -446,32 +476,53 @@ def _name_targets(groups: List[Dict[str, Any]], inv: R1VenueInventory, default_i
         ssids = sorted(r1_group_ssids.get(gid) or [])
         cands.append({"key": f"r1:{gid}", "name": g["name"], "id": gid, "ready": True, "create": False,
                       "staged": False, "broadcast": sorted(set(all_ap_ssids) | set(ssids)), "ssids": ssids})
-    # Three indexes, tried in order: exact group name, exact unit ("1-1101" of
-    # "1-1101@Site"), then the unit number alone -- the last alphanumeric
-    # token of a group name or unit ("1101" of "1-1101" / "Unit 1101").
-    idx: List[Dict[str, Dict[str, Dict[str, Any]]]] = [{}, {}, {}]
+    # Tried in order: exact group name, exact unit ("1-1101" of "1-1101@Site"),
+    # then any of a group's keys found in the AP name as its own token -- its
+    # name, its units, and the last token of each ("1101" of "1-1101" /
+    # "Unit 1101") -- the longest found wins (WLAN Activator's unit_for_name):
+    # "*20102-NEW" finds 20102, "2-2045 bedroom" finds 2045.
+    exact: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    units_idx: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    tokens: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for c in cands:
         units = {unit(s) for s in c.pop("ssids")} - {None, ""}
-        idx[0].setdefault(fold(c["name"]), {})[c["key"]] = c
+        exact.setdefault(fold(c["name"]), {})[c["key"]] = c
         for u in units:
-            idx[1].setdefault(u, {})[c["key"]] = c
+            units_idx.setdefault(u, {})[c["key"]] = c
         for v in {fold(c["name"]), _last_token(fold(c["name"]))} | units | {_last_token(u) for u in units}:
-            if v:
-                idx[2].setdefault(v, {})[c["key"]] = c
+            if v and len(v) >= 2:
+                tokens.setdefault(v, {})[c["key"]] = c
+
+    def one(hits: Optional[Dict[str, Dict[str, Any]]]) -> Optional[Dict[str, Any]]:
+        return next(iter(hits.values())) if hits and len(hits) == 1 else None
 
     def lookup(ap_name: Optional[str]) -> Optional[Dict[str, Any]]:
         n = fold(ap_name)
         if not n:
             return None
-        for i, keys in ((0, [n]), (1, [n]), (2, _variants(n))):
-            for k in keys:
-                hits = idx[i].get(k) or {}
-                if len(hits) == 1:
-                    return next(iter(hits.values()))
-                if len(hits) > 1:
-                    return None          # ambiguous: leave it to the operator
-        return None
+        for idx in (exact, units_idx):
+            if n in idx:
+                return one(idx[n])      # two groups by that name: ambiguous, the operator's call
+        best, _tied = unit_for_name(n, list(tokens))
+        return one(tokens.get(best)) if best else None
     return lookup
+
+
+def unit_in_ap_name(name: Optional[str]) -> Optional[str]:
+    """
+    The unit number an AP name carries, for a group named after it when none
+    exists: its one all-digit token of 3+ digits ("*2004" -> "2004",
+    "*20102-NEW" -> "20102", "Bldg 2 - 2045" -> "2045"). None when it has
+    none ("Maint Shop") or two ("101-102") -- not guessed.
+    """
+    nums = [t for t in re.findall(r"[0-9a-z]+", (name or "").casefold()) if t.isdigit() and len(t) >= 3]
+    return nums[0] if len(set(nums)) == 1 else None
+
+
+def _unbuilt(g: Dict[str, Any]) -> Dict[str, Any]:
+    """A derived group neither in R1 nor ticked, as a by-name candidate AP Mapping would create."""
+    return {"key": g["key"], "name": g["name"], "r1_id": None, "create": True, "staged": False, "unbuilt": True,
+            "ssids": g["ssids"]}
 
 
 def _tokens(n: str) -> List[str]:
@@ -481,9 +532,3 @@ def _tokens(n: str) -> List[str]:
 def _last_token(n: Optional[str]) -> Optional[str]:
     t = _tokens(n or "")
     return t[-1] if len(t) > 1 and len(t[-1]) >= 3 else None
-
-
-def _variants(n: str) -> List[str]:
-    """'1-1101' -> ['1101']; '2-2045 bedroom' -> ['2045', 'bedroom']: tokens of 3+ chars, the unit number first."""
-    t = [x for x in _tokens(n) if len(x) >= 3]
-    return sorted(t, key=lambda x: (not x.isdigit(), -len(x)))

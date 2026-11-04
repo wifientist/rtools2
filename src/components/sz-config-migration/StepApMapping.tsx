@@ -49,7 +49,9 @@ interface PreviewAp {
   name: string | null; serial: string | null; mac: string | null; model: string | null; sz_ap_group: string | null;
   group_name: string; group_id: string | null; staged: boolean; broadcast: string[];
   current_group: string | null; in_r1: boolean; silent: boolean;
-  action: 'already' | 'move' | 'not_in_r1' | 'group_missing' | 'keep' | 'unmapped' | 'blocked' | 'add' | 'not_selected';
+  action: 'already' | 'move' | 'not_in_r1' | 'keep' | 'unmapped' | 'blocked' | 'add' | 'not_selected';
+  // Its AP Group isn't in R1 (manual, by name, or ticked but not built): the job creates it, empty, first
+  group_create?: boolean;
   note?: string; extra_ssids?: string[]; error: string | null;
   name_clash?: boolean; r1_name?: string | null;
   // R1 takes 32 characters: a longer SZ name is split at a delimiter ('split') or cut on a word ('cut'),
@@ -63,24 +65,25 @@ interface PreviewAp {
 }
 interface Preview {
   venue_name: string; r1_ap_count: number; counts: Counts; aps: PreviewAp[];
-  r1_groups: string[]; manual_missing: string[];
+  r1_groups: string[]; manual_missing: string[]; create_groups?: string[];
   warnings: Array<{ message: string; severity: string }>;
   staged: { unpaired: string[]; conflicts: string[] };
   activations: Array<{ name: string; status: string; error: string | null }>;
 }
 
 // What the table's filter chips group by.
-type View = 'all' | 'move' | 'new' | 'already' | 'waiting' | 'nogroup' | 'keep' | 'other' | 'byname';
+type View = 'all' | 'move' | 'new' | 'already' | 'newgroup' | 'nogroup' | 'keep' | 'other' | 'byname';
 const VIEW_OF = (a: PreviewAp['action']): View =>
   a === 'move' ? 'move' : a === 'not_in_r1' ? 'new' : a === 'already' ? 'already'
-    : a === 'group_missing' ? 'waiting' : a === 'unmapped' ? 'nogroup' : a === 'keep' ? 'keep' : 'other';
+    : a === 'unmapped' ? 'nogroup' : a === 'keep' ? 'keep' : 'other';
 const VIEWS: Array<[View, string]> = [
   ['all', 'All'], ['move', 'To move'], ['new', 'Not in R1 yet'], ['already', 'Already in place'],
-  ['waiting', 'Waiting on an AP Group'], ['nogroup', 'No AP Group built'], ['keep', 'Kept as R1 has them'],
+  ['newgroup', 'AP Group to create'], ['nogroup', 'No AP Group built'], ['keep', 'Kept as R1 has them'],
   ['other', 'No serial'], ['byname', 'Name points elsewhere'],
 ];
 const inView = (a: PreviewAp, vw: View) =>
-  vw === 'all' || (vw === 'byname' ? !!(a.by_name || a.name_group) : VIEW_OF(a.action) === vw);
+  vw === 'all' || (vw === 'byname' ? !!(a.by_name || a.name_group)
+    : vw === 'newgroup' ? !!a.group_create : VIEW_OF(a.action) === vw);
 const ROW_CAP = 800;
 
 const Tile = ({ label, value, ok }: { label: string; value: string; ok: boolean | null }) => (
@@ -248,7 +251,10 @@ export default function StepApMapping({ state, dispatch }: Props) {
     });
   };
   const pc = preview?.counts ?? {};
-  const configGaps = (pc.aps_group_missing ?? 0) > 0 || (preview?.activations ?? []).length > 0;
+  const configGaps = (preview?.activations ?? []).length > 0;
+  // Groups the job creates: only those the picked APs go into
+  const groupsToCreate = [...new Set(aps.filter(a => a.group_create && isPicked(a)
+    && (a.action === 'move' || a.action === 'not_in_r1')).map(a => a.group_name))];
 
   const loadReport = async (jobId: string) => {
     const res = await apiFetch(`${API_URL}/sz-migration/ap-mapping/${jobId}/report`);
@@ -332,10 +338,9 @@ export default function StepApMapping({ state, dispatch }: Props) {
   const c = v.counts ?? {};
   const differ = v.differing_total ?? 0;
   const mappable = (c.aps ?? 0) - (c.aps_unmapped ?? 0) - (c.aps_blocked ?? 0) - (c.aps_keep ?? 0)
-    - (c.aps_not_in_r1 ?? 0) - (c.aps_group_missing ?? 0);
+    - (c.aps_not_in_r1 ?? 0);
   const activatable = (c.wlans ?? 0) - (c.wlans_no_network ?? 0);
-  const verified = !!v.counts && differ === 0 && (v.not_mapped ?? []).length === 0 && (v.not_active ?? []).length === 0
-    && (c.aps_group_missing ?? 0) === 0;
+  const verified = !!v.counts && differ === 0 && (v.not_mapped ?? []).length === 0 && (v.not_active ?? []).length === 0;
   const running = report && ['RUNNING', 'PENDING', 'AWAITING_CONFIRMATION'].includes(report.status);
 
   return (
@@ -370,11 +375,6 @@ export default function StepApMapping({ state, dispatch }: Props) {
 
         {configGaps && (
           <div className="text-xs text-red-800 bg-red-50 border border-red-200 rounded px-3 py-2 mb-3 space-y-0.5">
-            {(pc.aps_group_missing ?? 0) > 0 && (
-              <div className="flex gap-1.5"><AlertTriangle size={13} className="mt-0.5" />
-                {pc.aps_group_missing} AP(s) belong in AP Groups not in R1 yet — re-run Create WLANs (it builds every
-                AP Group), then come back.</div>
-            )}
             {(preview?.activations ?? []).length > 0 && (
               <div className="flex gap-1.5"><AlertTriangle size={13} className="mt-0.5" />
                 {preview!.activations.length} WLAN(s) not active where the plan puts them
@@ -462,15 +462,15 @@ export default function StepApMapping({ state, dispatch }: Props) {
                     : <span className="text-green-700">Checked against R1</span>}
                 </div>
                 {!overridesDirty && preview.manual_missing.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2 text-red-800">
-                    <AlertTriangle size={13} />
+                  <div className="flex flex-wrap items-center gap-2 text-blue-800">
                     {preview.manual_missing.length} AP Group(s) not in R1: {preview.manual_missing.slice(0, 8).join(', ')}
                     {preview.manual_missing.length > 8 ? '…' : ''}
+                    <span className="text-gray-500">— mapping creates them (empty, nothing activated on them), or
+                      create them now:</span>
                     <button onClick={() => createMissing(preview.manual_missing)} disabled={creating}
-                            className="px-2.5 py-1 rounded bg-orange-600 text-white font-medium disabled:bg-gray-300">
-                      {creating ? 'Creating…' : `Create ${preview.manual_missing.length} AP Group(s) in R1`}
+                            className="px-2.5 py-1 rounded border border-blue-300 text-blue-800 font-medium disabled:opacity-50">
+                      {creating ? 'Creating…' : `Create ${preview.manual_missing.length} now`}
                     </button>
-                    <span className="text-gray-500">(empty groups, nothing activated on them) — or fix the names</span>
                   </div>
                 )}
                 {createResult && <div className="text-gray-700">{createResult}</div>}
@@ -590,6 +590,14 @@ export default function StepApMapping({ state, dispatch }: Props) {
               </div>
             </div>
 
+            {groupsToCreate.length > 0 && (
+              <div className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-2">
+                Mapping first creates {groupsToCreate.length} AP Group(s) not in R1 —{' '}
+                {groupsToCreate.slice(0, 10).join(', ')}{groupsToCreate.length > 10 ? '…' : ''} — empty, with nothing
+                activated on them (AP Mapping doesn't activate WLANs), then places the picked APs in them.
+              </div>
+            )}
+
             {toAdd > 0 && (
               <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-2 flex gap-1.5">
                 <AlertTriangle size={13} className="mt-0.5 flex-shrink-0" />
@@ -624,7 +632,6 @@ export default function StepApMapping({ state, dispatch }: Props) {
                       a.action === 'move' ? (on ? ['Move', 'text-blue-700'] : ['Leave where it is', 'text-gray-400'])
                       : a.action === 'not_in_r1' ? (on ? ['Add to R1', 'text-amber-700 font-semibold'] : ['Not added', 'text-gray-400'])
                       : a.action === 'already' ? ['In place', 'text-green-700']
-                      : a.action === 'group_missing' ? ['Waiting on AP Group', 'text-red-700']
                       : a.action === 'keep' ? ['Kept as R1 has it', 'text-purple-700']
                       : a.action === 'unmapped'
                         ? (on ? [a.in_r1 ? 'Move → default group' : 'Add to R1 → default group', 'text-amber-700 font-semibold']
@@ -677,7 +684,7 @@ export default function StepApMapping({ state, dispatch }: Props) {
                               )}
                               {a.manual && !pending && (
                                 a.manual_status === 'missing'
-                                  ? <span className="ml-1 text-[10px] px-1 rounded bg-red-100 text-red-700">not in R1</span>
+                                  ? <span className="ml-1 text-[10px] px-1 rounded bg-blue-100 text-blue-700">created by mapping</span>
                                   : a.manual_status === 'planned'
                                     ? <span className="ml-1 text-[10px] px-1 rounded bg-blue-100 text-blue-700">to be built</span>
                                     : <span className="ml-1 text-[10px] px-1 rounded bg-green-100 text-green-700">in R1 ✓</span>
@@ -687,7 +694,10 @@ export default function StepApMapping({ state, dispatch }: Props) {
                           </>);
                         })()}
                         <td className="px-2 py-1 text-gray-600">{a.in_r1 ? (a.current_group ?? '—') : <span className="text-gray-400">not in R1</span>}</td>
-                        <td className={`px-2 py-1 ${outcome[1]}`} title={a.note ?? a.error ?? ''}>{outcome[0]}</td>
+                        <td className={`px-2 py-1 ${outcome[1]}`} title={a.note ?? a.error ?? ''}>
+                          {outcome[0]}
+                          {a.group_create && on && <div className="text-[10px] text-blue-700">+ creates {a.group_name}</div>}
+                        </td>
                         <td className="px-2 py-1 text-gray-600" title={a.broadcast.join('\n')}>
                           {a.broadcast.length === 0 ? <span className="text-gray-300">nothing</span>
                             : <>{a.broadcast.slice(0, 2).join(', ')}{a.broadcast.length > 2 && <span className="text-gray-400"> +{a.broadcast.length - 2}</span>}</>}
@@ -730,9 +740,6 @@ export default function StepApMapping({ state, dispatch }: Props) {
                       ok={(c.wlans_already ?? 0) >= activatable} />
                 <Tile label="APs broadcasting differently from SZ" value={String(differ)} ok={differ === 0} />
                 <Tile label="Kept as R1 has them" value={String(c.aps_keep ?? 0)} ok={null} />
-                {(c.aps_group_missing ?? 0) > 0 && (
-                  <Tile label="APs waiting on an AP Group (re-run Create WLANs)" value={String(c.aps_group_missing)} ok={false} />
-                )}
                 {(c.aps_not_in_r1 ?? 0) > 0 && (
                   <Tile label="SZ APs not in R1 (not added)" value={String(c.aps_not_in_r1)} ok={null} />
                 )}

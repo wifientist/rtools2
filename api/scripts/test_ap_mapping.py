@@ -24,8 +24,11 @@ WHAT THIS GUARDS
      from the task answers.
   5. map_aps maps what it can and fails (non-critical) on what it can't.
   6. (Activation is Create WLANs' job -- covered by test_migration_activation.)
-  7. Graph: APs only -- plan -> map -> verify; a group the plan needs but R1
-     lacks is "group_missing" (re-run Create WLANs), never created here.
+  7. Graph: APs only -- plan -> map -> verify. A group the APs go into but
+     R1 lacks (manual, by name, ticked but not built) is created by map_aps,
+     empty, before the APs are placed (group_create / create_groups).
+ 10. By name: the unit anywhere in the name as a token ("*20102-NEW"), and
+     derived groups Create WLANs didn't build are candidates (created here).
 
 Usage:
     docker compose exec backend python scripts/test_ap_mapping.py
@@ -161,8 +164,9 @@ def test_plan():
     by = {a["name"]: a for a in plan["aps"]}
     f += check("AP-0 moves into existing unit-101 (matched by its SSIDs)",
                (by["AP-0"]["action"], by["AP-0"]["group_id"]) == ("move", "g101"), str(by["AP-0"]))
-    f += check("AP-1's group (ticked) isn't in R1 yet: waiting on Create WLANs, not created here",
-               (by["AP-1"]["action"], by["AP-1"]["group_name"]) == ("group_missing", "unit-102"), str(by["AP-1"]))
+    f += check("AP-1's group (ticked) isn't in R1 yet: added, its group created by map_aps first",
+               (by["AP-1"]["action"], by["AP-1"]["group_name"], by["AP-1"]["group_create"])
+               == ("add", "unit-102", True) and plan["create_groups"] == ["unit-102"], str(by["AP-1"]))
     f += check("AP-2's group not ticked: unmapped", by["AP-2"]["action"] == "unmapped", str(by["AP-2"]))
     f += check("AP-3 already in the default group", (by["AP-3"]["action"], by["AP-3"]["group_id"])
                == ("already", "r1-default"), str(by["AP-3"]))
@@ -186,7 +190,7 @@ def test_plan():
                acts["Unit102"]["status"] == "needed" and [x["status"] for x in t] == ["awaiting_group"]
                and acts["Unit102"]["dpsk"] is True, str(acts["Unit102"]))
     c = plan["counts"]
-    f += check("counts", (c["aps_move"], c["aps_group_missing"], c["aps_already"], c["aps_keep"], c["aps_unmapped"],
+    f += check("counts", (c["aps_move"], c["aps_group_create"], c["aps_already"], c["aps_keep"], c["aps_unmapped"],
                           c["aps_blocked"], c["wlans_needed"], c["wlans_already"]) == (2, 1, 4, 1, 1, 1, 2, 2), str(c))
     return f
 
@@ -408,8 +412,9 @@ def test_staging():
 
     plan = plan_ap_mapping(snapshot(), inventory(), {**CHOICES, **stage})
     ap6 = next(a for a in plan["aps"] if a["name"] == "AP-6")
-    f += check("before Create WLANs builds it, AP-6 waits on its staged group",
-               (ap6["action"], ap6["group_name"]) == ("group_missing", "AP-6"), str(ap6))
+    f += check("before Create WLANs builds it, AP-6 moves into its staged group, created by map_aps",
+               (ap6["action"], ap6["group_name"], ap6["group_create"]) == ("move", "AP-6", True)
+               and "AP-6" in plan["create_groups"], str(ap6))
     inv = inventory()
     inv.ap_groups.append({"id": "g-stage-6", "name": "AP-6"})
     ap6 = next(a for a in plan_ap_mapping(snapshot(), inv, {**CHOICES, **stage})["aps"] if a["name"] == "AP-6")
@@ -575,14 +580,18 @@ def test_place_by_name():
                                                                          for b in ("radio24g", "radio5g")}}
                                          for n, wg in stray.items()}}})
     p = plan_ap_mapping(snap2, inv)
-    f += check("off: strays follow SZ into 4-124's group, flagged 'name says: (default)'",
-               row(p, "5101")["group_id"] == "g124" and row(p, "5101")["name_group"] == "(default)"
+    f += check("off: strays follow SZ into 4-124's group; name says its own unit '5101', or default (Club)",
+               row(p, "5101")["group_id"] == "g124" and row(p, "5101")["name_group"] == "5101"
                and row(p, "Club")["name_group"] == "(default)", str(row(p, "5101")))
     f += check("a second AP in the unit isn't a stray", row(p, "4-124-B")["name_group"] is None, str(row(p, "4-124-B")))
     p = plan_ap_mapping(snap2, inv, place_by_name=True)
-    f += check("on: strays go to the default group, broadcasting only the All AP Groups set",
-               all(row(p, n)["group_key"] == "__default__" and row(p, n)["by_name"] and row(p, n)["broadcast"] == ["WiFi"]
-                   for n in ("5101", "Club")), str(row(p, "Club")))
+    f += check("on: a stray with no unit in its name goes to the default group (All AP Groups set only)",
+               row(p, "Club")["group_key"] == "__default__" and row(p, "Club")["by_name"]
+               and row(p, "Club")["broadcast"] == ["WiFi"], str(row(p, "Club")))
+    a = row(p, "5101")
+    f += check("on: a stray named after a unit with no group gets that group, created",
+               (a["group_name"], a["by_name"], a["group_create"], a["broadcast"]) == ("5101", True, True, ["WiFi"]),
+               str(a))
     f += check("on: the unit's own APs stay", row(p, "4-124-B")["group_id"] == "g124" and not row(p, "4-124-B")["by_name"])
 
     # Wider match: "2-2045" finds group "2045" (the unit number alone).
@@ -602,9 +611,13 @@ def test_place_by_name():
                a["group_id"] == "g125" and a["manual"] and a["manual_status"] == "exists"
                and a["sz_group_name"] == "4-124" and a["auto_group"] == "(default)", str(a))
     a = row(p, "5101")
-    f += check("manual -> a group R1 lacks: missing, waits on it, listed",
-               a["manual_status"] == "missing" and a["action"] == "group_missing"
-               and p["manual_missing"] == ["Pool House"], str((a, p["manual_missing"])))
+    f += check("manual -> a group R1 lacks: missing, listed, to be created (only once the AP is added)",
+               a["manual_status"] == "missing" and a["action"] == "not_in_r1" and a["group_create"]
+               and p["manual_missing"] == ["Pool House"] and "Pool House" not in p["create_groups"],
+               str((a, p["manual_missing"])))
+    p = plan_ap_mapping(snap3, inv2, place_by_name=True, overrides=ov, add_new_aps=True)
+    f += check("... added: 'Pool House' is in create_groups", row(p, "5101")["action"] == "add"
+               and p["create_groups"] == ["Pool House"], str(p["create_groups"]))
     f += check("manual '(default)' -> the default group", row(p, "Lobby")["group_key"] == "__default__"
                and row(p, "Lobby")["manual"])
     f += check("a blank override is ignored", not row(p, "4-126")["manual"])
@@ -620,9 +633,137 @@ def test_place_by_name():
     return f
 
 
+def test_by_name_tokens():
+    print("\n11. By name: unit as a token anywhere in the name; groups Create WLANs didn't build")
+    f = 0
+    site = "Site"
+    units = ("20102", "2004", "3003")
+    w = {"wifi": SZWLANFull(id="wifi", name="WiFi", ssid="WiFi", auth_type="WPA2-PSK", encryption={"method": "WPA2"})}
+    w.update({u: SZWLANFull(id=f"w{u}", name=f"{u}@{site}", ssid=f"{u}@{site}", auth_type="WPA2-PSK",
+                            encryption={"method": "WPA2"}) for u in units})
+    m = {k: SZWLANGroupMember(id=v.id, name=v.name, ssid=v.ssid) for k, v in w.items()}
+    wgs = [SZWLANGroup(id="wg-d", name="default", members=[m["wifi"]])] + [
+        SZWLANGroup(id=f"wg-{u}", name=u, members=[m["wifi"], m[u]]) for u in units]
+    # "*20102-NEW" and "*2004" broadcast their own unit; "2004" (a second AP in 2004) and
+    # "*3003-old" broadcast only WiFi in SZ (lost their override); "Lobby" has no unit.
+    plan_of = {"*20102-NEW": "wg-20102", "*2004": "wg-2004", "2004": None, "*3003-old": None, "Lobby": None,
+               "3003": "wg-3003"}
+    aps = [{"apMac": n, "deviceName": n, "serial": f"S{i}", "apGroupId": "sz-default"} for i, n in enumerate(plan_of)]
+    detail = {n: {"dual5g": False, "radios": {b: {"wlan_group_id": wg, "service_enabled": True}
+                                              for b in ("radio24g", "radio5g")}} for n, wg in plan_of.items()}
+    snap = SZMigrationSnapshot(zone=SZZoneSnapshot(id="z", name="Z"), wlans=list(w.values()), wlan_groups=wgs,
+                               aps=aps, ap_radio_config=detail,
+                               ap_groups=[SZAPGroupEnriched(id="sz-default", name="default", ap_count=len(aps))])
+    # R1: only 3003's group was built (named "Unit 3003"); 20102 and 2004 were not ticked in Create WLANs.
+    inv = R1VenueInventory(
+        venue_id="v", venue_name="V", tenant_id="t",
+        ap_groups=[{"id": "g-d", "name": "", "isDefault": True}, {"id": "g3003", "name": "Unit 3003"}],
+        wifi_networks=[{"id": "n0", "name": "WiFi", "ssid": "WiFi",
+                        "venueApGroups": [{"venueId": "v", "isAllApGroups": True}]},
+                       {"id": "n3003", "name": f"3003@{site}", "ssid": f"3003@{site}",
+                        "venueApGroups": [{"venueId": "v", "isAllApGroups": False, "apGroupIds": ["g3003"]}]}],
+        aps=[{"serialNumber": f"S{i}", "name": n, "apGroupId": "g-d"} for i, n in enumerate(plan_of)])
+    row = lambda p, n: next(a for a in p["aps"] if a["name"] == n)
+
+    p = plan_ap_mapping(snap, inv)
+    f += check("off: '*20102-NEW' has no AP Group built -> unmapped, as before",
+               row(p, "*20102-NEW")["action"] == "unmapped", str(row(p, "*20102-NEW")))
+    f += check("off: '2004' and '*3003-old' are flagged with the group their name points at",
+               row(p, "2004")["name_group"] == "2004" and row(p, "*3003-old")["name_group"] == "Unit 3003",
+               str((row(p, "2004"), row(p, "*3003-old"))))
+
+    p = plan_ap_mapping(snap, inv, place_by_name=True)
+    for n, g in (("*20102-NEW", "20102"), ("*2004", "2004"), ("2004", "2004")):
+        a = row(p, n)
+        f += check(f"on: '{n}' -> group '{g}', created by map_aps, moved there",
+                   (a["group_name"], a["by_name"], a["group_create"], a["action"]) == (g, True, True, "move"), str(a))
+    a = row(p, "*3003-old")
+    f += check("on: '*3003-old' -> existing 'Unit 3003' (via 3003@Site)",
+               (a["group_id"], a["by_name"], a["action"]) == ("g3003", True, "move"), str(a))
+    f += check("on: no unit in the name -> unchanged", row(p, "Lobby")["group_key"] == "__default__"
+               and not row(p, "Lobby")["by_name"])
+    f += check("on: a group not built broadcasts only the All AP Groups set (AP Mapping doesn't activate)",
+               row(p, "*2004")["broadcast"] == ["WiFi"], str(row(p, "*2004")["broadcast"]))
+    f += check("create_groups lists each once", p["create_groups"] == ["2004", "20102"], str(p["create_groups"]))
+
+    # Echo Lake SG: no unit WLANs at all, R1 has other units' groups -- the group comes from the AP's name.
+    names = ["*2001", "2001", "19101", "*20102-NEW", "Maint Shop", "101-102", "3003"]
+    snap2 = SZMigrationSnapshot(
+        zone=SZZoneSnapshot(id="z", name="SG"), wlans=[w["wifi"]], wlan_groups=[wgs[0]],
+        aps=[{"apMac": n, "deviceName": n, "serial": f"T{i}", "apGroupId": "sz-default"} for i, n in enumerate(names)],
+        ap_radio_config={n: {"dual5g": False, "radios": {b: {"wlan_group_id": None, "service_enabled": True}
+                                                         for b in ("radio24g", "radio5g")}} for n in names},
+        ap_groups=[SZAPGroupEnriched(id="sz-default", name="default", ap_count=len(names))])
+    p = plan_ap_mapping(snap2, inv, place_by_name=True, add_new_aps=True)
+    got = {n: (row(p, n)["group_name"], row(p, n)["group_create"]) for n in names}
+    f += check("no group anywhere: named after the unit in the AP name, created; '*2001' and '2001' share one",
+               got == {"*2001": ("2001", True), "2001": ("2001", True), "19101": ("19101", True),
+                       "*20102-NEW": ("20102", True), "Maint Shop": ("(default)", False),
+                       "101-102": ("(default)", False), "3003": ("Unit 3003", False)}
+               and p["create_groups"] == ["19101", "2001", "20102"], str((got, p["create_groups"])))
+    return f
+
+
+class GroupR1(FakeR1):
+    """FakeR1 plus AP Group find/create; `fail` names refuse to create."""
+
+    def __init__(self, existing=None, fail=()):
+        super().__init__()
+        self.groups = dict(existing or {})      # name -> id
+        self.created, self.fail = [], set(fail)
+        self.venues = SimpleNamespace(find_ap_group_by_name=self._find, create_ap_group=self._create,
+                                      get_aps_by_tenant_venue=self._aps)
+
+    async def _find(self, t, v, name):
+        gid = next((i for n, i in self.groups.items() if n.casefold() == name.casefold()), None)
+        return {"id": gid, "name": name} if gid else None
+
+    async def _create(self, t, v, name, wait_for_completion=True):
+        if name in self.fail:
+            raise RuntimeError("R1 said no")
+        self.groups[name] = f"new-{name}"
+        self.created.append(name)
+        return {"id": f"new-{name}", "name": name}
+
+    async def _aps(self, t, v):
+        return {"data": [{"serialNumber": s, "apGroupId": g} for s, g in self.where.items()]}
+
+
+def test_map_creates_groups():
+    print("\n12. map_aps creates the AP Groups its APs go into, then places them")
+    f = 0
+    phases.save_report = _no_report
+    # AP-1 goes into ticked unit-102 (not built); AP-3 manually into "Pool House", AP-8 into "Broken"
+    plan = plan_ap_mapping(snapshot(), inventory(), CHOICES, add_new_aps=True,
+                           overrides={"S3": "Pool House", "S8": "Broken"})
+    r1 = GroupR1(fail={"Broken"})
+    p = _phase(phases.MapApsPhase, plan, r1)
+    changes = []
+
+    async def rec(action, rtype, name, resource_id=None, detail=""):
+        changes.append((action, rtype, name))
+    p.record_change = rec
+    try:
+        asyncio.run(p.execute(p.Inputs(sz_snapshot_job_id="s")))
+        raised = None
+    except RuntimeError as e:
+        raised = str(e)
+    f += check("creates the groups R1 lacks", sorted(r1.created) == ["Pool House", "unit-102"], str(r1.created))
+    reqs = sorted((x[0], x[1]) for x in r1.requests)
+    f += check("then places APs into the new groups",
+               ("POST", "/venues/v/apGroups/new-unit-102/aps") in reqs
+               and ("PUT", "/venues/v/apGroups/new-Pool House/aps/S3") in reqs, str(reqs))
+    f += check("an AP whose group failed to create is not sent, and fails the phase",
+               not any("S8" in x[1] for x in reqs) and raised and "AP-8" in raised
+               and ("failed", "ap_groups", "Broken") in changes, str((raised, changes)))
+    f += check("created groups logged", ("created", "ap_groups", "Pool House") in changes, str(changes))
+    return f
+
+
 if __name__ == "__main__":
     failures = sum(t() for t in (test_layout_radios, test_plan, test_place_aps, test_map_phase,
                                  test_graph, test_staging, test_selection, test_name_clash_retry,
-                                 test_place_by_name, test_pending_tasks))
+                                 test_place_by_name, test_pending_tasks, test_by_name_tokens,
+                                 test_map_creates_groups))
     print(f"\n{'All checks passed' if not failures else f'{failures} check(s) failed'}")
     sys.exit(1 if failures else 0)
