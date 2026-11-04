@@ -141,7 +141,7 @@ const App = () => {
             }
           />
           <Route path="/pisr" element={<AlphaRoute element={<PISR />} />} />
-          <Route path="/tracker" element={<AlphaRoute element={<MigrationTracker />} />} />
+          <Route path="/tracker" element={<BetaRoute element={<MigrationTracker />} />} />
           <Route path="/template-tool" element={<BetaRoute element={<TemplateTool />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />

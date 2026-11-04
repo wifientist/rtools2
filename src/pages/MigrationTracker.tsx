@@ -199,7 +199,7 @@ export default function MigrationTracker() {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900">Tracker</h1>
-            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">Alpha</span>
+            <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Beta</span>
             {!loading && !canEdit && (
               <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">View only</span>
             )}
