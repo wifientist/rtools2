@@ -6,6 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 import BetaRoute from "@/components/BetaRoute";
 import AlphaRoute from "@/components/AlphaRoute";
+import FeatureRoute from "@/components/FeatureRoute";
 import DangerRoute from "@/components/DangerRoute";
 
 import { AuthProvider } from "@/context/AuthContext";
@@ -143,7 +144,7 @@ const App = () => {
             }
           />
           <Route path="/pisr" element={<AlphaRoute element={<PISR />} />} />
-          <Route path="/tracker" element={<BetaRoute element={<MigrationTracker />} />} />
+          <Route path="/tracker" element={<FeatureRoute feature="migration_tracker" element={<MigrationTracker />} />} />
           <Route path="/template-tool" element={<BetaRoute element={<TemplateTool />} />} />
           <Route path="/snapshot" element={<Navigate to="/r1-details" />} />
           <Route path="/testcalls" element={<AdminRoute element={<TestCalls />} />} />

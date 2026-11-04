@@ -29,6 +29,7 @@ class UserResponse(UserBase):
     beta_enabled: bool
     alpha_enabled: bool
     danger_enabled: bool
+    tracker_enabled: bool = False
     company_id: int | None
 
     class Config:
