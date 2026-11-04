@@ -1049,6 +1049,8 @@ async def preview_ap_mapping(
         # every named R1 AP Group in the venue (manual override suggestions), and typed names R1 lacks
         "r1_groups": sorted((g.get("name") for g in inv.ap_groups if (g.get("name") or "").strip()), key=str.casefold),
         "manual_missing": plan["manual_missing"],
+        # AP Groups the job creates (empty) before placing the picked APs into them
+        "create_groups": plan["create_groups"],
         "warnings": plan["warnings"],
         "staged": plan["staged"],
         "activations": [{"name": a["name"], "status": a["status"], "error": a["error"]}

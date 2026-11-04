@@ -317,7 +317,7 @@ export default function Step6Results({ state, dispatch }: Props) {
         const v = apReport?.verify ?? {};
         const c = v.counts ?? {};
         const placed = (c.aps ?? 0) - (c.aps_unmapped ?? 0) - (c.aps_blocked ?? 0) - (c.aps_keep ?? 0)
-          - (c.aps_not_in_r1 ?? 0) - (c.aps_group_missing ?? 0);
+          - (c.aps_not_in_r1 ?? 0);
         const differ = v.differing_total ?? 0;
         return (
           <StageCard n={4} title="AP Mapping"

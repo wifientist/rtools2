@@ -8,8 +8,11 @@ belong, and is skippable: config-only runs stop before it.
     ap_mapping_plan     read SZ snapshot + the venue now; list APs to move /
                         add (adding is opt-in), and anything configuration-
                         side that is missing (fix: re-run Create WLANs); pause
-    map_aps             move APs into their group; add the ones not in the
-                        venue when opted in (non-critical)
+    map_aps             create the AP Groups APs go into that R1 lacks
+                        (manual / by-name targets, ticked groups Create WLANs
+                        didn't build -- empty, nothing activated); move APs
+                        into their group; add the ones picked that aren't in
+                        the venue (non-critical)
     verify_ap_mapping   read the venue back: membership, activations and the
                         audit's per-AP broadcast comparison
 
@@ -79,6 +82,41 @@ class _Stage(PhaseExecutor):
                                overrides=self.context.options.get("ap_group_overrides") or {})
         return snapshot, inv, plan
 
+    async def create_groups(self, plan: Dict[str, Any], todo: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Find-or-create the AP Groups the APs to place go into but R1 lacks;
+        fills each AP's group_id in place. Returns failed rows (in place_aps'
+        shape) for APs whose group could not be created.
+        """
+        names = plan["create_groups"]
+        if not names:
+            return []
+        await self.emit(f"Creating {len(names)} AP Group(s) not in R1: {', '.join(names[:10])}"
+                        + ("…" if len(names) > 10 else ""))
+        ids, errors, created = await ap_group_ops.ensure_groups(self.r1_client, self.tenant_id, self.venue_id, names)
+        for n in names:
+            k = n.casefold()
+            if k in errors:
+                await self.record_change("failed", "ap_groups", n, detail=errors[k])
+            else:
+                await self.record_change("created" if n in created else "reused", "ap_groups", n,
+                                         resource_id=ids.get(k), detail="Empty; nothing activated on it")
+        await self.emit(f"AP Groups: {len(created)} created, {len(names) - len(created) - len(errors)} already there"
+                        + (f", {len(errors)} failed" if errors else ""),
+                        "warning" if errors else "success")
+        failed = []
+        for a in todo:
+            if not a["group_create"]:
+                continue
+            k = (a["group_name"] or "").casefold()
+            if ids.get(k):
+                a["group_id"] = ids[k]
+            else:
+                failed.append({"serial": a["serial"], "ap_name": a.get("r1_name") or a["name"],
+                               "to_group_name": a["group_name"], "op": a["action"], "status": "failed",
+                               "error": f"AP Group not created — {errors.get(k, 'not found after create')}"})
+        return failed
+
     async def read_aps(self) -> List[Dict[str, Any]]:
         return (await self.r1_client.venues.get_aps_by_tenant_venue(self.tenant_id, self.venue_id)).get("data") or []
 
@@ -98,8 +136,8 @@ class ApMappingPlanPhase(_Stage):
         c = plan["counts"]
         await self.emit(f"Zone '{snapshot.zone.name}' → {inv.venue_name}: {c['aps']} APs "
                         f"({c['aps_already']} already mapped, {c['aps_move']} to move, {c['aps_add']} to add, "
-                        f"{c['aps_not_in_r1']} not in R1 and not added, "
-                        f"{c['aps_group_missing']} waiting on an AP Group)")
+                        f"{c['aps_not_in_r1']} not in R1 and not added; "
+                        f"{len(plan['create_groups'])} AP Group(s) to create for {c['aps_group_create']} of them)")
 
         actions: List[ResourceAction] = []
         for g in plan["groups"]:
@@ -107,13 +145,19 @@ class ApMappingPlanPhase(_Stage):
             moves = sum(1 for a in members if a["action"] == "move")
             adds = sum(1 for a in members if a["action"] == "add")
             if not g["exists"]:
-                continue   # reported above as waiting on Create WLANs
+                continue   # listed below with the groups to create
             notes = [f"{len(members)} AP(s): {moves} to move, {adds} to add, "
                      f"{len(members) - moves - adds} already in it", "SSIDs: " + ", ".join(g["ssids"])]
             if g["staged"]:
                 notes.append("Staged: its WLAN(s) are created but NOT activated — no AP broadcasts them in SZ")
             actions.append(ResourceAction(resource_type="ap_group", name=g["name"],
                                           action="update" if moves or adds else "reuse", notes=notes))
+        for name in plan["create_groups"]:
+            members = [a for a in plan["aps"] if a["group_name"] == name and a["group_create"]
+                       and a["action"] in ("move", "add")]
+            actions.append(ResourceAction(
+                resource_type="ap_group", name=name, action="create",
+                notes=[f"Not in R1: created empty (nothing activated on it), then {len(members)} AP(s) placed in it"]))
         dflt = [a for a in plan["aps"] if a["group_key"] == "__default__"]
         if dflt:
             moves = sum(1 for a in dflt if a["action"] in ("move", "add"))
@@ -135,12 +179,13 @@ class ApMappingPlanPhase(_Stage):
                 resource_type="wifi_network", resource_name=", ".join(names[:8]),
                 description=f"{c['wlans_needed']} WLAN(s) not active where the plan puts them — re-run Create WLANs "
                             "(AP Mapping doesn't activate)", severity="warning"))
-        if c["aps_group_missing"]:
-            missing = sorted({a["group_name"] for a in plan["aps"] if a["action"] == "group_missing"})
+        if plan["create_groups"]:
+            made = plan["create_groups"]
             conflicts.append(ConflictDetail(
-                resource_type="ap_group", resource_name=", ".join(missing[:8]),
-                description=f"{len(missing)} AP Group(s) for {c['aps_group_missing']} AP(s) aren't in R1 yet — "
-                            "re-run Create WLANs (it builds every AP Group)", severity="warning"))
+                resource_type="ap_group", resource_name=", ".join(made[:8]),
+                description=f"{len(made)} AP Group(s) aren't in R1 yet — created here, empty, for "
+                            f"{c['aps_group_create']} AP(s). AP Mapping doesn't activate: any WLAN that belongs on "
+                            "them needs Create WLANs (or WLAN Activator)", severity="warning"))
         if c["aps_unmapped"]:
             conflicts.append(ConflictDetail(
                 resource_type="ap_group", resource_name=", ".join(plan["unmapped_groups"][:8]),
@@ -173,8 +218,8 @@ class ApMappingPlanPhase(_Stage):
             conflicts.append(ConflictDetail(
                 resource_type="ap", resource_name=", ".join(missing[:8]),
                 description=f"{c['aps_manual']} AP(s) placed by hand"
-                            + (f"; {len(missing)} of those AP Groups aren't in R1 — their APs wait until they're "
-                               "created ('Validate manual choices')" if missing else ""),
+                            + (f"; {len(missing)} of those AP Groups aren't in R1 — created by this job"
+                               if missing else ""),
                 severity="warning"))
         if c["aps_by_name"]:
             moved = [a for a in plan["aps"] if a.get("by_name")]
@@ -237,7 +282,9 @@ class MapApsPhase(_Stage):
     async def execute(self, inputs: Inputs) -> Outputs:
         _, _, plan = await self.fresh(inputs.sz_snapshot_job_id)
         todo = [a for a in plan["aps"] if a["action"] in ("move", "add")]
-        if not todo:
+        group_failed = await self.create_groups(plan, todo)
+        todo = [a for a in todo if not a["group_create"] or a["group_id"]]
+        if not todo and not group_failed:
             await self.emit("Every mappable AP is already in its AP Group")
             await save_report(self.job_id, "map", {"counts": {}, "problems": []})
             return self.Outputs()
@@ -261,7 +308,7 @@ class MapApsPhase(_Stage):
         await ap_group_ops.place_aps(self.r1_client, self.tenant_id, self.venue_id, rows, self.read_aps,
                                      log_label="[SZ AP Mapping]", wait_seconds=budget,
                                      confirm_seconds=budget, progress=self.emit)
-        rows += refused
+        rows += refused + group_failed
         counts: Dict[str, int] = {}
         for r in rows:
             counts[r["status"]] = counts.get(r["status"], 0) + 1
@@ -321,7 +368,8 @@ class VerifyApMappingPhase(_Stage):
             "not_in_r1": c["aps_not_in_r1"],
             "fallback_default": [{"name": a["name"], "serial": a["serial"], "wanted_group": a.get("wanted_group")}
                                  for a in plan["aps"] if a.get("fallback_default")][:SAMPLE],
-            "groups_missing": sorted({a["group_name"] for a in plan["aps"] if a["action"] == "group_missing"}),
+            # still not in R1 after map_aps created them: a create failed
+            "groups_missing": plan["create_groups"],
             "kept": [{"name": a["name"], "serial": a["serial"], "current_group": a["current_group"],
                       "extra_ssids": a.get("extra_ssids") or []} for a in plan["aps"] if a["action"] == "keep"],
             "no_network": [a["name"] for a in plan["activations"] if a["status"] == "no_network"],
@@ -339,8 +387,9 @@ class VerifyApMappingPhase(_Stage):
                         f"(of {broadcast.counts.get('aps_compared', 0)} compared)",
                         "success" if not differing else "warning")
         problems = []
-        if c["aps_group_missing"]:
-            problems.append(f"{c['aps_group_missing']} AP(s) waiting on AP Groups not in R1 (re-run Create WLANs)")
+        if plan["create_groups"]:
+            problems.append(f"{len(plan['create_groups'])} AP Group(s) still not in R1: "
+                            + ", ".join(plan["create_groups"][:5]))
         if not_mapped:
             problems.append(f"{len(not_mapped)} AP(s) not in their AP Group")
         if not_active:
