@@ -155,7 +155,9 @@ from routers.apg_cleanup.router import router as apg_cleanup_router
 app.include_router(apg_cleanup_router, tags=["APG Cleanup"])
 # Venue Checkup — a venue's settings; per-AP-model ones editable (beta-gated)
 from routers.venue_checkup.router import router as venue_checkup_router
+from routers.config_rules.router import router as config_rules_router
 app.include_router(venue_checkup_router, tags=["Venue Checkup"])
+app.include_router(config_rules_router, tags=["Config Rules"])
 
 from routers.migration_tracker import router as migration_tracker_router
 app.include_router(migration_tracker_router)

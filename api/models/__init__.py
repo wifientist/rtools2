@@ -34,6 +34,7 @@ from models.data_studio_export import DataStudioExportConfig, DataStudioExportRu
 # Migration Tracker
 from models.migration_tracker import TrackerSite
 from models.radius_standard import RadiusStandard
+from models.config_ruleset import ConfigRuleset
 
 __all__ = [
     'User', 'RoleEnum', 'Company', 'Controller',
