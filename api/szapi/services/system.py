@@ -10,6 +10,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _sum_by_name(pairs) -> Dict[str, int]:
+    """Sum counts per non-empty name."""
+    out: Dict[str, int] = {}
+    for name, count in pairs:
+        if name:
+            out[name] = out.get(name, 0) + count
+    return out
+
+
 class SystemService:
     def __init__(self, client):
         self.client = client  # back-reference to main SZClient
@@ -199,7 +208,8 @@ class SystemService:
 
         Returns:
             Dict with connected, zones_with_connected, zones_read, zones_total,
-            and connected_zone_names (names of zones with a connected AP)
+            and connected_by_zone_name ({zone name: connected APs}, zones with
+            at least one; same-name zones are summed)
         """
         endpoint = f"/{self.client.api_version}/system/inventory"
         zones: Dict[str, int] = {}
@@ -226,7 +236,7 @@ class SystemService:
             "zones_with_connected": sum(1 for count in zones.values() if count > 0),
             "zones_read": len(zones),
             "zones_total": zones_total,
-            "connected_zone_names": sorted(
-                {names[zid] for zid, count in zones.items() if count > 0 and names.get(zid)}
+            "connected_by_zone_name": _sum_by_name(
+                (names.get(zid, ""), count) for zid, count in zones.items() if count > 0
             ),
         }

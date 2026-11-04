@@ -388,7 +388,7 @@
   <div class="section">
     <div class="section-header">
       <h2>Left on SmartZone</h2>
-      <div class="count">Connected APs (online or flagged) and online switches, fewest first. Zones / SG = zones with a connected AP / switch groups with an online switch.</div>
+      <div class="count">Connected APs (online or flagged) and online switches, fewest first. Zones / SG = zones with at least {{ sz_min_zone_aps }} connected AP{{ "s" if sz_min_zone_aps != 1 }} / switch groups with at least {{ sz_min_group_switches }} online switch{{ "es" if sz_min_group_switches != 1 }}.</div>
     </div>
     <table>
       <thead>

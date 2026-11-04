@@ -450,6 +450,8 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
         "sz_failed": sz_failed,
         "sz_switch_failed": sz_switch_failed,
         "sz_left_rows": sz_left_rows,
+        "sz_min_zone_aps": ap_progress.get("min_zone_aps", 1),
+        "sz_min_group_switches": ap_progress.get("min_group_switches", 1),
         "sz_online_switches": switch_progress.get("sz_online_switches", 0),
         "switch_fleet_total": switch_progress.get("fleet_total", 0),
         "message": message,

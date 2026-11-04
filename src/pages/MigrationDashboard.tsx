@@ -64,7 +64,7 @@ interface SzControllerCount {
   switch_error: string | null;
   zones_with_aps: number | null;
   switch_groups_online: number | null;
-  sites: number | null; // zones ∪ switch groups (matched by name) holding an online device
+  sites: number | null; // zones ∪ switch groups (matched by name) at/above the minimums
 }
 
 // Same rule as APs: R1 / (R1 + still online on the same SZ controllers).
@@ -88,6 +88,8 @@ interface ApProgress {
   fleet_total?: number;
   sz_complete?: boolean;
   sz_controllers?: SzControllerCount[];
+  min_zone_aps?: number;
+  min_group_switches?: number;
 }
 
 interface DashboardSettings {
@@ -95,6 +97,8 @@ interface DashboardSettings {
   target_switches: number;
   ignored_tenant_ids: string[];
   sz_controller_ids?: number[];
+  sz_min_zone_aps?: number;
+  sz_min_group_switches?: number;
 }
 
 interface LicenseDeviceBreakdown {
@@ -437,6 +441,8 @@ const MigrationDashboard = () => {
   const [settingsSwitchTarget, setSettingsSwitchTarget] = useState("");
   const [settingsIgnored, setSettingsIgnored] = useState<Set<string>>(new Set());
   const [settingsSzIds, setSettingsSzIds] = useState<Set<number>>(new Set());
+  const [settingsMinZoneAps, setSettingsMinZoneAps] = useState("5");
+  const [settingsMinGroupSwitches, setSettingsMinGroupSwitches] = useState("1");
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Report schedule
@@ -751,6 +757,8 @@ const MigrationDashboard = () => {
     setSettingsSwitchTarget(String(switchTarget));
     setSettingsIgnored(new Set(settings?.ignored_tenant_ids ?? []));
     setSettingsSzIds(new Set(settings?.sz_controller_ids ?? []));
+    setSettingsMinZoneAps(String(settings?.sz_min_zone_aps ?? 5));
+    setSettingsMinGroupSwitches(String(settings?.sz_min_group_switches ?? 1));
     setTestReportStatus(null);
     setShowSettings(true);
     // Fetch report schedule
@@ -784,6 +792,9 @@ const MigrationDashboard = () => {
             target_switches: !isNaN(swVal) && swVal > 0 ? swVal : undefined,
             ignored_tenant_ids: Array.from(settingsIgnored),
             sz_controller_ids: Array.from(settingsSzIds),
+            sz_min_zone_aps: parseInt(settingsMinZoneAps, 10) > 0 ? parseInt(settingsMinZoneAps, 10) : undefined,
+            sz_min_group_switches:
+              parseInt(settingsMinGroupSwitches, 10) > 0 ? parseInt(settingsMinGroupSwitches, 10) : undefined,
           }),
         }
       );
@@ -1093,6 +1104,34 @@ const MigrationDashboard = () => {
                   No SmartZone controllers are set up for your account.
                 </p>
               )}
+              <div className="mt-4 flex flex-wrap gap-6">
+                <label className="text-sm text-gray-700">
+                  A zone counts with at least
+                  <input
+                    type="number"
+                    min={1}
+                    value={settingsMinZoneAps}
+                    onChange={(e) => setSettingsMinZoneAps(e.target.value)}
+                    className="w-20 mx-2 px-2 py-1 border rounded-lg text-sm"
+                  />
+                  connected APs
+                </label>
+                <label className="text-sm text-gray-700">
+                  A switch group counts with at least
+                  <input
+                    type="number"
+                    min={1}
+                    value={settingsMinGroupSwitches}
+                    onChange={(e) => setSettingsMinGroupSwitches(e.target.value)}
+                    className="w-20 mx-2 px-2 py-1 border rounded-lg text-sm"
+                  />
+                  online switches
+                </label>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Only for the Zones / SG column, so a few stragglers don't read as a site still to
+                migrate. AP and switch totals always count every device.
+              </p>
             </div>
 
             {/* Target Switches */}
@@ -1672,7 +1711,8 @@ const MigrationDashboard = () => {
                 <h2 className="text-lg font-semibold text-gray-800">Left on SmartZone</h2>
                 <span className="text-xs text-gray-400">
                   Connected APs (online or flagged) and online switches, fewest first. Zones / SG =
-                  zones with a connected AP / switch groups with an online switch.
+                  zones with ≥{apProgress?.min_zone_aps ?? 1} connected APs / switch groups with ≥
+                  {apProgress?.min_group_switches ?? 1} online switches.
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -1714,9 +1754,9 @@ const MigrationDashboard = () => {
                         <td
                           className="px-6 py-3 text-sm text-right font-mono text-gray-700"
                           title={
-                            c.sites == null
-                              ? undefined
-                              : `About ${c.sites.toLocaleString()} distinct sites: switch groups named like a zone with APs are counted once`
+                            c.sites != null
+                              ? `About ${c.sites.toLocaleString()} distinct sites (switch groups named like a counted zone are counted once)`
+                              : undefined
                           }
                         >
                           <span className={c.error ? "text-red-600" : ""}>
