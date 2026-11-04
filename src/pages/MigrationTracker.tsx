@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Plus, ClipboardPaste, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload } from "lucide-react";
 import { apiFetch } from "@/utils/api";
 import TrackerGantt from "@/components/migration-tracker/TrackerGantt";
-import TrackerTable, { type EventPatch, type FailBody, type MissBody, type MissMigrationBody } from "@/components/migration-tracker/TrackerTable";
+import TrackerTable, { type MissBody, type MissMigrationBody, type MissValidationBody } from "@/components/migration-tracker/TrackerTable";
 import {
   STAGES, TONE_CLASSES, parsePaste, stageOf, siteStatus, todayISO,
   type PasteResult, type TrackerSite,
@@ -10,6 +10,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const BASE = `${API_BASE_URL}/tracker/sites`;
+const TRACKER = `${API_BASE_URL}/tracker`;
 const FILTER_KEY = "tracker.table.filter";
 
 type TableFilter = "active" | "overdue" | "all" | (typeof STAGES)[number]["key"];
@@ -90,17 +91,14 @@ export default function MigrationTracker() {
     setSites((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     replace(await call(`${BASE}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }));
   });
-  const onFailValidation = (id: number, body: FailBody) => guard(async () => {
-    replace(await call(`${BASE}/${id}/fail-validation`, { method: "POST", body: JSON.stringify(body) }));
-  });
   const onMissConfig = (id: number, body: MissBody) => guard(async () => {
     replace(await call(`${BASE}/${id}/miss-config`, { method: "POST", body: JSON.stringify(body) }));
   });
+  const onMissValidation = (id: number, body: MissValidationBody) => guard(async () => {
+    replace(await call(`${BASE}/${id}/miss-validation`, { method: "POST", body: JSON.stringify(body) }));
+  });
   const onMissMigration = (id: number, body: MissMigrationBody) => guard(async () => {
     replace(await call(`${BASE}/${id}/miss-migration`, { method: "POST", body: JSON.stringify(body) }));
-  });
-  const onUpdateEvent = (id: number, index: number, patch: EventPatch) => guard(async () => {
-    replace(await call(`${BASE}/${id}/events/${index}`, { method: "PATCH", body: JSON.stringify(patch) }));
   });
   const onDeleteEvent = (id: number, index: number) => guard(async () => {
     replace(await call(`${BASE}/${id}/events/${index}`, { method: "DELETE" }));
@@ -113,6 +111,49 @@ export default function MigrationTracker() {
     const data = await call(`${BASE}/bulk`, { method: "POST", body: JSON.stringify({ sites: rows }) });
     setSites((prev) => [...prev, ...data.sites]);
     if (data.sites.length === 1) jumpTo(data.sites[0].id);
+  });
+
+  // Export / import: the whole board as one JSON file, to carry it between environments.
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [pendingImport, setPendingImport] = useState<{ name: string; data: { format?: string; sites: unknown[] } } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const onExport = () => guard(async () => {
+    const data = await call(`${TRACKER}/export`);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tracker-${todayISO()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  const onPickFile = async (file: File | undefined) => {
+    if (fileInput.current) fileInput.current.value = "";
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || !Array.isArray(data.sites)) throw new Error("no \"sites\" list in it");
+      if (data.format && data.format !== "rtools-tracker") throw new Error(`format is "${data.format}"`);
+      setPendingImport({ name: file.name, data });
+      setNotice(null);
+      setError(null);
+    } catch (e) {
+      setError(`${file.name} isn't a tracker export: ${(e as Error).message}`);
+    }
+  };
+
+  const runImport = (mode: "replace" | "add") => guard(async () => {
+    if (!pendingImport) return;
+    const res = await call(`${TRACKER}/import`, {
+      method: "POST",
+      body: JSON.stringify({ ...pendingImport.data, mode }),
+    });
+    setPendingImport(null);
+    setNotice(`Imported ${res.imported} site${res.imported === 1 ? "" : "s"}`
+      + (res.removed ? `, replacing ${res.removed}` : "") + ".");
+    await load();
   });
 
   const jumpTo = (id: number) => {
@@ -175,6 +216,33 @@ export default function MigrationTracker() {
             </span>
           )}
           <button
+            onClick={() => void onExport()}
+            disabled={loading || sites.length === 0}
+            title="Download the whole board as JSON"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Download size={14} /> Export
+          </button>
+          {canEdit && (
+            <>
+              <button
+                onClick={() => fileInput.current?.click()}
+                disabled={loading}
+                title="Load a board exported from this or another environment"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Upload size={14} /> Import
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => void onPickFile(e.target.files?.[0])}
+              />
+            </>
+          )}
+          <button
             onClick={() => void load()}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50"
@@ -183,6 +251,35 @@ export default function MigrationTracker() {
           </button>
         </div>
       </div>
+
+      {pendingImport && (
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded border border-blue-300 bg-blue-50 text-sm text-blue-900">
+          <span>
+            <span className="font-medium">{pendingImport.name}</span> has {pendingImport.data.sites.length} site
+            {pendingImport.data.sites.length === 1 ? "" : "s"}.
+            {sites.length > 0 && ` The board has ${sites.length} now.`}
+          </span>
+          <button
+            onClick={() => void runImport("replace")}
+            className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {sites.length > 0 ? `Replace the board` : "Import"}
+          </button>
+          {sites.length > 0 && (
+            <button
+              onClick={() => void runImport("add")}
+              className="px-3 py-1 rounded border border-blue-400 bg-white hover:bg-blue-100"
+            >
+              Add to the board
+            </button>
+          )}
+          <button onClick={() => setPendingImport(null)} className="text-blue-700 hover:underline">Cancel</button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="p-3 rounded border border-green-300 bg-green-50 text-sm text-green-800">{notice}</div>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 p-3 rounded border border-red-300 bg-red-50 text-sm text-red-800">
@@ -250,10 +347,9 @@ export default function MigrationTracker() {
             today={today}
             highlightId={highlightId}
             onPatch={onPatch}
-            onFailValidation={onFailValidation}
             onMissConfig={onMissConfig}
+            onMissValidation={onMissValidation}
             onMissMigration={onMissMigration}
-            onUpdateEvent={onUpdateEvent}
             onDeleteEvent={onDeleteEvent}
             onDelete={onDelete}
           />

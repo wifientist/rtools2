@@ -1,13 +1,15 @@
 import { Fragment, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, Trash2, X, Check } from "lucide-react";
 import {
-  STEPS, STEP_STYLES, TONE_CLASSES, defaultNewDate, fmtShort, isOverdue, isReconfigOverdue,
-  nextWorkday, parseISO, previewMissConfig, siteStatus, toISO, type EditableField, type TrackerSite,
+  STEPS, STEP_STYLES, TONE_CLASSES, defaultNewDate, fmtShort, isOverdue,
+  nextWorkday, parseISO, previewMissConfig, previewMissValidation, siteStatus, toISO, type EditableField, type TrackerSite,
 } from "./trackerModel";
 import DateInput from "./DateInput";
 
-export interface FailBody {
-  failed_on: string | null;
+export interface MissValidationBody {
+  missed_on: string;
+  new_validation: string;
+  push_later: boolean;
   note: string | null;
 }
 
@@ -24,21 +26,15 @@ export interface MissMigrationBody {
   note: string | null;
 }
 
-export interface EventPatch {
-  reconfig_on?: string | null;
-  reconfig_done?: boolean;
-}
-
 interface Props {
   sites: TrackerSite[];
   canEdit: boolean;
   today: string;
   highlightId: number | null;
   onPatch: (id: number, patch: Partial<TrackerSite>) => Promise<void>;
-  onFailValidation: (id: number, body: FailBody) => Promise<void>;
   onMissConfig: (id: number, body: MissBody) => Promise<void>;
+  onMissValidation: (id: number, body: MissValidationBody) => Promise<void>;
   onMissMigration: (id: number, body: MissMigrationBody) => Promise<void>;
-  onUpdateEvent: (id: number, index: number, patch: EventPatch) => Promise<void>;
   onDeleteEvent: (id: number, index: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
@@ -48,7 +44,7 @@ interface Props {
  * (or on Enter); Escape puts it back. Viewers get the same table as text.
  */
 export default function TrackerTable({
-  sites, canEdit, today, highlightId, onPatch, onFailValidation, onMissConfig, onMissMigration, onUpdateEvent, onDeleteEvent, onDelete,
+  sites, canEdit, today, highlightId, onPatch, onMissConfig, onMissValidation, onMissMigration, onDeleteEvent, onDelete,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const categories = [...new Set(sites.map((s) => s.category).filter((c): c is string => !!c))].sort();
@@ -94,7 +90,7 @@ export default function TrackerTable({
           {sites.map((site) => {
             const status = siteStatus(site, today);
             const open = expanded.has(site.id);
-            const fails = site.events.filter((e) => e.kind === "validation_failed").length;
+            const vMisses = site.events.filter((e) => e.kind === "validation_missed").length;
             const misses = site.events.filter((e) => e.kind === "config_missed").length;
             const hwMisses = site.events.filter((e) => e.kind === "migration_missed").length;
             return (
@@ -169,13 +165,13 @@ export default function TrackerTable({
                               {hwMisses} missed
                             </button>
                           )}
-                          {s.key === "validation" && fails > 0 && (
+                          {s.key === "validation" && vMisses > 0 && (
                             <button
                               onClick={() => toggle(site.id)}
-                              className="text-[11px] px-1.5 rounded-full bg-red-100 text-red-700"
-                              title="Failed validations — open history"
+                              className="text-[11px] px-1.5 rounded-full bg-red-100 text-red-700 whitespace-nowrap"
+                              title="Missed validations — open history"
                             >
-                              {fails}✕
+                              {vMisses} missed
                             </button>
                           )}
                           {canEdit && nextStep && (
@@ -215,10 +211,9 @@ export default function TrackerTable({
                         site={site}
                         canEdit={canEdit}
                         today={today}
-                        onFailValidation={onFailValidation}
                         onMissConfig={onMissConfig}
+                        onMissValidation={onMissValidation}
                         onMissMigration={onMissMigration}
-                        onUpdateEvent={onUpdateEvent}
                         onDeleteEvent={onDeleteEvent}
                       />
                     </td>
@@ -298,21 +293,20 @@ function Cell({
 }
 
 function History({
-  site, canEdit, today, onFailValidation, onMissConfig, onMissMigration, onUpdateEvent, onDeleteEvent,
+  site, canEdit, today, onMissConfig, onMissValidation, onMissMigration, onDeleteEvent,
 }: {
   site: TrackerSite;
   canEdit: boolean;
   today: string;
-  onFailValidation: Props["onFailValidation"];
   onMissConfig: Props["onMissConfig"];
+  onMissValidation: Props["onMissValidation"];
   onMissMigration: Props["onMissMigration"];
-  onUpdateEvent: Props["onUpdateEvent"];
   onDeleteEvent: Props["onDeleteEvent"];
 }) {
   return (
     <div className="space-y-3 text-sm max-w-4xl">
       <div>
-        <div className="text-xs font-medium text-gray-500 mb-1">Missed days and failed validations</div>
+        <div className="text-xs font-medium text-gray-500 mb-1">Missed days</div>
         {site.events.length === 0 ? (
           <div className="text-gray-400">None recorded.</div>
         ) : (
@@ -338,38 +332,15 @@ function History({
                     </span>
                   </>
                 ) : (
-                <>
-                <span className="font-medium">
-                  Validation #{site.events.slice(0, i + 1).filter((x) => x.kind === "validation_failed").length} failed {fmtShort(e.date)}
-                </span>
-                {e.note && <span className="text-gray-700">· {e.note}</span>}
-                {e.reconfig_on !== undefined ? (
-                  <span className="flex items-center gap-1.5 text-gray-600">
-                    → re-config + re-validate
-                    {canEdit ? (
-                      <DateInput
-                        value={e.reconfig_on ?? null}
-                        onChange={(v) => void onUpdateEvent(site.id, i, { reconfig_on: v })}
-                        className={isReconfigOverdue(e, today) ? "border-red-400" : "border-gray-300"}
-                      />
-                    ) : (
-                      <span className={isReconfigOverdue(e, today) ? "text-red-700 font-medium" : ""}>{fmtShort(e.reconfig_on ?? null)}</span>
+                  <>
+                    <span className="font-medium">Validation missed {fmtShort(e.date)}</span>
+                    {e.note && <span className="text-gray-700">· {e.note}</span>}
+                    {e.new_validation && (
+                      <span className="text-gray-600">
+                        → moved to {fmtShort(e.new_validation)}{e.pushed_later ? ", HW moved with it" : ""}
+                      </span>
                     )}
-                    <button
-                      disabled={!canEdit}
-                      onClick={() => void onUpdateEvent(site.id, i, { reconfig_done: !e.reconfig_done })}
-                      title={e.reconfig_done ? "Re-config done — click to undo" : "Mark re-config done"}
-                      className={`inline-flex items-center justify-center w-5 h-5 rounded border ${
-                        e.reconfig_done ? STEP_STYLES.sky.done : "border-gray-300 text-transparent hover:border-gray-500"
-                      } ${!canEdit && !e.reconfig_done ? "invisible" : ""} disabled:cursor-default`}
-                    >
-                      <Check size={12} strokeWidth={3} />
-                    </button>
-                  </span>
-                ) : (
-                  e.slip_days ? <span className="text-gray-500">— pushed validation + HW +{e.slip_days}d</span> : null
-                )}
-                </>
+                  </>
                 )}
                 {canEdit && (
                   <button
@@ -388,8 +359,8 @@ function History({
         )}
       </div>
 
-      {canEdit && <RecordForm key={site.events.length} site={site} today={today} onFailValidation={onFailValidation}
-        onMissConfig={onMissConfig} onMissMigration={onMissMigration} />}
+      {canEdit && <RecordForm key={site.events.length} site={site} today={today}
+        onMissConfig={onMissConfig} onMissValidation={onMissValidation} onMissMigration={onMissMigration} />}
 
       {site.updated_by && (
         <div className="text-xs text-gray-400">
@@ -402,17 +373,19 @@ function History({
 
 /** One box for every slip kind; opens on whichever step the site is waiting on. */
 function RecordForm({
-  site, today, onFailValidation, onMissConfig, onMissMigration,
+  site, today, onMissConfig, onMissValidation, onMissMigration,
 }: {
   site: TrackerSite;
   today: string;
-  onFailValidation: Props["onFailValidation"];
   onMissConfig: Props["onMissConfig"];
+  onMissValidation: Props["onMissValidation"];
   onMissMigration: Props["onMissMigration"];
 }) {
-  const [mode, setMode] = useState<"config" | "failed" | "migration">(
-    !site.config_pushed_done ? "config" : !site.validation_done ? "failed" : "migration");
-  const [failedOn, setFailedOn] = useState(site.validation ?? today);
+  const [mode, setMode] = useState<"config" | "validation" | "migration">(
+    !site.config_pushed_done ? "config" : !site.validation_done ? "validation" : "migration");
+  const [vMissedOn, setVMissedOn] = useState(site.validation ?? today);
+  const [newValidation, setNewValidation] = useState<string | null>(null); // null = follow the default
+  const [vPushLater, setVPushLater] = useState(true);
   const [missedOn, setMissedOn] = useState(site.config_pushed ?? today);
   const [newConfig, setNewConfig] = useState<string | null>(null); // null = follow the default
   const [pushLater, setPushLater] = useState(true);
@@ -422,9 +395,9 @@ function RecordForm({
   const [busy, setBusy] = useState(false);
 
   // Same rules the API applies, shown before they're committed.
-  const retryOn = failedOn ? toISO(nextWorkday(parseISO(failedOn))) : null;
-  const hwFloor = retryOn ? toISO(nextWorkday(parseISO(retryOn))) : null;
-  const hwAfterFail = site.hw_migrated && hwFloor && site.hw_migrated < hwFloor ? hwFloor : site.hw_migrated;
+  const effectiveNewValidation = newValidation ?? (vMissedOn ? defaultNewDate(vMissedOn) : "");
+  const vMissValid = !!vMissedOn && !!effectiveNewValidation && effectiveNewValidation > vMissedOn;
+  const hwAfterVMiss = vMissValid ? previewMissValidation(site, vMissedOn, effectiveNewValidation, vPushLater) : null;
   const effectiveNewConfig = newConfig ?? (missedOn ? defaultNewDate(missedOn) : "");
   const missValid = !!missedOn && !!effectiveNewConfig && effectiveNewConfig > missedOn;
   const afterMiss = missValid ? previewMissConfig(site, missedOn, effectiveNewConfig, pushLater) : null;
@@ -434,8 +407,11 @@ function RecordForm({
   const submit = async () => {
     setBusy(true);
     try {
-      if (mode === "failed") {
-        await onFailValidation(site.id, { failed_on: failedOn || null, note: note.trim() || null });
+      if (mode === "validation") {
+        await onMissValidation(site.id, {
+          missed_on: vMissedOn, new_validation: effectiveNewValidation, push_later: vPushLater, note: note.trim() || null,
+        });
+        setNewValidation(null);
       } else if (mode === "config") {
         await onMissConfig(site.id, {
           missed_on: missedOn, new_config: effectiveNewConfig, push_later: pushLater, note: note.trim() || null,
@@ -456,7 +432,7 @@ function RecordForm({
   const dateInput = "border-gray-300";
   const MODES = [
     { key: "config", label: "Missed config" },
-    { key: "failed", label: "Failed validation" },
+    { key: "validation", label: "Missed validation" },
     { key: "migration", label: "Missed migration" },
   ] as const;
 
@@ -477,11 +453,22 @@ function RecordForm({
         ))}
       </div>
 
-      {mode === "failed" ? (
-        <label className="text-xs text-gray-600">
-          Failed on
-          <div><DateInput value={failedOn || null} onChange={(v) => setFailedOn(v ?? "")} className={dateInput} /></div>
-        </label>
+      {mode === "validation" ? (
+        <>
+          <label className="text-xs text-gray-600">
+            Validation was due
+            <div><DateInput value={vMissedOn || null} onChange={(v) => setVMissedOn(v ?? "")} className={dateInput} /></div>
+          </label>
+          <label className="text-xs text-gray-600">
+            New validation date
+            <div><DateInput value={effectiveNewValidation || null} min={vMissedOn || undefined}
+              onChange={setNewValidation} className={dateInput} /></div>
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-700 pb-1 cursor-pointer">
+            <input type="checkbox" checked={vPushLater} onChange={(e) => setVPushLater(e.target.checked)} />
+            Also push HW
+          </label>
+        </>
       ) : mode === "config" ? (
         <>
           <label className="text-xs text-gray-600">
@@ -512,24 +499,30 @@ function RecordForm({
         </>
       )}
       <label className="text-xs text-gray-600 flex-1 min-w-[200px]">
-        {mode === "failed" ? "What failed" : "Why"}
+        Why
         <input value={note} onChange={(e) => setNote(e.target.value)}
-          placeholder={mode === "failed" ? "e.g. DPSK SSID not broadcasting in units 3xx"
+          placeholder={mode === "validation" ? "e.g. failed: DPSK SSID not broadcasting in units 3xx"
             : mode === "config" ? "e.g. change window cancelled" : "e.g. no tech on site"}
           className="block w-full border border-gray-300 rounded px-1.5 py-0.5 text-sm" />
       </label>
       <button
         onClick={submit}
-        disabled={busy || (mode === "failed" ? !failedOn : mode === "config" ? !missValid : !hwMissValid)}
+        disabled={busy || (mode === "validation" ? !vMissValid : mode === "config" ? !missValid : !hwMissValid)}
         className="px-3 py-1 rounded bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50"
       >
-        {mode === "failed" ? "Record failure" : "Record miss"}
+        Record miss
       </button>
 
       <div className="w-full text-xs text-gray-500">
-        {mode === "failed" ? (
-          retryOn && <>Re-config and re-validation {fmtShort(retryOn)}
-            {site.hw_migrated ? ` · ${moved("HW migrated", site.hw_migrated, hwAfterFail)}` : ""}</>
+        {mode === "validation" ? (
+          vMissValid ? (
+            [
+              `Validation ${fmtShort(vMissedOn)} → ${fmtShort(effectiveNewValidation)}`,
+              moved("HW migrated", site.hw_migrated, hwAfterVMiss),
+            ].filter(Boolean).join(" · ")
+          ) : (
+            <span className="text-red-600">The new validation date has to be after the one that was missed.</span>
+          )
         ) : mode === "config" ? (
           afterMiss ? (
             [

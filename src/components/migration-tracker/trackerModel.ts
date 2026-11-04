@@ -9,22 +9,19 @@
 /**
  * Something that moved a site's dates, on `date`.
  *
- * validation_failed — a retry loop: re-config on reconfig_on, and validation
- *   re-runs that same day. Entries from before retry loops existed have
- *   slip_days and no reconfig_on.
  * config_missed — config didn't happen on `date` and moved to
  *   new_config; pushed_later says whether validation + HW moved with it.
+ * validation_missed — validation failed or didn't happen on `date` and moved
+ *   to new_validation (the note says why); pushed_later says whether HW moved.
  * migration_missed — the HW swap didn't happen on `date` and moved to
  *   new_hw. Nothing comes after it, so nothing else moves.
  */
 export interface TrackerEvent {
   date: string;
-  kind: "validation_failed" | "config_missed" | "migration_missed";
+  kind: "config_missed" | "validation_missed" | "migration_missed";
   note: string | null;
   original_validation?: string | null;
-  reconfig_on?: string | null;
-  reconfig_done?: boolean;
-  slip_days?: number;
+  new_validation?: string | null;
   original_config?: string;
   new_config?: string;
   pushed_later?: boolean;
@@ -168,6 +165,17 @@ export function previewMissConfig(
   return { validation, hw_migrated: hw };
 }
 
+/** Where HW lands after a missed validation. Mirrors the API's miss-validation. */
+export function previewMissValidation(
+  site: TrackerSite, missedOn: string, newValidation: string, pushLater: boolean,
+): string | null {
+  let hw = site.hw_migrated;
+  if (pushLater && hw) hw = addWorkdaysISO(hw, workdaysBetween(site.validation ?? missedOn, newValidation));
+  const hwFloor = toISO(nextWorkday(parseISO(newValidation)));
+  if (hw && hw < hwFloor) hw = hwFloor;
+  return hw;
+}
+
 /** Monday of the week containing d. */
 export function startOfWeek(d: Date): Date {
   const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -184,15 +192,9 @@ export function stepDates(site: TrackerSite): string[] {
   return STEPS.map((s) => site[s.key]).filter((d): d is string => !!d);
 }
 
-/** Every date the chart draws for a site: steps, failures, re-configs and where validation used to be. */
+/** Every date the chart draws for a site: its steps and the days it missed. */
 export function markerDates(site: TrackerSite): string[] {
-  const dates = stepDates(site);
-  for (const e of site.events) {
-    dates.push(e.date);
-    if (e.reconfig_on) dates.push(e.reconfig_on);
-    if (e.original_validation) dates.push(e.original_validation);
-  }
-  return dates.sort();
+  return [...stepDates(site), ...site.events.map((e) => e.date)].sort();
 }
 
 export function isOverdue(site: TrackerSite, step: (typeof STEPS)[number], today: string): boolean {
@@ -200,24 +202,14 @@ export function isOverdue(site: TrackerSite, step: (typeof STEPS)[number], today
   return !!d && d < today && !site[step.doneKey];
 }
 
-export function isReconfigOverdue(e: TrackerEvent, today: string): boolean {
-  return !!e.reconfig_on && e.reconfig_on < today && !e.reconfig_done;
-}
-
-export function pendingReconfig(site: TrackerSite): TrackerEvent | undefined {
-  return site.events.find((e) => e.reconfig_on && !e.reconfig_done);
-}
-
 export type Status = { label: string; tone: "green" | "blue" | "amber" | "red" | "gray" | "sky"; rank: number };
 
 export function siteStatus(site: TrackerSite, today: string): Status {
   if (site.hw_migrated_done) return { label: "Migrated", tone: "green", rank: 5 };
-  if (STEPS.some((s) => isOverdue(site, s, today)) || site.events.some((e) => isReconfigOverdue(e, today))) {
+  if (STEPS.some((s) => isOverdue(site, s, today))) {
     return { label: "Overdue", tone: "red", rank: 0 };
   }
   if (site.validation_done) return { label: "Validated", tone: "blue", rank: 3 };
-  if (pendingReconfig(site)) return { label: "Re-config", tone: "amber", rank: 1 };
-  if (site.events.some((e) => e.kind === "validation_failed")) return { label: "Re-validating", tone: "amber", rank: 1.5 };
   if (site.config_pushed_done) return { label: "Config pushed", tone: "sky", rank: 2 };
   if (stepDates(site).length) return { label: "Scheduled", tone: "gray", rank: 4 };
   return { label: "Not scheduled", tone: "gray", rank: 6 };
@@ -251,7 +243,7 @@ export type StageKey = (typeof STAGES)[number]["key"];
 export function stageOf(site: TrackerSite): StageKey {
   if (site.hw_migrated_done) return "migrated";
   if (site.validation_done) return "migrating";
-  if (site.config_pushed_done || site.events.some((e) => e.kind === "validation_failed")) return "validation";
+  if (site.config_pushed_done || site.events.some((e) => e.kind === "validation_missed")) return "validation";
   if (stepDates(site).length) return "config";
   return "unscheduled";
 }
@@ -263,7 +255,7 @@ function stageDate(site: TrackerSite, stage: StageKey): string {
   switch (stage) {
     case "migrating":
     case "migrated": return site.hw_migrated ?? NO_DATE;
-    case "validation": return pendingReconfig(site)?.reconfig_on ?? site.validation ?? NO_DATE;
+    case "validation": return site.validation ?? NO_DATE;
     case "config": return site.config_pushed ?? site.validation ?? site.hw_migrated ?? NO_DATE;
     default: return NO_DATE;
   }

@@ -4,14 +4,16 @@ Migration Tracker — one shared board for the last few site migrations. Alpha-g
 Replaces the spreadsheet that gets copied and pasted back and forth: each site
 is a row with its three step dates (config pushed, validation, HW migrated).
 
-A failed validation starts a retry loop, recorded as an event on the site:
-re-config on the next workday, re-validation the same day, and HW migrated
-kept at least one workday after that. A site rarely loops more than once or
-twice, so the loops live in the site's `events` list, not a table of their own.
+A step that didn't happen on its day is recorded as an event in the site's
+`events` list, with a free-text reason:
 
-A missed config day is the other event kind: config moves to a new date and,
-by default, validation and HW move by the same number of workdays. A missed
-migration is the third: HW moves to a new date; nothing comes after it.
+- missed config: config moves to a new date and, by default, validation and HW
+  move by the same number of workdays.
+- missed validation (it failed, or simply didn't happen): validation moves to a
+  new date and, by default, HW moves by the same number of workdays.
+- missed migration: HW moves to a new date; nothing comes after it.
+
+Whatever is pushed or not, HW always stays at least a workday after validation.
 
 Who sees it: alpha users whose company domain is in TRACKER_DOMAINS, plus
 super users. Who edits it: super users only. Nothing here talks to SZ or R1.
@@ -20,12 +22,13 @@ super users. Who edits it: super users only. Nothing here talks to SZ or R1.
   POST   /tracker/sites                      add one site
   POST   /tracker/sites/bulk                 add many (pasted from a spreadsheet)
   PATCH  /tracker/sites/{id}                 edit any fields
-  POST   /tracker/sites/{id}/fail-validation record a failed validation, schedule the retry
   POST   /tracker/sites/{id}/miss-config     record a missed config day, reschedule
+  POST   /tracker/sites/{id}/miss-validation record a missed or failed validation, reschedule
   POST   /tracker/sites/{id}/miss-migration  record a missed HW migration, reschedule
-  PATCH  /tracker/sites/{id}/events/{index}  move a re-config date or tick it done
   DELETE /tracker/sites/{id}/events/{index}  remove a mis-entered event
   DELETE /tracker/sites/{id}
+  GET    /tracker/export                     the whole board as JSON (to carry dev -> prod)
+  POST   /tracker/import                     load an export: replace the board, or add to it
 """
 
 from datetime import date, datetime, timedelta
@@ -69,8 +72,10 @@ class BulkCreate(BaseModel):
     sites: List[SiteCreate]
 
 
-class FailValidation(BaseModel):
-    failed_on: Optional[date] = None  # defaults to the current validation date, else today
+class MissValidation(BaseModel):
+    missed_on: Optional[date] = None       # defaults to the current validation date, else today
+    new_validation: Optional[date] = None  # defaults to the next workday after the miss
+    push_later: bool = True                # move HW by the same number of workdays
     note: Optional[str] = None
 
 
@@ -87,10 +92,23 @@ class MissMigration(BaseModel):
     note: Optional[str] = None
 
 
-class EventUpdate(BaseModel):
-    reconfig_on: Optional[date] = None
-    reconfig_done: Optional[bool] = None
-    note: Optional[str] = None
+class ImportSite(SiteFields):
+    """One site from an export. `id` in the file is ignored; everything else is kept as-is."""
+    site_name: str = Field(min_length=1)
+    events: List[dict] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[str] = None
+
+
+class ImportBody(BaseModel):
+    format: Optional[str] = None
+    sites: List[ImportSite]
+    mode: str = Field(default="replace", pattern="^(replace|add)$")
+
+
+EXPORT_FORMAT = "rtools-tracker"
+EXPORT_VERSION = 1
 
 
 # ---------- Helpers ----------
@@ -136,6 +154,28 @@ def _get_site(site_id: int, db: Session) -> TrackerSite:
     return site
 
 
+def _normalize_event(e: dict) -> dict:
+    """Older boards logged a failed validation as a re-config retry loop
+    (kind "validation_failed", reconfig_on/reconfig_done). That's now just a
+    missed validation, with the retry date as the new validation date."""
+    if e.get("kind") == "validation_failed":
+        e = {
+            "date": e.get("date"),
+            "kind": "validation_missed",
+            "note": e.get("note"),
+            "original_validation": e.get("original_validation") or e.get("date"),
+            "new_validation": e.get("reconfig_on"),
+            "pushed_later": False,
+            "by": e.get("by"),
+            "at": e.get("at"),
+        }
+    return {k: v for k, v in e.items() if k not in ("reconfig_on", "reconfig_done", "slip_days")}
+
+
+def _events(site: TrackerSite) -> list:
+    return [_normalize_event(e) for e in site.events or [] if isinstance(e, dict)]
+
+
 def _serialize(site: TrackerSite) -> dict:
     def d(v):
         return v.isoformat() if v else None
@@ -154,17 +194,20 @@ def _serialize(site: TrackerSite) -> dict:
         "hw_migrated": d(site.hw_migrated),
         "hw_migrated_done": site.hw_migrated_done,
         "notes": site.notes,
-        "events": site.events or [],
+        "events": _events(site),
         "updated_at": d(site.updated_at),
         "updated_by": site.updated_by,
     }
 
 
+def _export_row(site: TrackerSite) -> dict:
+    row = _serialize(site)
+    row["created_at"] = site.created_at.isoformat() if site.created_at else None
+    return row
+
+
 def _apply(site: TrackerSite, fields: SiteFields) -> None:
     changes = fields.model_dump(exclude_unset=True)
-    # A passed validation means the re-config before it happened too.
-    if changes.get("validation_done") and any(not e.get("reconfig_done", True) for e in site.events or []):
-        site.events = [{**e, "reconfig_done": True} for e in site.events]
     for key, value in changes.items():
         if key == "site_name" and not (value or "").strip():
             raise HTTPException(status_code=400, detail="Site name cannot be empty")
@@ -239,44 +282,6 @@ def update_site(
     return _serialize(site)
 
 
-@router.post("/sites/{site_id}/fail-validation")
-def fail_validation(
-    site_id: int,
-    body: FailValidation,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Log a failed validation and schedule the retry: re-config and re-validate
-    on the next workday, HW migrated no sooner than the workday after that."""
-    _require_edit(current_user)
-    site = _get_site(site_id, db)
-    failed_on = body.failed_on or site.validation or date.today()
-    retry_on = next_workday(failed_on)
-    original_validation = site.validation
-
-    site.validation = retry_on
-    site.validation_done = False
-    if site.hw_migrated:
-        site.hw_migrated = max(site.hw_migrated, next_workday(retry_on))
-        site.hw_migrated_done = False
-
-    # Reassign rather than mutate: a plain JSON column doesn't track in-place edits.
-    site.events = [*(site.events or []), {
-        "date": failed_on.isoformat(),
-        "kind": "validation_failed",
-        "note": (body.note or "").strip() or None,
-        "original_validation": original_validation.isoformat() if original_validation else None,
-        "reconfig_on": retry_on.isoformat(),
-        "reconfig_done": False,
-        "by": current_user.email,
-        "at": datetime.utcnow().isoformat(timespec="seconds"),
-    }]
-    site.updated_by = current_user.email
-    db.commit()
-    db.refresh(site)
-    return _serialize(site)
-
-
 @router.post("/sites/{site_id}/miss-config")
 def miss_config(
     site_id: int,
@@ -313,12 +318,55 @@ def miss_config(
     site.hw_migrated_done = False
 
     # Reassign rather than mutate: a plain JSON column doesn't track in-place edits.
-    site.events = [*(site.events or []), {
+    site.events = [*_events(site), {
         "date": missed_on.isoformat(),
         "kind": "config_missed",
         "note": (body.note or "").strip() or None,
         "original_config": original_config.isoformat(),
         "new_config": new_config.isoformat(),
+        "pushed_later": body.push_later,
+        "by": current_user.email,
+        "at": datetime.utcnow().isoformat(timespec="seconds"),
+    }]
+    site.updated_by = current_user.email
+    db.commit()
+    db.refresh(site)
+    return _serialize(site)
+
+
+@router.post("/sites/{site_id}/miss-validation")
+def miss_validation(
+    site_id: int,
+    body: MissValidation,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Log a validation that didn't pass on its day (failed or just didn't happen;
+    the note says which) and move it to a new date. With push_later, HW keeps
+    its workday gap; without it, HW stays put unless validation would overtake it."""
+    _require_edit(current_user)
+    site = _get_site(site_id, db)
+    missed_on = body.missed_on or site.validation or date.today()
+    new_validation = body.new_validation or next_workday(missed_on)
+    if new_validation <= missed_on:
+        raise HTTPException(status_code=400, detail="The new validation date must be after the missed one")
+    original_validation = site.validation or missed_on
+
+    if body.push_later and site.hw_migrated:
+        site.hw_migrated = add_workdays(site.hw_migrated, workdays_between(original_validation, new_validation))
+    if site.hw_migrated and site.hw_migrated < next_workday(new_validation):
+        site.hw_migrated = next_workday(new_validation)
+
+    site.validation = new_validation
+    site.validation_done = False
+    site.hw_migrated_done = False
+
+    site.events = [*_events(site), {
+        "date": missed_on.isoformat(),
+        "kind": "validation_missed",
+        "note": (body.note or "").strip() or None,
+        "original_validation": original_validation.isoformat(),
+        "new_validation": new_validation.isoformat(),
         "pushed_later": body.push_later,
         "by": current_user.email,
         "at": datetime.utcnow().isoformat(timespec="seconds"),
@@ -349,7 +397,7 @@ def miss_migration(
     site.hw_migrated = new_hw
     site.hw_migrated_done = False
 
-    site.events = [*(site.events or []), {
+    site.events = [*_events(site), {
         "date": missed_on.isoformat(),
         "kind": "migration_missed",
         "note": (body.note or "").strip() or None,
@@ -358,36 +406,6 @@ def miss_migration(
         "by": current_user.email,
         "at": datetime.utcnow().isoformat(timespec="seconds"),
     }]
-    site.updated_by = current_user.email
-    db.commit()
-    db.refresh(site)
-    return _serialize(site)
-
-
-@router.patch("/sites/{site_id}/events/{index}")
-def update_event(
-    site_id: int,
-    index: int,
-    body: EventUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Edit one retry loop. Moving the re-config date doesn't move validation — do that by hand."""
-    _require_edit(current_user)
-    site = _get_site(site_id, db)
-    events = list(site.events or [])
-    if not 0 <= index < len(events):
-        raise HTTPException(status_code=404, detail="Event not found")
-    event = dict(events[index])
-    changes = body.model_dump(exclude_unset=True)
-    if "reconfig_on" in changes:
-        event["reconfig_on"] = changes["reconfig_on"].isoformat() if changes["reconfig_on"] else None
-    if "reconfig_done" in changes:
-        event["reconfig_done"] = bool(changes["reconfig_done"])
-    if "note" in changes:
-        event["note"] = (changes["note"] or "").strip() or None
-    events[index] = event
-    site.events = events
     site.updated_by = current_user.email
     db.commit()
     db.refresh(site)
@@ -404,7 +422,7 @@ def delete_event(
     """Remove one event. Dates it slipped are left alone — fix those by hand."""
     _require_edit(current_user)
     site = _get_site(site_id, db)
-    events = list(site.events or [])
+    events = _events(site)
     if not 0 <= index < len(events):
         raise HTTPException(status_code=404, detail="Event not found")
     del events[index]
@@ -426,3 +444,53 @@ def delete_site(
     db.delete(site)
     db.commit()
     return {"deleted": site_id}
+
+
+@router.get("/export")
+def export_board(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Every site with its dates, done flags, notes and event history, for /tracker/import."""
+    _require_view(current_user)
+    sites = db.query(TrackerSite).order_by(TrackerSite.id).all()
+    return {
+        "format": EXPORT_FORMAT,
+        "version": EXPORT_VERSION,
+        "exported_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "exported_by": current_user.email,
+        "sites": [_export_row(s) for s in sites],
+    }
+
+
+@router.post("/import")
+def import_board(
+    body: ImportBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Load an export. `replace` empties the board first; `add` appends. One transaction
+    either way, so a bad file leaves the board untouched. Who last edited each site and
+    when are kept from the file, so the history carries over."""
+    _require_edit(current_user)
+    if body.format and body.format != EXPORT_FORMAT:
+        raise HTTPException(status_code=400, detail=f"Not a tracker export (format {body.format!r})")
+
+    now = datetime.utcnow()
+    new_sites = []
+    for row in body.sites:
+        site = TrackerSite(
+            events=[_normalize_event(e) for e in row.events if isinstance(e, dict)],
+            created_at=row.created_at or now,
+            updated_at=row.updated_at or now,
+            updated_by=row.updated_by or current_user.email,
+        )
+        _apply(site, SiteFields(**row.model_dump(include=set(SiteFields.model_fields), exclude_unset=True)))
+        new_sites.append(site)
+
+    removed = 0
+    if body.mode == "replace":
+        removed = db.query(TrackerSite).delete()
+    db.add_all(new_sites)
+    db.commit()
+    return {"imported": len(new_sites), "removed": removed, "mode": body.mode}
