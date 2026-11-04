@@ -1,5 +1,5 @@
 """
-Migration Tracker — one shared board for the last few site migrations. Beta-gated.
+Migration Tracker — one shared board for the last few site migrations.
 
 Replaces the spreadsheet that gets copied and pasted back and forth: each site
 is a row with its three step dates (config pushed, validation, HW migrated).
@@ -15,8 +15,9 @@ A step that didn't happen on its day is recorded as an event in the site's
 
 Whatever is pushed or not, HW always stays at least a workday after validation.
 
-Who sees it: beta users whose company domain is in TRACKER_DOMAINS, plus
-super users. Who edits it: super users only. Nothing here talks to SZ or R1.
+Who sees it: see has_tracker_access in constants/access.py (super users,
+users granted it on the Users page, and beta users from a listed company
+domain). Who edits it: super users only. Nothing here talks to SZ or R1.
 
   GET    /tracker/sites                      the board
   POST   /tracker/sites                      add one site
@@ -114,7 +115,7 @@ EXPORT_VERSION = 1
 # ---------- Helpers ----------
 
 def _require_view(user: User) -> None:
-    if not user.beta_enabled or not has_tracker_access(user):
+    if not has_tracker_access(user):
         raise HTTPException(status_code=403, detail="Tracker access required")
 
 

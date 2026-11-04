@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, Enum, Boolean, true
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, Enum, Boolean, true, false
 from sqlalchemy.orm import relationship
 import datetime
 from database import Base
@@ -30,6 +30,9 @@ class User(Base):
     # Per-user access to the nuclear "Danger Zone" cleanup. Granted only by
     # super admins; independent of role and of beta/alpha.
     danger_enabled = Column(Boolean, default=False, nullable=False)
+    # Per-user grant to view the Migration Tracker, set by super admins. On top
+    # of the company-domain rule in constants/access.py; needs no beta.
+    tracker_enabled = Column(Boolean, default=False, server_default=false(), nullable=False)
 
     # Slack job notifications. The webhook URL is a credential: anyone holding
     # it can post to the channel, so it is encrypted and never returned.

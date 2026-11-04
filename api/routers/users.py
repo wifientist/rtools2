@@ -26,6 +26,7 @@ class UserUpdateSchema(BaseModel):
     beta_enabled: bool | None = None
     alpha_enabled: bool | None = None
     danger_enabled: bool | None = None
+    tracker_enabled: bool | None = None
     company_id: int | None = None
 
 ### 🚀 Create New User (Admin Only)
@@ -205,6 +206,16 @@ def update_user_endpoint(
             )
         changes["danger_enabled"] = {"from": user.danger_enabled, "to": user_update.danger_enabled}
         user.danger_enabled = user_update.danger_enabled
+
+    if user_update.tracker_enabled is not None and user_update.tracker_enabled != user.tracker_enabled:
+        # Only super admins can grant/revoke Tracker access
+        if current_user.role != RoleEnum.super:
+            raise HTTPException(
+                status_code=403,
+                detail="Only super admins can manage Tracker access"
+            )
+        changes["tracker_enabled"] = {"from": user.tracker_enabled, "to": user_update.tracker_enabled}
+        user.tracker_enabled = user_update.tracker_enabled
 
     if user_update.company_id is not None and user_update.company_id != user.company_id:
         # Only super admins can change company assignments

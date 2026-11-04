@@ -11,6 +11,7 @@ interface User {
   beta_enabled: boolean;
   alpha_enabled: boolean;
   danger_enabled: boolean;
+  tracker_enabled: boolean;
   company_id: number | null;
 }
 
@@ -44,6 +45,7 @@ export default function UserManager() {
     beta_enabled: false,
     alpha_enabled: false,
     danger_enabled: false,
+    tracker_enabled: false,
   });
 
   // Fetch all users
@@ -139,6 +141,7 @@ export default function UserManager() {
       beta_enabled: user.beta_enabled,
       alpha_enabled: user.alpha_enabled,
       danger_enabled: user.danger_enabled,
+      tracker_enabled: user.tracker_enabled,
     });
   };
 
@@ -374,6 +377,22 @@ export default function UserManager() {
                 </div>
               )}
 
+              {currentUserRole === "super" && (
+                <div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="edit-tracker"
+                      checked={editFormData.tracker_enabled}
+                      onChange={(e) => setEditFormData({ ...editFormData, tracker_enabled: e.target.checked })}
+                      className="rounded"
+                    />
+                    <label htmlFor="edit-tracker" className="ml-2 text-sm">Grant Tracker access (super only)</label>
+                  </div>
+                  <p className="text-xs text-gray-500 ml-6">View-only. Not needed for beta users at a Tracker company.</p>
+                </div>
+              )}
+
               <div className="flex gap-3 mt-6">
                 <button
                   type="submit"
@@ -421,6 +440,11 @@ export default function UserManager() {
                   Danger Zone
                 </th>
               )}
+              {currentUserRole === "super" && (
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Tracker
+                </th>
+              )}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
@@ -466,6 +490,15 @@ export default function UserManager() {
                       user.danger_enabled ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-800"
                     }`}>
                       {user.danger_enabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </td>
+                )}
+                {currentUserRole === "super" && (
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.tracker_enabled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                    }`}>
+                      {user.tracker_enabled ? "Granted" : "—"}
                     </span>
                   </td>
                 )}
