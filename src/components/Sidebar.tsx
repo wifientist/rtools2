@@ -57,7 +57,7 @@ const Sidebar = () => {
       items: [
         { to: "/fileshare", icon: <FolderOpen size={20} />, label: "Fileshare", requiresAuth: true, rolesAllowed: ["user","admin","super"] },
         { to: "/migration-dashboard", icon: <BarChart3 size={20} />, label: "Migration", requiresAuth: true, rolesAllowed: ["user","admin"] },
-        { to: "/tracker", icon: <CalendarRange size={20} />, label: "Tracker", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true, requiresFeature: "migration_tracker" },
+        { to: "/tracker", icon: <CalendarRange size={20} />, label: "Tracker", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true, requiresFeature: "migration_tracker" },
         { to: "/r1-details", icon: <CloudCog size={20} />, label: "R1 Details", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/maps", icon: <Map size={20} />, label: "Maps", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/pisr", icon: <ClipboardCheck size={20} />, label: "PISR", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
