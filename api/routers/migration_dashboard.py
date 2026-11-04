@@ -37,6 +37,8 @@ class SettingsResponse(BaseModel):
     target_switches: int
     ignored_tenant_ids: List[str]
     sz_controller_ids: List[int] = []
+    sz_min_zone_aps: int = 5
+    sz_min_group_switches: int = 1
 
     class Config:
         from_attributes = True
@@ -47,6 +49,8 @@ class SettingsUpdate(BaseModel):
     target_switches: Optional[int] = None
     ignored_tenant_ids: Optional[List[str]] = None
     sz_controller_ids: Optional[List[int]] = None
+    sz_min_zone_aps: Optional[int] = None
+    sz_min_group_switches: Optional[int] = None
 
 
 class SnapshotBackfillEntry(BaseModel):
@@ -235,14 +239,24 @@ def _upsert_venue_history(
 SZ_COUNT_TIMEOUT_S = 120
 
 
-def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
+def _start_sz_connected_count(
+    sz_controller_ids: list[int],
+    db: Session,
+    min_zone_aps: int = 1,
+    min_group_switches: int = 1,
+):
     """
     Start counting connected APs (Online + Flagged) and online switches on the
     selected SZ controllers.
 
     These are the devices still left to migrate: new installs go straight to R1,
     so they never show up here. APs and switches carry separate errors so a
-    switch-module failure doesn't throw away a good AP count. Returns a task to await, or None when no SZ
+    switch-module failure doesn't throw away a good AP count.
+
+    A zone counts toward "Zones" only with at least min_zone_aps connected APs,
+    and a switch group toward "SG" only with at least min_group_switches online
+    switches; smaller ones are stragglers and not counted. Device totals are
+    never thresholded. Returns a task to await, or None when no SZ
     controllers are selected. All DB reads happen here, before the task starts,
     so the task only does network I/O while the R1 fan-out shares the session.
     """
@@ -270,8 +284,8 @@ def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
             # Sites still holding an online device. Zones and switch groups
             # have unrelated IDs, so they are matched by name (case and
             # spacing ignored); a switch-only group counts as its own site.
-            "zones_with_aps": None,
-            "switch_groups_online": None,
+            "zones_with_aps": None,       # zones at/above min_zone_aps
+            "switch_groups_online": None, # groups at/above min_group_switches
             "sites": None,
         }
         client = None
@@ -291,8 +305,8 @@ def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
         def describe(e: Exception) -> str:
             return str(getattr(e, "detail", e)) or type(e).__name__
 
-        zone_names: set[str] = set()
-        group_names: set[str] = set()
+        zone_counts: dict[str, int] = {}
+        group_counts: dict[str, int] = {}
 
         def norm(name: str) -> str:
             return " ".join(name.split()).lower()
@@ -308,16 +322,20 @@ def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
                     row["connected"] = counts["connected"]
                     row["zones_read"] = counts["zones_read"]
                     row["zones_total"] = counts["zones_total"]
-                    zone_names.update(norm(n) for n in counts.get("connected_zone_names", []))
-                    row["zones_with_aps"] = len(zone_names)
+                    for n, k in counts.get("connected_by_zone_name", {}).items():
+                        zone_counts[norm(n)] = zone_counts.get(norm(n), 0) + k
+                    row["zones_with_aps"] = sum(1 for k in zone_counts.values() if k >= min_zone_aps)
                 except Exception as e:
                     row["error"] = describe(e)
                 try:
                     sw = await client.switches.get_switch_status_counts()
                     row["switches_online"] = sw["online"]
                     row["switches_total"] = sw["total"]
-                    group_names.update(norm(n) for n in sw.get("online_site_names", []))
-                    row["switch_groups_online"] = len(group_names)
+                    for n, k in sw.get("online_by_site_name", {}).items():
+                        group_counts[norm(n)] = group_counts.get(norm(n), 0) + k
+                    row["switch_groups_online"] = sum(
+                        1 for k in group_counts.values() if k >= min_group_switches
+                    )
                 except Exception as e:
                     row["switch_error"] = describe(e)
 
@@ -333,9 +351,12 @@ def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
             row["error"] = row["error"] or describe(e)
             row["switch_error"] = row["switch_error"] or describe(e)
         if not row["error"] and not row["switch_error"]:
-            # Every zone with an AP is a site; a switch group adds one only if
-            # it doesn't match one of those zones. The " SG" suffix is ignored
-            # for that match alone, so two real zones are never merged.
+            # Every zone over the minimum is a site; a switch group over its
+            # minimum adds one only if it doesn't match one of those zones. The
+            # " SG" suffix is ignored for that match alone, so two real zones
+            # are never merged.
+            zone_names = {z for z, k in zone_counts.items() if k >= min_zone_aps}
+            group_names = {g for g, k in group_counts.items() if k >= min_group_switches}
             zone_keys = zone_names | {strip_sg(z) for z in zone_names}
             switch_only = {
                 g for g in group_names
@@ -358,6 +379,8 @@ def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
             "online_switches": sum(r["switches_online"] or 0 for r in rows),
             "switches_complete": all(r["switch_error"] is None for r in rows),
             "controllers": sorted(rows, key=lambda r: r["name"].lower()),
+            "min_zone_aps": min_zone_aps,
+            "min_group_switches": min_group_switches,
         }
 
     return asyncio.ensure_future(count_all())
@@ -390,6 +413,8 @@ def _compute_ap_progress(total_aps: int, settings_data: dict, sz: dict | None) -
         "percentage": (total_aps / fleet_total * 100) if fleet_total > 0 else 0,
         "sz_complete": sz["complete"],
         "sz_controllers": sz["controllers"],
+        "min_zone_aps": sz["min_zone_aps"],
+        "min_group_switches": sz["min_group_switches"],
     }
 
 
@@ -536,6 +561,8 @@ def get_settings(
             target_switches=settings.target_switches,
             ignored_tenant_ids=settings.ignored_tenant_ids,
             sz_controller_ids=settings.sz_controller_ids or [],
+            sz_min_zone_aps=settings.sz_min_zone_aps,
+            sz_min_group_switches=settings.sz_min_group_switches,
         )
     return SettingsResponse(target_aps=180000, target_switches=10000, ignored_tenant_ids=[], sz_controller_ids=[])
 
@@ -572,6 +599,10 @@ def update_settings(
                     detail=f"'{sz_ctrl.name}' is not a SmartZone controller",
                 )
         settings.sz_controller_ids = sz_ids
+    if body.sz_min_zone_aps is not None:
+        settings.sz_min_zone_aps = max(1, body.sz_min_zone_aps)
+    if body.sz_min_group_switches is not None:
+        settings.sz_min_group_switches = max(1, body.sz_min_group_switches)
 
     db.commit()
     db.refresh(settings)
@@ -581,6 +612,8 @@ def update_settings(
         target_switches=settings.target_switches,
         ignored_tenant_ids=settings.ignored_tenant_ids,
         sz_controller_ids=settings.sz_controller_ids or [],
+        sz_min_zone_aps=settings.sz_min_zone_aps,
+        sz_min_group_switches=settings.sz_min_group_switches,
     )
 
 
@@ -865,10 +898,17 @@ async def fetch_controller_progress(
         "target_switches": settings.target_switches if settings else 10000,
         "ignored_tenant_ids": list(ignored_ids),
         "sz_controller_ids": list(settings.sz_controller_ids or []) if settings else [],
+        "sz_min_zone_aps": settings.sz_min_zone_aps if settings else 5,
+        "sz_min_group_switches": settings.sz_min_group_switches if settings else 1,
     }
 
     # SZ counts run alongside the R1 fan-out below.
-    sz_task = _start_sz_connected_count(settings_data["sz_controller_ids"], db)
+    sz_task = _start_sz_connected_count(
+        settings_data["sz_controller_ids"],
+        db,
+        min_zone_aps=settings_data["sz_min_zone_aps"],
+        min_group_switches=settings_data["sz_min_group_switches"],
+    )
 
     if not ec_list:
         empty_data = {

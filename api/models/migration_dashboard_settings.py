@@ -20,6 +20,10 @@ class MigrationDashboardSettings(Base):
     # SmartZone controllers whose connected APs count as "left to migrate".
     # When set, AP progress is R1 / (R1 + SZ connected) and target_aps is unused.
     sz_controller_ids = Column(JSON, default=list, nullable=False, server_default="[]")
+    # Minimum still-online devices for a zone / switch group to count as a site
+    # still to migrate in "Zones / SG"; fewer is treated as stragglers.
+    sz_min_zone_aps = Column(Integer, default=5, nullable=False, server_default="5")
+    sz_min_group_switches = Column(Integer, default=1, nullable=False, server_default="1")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False

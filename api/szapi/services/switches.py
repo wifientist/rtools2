@@ -286,9 +286,9 @@ class SwitchService:
 
         Returns:
             Dict with online, read, total, groups (those holding a switch),
-            groups_with_online, and online_site_names: the top-level switch
-            group names holding an online switch (a child group such as "IDFs"
-            is reported as its parent, which is the one named like the zone)
+            groups_with_online, and online_by_site_name: {top-level switch group
+            name: online switches}. A child group such as "IDFs" is counted
+            under its parent, which is the one named like the zone.
         """
         endpoint = self._switchm_endpoint("/switch")
         statuses: Dict[str, Any] = {}
@@ -306,7 +306,7 @@ class SwitchService:
                 if "(404)" in str(e):
                     return {
                     "online": 0, "read": 0, "total": 0, "groups": 0,
-                    "groups_with_online": 0, "online_site_names": [],
+                    "groups_with_online": 0, "online_by_site_name": {},
                 }
                 raise
 
@@ -335,10 +335,15 @@ class SwitchService:
                 name, parent = group_info[parent]
             return name
 
-        online_groups = {groups[i] for i, s in statuses.items() if s == "ONLINE" and groups[i]}
+        online_by_site: Dict[str, int] = {}
+        for switch_id, status in statuses.items():
+            if status == "ONLINE" and groups.get(switch_id):
+                name = top_level_name(groups[switch_id])
+                if name:
+                    online_by_site[name] = online_by_site.get(name, 0) + 1
 
         return {
-            "online_site_names": sorted({n for n in (top_level_name(g) for g in online_groups) if n}),
+            "online_by_site_name": online_by_site,
             "online": sum(1 for s in statuses.values() if s == "ONLINE"),
             "read": len(statuses),
             "total": total,
