@@ -197,7 +197,11 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
         </svg>
+        {% if sz_mode %}
+        {{ "{:,}".format(sz_connected_aps) }} APs left on SmartZone
+        {% else %}
         Target: {{ "{:,}".format(target_aps) }} APs
+        {% endif %}
       </div>
       <div class="progress-message">{{ message }}</div>
     </div>
@@ -205,13 +209,25 @@
       <div class="progress-bar {% if percentage >= 100 %}complete{% endif %}"
            style="width: {{ [percentage, 100] | min }}%"></div>
       <div class="progress-label">
+        {% if sz_mode %}
+        {{ "{:,}".format(total_aps) }} in R1 / {{ "{:,}".format(fleet_total) }} total APs
+        {% else %}
         {{ "{:,}".format(total_aps) }} / {{ "{:,}".format(target_aps) }} APs
+        {% endif %}
         ({{ "%.1f" | format(percentage) }}%)
       </div>
       <div class="milestone" style="left: 25%"></div>
       <div class="milestone" style="left: 50%"></div>
       <div class="milestone" style="left: 75%"></div>
     </div>
+    {% if sz_mode %}
+    <div style="font-size: 11px; color: #6b7280; margin-top: 6px;">
+      Total = APs in R1 + APs still connected (online or flagged) on {{ sz_controller_count }} SmartZone controller{{ "s" if sz_controller_count != 1 }}.
+      {% if sz_failed %}
+      <span style="color: #dc2626;">No answer from {{ sz_failed | join(", ") }}, so the APs left are undercounted.</span>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
   <!-- Switch Progress Section -->
@@ -221,7 +237,11 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
         </svg>
+        {% if sz_mode %}
+        {{ "{:,}".format(sz_online_switches) }} switches left on SmartZone
+        {% else %}
         Target: {{ "{:,}".format(target_switches) }} switches
+        {% endif %}
       </div>
       <div class="progress-message">{{ switch_message }}</div>
     </div>
@@ -229,13 +249,25 @@
       <div class="progress-bar {% if switch_percentage >= 100 %}complete{% endif %}"
            style="width: {{ [switch_percentage, 100] | min }}%"></div>
       <div class="progress-label">
+        {% if sz_mode %}
+        {{ "{:,}".format(total_switches) }} in R1 / {{ "{:,}".format(switch_fleet_total) }} total switches
+        {% else %}
         {{ "{:,}".format(total_switches) }} / {{ "{:,}".format(target_switches) }} switches
+        {% endif %}
         ({{ "%.1f" | format(switch_percentage) }}%)
       </div>
       <div class="milestone" style="left: 25%"></div>
       <div class="milestone" style="left: 50%"></div>
       <div class="milestone" style="left: 75%"></div>
     </div>
+    {% if sz_mode %}
+    <div style="font-size: 11px; color: #6b7280; margin-top: 6px;">
+      Total = switches in R1 + switches still online on the same SmartZone controllers.
+      {% if sz_switch_failed %}
+      <span style="color: #dc2626;">No switch count from {{ sz_switch_failed | join(", ") }}, so the switches left are undercounted.</span>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 
   <!-- Metrics — Access Points -->
@@ -348,6 +380,48 @@
       {% endfor %}
     </div>
     {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Left on SmartZone, per controller (fewest first) -->
+  {% if sz_mode and sz_left_rows %}
+  <div class="section">
+    <div class="section-header">
+      <h2>Left on SmartZone</h2>
+      <div class="count">Connected APs (online or flagged) and online switches, fewest first. Zones / SG = zones with a connected AP / switch groups with an online switch.</div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Controller</th>
+          <th class="text-right">APs</th>
+          <th class="text-right">Switches</th>
+          <th class="text-right">Total</th>
+          <th class="text-right">Zones / SG</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in sz_left_rows %}
+        <tr>
+          <td class="name">{{ r.name }}</td>
+          <td class="text-right font-mono">
+            {% if r.aps is none %}<span class="text-red">no answer</span>{% else %}{{ "{:,}".format(r.aps) }}{% endif %}
+          </td>
+          <td class="text-right font-mono">
+            {% if r.switches is none %}<span class="text-red">no answer</span>{% else %}{{ "{:,}".format(r.switches) }}{% endif %}
+          </td>
+          <td class="text-right font-mono" style="font-weight: 600;">
+            {% if r.unknown %}?{% else %}{{ "{:,}".format(r.left) }}{% endif %}
+          </td>
+          <td class="text-right font-mono">
+            {% if r.zones_with_aps is none %}?{% else %}{{ "{:,}".format(r.zones_with_aps) }}{% endif %}
+            <span class="text-muted">/</span>
+            {% if r.switch_groups_online is none %}?{% else %}{{ "{:,}".format(r.switch_groups_online) }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% endif %}
 

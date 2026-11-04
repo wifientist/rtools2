@@ -48,12 +48,53 @@ interface DashboardData {
   switch_status_summary: StatusSummary;
   switch_status_counts: Record<string, number>;
   tenants: ECTenantStats[];
+  ap_progress?: ApProgress;
+  switch_progress?: SwitchProgress;
+}
+
+interface SzControllerCount {
+  id: number;
+  name: string;
+  connected: number | null;
+  zones_read: number;
+  zones_total: number;
+  error: string | null; // AP count (or login) failure
+  switches_online: number | null;
+  switches_total: number;
+  switch_error: string | null;
+  zones_with_aps: number | null;
+  switch_groups_online: number | null;
+  sites: number | null; // zones ∪ switch groups (matched by name) holding an online device
+}
+
+// Same rule as APs: R1 / (R1 + still online on the same SZ controllers).
+interface SwitchProgress {
+  mode: "sz" | "target";
+  r1_switches: number;
+  percentage: number;
+  target_switches?: number;
+  sz_online_switches?: number;
+  fleet_total?: number;
+  sz_complete?: boolean;
+}
+
+// "sz": R1 / (R1 + still connected on SZ). "target": legacy R1 / fixed target.
+interface ApProgress {
+  mode: "sz" | "target";
+  r1_aps: number;
+  percentage: number;
+  target_aps?: number;
+  sz_connected_aps?: number;
+  fleet_total?: number;
+  sz_complete?: boolean;
+  sz_controllers?: SzControllerCount[];
 }
 
 interface DashboardSettings {
   target_aps: number;
   target_switches: number;
   ignored_tenant_ids: string[];
+  sz_controller_ids?: number[];
 }
 
 interface LicenseDeviceBreakdown {
@@ -180,6 +221,8 @@ interface SnapshotPoint {
   total_venues: number;
   total_clients: number;
   total_ecs: number;
+  sz_connected_aps?: number | null;
+  sz_online_switches?: number | null;
 }
 
 interface BackfillRow {
@@ -222,6 +265,8 @@ function Sparkline({
 
 
 interface PeriodDelta {
+  szLeft: number | null;
+  szSwitchesLeft: number | null;
   aps: number;
   operational: number;
   switches: number;
@@ -244,6 +289,15 @@ function getPeriodDelta(snapshots: SnapshotPoint[], days: number): PeriodDelta |
   const baselineAge = (Date.now() - new Date(baseline.captured_at).getTime()) / 86400000;
   if (baselineAge < days * 0.5) return null;
   return {
+    // Null until both ends were measured on SZ (older snapshots predate it).
+    szLeft:
+      latest.sz_connected_aps != null && baseline.sz_connected_aps != null
+        ? latest.sz_connected_aps - baseline.sz_connected_aps
+        : null,
+    szSwitchesLeft:
+      latest.sz_online_switches != null && baseline.sz_online_switches != null
+        ? latest.sz_online_switches - baseline.sz_online_switches
+        : null,
     aps: latest.total_aps - baseline.total_aps,
     operational: latest.operational_aps - baseline.operational_aps,
     switches: (latest.total_switches ?? 0) - (baseline.total_switches ?? 0),
@@ -252,8 +306,9 @@ function getPeriodDelta(snapshots: SnapshotPoint[], days: number): PeriodDelta |
   };
 }
 
-function DeltaRow({ label, value, sparkData, sparkColor = "#6366f1" }: { label: string; value: number; sparkData?: number[]; sparkColor?: string }) {
-  const color = value > 0 ? "text-green-600" : value < 0 ? "text-red-500" : "text-gray-400";
+function DeltaRow({ label, value, sparkData, sparkColor = "#6366f1", lowerIsBetter = false }: { label: string; value: number; sparkData?: number[]; sparkColor?: string; lowerIsBetter?: boolean }) {
+  const good = lowerIsBetter ? value < 0 : value > 0;
+  const color = value === 0 ? "text-gray-400" : good ? "text-green-600" : "text-red-500";
   const prefix = value > 0 ? "+" : "";
   const display = value === 0 ? "\u2014" : `${prefix}${value.toLocaleString()}`;
   return (
@@ -281,6 +336,24 @@ function PeriodCard({ label, delta, snapshots }: { label: string; delta: PeriodD
       <div className="text-sm font-semibold text-gray-700 mb-3">{label}</div>
       {delta ? (
         <div className="space-y-1.5">
+          {delta.szLeft !== null && (
+            <DeltaRow
+              label="Left on SZ"
+              value={delta.szLeft}
+              lowerIsBetter
+              sparkData={snapshots?.filter(s => s.sz_connected_aps != null).map(s => s.sz_connected_aps as number)}
+              sparkColor="#d97706"
+            />
+          )}
+          {delta.szSwitchesLeft !== null && (
+            <DeltaRow
+              label="Switches left on SZ"
+              value={delta.szSwitchesLeft}
+              lowerIsBetter
+              sparkData={snapshots?.filter(s => s.sz_online_switches != null).map(s => s.sz_online_switches as number)}
+              sparkColor="#d97706"
+            />
+          )}
           <DeltaRow label="APs" value={delta.aps} sparkData={snapshots?.map(s => s.total_aps)} />
           <DeltaRow label="Switches" value={delta.switches} sparkData={snapshots?.map(s => s.total_switches ?? 0)} sparkColor="#0d9488" />
           <DeltaRow label="Venues" value={delta.venues} sparkData={snapshots?.map(s => s.total_venues)} />
@@ -334,6 +407,9 @@ function getSwitchMessage(pct: number): string {
 const MigrationDashboard = () => {
   const { controllers, userRole } = useAuth();
 
+  const szControllers = controllers
+    .filter((c) => c.controller_type === "SmartZone")
+    .sort((a, b) => a.name.localeCompare(b.name));
   const mspControllers = controllers.filter(
     (c) => c.controller_subtype === "MSP"
   );
@@ -360,6 +436,7 @@ const MigrationDashboard = () => {
   const [settingsTarget, setSettingsTarget] = useState("");
   const [settingsSwitchTarget, setSettingsSwitchTarget] = useState("");
   const [settingsIgnored, setSettingsIgnored] = useState<Set<string>>(new Set());
+  const [settingsSzIds, setSettingsSzIds] = useState<Set<number>>(new Set());
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Report schedule
@@ -465,8 +542,11 @@ const MigrationDashboard = () => {
   // Animate progress bar after data loads
   useEffect(() => {
     if (!data) return;
-    const pct = Math.min((data.total_aps / target) * 100, 100);
-    const swPct = Math.min(((data.total_switches ?? 0) / switchTarget) * 100, 100);
+    const pct = Math.min(data.ap_progress?.percentage ?? (data.total_aps / target) * 100, 100);
+    const swPct = Math.min(
+      data.switch_progress?.percentage ?? ((data.total_switches ?? 0) / switchTarget) * 100,
+      100
+    );
     const timer = setTimeout(() => {
       setAnimatedPct(pct);
       setAnimatedSwitchPct(swPct);
@@ -514,9 +594,37 @@ const MigrationDashboard = () => {
     return () => abortController.abort();
   }, [controllerID, moversFilter]);
 
-  const percentage = data ? (data.total_aps / target) * 100 : 0;
+  const apProgress = data?.ap_progress;
+  const szMode = apProgress?.mode === "sz";
+  const percentage = data ? apProgress?.percentage ?? (data.total_aps / target) * 100 : 0;
+  const szFailed = (apProgress?.sz_controllers ?? []).filter((c) => c.error);
   const remaining = data ? Math.max(target - data.total_aps, 0) : target;
-  const switchPercentage = data ? ((data.total_switches ?? 0) / switchTarget) * 100 : 0;
+  const switchProgress = data?.switch_progress;
+  const switchSzMode = switchProgress?.mode === "sz";
+  const switchPercentage = data
+    ? switchProgress?.percentage ?? ((data.total_switches ?? 0) / switchTarget) * 100
+    : 0;
+  const szSwitchFailed = (apProgress?.sz_controllers ?? []).filter((c) => c.switch_error);
+
+  // SZ controllers by what's still on them, fewest first: the top rows are the
+  // quickest to empty and shut down. A controller with a failed read has an
+  // unknown count, so it sorts last rather than looking nearly empty.
+  const szLeftRows = useMemo(() => {
+    const rows = (apProgress?.sz_controllers ?? []).map((c) => {
+      const unknown = !!(c.error || c.switch_error);
+      return {
+        ...c,
+        unknown,
+        left: (c.connected ?? 0) + (c.switches_online ?? 0),
+      };
+    });
+    return rows.sort(
+      (a, b) =>
+        Number(a.unknown) - Number(b.unknown) ||
+        a.left - b.left ||
+        a.name.localeCompare(b.name)
+    );
+  }, [apProgress]);
 
   // Sorted tenants
   const sortedTenants = useMemo(() => {
@@ -642,6 +750,7 @@ const MigrationDashboard = () => {
     setSettingsTarget(String(target));
     setSettingsSwitchTarget(String(switchTarget));
     setSettingsIgnored(new Set(settings?.ignored_tenant_ids ?? []));
+    setSettingsSzIds(new Set(settings?.sz_controller_ids ?? []));
     setTestReportStatus(null);
     setShowSettings(true);
     // Fetch report schedule
@@ -674,6 +783,7 @@ const MigrationDashboard = () => {
             target_aps: !isNaN(val) && val > 0 ? val : undefined,
             target_switches: !isNaN(swVal) && swVal > 0 ? swVal : undefined,
             ignored_tenant_ids: Array.from(settingsIgnored),
+            sz_controller_ids: Array.from(settingsSzIds),
           }),
         }
       );
@@ -927,12 +1037,62 @@ const MigrationDashboard = () => {
                 type="number"
                 value={settingsTarget}
                 onChange={(e) => setSettingsTarget(e.target.value)}
-                className="w-48 px-3 py-2 border rounded-lg text-sm"
+                disabled={settingsSzIds.size > 0}
+                className="w-48 px-3 py-2 border rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400"
                 min={1}
               />
               <p className="text-xs text-gray-400 mt-1">
-                Shared across all users viewing this controller's dashboard.
+                {settingsSzIds.size > 0
+                  ? "Not used while SmartZone controllers are selected below."
+                  : "Shared across all users viewing this controller's dashboard."}
               </p>
+            </div>
+
+            {/* SmartZone controllers counted as "left to migrate" */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                SmartZone Controllers
+                <span className="font-normal text-gray-400 ml-1">
+                  (APs and switches still to migrate)
+                </span>
+              </label>
+              <p className="text-xs text-gray-400 mb-2">
+                When any are selected, AP progress is R1 ÷ (R1 + APs still connected on these
+                controllers, online or flagged), and switch progress is R1 ÷ (R1 + switches still
+                online on them). New installs in R1 can't push either past 100%.
+                Each one is read whenever the dashboard loads, a report is sent, or the daily
+                snapshot runs.
+              </p>
+              {szControllers.length > 0 ? (
+                <div className="max-h-64 overflow-y-auto border rounded-lg divide-y">
+                  {szControllers.map((c) => (
+                    <label
+                      key={c.id}
+                      className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settingsSzIds.has(c.id)}
+                        onChange={() =>
+                          setSettingsSzIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(c.id)) next.delete(c.id);
+                            else next.add(c.id);
+                            return next;
+                          })
+                        }
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm flex-1 text-gray-700">{c.name}</span>
+                      <span className="text-xs text-gray-400 font-mono">{c.sz_host}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">
+                  No SmartZone controllers are set up for your account.
+                </p>
+              )}
             </div>
 
             {/* Target Switches */}
@@ -944,11 +1104,14 @@ const MigrationDashboard = () => {
                 type="number"
                 value={settingsSwitchTarget}
                 onChange={(e) => setSettingsSwitchTarget(e.target.value)}
-                className="w-48 px-3 py-2 border rounded-lg text-sm"
+                disabled={settingsSzIds.size > 0}
+                className="w-48 px-3 py-2 border rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400"
                 min={1}
               />
               <p className="text-xs text-gray-400 mt-1">
-                Shared across all users viewing this controller's dashboard.
+                {settingsSzIds.size > 0
+                  ? "Not used while SmartZone controllers are selected below."
+                  : "Shared across all users viewing this controller's dashboard."}
               </p>
             </div>
 
@@ -1313,7 +1476,14 @@ const MigrationDashboard = () => {
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm text-gray-500 flex items-center gap-2">
                 <Target size={14} />
-                {editingTarget ? (
+                {szMode ? (
+                  <span>
+                    <span className="font-semibold text-gray-700">
+                      {(apProgress?.sz_connected_aps ?? 0).toLocaleString()}
+                    </span>{" "}
+                    APs left on SmartZone
+                  </span>
+                ) : editingTarget ? (
                   <span className="flex items-center gap-1">
                     Target:{" "}
                     <input
@@ -1367,8 +1537,10 @@ const MigrationDashboard = () => {
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-lg font-bold text-white [text-shadow:_0_1px_3px_rgba(0,0,0,0.6)]">
-                  {data.total_aps.toLocaleString()} / {target.toLocaleString()}{" "}
-                  APs ({percentage.toFixed(1)}%)
+                  {szMode
+                    ? `${data.total_aps.toLocaleString()} in R1 / ${(apProgress?.fleet_total ?? 0).toLocaleString()} total APs`
+                    : `${data.total_aps.toLocaleString()} / ${target.toLocaleString()} APs`}{" "}
+                  ({percentage.toFixed(1)}%)
                 </span>
               </div>
               {/* Milestone markers */}
@@ -1380,6 +1552,21 @@ const MigrationDashboard = () => {
                 />
               ))}
             </div>
+            {szMode && (
+              <div className="mt-3 text-xs text-gray-500">
+                Total = APs in R1 + APs still connected (online or flagged) on{" "}
+                {apProgress?.sz_controllers?.length ?? 0} SmartZone controller
+                {(apProgress?.sz_controllers?.length ?? 0) === 1 ? "" : "s"}. Per-controller
+                counts are under "Left on SmartZone" below.
+                {szFailed.length > 0 && (
+                  <div className="mt-1 text-red-600 flex items-center gap-1">
+                    <AlertCircle size={12} />
+                    {szFailed.length} controller{szFailed.length === 1 ? "" : "s"} didn't answer, so
+                    the APs left are undercounted and the percentage reads high.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Switch progress bar */}
@@ -1388,7 +1575,14 @@ const MigrationDashboard = () => {
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm text-gray-500 flex items-center gap-2">
                 <Network size={14} />
-                {editingSwitchTarget ? (
+                {switchSzMode ? (
+                  <span>
+                    <span className="font-semibold text-gray-700">
+                      {(switchProgress?.sz_online_switches ?? 0).toLocaleString()}
+                    </span>{" "}
+                    switches left on SmartZone
+                  </span>
+                ) : editingSwitchTarget ? (
                   <span className="flex items-center gap-1">
                     Target:{" "}
                     <input
@@ -1442,8 +1636,10 @@ const MigrationDashboard = () => {
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-lg font-bold text-white [text-shadow:_0_1px_3px_rgba(0,0,0,0.6)]">
-                  {(data.total_switches ?? 0).toLocaleString()} /{" "}
-                  {switchTarget.toLocaleString()} switches ({switchPercentage.toFixed(1)}%)
+                  {switchSzMode
+                    ? `${(data.total_switches ?? 0).toLocaleString()} in R1 / ${(switchProgress?.fleet_total ?? 0).toLocaleString()} total switches`
+                    : `${(data.total_switches ?? 0).toLocaleString()} / ${switchTarget.toLocaleString()} switches`}{" "}
+                  ({switchPercentage.toFixed(1)}%)
                 </span>
               </div>
               {/* Milestone markers */}
@@ -1455,7 +1651,89 @@ const MigrationDashboard = () => {
                 />
               ))}
             </div>
+            {switchSzMode && (
+              <div className="mt-3 text-xs text-gray-500">
+                Total = switches in R1 + switches still online on the same SmartZone controllers.
+                {szSwitchFailed.length > 0 && (
+                  <div className="mt-1 text-red-600 flex items-center gap-1">
+                    <AlertCircle size={12} />
+                    {szSwitchFailed.length} controller{szSwitchFailed.length === 1 ? "" : "s"} gave no
+                    switch count, so the switches left are undercounted and the percentage reads high.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Left on SmartZone, per controller */}
+          {szMode && szLeftRows.length > 0 && (
+            <div className="bg-white rounded-xl shadow overflow-hidden mb-6">
+              <div className="px-6 py-4 border-b border-gray-100 flex items-baseline justify-between gap-4 flex-wrap">
+                <h2 className="text-lg font-semibold text-gray-800">Left on SmartZone</h2>
+                <span className="text-xs text-gray-400">
+                  Connected APs (online or flagged) and online switches, fewest first. Zones / SG =
+                  zones with a connected AP / switch groups with an online switch.
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Controller</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">APs</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Switches</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Zones / SG</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {szLeftRows.map((c) => (
+                      <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-3 text-sm text-gray-800">{c.name}</td>
+                        <td
+                          className={`px-6 py-3 text-sm text-right font-mono ${c.error ? "text-red-600" : "text-gray-700"}`}
+                          title={
+                            c.error ??
+                            (c.zones_read < c.zones_total
+                              ? `Read ${c.zones_read} of ${c.zones_total} zones`
+                              : undefined)
+                          }
+                        >
+                          {c.error ? "no answer" : (c.connected ?? 0).toLocaleString()}
+                          {!c.error && c.zones_read < c.zones_total && " *"}
+                        </td>
+                        <td
+                          className={`px-6 py-3 text-sm text-right font-mono ${c.switch_error ? "text-red-600" : "text-gray-700"}`}
+                          title={c.switch_error ?? `${c.switches_total.toLocaleString()} registered on this controller`}
+                        >
+                          {c.switch_error ? "no answer" : (c.switches_online ?? 0).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-right font-mono font-semibold text-gray-800">
+                          {c.unknown ? "?" : c.left.toLocaleString()}
+                        </td>
+                        <td
+                          className="px-6 py-3 text-sm text-right font-mono text-gray-700"
+                          title={
+                            c.sites == null
+                              ? undefined
+                              : `About ${c.sites.toLocaleString()} distinct sites: switch groups named like a zone with APs are counted once`
+                          }
+                        >
+                          <span className={c.error ? "text-red-600" : ""}>
+                            {c.zones_with_aps == null ? "?" : c.zones_with_aps.toLocaleString()}
+                          </span>
+                          <span className="text-gray-400"> / </span>
+                          <span className={c.switch_error ? "text-red-600" : ""}>
+                            {c.switch_groups_online == null ? "?" : c.switch_groups_online.toLocaleString()}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Metrics — Access Points */}
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">

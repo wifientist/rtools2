@@ -286,11 +286,14 @@ class SwitchService:
 
         Returns:
             Dict with online, read, total, groups (those holding a switch),
-            groups_with_online
+            groups_with_online, and online_site_names: the top-level switch
+            group names holding an online switch (a child group such as "IDFs"
+            is reported as its parent, which is the one named like the zone)
         """
         endpoint = self._switchm_endpoint("/switch")
         statuses: Dict[str, Any] = {}
         groups: Dict[str, Any] = {}
+        group_info: Dict[str, Any] = {}  # groupId -> (groupName, parentGroupId)
         total = 0
         page = 1  # SmartZone uses 1-based pagination
 
@@ -301,7 +304,10 @@ class SwitchService:
                 )
             except ValueError as e:
                 if "(404)" in str(e):
-                    return {"online": 0, "read": 0, "total": 0, "groups": 0, "groups_with_online": 0}
+                    return {
+                    "online": 0, "read": 0, "total": 0, "groups": 0,
+                    "groups_with_online": 0, "online_site_names": [],
+                }
                 raise
 
             switches = result.get("list", [])
@@ -309,12 +315,30 @@ class SwitchService:
             for switch in switches:
                 statuses[switch.get("id")] = switch.get("status")
                 groups[switch.get("id")] = switch.get("groupId")
+                if switch.get("groupId"):
+                    group_info[switch["groupId"]] = (
+                        switch.get("groupName") or "",
+                        switch.get("parentGroupId") or "",
+                    )
 
             if not switches or not result.get("hasMore"):
                 break
             page += 1
 
+        def top_level_name(group_id: str) -> str:
+            # Walk up parents we have seen; stop at the first one we haven't
+            # (a parent with no switches of its own isn't in the switch list).
+            seen = set()
+            name, parent = group_info.get(group_id, ("", ""))
+            while parent and parent in group_info and parent not in seen:
+                seen.add(parent)
+                name, parent = group_info[parent]
+            return name
+
+        online_groups = {groups[i] for i, s in statuses.items() if s == "ONLINE" and groups[i]}
+
         return {
+            "online_site_names": sorted({n for n in (top_level_name(g) for g in online_groups) if n}),
             "online": sum(1 for s in statuses.values() if s == "ONLINE"),
             "read": len(statuses),
             "total": total,
