@@ -1,8 +1,8 @@
 import { Fragment, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronDown, X, CalendarDays } from "lucide-react";
 import {
-  STEPS, STEP_STYLES, addDays, fmtShort, isOverdue, isReconfigOverdue, markerDates,
-  STAGES, compareSites, parseISO, stageOf, type StageKey, startOfWeek, toISO, type TrackerEvent, type TrackerSite,
+  STEPS, STEP_STYLES, addDays, fmtShort, isOverdue, markerDates,
+  STAGES, compareSites, parseISO, stageOf, type StageKey, startOfWeek, toISO, type TrackerSite,
 } from "./trackerModel";
 
 const COLLAPSED_KEY = "tracker.gantt.collapsed";
@@ -43,10 +43,9 @@ export default function TrackerGantt({
   const DAYS = weeks * 7;
   // Marker sizes for each density.
   const sz = compact
-    ? { dot: "w-4 h-4 text-[9px] border", badge: "-top-1 -right-1 w-2.5 h-2.5", badgeX: 7,
-        fail: "w-3.5 h-3.5", failX: 9, ring: "ring-1 ring-red-500", sup: "text-[6px]" }
+    ? { dot: "w-4 h-4 text-[9px] border", badge: "-top-1 -right-1 w-2.5 h-2.5", badgeX: 7, ring: "ring-1 ring-red-500" }
     : { dot: "w-6 h-6 text-[11px] border-2", badge: "-top-1.5 -right-1.5 w-3.5 h-3.5", badgeX: 9,
-        fail: "w-5 h-5", failX: 12, ring: "ring-2 ring-red-500 ring-offset-1", sup: "text-[8px]" };
+        ring: "ring-2 ring-red-500 ring-offset-1" };
   const [collapsed, setCollapsed] = useState<Set<StageKey>>(() => {
     try {
       const saved = localStorage.getItem(COLLAPSED_KEY);
@@ -198,16 +197,7 @@ export default function TrackerGantt({
                   const weekend = date.getDay() === 0 || date.getDay() === 6;
                   const inSpan = spanStart !== null && d >= spanStart && d <= spanEnd!;
                   const steps = STEPS.filter((s) => site[s.key] === d);
-                  // Where validation sat before each failure, faded, with the ✕ on it when it failed that day.
-                  const ghosts = site.events.filter((e) =>
-                    e.original_validation === d && e.original_validation !== site.validation);
-                  const fails = site.events.filter((e) =>
-                    e.kind === "validation_failed" && e.date === d && !ghosts.some((g) => g === e));
-                  const reconfigs = site.events
-                    .filter((e) => e.kind === "validation_failed")
-                    .map((e, idx) => ({ e, attempt: idx + 2 }))
-                    .filter(({ e }) => e.reconfig_on === d);
-                  // Where config or the HW swap was meant to happen before it was missed.
+                  // Where a step was meant to happen before it was missed.
                   const missed = [
                     ...site.events
                       .filter((e) => e.kind === "config_missed" && e.date === d && e.date !== site.config_pushed)
@@ -215,6 +205,13 @@ export default function TrackerGantt({
                         letter: "C", tone: "border-sky-400 text-sky-400",
                         title: `Config missed ${fmtShort(d)} — moved to ${fmtShort(e.new_config ?? null)}${
                           e.pushed_later ? ", validation + HW moved with it" : ""}${e.note ? `\n${e.note}` : ""}`,
+                      })),
+                    ...site.events
+                      .filter((e) => e.kind === "validation_missed" && e.date === d && e.date !== site.validation)
+                      .map((e) => ({
+                        letter: "V", tone: "border-amber-400 text-amber-400",
+                        title: `Validation missed ${fmtShort(d)} — moved to ${fmtShort(e.new_validation ?? null)}${
+                          e.pushed_later ? ", HW moved with it" : ""}${e.note ? `\n${e.note}` : ""}`,
                       })),
                     ...site.events
                       .filter((e) => e.kind === "migration_missed" && e.date === d && e.date !== site.hw_migrated)
@@ -255,44 +252,6 @@ export default function TrackerGantt({
                           </span>
                         </span>
                       ))}
-                      {ghosts.map((e, k) => (
-                        <span
-                          key={`g${k}`}
-                          className={`relative z-10 inline-flex items-center justify-center ${sz.dot} rounded-full border-dashed border-amber-400 bg-white font-bold text-amber-400`}
-                          title={`Validation was planned ${fmtShort(d)}${e.date === d ? " — failed" : ""}${e.note ? `\n${e.note}` : ""}`}
-                        >
-                          V
-                          {e.date === d && (
-                            <span className={`absolute ${sz.badge} inline-flex items-center justify-center rounded-full bg-red-600 text-white`}>
-                              <X size={sz.badgeX} strokeWidth={3} />
-                            </span>
-                          )}
-                        </span>
-                      ))}
-                      {fails.map((e, k) => (
-                        <span
-                          key={`f${k}`}
-                          className={`relative z-10 inline-flex items-center justify-center ${sz.fail} rounded-full bg-red-600 text-white`}
-                          title={failTitle(e)}
-                        >
-                          <X size={sz.failX} strokeWidth={3} />
-                        </span>
-                      ))}
-                      {reconfigs.map(({ e, attempt }) => {
-                        const overdue = isReconfigOverdue(e, today);
-                        return (
-                          <span
-                            key={`r${attempt}`}
-                            className={`relative z-10 inline-flex items-center justify-center ${sz.dot} rounded-full font-bold ${
-                              e.reconfig_done ? STEP_STYLES.sky.done : STEP_STYLES.sky.planned
-                            } ${overdue ? sz.ring : ""}`}
-                            title={`Re-config #${attempt - 1} + re-validation — ${fmtShort(d)} — ${
-                              e.reconfig_done ? "done" : overdue ? "overdue" : "planned"}${e.note ? `\nAfter: ${e.note}` : ""}`}
-                          >
-                            C<sup className={`${sz.sup} -mr-0.5`}>{attempt}</sup>
-                          </span>
-                        );
-                      })}
                       {steps.map((s) => {
                         const done = site[s.doneKey];
                         const overdue = isOverdue(site, s, today);
@@ -345,12 +304,6 @@ function Segmented<T extends string | number | boolean>({
   );
 }
 
-function failTitle(e: TrackerEvent): string {
-  const after = e.reconfig_on ? ` — re-config ${fmtShort(e.reconfig_on)}`
-    : e.slip_days ? ` — pushed +${e.slip_days}d` : "";
-  return `Validation failed ${fmtShort(e.date)}${after}${e.note ? `\n${e.note}` : ""}`;
-}
-
 function OffWindow({ side, text }: { side: "left" | "right"; text: string }) {
   return (
     <span
@@ -384,13 +337,6 @@ function Legend() {
         <span className="w-3.5 h-3.5 rounded-full border-2 border-gray-400 ring-2 ring-red-500 ring-offset-1" /> overdue
       </span>
       <span className="flex items-center gap-1">
-        <span className="relative inline-flex items-center justify-center w-4 h-4 rounded-full border-2 border-dashed border-amber-400 text-[8px] font-bold text-amber-400">
-          V
-          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-600" />
-        </span>
-        failed validation
-      </span>
-      <span className="flex items-center gap-1">
         <span className="relative inline-flex items-center justify-center w-4 h-4 rounded-full border-2 border-dashed border-sky-400 text-[8px] font-bold text-sky-400">
           C
           <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-600" />
@@ -398,17 +344,18 @@ function Legend() {
         missed config
       </span>
       <span className="flex items-center gap-1">
+        <span className="relative inline-flex items-center justify-center w-4 h-4 rounded-full border-2 border-dashed border-amber-400 text-[8px] font-bold text-amber-400">
+          V
+          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-600" />
+        </span>
+        missed validation
+      </span>
+      <span className="flex items-center gap-1">
         <span className="relative inline-flex items-center justify-center w-4 h-4 rounded-full border-2 border-dashed border-emerald-400 text-[8px] font-bold text-emerald-400">
           M
           <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-600" />
         </span>
         missed migration
-      </span>
-      <span className="flex items-center gap-1">
-        <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[8px] font-bold ${STEP_STYLES.sky.done}`}>
-          C<sup className="text-[6px]">2</sup>
-        </span>
-        re-config + re-validate
       </span>
     </div>
   );
