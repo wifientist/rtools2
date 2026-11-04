@@ -198,10 +198,12 @@ class SystemService:
         whether any were missed.
 
         Returns:
-            Dict with connected, zones_with_connected, zones_read, zones_total
+            Dict with connected, zones_with_connected, zones_read, zones_total,
+            and connected_zone_names (names of zones with a connected AP)
         """
         endpoint = f"/{self.client.api_version}/system/inventory"
         zones: Dict[str, int] = {}
+        names: Dict[str, str] = {}
         index = 0  # index is an offset, not a page number
         zones_total = 0
 
@@ -213,6 +215,7 @@ class SystemService:
             zones_total = result.get("totalCount", zones_total)
             for zone in page:
                 zones[zone.get("zoneId")] = zone.get("connectedAPs") or 0
+                names[zone.get("zoneId")] = zone.get("zoneName") or ""
 
             index += len(page)
             if not page or not result.get("hasMore"):
@@ -223,4 +226,7 @@ class SystemService:
             "zones_with_connected": sum(1 for count in zones.values() if count > 0),
             "zones_read": len(zones),
             "zones_total": zones_total,
+            "connected_zone_names": sorted(
+                {names[zid] for zid, count in zones.items() if count > 0 and names.get(zid)}
+            ),
         }

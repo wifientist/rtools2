@@ -20,6 +20,11 @@ class MigrationDashboardSnapshot(Base):
     total_venues = Column(Integer, nullable=False)
     total_clients = Column(Integer, nullable=False)
     total_ecs = Column(Integer, nullable=False)
+    # Online + flagged APs across the selected SZ controllers. NULL = not
+    # measured (no SZ controllers picked, or a controller failed to answer).
+    sz_connected_aps = Column(Integer, nullable=True)
+    # Online switches on the same SZ controllers; NULL on the same terms.
+    sz_online_switches = Column(Integer, nullable=True)
     tenant_data = Column(JSON, nullable=False)
     captured_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

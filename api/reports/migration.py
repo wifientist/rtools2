@@ -170,6 +170,17 @@ def _get_period_delta(snapshots, days: int):
         "aps": latest.total_aps - baseline.total_aps,
         "operational": latest.operational_aps - baseline.operational_aps,
         "switches": (getattr(latest, "total_switches", 0) or 0) - (getattr(baseline, "total_switches", 0) or 0),
+        # None until both ends were measured on SZ (older snapshots predate it).
+        "sz_left": (
+            latest.sz_connected_aps - baseline.sz_connected_aps
+            if latest.sz_connected_aps is not None and baseline.sz_connected_aps is not None
+            else None
+        ),
+        "sz_switches_left": (
+            latest.sz_online_switches - baseline.sz_online_switches
+            if latest.sz_online_switches is not None and baseline.sz_online_switches is not None
+            else None
+        ),
         "venues": latest.total_venues - baseline.total_venues,
         "clients": latest.total_clients - baseline.total_clients,
     }
@@ -232,14 +243,45 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
     total_aps = progress_data["total_aps"]
     operational = progress_data.get("status_summary", {}).get("operational", 0)
     offline = progress_data.get("status_summary", {}).get("offline", 0)
-    percentage = (total_aps / target_aps * 100) if target_aps > 0 else 0
+    # Same math as the dashboard: R1 / (R1 + still connected on SZ) when SZ
+    # controllers are selected, else R1 / the fixed target.
+    ap_progress = progress_data.get("ap_progress") or {}
+    percentage = ap_progress.get("percentage")
+    if percentage is None:
+        percentage = (total_aps / target_aps * 100) if target_aps > 0 else 0
+    sz_mode = ap_progress.get("mode") == "sz"
+    sz_failed = [c["name"] for c in ap_progress.get("sz_controllers", []) if c.get("error")]
 
     # Switch totals + progress (mirrors the AP block above)
     target_switches = settings_data.get("target_switches", 10000)
     total_switches = progress_data.get("total_switches", 0)
     operational_switches = progress_data.get("switch_status_summary", {}).get("operational", 0)
     offline_switches = progress_data.get("switch_status_summary", {}).get("offline", 0)
-    switch_percentage = (total_switches / target_switches * 100) if target_switches > 0 else 0
+    switch_progress = progress_data.get("switch_progress") or {}
+    switch_percentage = switch_progress.get("percentage")
+    if switch_percentage is None:
+        switch_percentage = (total_switches / target_switches * 100) if target_switches > 0 else 0
+    sz_switch_failed = [
+        c["name"] for c in ap_progress.get("sz_controllers", []) if c.get("switch_error")
+    ]
+
+    # Left on SmartZone per controller, fewest first (quickest to shut down).
+    # Mirrors szLeftRows on the dashboard: a failed read sorts last instead of
+    # looking nearly empty.
+    sz_left_rows = []
+    for c in ap_progress.get("sz_controllers", []):
+        unknown = bool(c.get("error") or c.get("switch_error"))
+        sz_left_rows.append({
+            "name": c["name"],
+            "aps": None if c.get("error") else (c.get("connected") or 0),
+            "switches": None if c.get("switch_error") else (c.get("switches_online") or 0),
+            "switches_total": c.get("switches_total") or 0,
+            "zones_with_aps": c.get("zones_with_aps"),
+            "switch_groups_online": c.get("switch_groups_online"),
+            "unknown": unknown,
+            "left": (c.get("connected") or 0) + (c.get("switches_online") or 0),
+        })
+    sz_left_rows.sort(key=lambda r: (r["unknown"], r["left"], r["name"].lower()))
 
     # Quip messages
     message = _get_message(percentage)
@@ -303,9 +345,23 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
     for days, label in [(30, "Last 30 Days"), (60, "Last 60 Days"), (90, "Last 90 Days")]:
         delta = _get_period_delta(snapshots, days)
         if delta:
+            sz_rows = []
+            if delta["sz_left"] is not None:
+                # Falling is good here, so the colour is inverted.
+                sz_rows.append({
+                    "label": "Left on SZ",
+                    "value": _format_delta(delta["sz_left"]),
+                    "color": _delta_color(-delta["sz_left"]),
+                })
+            if delta["sz_switches_left"] is not None:
+                sz_rows.append({
+                    "label": "Switches left on SZ",
+                    "value": _format_delta(delta["sz_switches_left"]),
+                    "color": _delta_color(-delta["sz_switches_left"]),
+                })
             period_cards.append({
                 "label": label,
-                "rows": [
+                "rows": sz_rows + [
                     {"label": "APs", "value": _format_delta(delta["aps"]), "color": _delta_color(delta["aps"])},
                     {"label": "Switches", "value": _format_delta(delta["switches"]), "color": _delta_color(delta["switches"])},
                     {"label": "Venues", "value": _format_delta(delta["venues"]), "color": _delta_color(delta["venues"])},
@@ -387,6 +443,15 @@ async def fetch_report_data(context_id: str, db: Session) -> dict:
         "total_aps": total_aps,
         "target_aps": target_aps,
         "percentage": percentage,
+        "sz_mode": sz_mode,
+        "sz_connected_aps": ap_progress.get("sz_connected_aps", 0),
+        "fleet_total": ap_progress.get("fleet_total", 0),
+        "sz_controller_count": len(ap_progress.get("sz_controllers", [])),
+        "sz_failed": sz_failed,
+        "sz_switch_failed": sz_switch_failed,
+        "sz_left_rows": sz_left_rows,
+        "sz_online_switches": switch_progress.get("sz_online_switches", 0),
+        "switch_fleet_total": switch_progress.get("fleet_total", 0),
         "message": message,
         "operational": operational,
         "offline": offline,

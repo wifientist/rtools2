@@ -36,6 +36,7 @@ class SettingsResponse(BaseModel):
     target_aps: int
     target_switches: int
     ignored_tenant_ids: List[str]
+    sz_controller_ids: List[int] = []
 
     class Config:
         from_attributes = True
@@ -45,6 +46,7 @@ class SettingsUpdate(BaseModel):
     target_aps: Optional[int] = None
     target_switches: Optional[int] = None
     ignored_tenant_ids: Optional[List[str]] = None
+    sz_controller_ids: Optional[List[int]] = None
 
 
 class SnapshotBackfillEntry(BaseModel):
@@ -229,6 +231,190 @@ def _upsert_venue_history(
         db.rollback()
 
 
+# One SZ controller's inventory walk; a hung controller must not hold up the dashboard.
+SZ_COUNT_TIMEOUT_S = 120
+
+
+def _start_sz_connected_count(sz_controller_ids: list[int], db: Session):
+    """
+    Start counting connected APs (Online + Flagged) and online switches on the
+    selected SZ controllers.
+
+    These are the devices still left to migrate: new installs go straight to R1,
+    so they never show up here. APs and switches carry separate errors so a
+    switch-module failure doesn't throw away a good AP count. Returns a task to await, or None when no SZ
+    controllers are selected. All DB reads happen here, before the task starts,
+    so the task only does network I/O while the R1 fan-out shares the session.
+    """
+    if not sz_controller_ids:
+        return None
+    from clients.sz_client_deps import create_sz_client_from_controller
+
+    controllers = {
+        c.id: c
+        for c in db.query(Controller).filter(Controller.id.in_(sz_controller_ids)).all()
+    }
+    prepared = []  # (row, client or None)
+    for cid in sz_controller_ids:
+        ctrl = controllers.get(cid)
+        row = {
+            "id": cid,
+            "name": ctrl.name if ctrl else f"Controller {cid}",
+            "connected": None,
+            "zones_read": 0,
+            "zones_total": 0,
+            "error": None,  # AP count (or login) failure
+            "switches_online": None,
+            "switches_total": 0,
+            "switch_error": None,
+            # Sites still holding an online device. Zones and switch groups
+            # have unrelated IDs, so they are matched by name (case and
+            # spacing ignored); a switch-only group counts as its own site.
+            "zones_with_aps": None,
+            "switch_groups_online": None,
+            "sites": None,
+        }
+        client = None
+        if not ctrl or ctrl.controller_type != "SmartZone":
+            row["error"] = row["switch_error"] = "Not found, or not a SmartZone controller"
+        else:
+            try:
+                client = create_sz_client_from_controller(cid, db)
+            except Exception as e:
+                row["error"] = row["switch_error"] = str(getattr(e, "detail", e)) or type(e).__name__
+        prepared.append((row, client))
+
+    async def count_one(row: dict, client) -> dict:
+        if client is None:
+            return row
+
+        def describe(e: Exception) -> str:
+            return str(getattr(e, "detail", e)) or type(e).__name__
+
+        zone_names: set[str] = set()
+        group_names: set[str] = set()
+
+        def norm(name: str) -> str:
+            return " ".join(name.split()).lower()
+
+        def strip_sg(name: str) -> str:
+            # Switch groups are often the zone name + " SG" ("1740 Division SG").
+            return name[:-3] if name.endswith(" sg") else name
+
+        async def run() -> None:
+            async with client:
+                try:
+                    counts = await client.system.get_connected_ap_count()
+                    row["connected"] = counts["connected"]
+                    row["zones_read"] = counts["zones_read"]
+                    row["zones_total"] = counts["zones_total"]
+                    zone_names.update(norm(n) for n in counts.get("connected_zone_names", []))
+                    row["zones_with_aps"] = len(zone_names)
+                except Exception as e:
+                    row["error"] = describe(e)
+                try:
+                    sw = await client.switches.get_switch_status_counts()
+                    row["switches_online"] = sw["online"]
+                    row["switches_total"] = sw["total"]
+                    group_names.update(norm(n) for n in sw.get("online_site_names", []))
+                    row["switch_groups_online"] = len(group_names)
+                except Exception as e:
+                    row["switch_error"] = describe(e)
+
+        try:
+            await asyncio.wait_for(run(), timeout=SZ_COUNT_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            msg = f"Timed out after {SZ_COUNT_TIMEOUT_S}s"
+            if row["connected"] is None and not row["error"]:
+                row["error"] = msg
+            if row["switches_online"] is None and not row["switch_error"]:
+                row["switch_error"] = msg
+        except Exception as e:  # login failure: neither count happened
+            row["error"] = row["error"] or describe(e)
+            row["switch_error"] = row["switch_error"] or describe(e)
+        if not row["error"] and not row["switch_error"]:
+            # Every zone with an AP is a site; a switch group adds one only if
+            # it doesn't match one of those zones. The " SG" suffix is ignored
+            # for that match alone, so two real zones are never merged.
+            zone_keys = zone_names | {strip_sg(z) for z in zone_names}
+            switch_only = {
+                g for g in group_names
+                if g not in zone_keys and strip_sg(g) not in zone_keys
+            }
+            row["sites"] = len(zone_names) + len(switch_only)
+        if row["error"] or row["switch_error"]:
+            logger.warning(
+                f"[dashboard] SZ count failed for {row['name']} ({row['id']}): "
+                f"aps={row['error']} switches={row['switch_error']}"
+            )
+        return row
+
+    async def count_all() -> dict:
+        rows = await asyncio.gather(*(count_one(r, c) for r, c in prepared))
+        return {
+            "connected_aps": sum(r["connected"] or 0 for r in rows),
+            # Every controller answered; otherwise "remaining" is an undercount.
+            "complete": all(r["error"] is None for r in rows),
+            "online_switches": sum(r["switches_online"] or 0 for r in rows),
+            "switches_complete": all(r["switch_error"] is None for r in rows),
+            "controllers": sorted(rows, key=lambda r: r["name"].lower()),
+        }
+
+    return asyncio.ensure_future(count_all())
+
+
+def _compute_ap_progress(total_aps: int, settings_data: dict, sz: dict | None) -> dict:
+    """
+    AP migration percentage.
+
+    With SZ controllers selected: R1 / (R1 + still connected on SZ). The total
+    moves with the fleet, so new R1 installs can't push it past 100%; it only
+    reaches 100% when SZ has nothing connected left.
+    Without them: the legacy R1 / fixed target.
+    """
+    if sz is None:
+        target = settings_data.get("target_aps") or 0
+        return {
+            "mode": "target",
+            "r1_aps": total_aps,
+            "target_aps": target,
+            "percentage": (total_aps / target * 100) if target > 0 else 0,
+        }
+    remaining = sz["connected_aps"]
+    fleet_total = total_aps + remaining
+    return {
+        "mode": "sz",
+        "r1_aps": total_aps,
+        "sz_connected_aps": remaining,
+        "fleet_total": fleet_total,
+        "percentage": (total_aps / fleet_total * 100) if fleet_total > 0 else 0,
+        "sz_complete": sz["complete"],
+        "sz_controllers": sz["controllers"],
+    }
+
+
+def _compute_switch_progress(total_switches: int, settings_data: dict, sz: dict | None) -> dict:
+    """Switch percentage, same rule as APs: R1 / (R1 + still online on SZ)."""
+    if sz is None:
+        target = settings_data.get("target_switches") or 0
+        return {
+            "mode": "target",
+            "r1_switches": total_switches,
+            "target_switches": target,
+            "percentage": (total_switches / target * 100) if target > 0 else 0,
+        }
+    remaining = sz["online_switches"]
+    fleet_total = total_switches + remaining
+    return {
+        "mode": "sz",
+        "r1_switches": total_switches,
+        "sz_online_switches": remaining,
+        "fleet_total": fleet_total,
+        "percentage": (total_switches / fleet_total * 100) if fleet_total > 0 else 0,
+        "sz_complete": sz["switches_complete"],
+    }
+
+
 def _get_settings(controller_id: int, db: Session) -> MigrationDashboardSettings | None:
     return (
         db.query(MigrationDashboardSettings)
@@ -270,6 +456,19 @@ def _maybe_capture_snapshot(
         new_sw_op = progress_data.get("switch_status_summary", {}).get("operational", 0)
         new_venues = progress_data["total_venues"]
         new_ecs = progress_data["total_ecs"]
+        ap_progress = progress_data.get("ap_progress") or {}
+        # Only a full SZ answer is worth keeping; a partial sum would read as progress.
+        new_sz = (
+            ap_progress.get("sz_connected_aps")
+            if ap_progress.get("mode") == "sz" and ap_progress.get("sz_complete")
+            else None
+        )
+        switch_progress = progress_data.get("switch_progress") or {}
+        new_sz_sw = (
+            switch_progress.get("sz_online_switches")
+            if switch_progress.get("mode") == "sz" and switch_progress.get("sz_complete")
+            else None
+        )
 
         if last and (
             last.total_aps == new_aps
@@ -278,6 +477,8 @@ def _maybe_capture_snapshot(
             and last.operational_switches == new_sw_op
             and last.total_venues == new_venues
             and last.total_ecs == new_ecs
+            and last.sz_connected_aps == new_sz
+            and last.sz_online_switches == new_sz_sw
         ):
             return
 
@@ -290,6 +491,8 @@ def _maybe_capture_snapshot(
             total_venues=progress_data["total_venues"],
             total_clients=progress_data.get("total_clients", 0),
             total_ecs=progress_data["total_ecs"],
+            sz_connected_aps=new_sz,
+            sz_online_switches=new_sz_sw,
             tenant_data=[
                 {
                     "id": t["id"],
@@ -332,8 +535,9 @@ def get_settings(
             target_aps=settings.target_aps,
             target_switches=settings.target_switches,
             ignored_tenant_ids=settings.ignored_tenant_ids,
+            sz_controller_ids=settings.sz_controller_ids or [],
         )
-    return SettingsResponse(target_aps=180000, target_switches=10000, ignored_tenant_ids=[])
+    return SettingsResponse(target_aps=180000, target_switches=10000, ignored_tenant_ids=[], sz_controller_ids=[])
 
 
 @router.put("/settings/{controller_id}", response_model=SettingsResponse)
@@ -358,6 +562,16 @@ def update_settings(
         settings.target_switches = body.target_switches
     if body.ignored_tenant_ids is not None:
         settings.ignored_tenant_ids = body.ignored_tenant_ids
+    if body.sz_controller_ids is not None:
+        sz_ids = sorted(set(body.sz_controller_ids))
+        for sz_id in sz_ids:
+            sz_ctrl = validate_controller_access(sz_id, current_user, db)
+            if sz_ctrl.controller_type != "SmartZone":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{sz_ctrl.name}' is not a SmartZone controller",
+                )
+        settings.sz_controller_ids = sz_ids
 
     db.commit()
     db.refresh(settings)
@@ -366,6 +580,7 @@ def update_settings(
         target_aps=settings.target_aps,
         target_switches=settings.target_switches,
         ignored_tenant_ids=settings.ignored_tenant_ids,
+        sz_controller_ids=settings.sz_controller_ids or [],
     )
 
 
@@ -532,6 +747,8 @@ def get_snapshots(
                 "total_venues": s.total_venues,
                 "total_clients": s.total_clients,
                 "total_ecs": s.total_ecs,
+                "sz_connected_aps": s.sz_connected_aps,
+                "sz_online_switches": s.sz_online_switches,
             }
             for s in snapshots
         ],
@@ -647,7 +864,11 @@ async def fetch_controller_progress(
         "target_aps": settings.target_aps if settings else 180000,
         "target_switches": settings.target_switches if settings else 10000,
         "ignored_tenant_ids": list(ignored_ids),
+        "sz_controller_ids": list(settings.sz_controller_ids or []) if settings else [],
     }
+
+    # SZ counts run alongside the R1 fan-out below.
+    sz_task = _start_sz_connected_count(settings_data["sz_controller_ids"], db)
 
     if not ec_list:
         empty_data = {
@@ -658,6 +879,9 @@ async def fetch_controller_progress(
             "switch_status_summary": {"operational": 0, "offline": 0},
             "switch_status_counts": {}, "tenants": [],
         }
+        sz = await sz_task if sz_task else None
+        empty_data["ap_progress"] = _compute_ap_progress(0, settings_data, sz)
+        empty_data["switch_progress"] = _compute_switch_progress(0, settings_data, sz)
         return empty_data, [], settings_data
 
     # 2. Query each EC for AP count and venue count in parallel
@@ -858,6 +1082,9 @@ async def fetch_controller_progress(
         "switch_status_counts": total_switch_status_counts,
         "tenants": sorted(tenants, key=lambda t: t["ap_count"], reverse=True),
     }
+    sz = await sz_task if sz_task else None
+    progress_data["ap_progress"] = _compute_ap_progress(total_aps, settings_data, sz)
+    progress_data["switch_progress"] = _compute_switch_progress(total_switches, settings_data, sz)
 
     logger.info(
         f"[dashboard] Progress for controller={controller_id}: "
