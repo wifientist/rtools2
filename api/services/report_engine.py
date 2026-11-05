@@ -7,6 +7,7 @@ converts it to PDF via WeasyPrint, and emails it as an attachment.
 Report types are registered in api/reports/__init__.py. To add a new report
 type, create a data source module and a template — no changes needed here.
 """
+import html
 import importlib
 import logging
 from datetime import datetime
@@ -122,6 +123,65 @@ def _build_movers_24h_html(active: list, pending: list) -> str:
     )
 
 
+def _fmt(n) -> str:
+    return "?" if n is None else f"{n:,}"
+
+
+def _build_sz_left_html(rows: list, min_zone_aps: int, min_group_switches: int) -> str:
+    """The "Left on SmartZone" table (same rows as the PDF), fewest first."""
+    if not rows:
+        return ""
+    cell = "padding:6px 8px;border-bottom:1px solid #e5e7eb;font-size:12px;"
+    num = cell + "text-align:right;font-family:monospace;white-space:nowrap;"
+    head = "padding:6px 8px;border-bottom:1px solid #d1d5db;font-size:10px;font-weight:600;text-transform:uppercase;color:#6b7280;"
+    body = []
+    for r in rows:
+        aps = '<span style="color:#dc2626;">no answer</span>' if r["aps"] is None else _fmt(r["aps"])
+        sws = '<span style="color:#dc2626;">no answer</span>' if r["switches"] is None else _fmt(r["switches"])
+        left = "?" if r["unknown"] else _fmt(r["left"])
+        body.append(
+            f'<tr><td style="{cell}">{html.escape(r["name"])}</td>'
+            f'<td style="{num}">{aps}</td><td style="{num}">{sws}</td>'
+            f'<td style="{num}font-weight:600;">{left}</td>'
+            f'<td style="{num}">{_fmt(r["zones_with_aps"])} <span style="color:#9ca3af;">/</span> '
+            f'{_fmt(r["switch_groups_online"])}</td></tr>'
+        )
+    s_aps = "s" if min_zone_aps != 1 else ""
+    s_sw = "es" if min_group_switches != 1 else ""
+    return (
+        f'<div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:20px;">'
+        f'<h3 style="font-size:13px;font-weight:600;color:#374151;margin:0 0 4px 0;">Left on SmartZone</h3>'
+        f'<p style="font-size:11px;color:#6b7280;margin:0 0 10px 0;">Connected APs (online or flagged) and online '
+        f'switches, fewest first. Zones / SG = zones with at least {min_zone_aps} connected AP{s_aps} / '
+        f'switch groups with at least {min_group_switches} online switch{s_sw}.</p>'
+        f'<table style="width:100%;border-collapse:collapse;">'
+        f'<tr><th style="{head}text-align:left;">Controller</th><th style="{head}text-align:right;">APs</th>'
+        f'<th style="{head}text-align:right;">Switches</th><th style="{head}text-align:right;">Total</th>'
+        f'<th style="{head}text-align:right;">Zones / SG</th></tr>'
+        f'{"".join(body)}</table></div>'
+    )
+
+
+def _sz_left_text(rows: list, min_zone_aps: int, min_group_switches: int) -> str:
+    if not rows:
+        return ""
+    width = max(len(r["name"]) for r in rows)
+    lines = [
+        f"\nLeft on SmartZone (fewest first; Zones / SG = zones with >= {min_zone_aps} connected"
+        f" AP{'s' if min_zone_aps != 1 else ''} / switch groups with >= {min_group_switches} online"
+        f" switch{'es' if min_group_switches != 1 else ''}):",
+    ]
+    for r in rows:
+        aps = "no answer" if r["aps"] is None else _fmt(r["aps"])
+        sws = "no answer" if r["switches"] is None else _fmt(r["switches"])
+        left = "?" if r["unknown"] else _fmt(r["left"])
+        lines.append(
+            f"  {r['name']:<{width}}  APs {aps:>9}  Switches {sws:>9}  Total {left:>7}"
+            f"  Zones/SG {_fmt(r['zones_with_aps'])}/{_fmt(r['switch_groups_online'])}"
+        )
+    return "\n".join(lines)
+
+
 async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict:
     """
     Full pipeline: fetch data → render template → PDF → email attachment.
@@ -167,6 +227,56 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
     total_clients = ctx.get("total_clients", 0)
     total_ecs = ctx.get("total_ecs", 0)
     message = ctx.get("message", "")
+    sz_mode = ctx.get("sz_mode", False)
+    sz_connected_aps = ctx.get("sz_connected_aps", 0)
+    fleet_total = ctx.get("fleet_total", 0)
+    sz_online_switches = ctx.get("sz_online_switches", 0)
+    switch_fleet_total = ctx.get("switch_fleet_total", 0)
+    sz_controller_count = ctx.get("sz_controller_count", 0)
+    sz_failed = ctx.get("sz_failed", [])
+    sz_switch_failed = ctx.get("sz_switch_failed", [])
+    sz_left_rows = ctx.get("sz_left_rows", []) if sz_mode else []
+    min_zone_aps = ctx.get("sz_min_zone_aps", 1)
+    min_group_switches = ctx.get("sz_min_group_switches", 1)
+
+    # Same wording as the PDF: in SZ mode the total is R1 + still on SZ.
+    if sz_mode:
+        ap_line = f"{total_aps:,} in R1 / {fleet_total:,} total APs ({pct:.1f}%)"
+        ap_left = f"{sz_connected_aps:,} APs left on SmartZone"
+        sw_line = f"{total_switches:,} in R1 / {switch_fleet_total:,} total switches ({switch_pct:.1f}%)"
+        sw_left = f"{sz_online_switches:,} switches left on SmartZone"
+        plural = "s" if sz_controller_count != 1 else ""
+        ap_note = (
+            f"Total = APs in R1 + APs still connected (online or flagged) on "
+            f"{sz_controller_count} SmartZone controller{plural}."
+        )
+        if sz_failed:
+            ap_note += f" No answer from {', '.join(sz_failed)}, so the APs left are undercounted."
+        sw_note = "Total = switches in R1 + switches still online on the same SmartZone controllers."
+        if sz_switch_failed:
+            sw_note += (
+                f" No switch count from {', '.join(sz_switch_failed)}, so the switches left are undercounted."
+            )
+    else:
+        ap_line = f"{total_aps:,} / {target_aps:,} APs ({pct:.1f}%)"
+        sw_line = f"{total_switches:,} / {target_switches:,} switches ({switch_pct:.1f}%)"
+        ap_left = sw_left = ap_note = sw_note = ""
+
+    def _html_left(text: str) -> str:
+        if not text:
+            return ""
+        return (
+            f'<p style="text-align: center; font-size: 15px; font-weight: 700; color: #111827; margin: 0 0 8px 0;">'
+            f'{text}</p>'
+        )
+
+    def _html_note(text: str) -> str:
+        if not text:
+            return ""
+        return (
+            f'<p style="text-align: center; font-size: 11px; color: #6b7280; margin: 0 0 16px 0;">'
+            f'{html.escape(text)}</p>'
+        )
 
     active_24h = ctx.get("active_24h", [])
     pending_24h = ctx.get("pending_24h", [])
@@ -188,12 +298,18 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
     text_body = (
         f"{display_name} Report — {report_label}\n"
         f"Generated: {generated_at}\n\n"
-        f"Progress: {total_aps:,} / {target_aps:,} APs ({pct:.1f}%)\n"
-        f"{message}\n\n"
+        + (f"{ap_left}\n" if ap_left else "")
+        + f"Progress: {ap_line}\n"
+        f"{message}\n"
+        + (f"{ap_note}\n" if ap_note else "")
+        + (f"\n{sw_left}\n" if sw_left else "\n")
+        + f"Switches: {sw_line} — {switch_message}\n"
+        + (f"{sw_note}\n" if sw_note else "")
+        + "\n"
         f"APs:      {total_aps:,} total  |  {operational:,} operational  |  {offline:,} offline\n"
         f"Switches: {total_switches:,} total  |  {operational_switches:,} operational  |  {offline_switches:,} offline\n"
-        f"          {total_switches:,} / {target_switches:,} switches ({switch_pct:.1f}%) — {switch_message}\n"
         f"Venues: {total_venues:,}  |  Clients: {total_clients:,}  |  Active ECs: {total_ecs:,}\n"
+        f"{_sz_left_text(sz_left_rows, min_zone_aps, min_group_switches)}\n"
         f"{movers_text}\n\n"
         f"Full report attached as PDF."
     )
@@ -210,26 +326,30 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
   <p style="color: #6b7280; margin: 0 0 20px 0;">{report_label} &mdash; {generated_at}</p>
 
   <!-- Progress -->
+  {_html_left(ap_left)}
   <div style="background: #f3f4f6; border-radius: 12px; height: 32px; position: relative; overflow: hidden; margin-bottom: 6px;">
     <div style="height: 32px; border-radius: 12px; width: {pct_clamped:.1f}%; background: {bar_color};"></div>
   </div>
   <p style="text-align: center; font-size: 14px; font-weight: 600; color: #374151; margin: 0 0 4px 0;">
-    {total_aps:,} / {target_aps:,} APs ({pct:.1f}%)
+    {ap_line}
   </p>
   <p style="text-align: center; font-size: 13px; color: #6b7280; font-style: italic; margin: 0 0 16px 0;">
     {message}
   </p>
+  {_html_note(ap_note)}
 
   <!-- Switch Progress -->
+  {_html_left(sw_left)}
   <div style="background: #f3f4f6; border-radius: 12px; height: 32px; position: relative; overflow: hidden; margin-bottom: 6px;">
     <div style="height: 32px; border-radius: 12px; width: {switch_pct_clamped:.1f}%; background: {switch_bar_color};"></div>
   </div>
   <p style="text-align: center; font-size: 14px; font-weight: 600; color: #374151; margin: 0 0 4px 0;">
-    {total_switches:,} / {target_switches:,} switches ({switch_pct:.1f}%)
+    {sw_line}
   </p>
   <p style="text-align: center; font-size: 13px; color: #6b7280; font-style: italic; margin: 0 0 20px 0;">
     {switch_message}
   </p>
+  {_html_note(sw_note)}
 
   <!-- Stats grid -->
   <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 4px;">Access Points</div>
@@ -285,6 +405,8 @@ async def generate_and_send_report(report: ScheduledReport, db: Session) -> dict
       </td>
     </tr>
   </table>
+
+  {_build_sz_left_html(sz_left_rows, min_zone_aps, min_group_switches)}
 
   {_build_movers_24h_html(active_24h, pending_24h)}
 

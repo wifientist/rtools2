@@ -625,6 +625,8 @@ class ReportScheduleResponse(BaseModel):
     frequency: str = "weekly"
     day_of_week: int = 0
     recipients: list[str] = []
+    send_time: str = "12:30"  # local "HH:MM"
+    timezone: str = "UTC"     # IANA name, so DST shifts with the clock
 
 
 class ReportScheduleUpdate(BaseModel):
@@ -632,6 +634,19 @@ class ReportScheduleUpdate(BaseModel):
     frequency: Optional[str] = None
     day_of_week: Optional[int] = None
     recipients: Optional[list[str]] = None
+    send_time: Optional[str] = None
+    timezone: Optional[str] = None
+
+
+def _schedule_response(report) -> ReportScheduleResponse:
+    return ReportScheduleResponse(
+        enabled=report.enabled,
+        frequency=report.frequency,
+        day_of_week=report.day_of_week,
+        recipients=report.recipients,
+        send_time=report.send_time,
+        timezone=report.timezone,
+    )
 
 
 @router.get("/report-schedule/{controller_id}", response_model=ReportScheduleResponse)
@@ -655,17 +670,12 @@ def get_report_schedule(
         .first()
     )
     if report:
-        return ReportScheduleResponse(
-            enabled=report.enabled,
-            frequency=report.frequency,
-            day_of_week=report.day_of_week,
-            recipients=report.recipients,
-        )
+        return _schedule_response(report)
     return ReportScheduleResponse()
 
 
 @router.put("/report-schedule/{controller_id}", response_model=ReportScheduleResponse)
-def update_report_schedule(
+async def update_report_schedule(
     body: ReportScheduleUpdate,
     controller_id: int = Path(...),
     current_user: User = Depends(get_current_user),
@@ -701,16 +711,33 @@ def update_report_schedule(
         report.day_of_week = body.day_of_week
     if body.recipients is not None:
         report.recipients = body.recipients
+    if body.send_time is not None:
+        import re
+        m = re.fullmatch(r"(\d{1,2}):(\d{2})", body.send_time.strip())
+        if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+            raise HTTPException(status_code=400, detail="Send time must be HH:MM (24-hour)")
+        report.send_time = f"{int(m.group(1)):02d}:{m.group(2)}"
+    if body.timezone is not None:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(body.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(status_code=400, detail=f"Unknown time zone '{body.timezone}'")
+        report.timezone = body.timezone
 
     db.commit()
     db.refresh(report)
 
-    return ReportScheduleResponse(
-        enabled=report.enabled,
-        frequency=report.frequency,
-        day_of_week=report.day_of_week,
-        recipients=report.recipients,
-    )
+    # The schedule's own cron job fires only when the schedule says so.
+    from jobs.report_dispatcher_job import sync_report_job
+    from scheduler.service import get_scheduler
+    try:
+        await sync_report_job(get_scheduler(), report)
+    except Exception as e:
+        logger.error(f"[dashboard] report {report.id} saved but not scheduled: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Schedule saved, but it could not be scheduled: {e}")
+
+    return _schedule_response(report)
 
 
 @router.post("/report/{controller_id}/send")
