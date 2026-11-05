@@ -22,6 +22,10 @@ class ScheduledReport(Base):
     frequency = Column(String, default="weekly", nullable=False)  # "daily" / "weekly" / "monthly"
     day_of_week = Column(Integer, default=0, nullable=False)  # 0=Mon, 6=Sun (for weekly)
     recipients = Column(JSON, default=list, nullable=False)
+    # Local send time ("HH:MM") in an IANA time zone, so the send stays put
+    # across daylight-saving changes.
+    send_time = Column(String(5), default="12:30", nullable=False, server_default="12:30")
+    timezone = Column(String(64), default="UTC", nullable=False, server_default="UTC")
     last_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(

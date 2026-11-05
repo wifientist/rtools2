@@ -408,6 +408,27 @@ function getSwitchMessage(pct: number): string {
   return "The switch migration begins!";
 }
 
+// Time zones offered for the report send time: the common US ones, UTC, the
+// browser's own zone and whatever is saved.
+const COMMON_REPORT_TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Phoenix",
+  "America/Los_Angeles",
+  "UTC",
+];
+
+function reportTimezoneOptions(current: string): string[] {
+  let browser = "";
+  try {
+    browser = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    // ignore
+  }
+  return Array.from(new Set([...COMMON_REPORT_TIMEZONES, browser, current].filter(Boolean)));
+}
+
 const MigrationDashboard = () => {
   const { controllers, userRole } = useAuth();
 
@@ -449,6 +470,8 @@ const MigrationDashboard = () => {
   const [reportEnabled, setReportEnabled] = useState(false);
   const [reportFrequency, setReportFrequency] = useState("weekly");
   const [reportDayOfWeek, setReportDayOfWeek] = useState(0);
+  const [reportSendTime, setReportSendTime] = useState("12:30");
+  const [reportTimezone, setReportTimezone] = useState("UTC");
   const [reportRecipients, setReportRecipients] = useState<string[]>([]);
   const [recipientInput, setRecipientInput] = useState("");
   const [savingReport, setSavingReport] = useState(false);
@@ -769,6 +792,8 @@ const MigrationDashboard = () => {
           setReportEnabled(data.enabled ?? false);
           setReportFrequency(data.frequency ?? "weekly");
           setReportDayOfWeek(data.day_of_week ?? 0);
+          setReportSendTime(data.send_time ?? "12:30");
+          setReportTimezone(data.timezone ?? "UTC");
           setReportRecipients(data.recipients ?? []);
         })
         .catch(() => {});
@@ -833,6 +858,8 @@ const MigrationDashboard = () => {
           frequency: reportFrequency,
           day_of_week: reportDayOfWeek,
           recipients: reportRecipients,
+          send_time: reportSendTime,
+          timezone: reportTimezone,
         }),
       });
     } catch {
@@ -1269,7 +1296,34 @@ const MigrationDashboard = () => {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400">Reports are sent at 12:30 UTC</p>
+                  <div className="flex items-end gap-4 flex-wrap">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Send at</label>
+                      <input
+                        type="time"
+                        value={reportSendTime}
+                        onChange={(e) => setReportSendTime(e.target.value)}
+                        className="w-36 px-3 py-2 border rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Time zone</label>
+                      <select
+                        value={reportTimezone}
+                        onChange={(e) => setReportTimezone(e.target.value)}
+                        className="w-60 px-3 py-2 border rounded-lg text-sm"
+                      >
+                        {reportTimezoneOptions(reportTimezone).map((tz) => (
+                          <option key={tz} value={tz}>
+                            {tz.replace(/_/g, " ")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Sent at this local time on the days above; it follows daylight saving time.
+                  </p>
 
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Recipients</label>
