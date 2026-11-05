@@ -27,10 +27,17 @@ broadcast_model); R1 decides per AP Group, with "All AP Groups" on top. So:
   5. 15 SSIDs per AP Group: group WLANs + All AP Groups WLANs (incl. ones
      already on All AP Groups in the R1 venue).
 
-WLANs no AP broadcasts (unused WLAN Groups, Always Off schedules) are the
-operator's call, per WLAN: skip (default), create (WLAN only), or create +
-stage -- the WLAN is created and its AP Group built and filled with the APs
-it pairs with, but nothing is activated. Pairing: an SZ WLAN Group holding
+WLANs no AP broadcasts (unused WLAN Groups, AP overrides pointing at the
+wrong WLAN Group, Always Off schedules) are the operator's call, per WLAN:
+skip, create (WLAN only), create + stage -- the WLAN is created and its AP
+Group built and filled with the APs it pairs with, but nothing is activated
+-- or activate. Activate puts a per-unit WLAN (one whose unit can be named:
+its own SZ WLAN Group, the {unit} of the pairing pattern, or "unit@site")
+on its unit's AP Group and activates it there: the staged group it pairs
+into, else a group of that name the SZ broadcast already derives, else an
+R1 group of that name, else a new one -- built even if no AP lands in it.
+A WLAN with no unit to name a group after is activated on All AP Groups.
+The Review step defaults per-unit WLANs to activate. Pairing: an SZ WLAN Group holding
 the WLAN whose name is an AP's name (sites where unit overrides were backed
 out keep "12103" groups beside AP "12103"), or a name pattern. Only APs
 that broadcast just the All AP Groups set (or nothing) can be staged -- an
@@ -125,6 +132,8 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
       group_names: {key: name}       renames
       include_unbroadcast: [wlan id] migrate (create, no activation)
       stage_unbroadcast: [wlan id]   create + build/fill its paired AP Group, no activation
+      activate_unbroadcast: [wlan id]  create + activate on its unit's AP Group (built even
+                                     with no AP), or All AP Groups when it has no unit
       pairing: {mode: "wlan_group" | "pattern", wlan_pattern, ap_pattern}
                                      how a staged WLAN finds its APs ({unit} in both patterns)
       excluded_wlans: [wlan id]      not migrated at all
@@ -161,6 +170,26 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
             coverage[w].add(i)
             bands_all[w] |= b
 
+    # ── WLANs no AP broadcasts: the operator's mode, and the unit each looks like ──
+    include = set(choices.get("include_unbroadcast") or [])
+    stage = set(choices.get("stage_unbroadcast") or [])
+    activate = set(choices.get("activate_unbroadcast") or [])
+    pairing = choices.get("pairing") or {}
+    unit_re = _pattern_regex(pairing.get("wlan_pattern") or "") if pairing.get("mode") == "pattern" else None
+    holders = _wlan_groups_of(snapshot)
+    ub_mode: Dict[str, str] = {}
+    ub_unit: Dict[str, Optional[str]] = {}
+    for w in snapshot.wlans:
+        if w.id in coverage:
+            continue
+        ub_unit[w.id] = unit_of_wlan(w, holders.get(w.id, []), unit_re)
+        ub_mode[w.id] = ("activate" if w.id in activate else "stage" if w.id in stage
+                         else "create" if w.id in include else "skip")
+    # Activated with no unit to name a group after: All AP Groups (the operator's opt-in)
+    ub_all_ap = {wid for wid, m in ub_mode.items() if m == "activate" and not ub_unit[wid]}
+    # Radios for a WLAN no AP broadcasts: the bands the zone broadcasts on
+    zone_bands = sorted(set().union(*bands_all.values())) if bands_all else ["2.4", "5"]
+
     # ── 2. Property-wide ───────────────────────────────────────────
     n_active = len(active)
     suggested = {w for w, s in coverage.items() if n_active and len(s) / n_active >= PROPERTY_WIDE_SHARE}
@@ -181,7 +210,7 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
                 if vag.get("venueId") in (None, inv.venue_id) and vag.get("isAllApGroups") \
                         and net.get("ssid") not in mig_ssids:
                     existing_all_ap.add(net.get("ssid"))
-    all_ap_ssids = {wlan_by_id[w].ssid for w in all_ap} | existing_all_ap
+    all_ap_ssids = {wlan_by_id[w].ssid for w in all_ap | ub_all_ap} | existing_all_ap
 
     # R1 groups by the SSIDs activated on them specifically (not All AP Groups)
     r1_by_ssids: Dict[FrozenSet[str], List[Dict[str, Any]]] = defaultdict(list)
@@ -266,18 +295,22 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
     def warn(message: str, severity: str = "warning"):
         warnings.append({"message": message, "severity": severity})
 
-    include = set(choices.get("include_unbroadcast") or [])
-    stage = set(choices.get("stage_unbroadcast") or [])
     unbroadcast: List[Dict[str, Any]] = []
     always_off = {w.id for w in snapshot.wlans if w.id not in sz.ssid_by_wlan}
     for w in snapshot.wlans:
         if w.id not in coverage:
-            mode = "stage" if w.id in stage else "create" if w.id in include else "skip"
+            mode = ub_mode[w.id]
             unbroadcast.append({"id": w.id, "name": w.name, "ssid": w.ssid, "auth_type": w.auth_type,
                                 "reason": "Scheduled Always Off" if w.id in always_off
                                 else "In no WLAN Group any AP uses",
                                 "mode": mode, "included": mode != "skip", "paired_aps": [],
-                                "paired_group": None})
+                                "paired_group": None,
+                                # the unit it looks like (None: not per-unit -> All AP Groups if activated)
+                                "unit": ub_unit[w.id],
+                                "activation": None if mode != "activate"
+                                else "ap_group" if ub_unit[w.id] else "all_ap_groups",
+                                "unit_group": None,
+                                "radio_types": r1_radio_types(zone_bands, w.encryption)[0]})
             continue
         radio_types, radio_notes = r1_radio_types(sorted(bands_all[w.id]), w.encryption)
         row = {
@@ -309,13 +342,14 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
     staged = _stage(snapshot, unbroadcast, default_aps,
                     [a for a in aps if not a["wlans"]], choices.get("pairing") or {},
                     inv, claimed, renames, all_ap_ssids, r1_by_ssids)
+    _place_activated(unbroadcast, groups, staged, inv, claimed, renames, all_ap_ssids, r1_by_ssids)
     staged_serials = {ap["serial"] for g in staged["groups"] if g["chosen"] for ap in g["aps"]}
     default_aps = [a for a in default_aps if a["raw"].get("serial") not in staged_serials]
 
     default_total = len(all_ap_ssids)
     if default_total > R1_SSID_LIMIT:
         warn(f"{default_total} SSIDs on All AP Groups — over R1's {R1_SSID_LIMIT} per AP Group everywhere", "error")
-    over = [g["name"] for g in groups if g["over_limit"]]
+    over = [g["name"] for g in groups + [x for x in staged["groups"] if x["chosen"]] if g["over_limit"]]
     if over:
         warn(f"{len(over)} AP Group(s) over {R1_SSID_LIMIT} SSIDs: {', '.join(over[:SAMPLE])}", "error")
     # Two groups to build under one name would land in one R1 group
@@ -352,6 +386,10 @@ def build_layout(snapshot: SZMigrationSnapshot, inv: Optional[R1VenueInventory],
             "staged_groups": sum(1 for g in staged["groups"] if g["chosen"]),
             "staged_aps": len(staged_serials),
             "staged_candidates": len(staged["groups"]),
+            "activated_unbroadcast": sum(1 for u in unbroadcast if u["mode"] == "activate"),
+            "activated_all_ap": len(ub_all_ap),
+            # unit groups built and activated that no AP lands in
+            "unit_groups_empty": sum(1 for g in staged["groups"] if g["chosen"] and not g["ap_count"]),
         },
         "default_group": {"ap_count": len(default_aps), "ssid_total": default_total,
                           "over_limit": default_total > R1_SSID_LIMIT,
@@ -482,7 +520,9 @@ def _stage(snapshot: SZMigrationSnapshot, rows: List[Dict[str, Any]], default_ap
         shared = sorted(set.intersection(*(set(groups_of.get(w, [])) for w in wids))) if out["mode"] != "pattern" else []
         base = shared[0] if shared else first.name
         ssids = sorted({wlan_by_id[w].ssid for w in wids})
-        chosen = any(row_by_id[w]["mode"] == "stage" for w in wids)
+        chosen = any(row_by_id[w]["mode"] in ("stage", "activate") for w in wids)
+        # what an AP in it broadcasts beyond All AP Groups: its activated WLANs only
+        active_ssids = sorted({wlan_by_id[w].ssid for w in wids if row_by_id[w]["mode"] == "activate"})
         r1 = None
         live = [g for g in r1_by_ssids.get(frozenset(ssids), []) if g["id"] not in claimed]
         if len(live) == 1:
@@ -500,6 +540,8 @@ def _stage(snapshot: SZMigrationSnapshot, rows: List[Dict[str, Any]], default_ap
         for w in wids:
             row_by_id[w]["paired_aps"] = [_ap_label(a["raw"]) for a in members]
             row_by_id[w]["paired_group"] = name
+            if row_by_id[w]["mode"] == "activate":
+                row_by_id[w]["unit_group"] = key
         source = "SZ WLAN Group" if shared else "WLAN name"
         options = [] if match == "SSIDs" else _name_options(
             base, source, [a["raw"] for a in members], [wlan_by_id[w] for w in sorted(wids)])
@@ -512,9 +554,96 @@ def _stage(snapshot: SZMigrationSnapshot, rows: List[Dict[str, Any]], default_ap
                     for a in members],
             "r1_id": r1.get("id") if r1 else None, "exists": r1 is not None, "matched_by": match,
             "chosen": chosen, "create": chosen and r1 is None,
-            "ssid_total": len(all_ap_ssids), "over_limit": False, "radio_types": {},
+            "active_ssids": active_ssids,
+            "ssid_total": len(all_ap_ssids | set(active_ssids)),
+            "over_limit": len(all_ap_ssids | set(active_ssids)) > R1_SSID_LIMIT,
+            "radio_types": {w: row_by_id[w]["radio_types"] for w in wids if row_by_id[w]["mode"] == "activate"},
         })
     return out
+
+
+def _wlan_groups_of(snapshot: SZMigrationSnapshot) -> Dict[str, List[str]]:
+    """WLAN id -> names of the SZ WLAN Groups holding it."""
+    out: Dict[str, List[str]] = defaultdict(list)
+    for g in snapshot.wlan_groups:
+        for m in g.members:
+            out[m.id].append(g.name)
+    return out
+
+
+def unit_of_wlan(w: Any, wlan_groups: List[str], unit_re: Optional["re.Pattern"]) -> Optional[str]:
+    """
+    The unit a WLAN no AP broadcasts belongs to, to name its AP Group after:
+    the {unit} of the pairing pattern, else the one SZ WLAN Group holding it
+    (per-unit zones keep a "12103" group per unit; "default" doesn't count),
+    else the "12103" of "12103@Site". None: not per-unit.
+    """
+    if unit_re is not None:
+        m = unit_re.match(w.name or "") or unit_re.match(w.ssid or "")
+        if m and m.group("unit").strip():
+            return m.group("unit").strip()
+    own = [n for n in wlan_groups if (n or "").strip() and n.strip().casefold() != _SZ_DEFAULT_AP_GROUP]
+    if len(own) == 1:
+        return own[0].strip()
+    for value in (w.name, w.ssid):
+        if value and "@" in value and value.rsplit("@", 1)[0].strip():
+            return value.rsplit("@", 1)[0].strip()
+    return None
+
+
+def _place_activated(rows: List[Dict[str, Any]], groups: List[Dict[str, Any]], staged: Dict[str, Any],
+                     inv: Optional[R1VenueInventory], claimed: Set[str], renames: Dict[str, str],
+                     all_ap_ssids: Set[str], r1_by_ssids: Dict[FrozenSet[str], List[Dict[str, Any]]]) -> None:
+    """
+    An activated per-unit WLAN no AP pairs with still goes on its unit's AP
+    Group: one the SZ broadcast derives under that name (its APs gain the
+    WLAN), else a staged candidate of that name (now built), else a group of
+    its own -- the R1 one of that name, or one to create, empty. Fills
+    unit_group / paired_group on each row.
+    """
+    for row in rows:
+        if row["mode"] != "activate" or not row["unit"] or row["unit_group"]:
+            continue
+        name = r1_group_name(row["unit"])
+        f = name.casefold()
+        wid, ssid, radios = row["id"], row["ssid"], row["radio_types"]
+        derived = next((g for g in groups if g["name"].casefold() == f), None)
+        if derived is not None:
+            derived["wlan_ids"] = sorted(set(derived["wlan_ids"]) | {wid})
+            derived["ssids"] = sorted(set(derived["ssids"]) | {ssid})
+            derived["radio_types"][wid] = radios
+            derived["ssid_total"] = len(set(derived["ssids"]) | all_ap_ssids)
+            derived["over_limit"] = derived["ssid_total"] > R1_SSID_LIMIT
+            row["unit_group"], row["paired_group"] = derived["key"], derived["name"]
+            continue
+        g = next((x for x in staged["groups"] if x["name"].casefold() == f), None)
+        if g is None:
+            key = "unit-" + hashlib.sha1(f.encode()).hexdigest()[:12]
+            gname = r1_group_name(renames.get(key) or name)
+            # An earlier run's group for it: activated with just this SSID, or by name
+            live = [x for x in r1_by_ssids.get(frozenset({ssid}), []) if x["id"] not in claimed]
+            r1, match = (live[0], "SSIDs") if len(live) == 1 else (None, None)
+            if r1 is None and inv is not None:
+                r1 = inv.ap_group_by_name(gname)
+                r1 = None if r1 is not None and r1["id"] in claimed else r1
+                match = "name" if r1 else None
+            if r1 is not None:
+                claimed.add(r1["id"])
+                gname = r1.get("name") or gname
+            g = {"key": key, "name": gname, "name_source": "unit (no AP pairs)", "renamed": key in renames,
+                 "staged": True, "name_options": [], "ambiguous": False,
+                 "wlan_ids": [], "ssids": [], "ap_count": 0, "aps": [],
+                 "r1_id": r1.get("id") if r1 else None, "exists": r1 is not None, "matched_by": match,
+                 "chosen": True, "create": r1 is None, "active_ssids": [], "radio_types": {}}
+            staged["groups"].append(g)
+        g["wlan_ids"] = sorted(set(g["wlan_ids"]) | {wid})
+        g["ssids"] = sorted(set(g["ssids"]) | {ssid})
+        g["active_ssids"] = sorted(set(g.get("active_ssids") or []) | {ssid})
+        g["radio_types"][wid] = radios
+        g["chosen"], g["create"] = True, not g["exists"]
+        g["ssid_total"] = len(all_ap_ssids | set(g["active_ssids"]))
+        g["over_limit"] = g["ssid_total"] > R1_SSID_LIMIT
+        row["unit_group"], row["paired_group"] = g["key"], g["name"]
 
 
 def wlan_activations(layout: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -523,9 +652,12 @@ def wlan_activations(layout: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
       {"mode": "all_ap_groups", "radio_types": [...]}
       {"mode": "ap_groups", "targets": [{r1_ap_group_id, r1_ap_group_name, r1_ap_group_create, r1_radio_types}],
        "skipped_groups": [name]}
-      {"mode": "none"}  (included un-broadcast WLANs: created only)
+      {"mode": "none"}  (included un-broadcast WLANs: created only / staged)
+    Activated un-broadcast WLANs: ap_groups on their unit group, or
+    all_ap_groups when they have no unit.
     """
     groups = {g["key"]: g for g in layout["groups"]}
+    staged = {g["key"]: g for g in layout["staged"]["groups"]}
     out: Dict[str, Dict[str, Any]] = {}
     for w in layout["wlans"]:
         if w["mode"] == "all_ap_groups":
@@ -542,6 +674,16 @@ def wlan_activations(layout: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 skipped.append(g["name"])
         out[w["id"]] = {"mode": "ap_groups", "targets": targets, "skipped_groups": skipped}
     for u in layout["unbroadcast"]:
-        if u["included"]:
+        if u["mode"] == "activate" and u.get("activation") == "all_ap_groups":
+            out[u["id"]] = {"mode": "all_ap_groups", "radio_types": u["radio_types"]}
+        elif u["mode"] == "activate":
+            g = groups.get(u.get("unit_group")) or staged.get(u.get("unit_group"))
+            ready = g is not None and (g["exists"] or g["create"])
+            out[u["id"]] = {"mode": "ap_groups",
+                            "targets": [{"r1_ap_group_id": g["r1_id"], "r1_ap_group_name": g["name"],
+                                         "r1_ap_group_create": g["create"] and not g["exists"],
+                                         "r1_radio_types": u["radio_types"]}] if ready else [],
+                            "skipped_groups": [] if ready else [g["name"] if g else u.get("unit") or "?"]}
+        elif u["included"]:
             out[u["id"]] = {"mode": "none"}
     return out

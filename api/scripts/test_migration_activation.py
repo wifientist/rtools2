@@ -77,12 +77,13 @@ def snapshot():
     one of them has an AP-level override to 'unit-101' (+ Unit101). 'Unused'
     is in a WLAN Group nothing uses."""
     wlans = [SZWLANFull(id="w1", name="Guest", ssid="Guest", auth_type="WPA2-PSK",
-                        encryption={"method": "WPA2"}),
+                        encryption={"method": "WPA2", "passphrase": "guest-pass-1"}),
              SZWLANFull(id="w2", name="Secure6", ssid="Secure6", auth_type="WPA3-SAE",
-                        encryption={"method": "WPA3"}),
+                        encryption={"method": "WPA3", "saePassphrase": "secure6-sae"}),
              SZWLANFull(id="w3", name="Unit101", ssid="Unit101", auth_type="WPA2-PSK",
-                        encryption={"method": "WPA2"}),
-             SZWLANFull(id="w4", name="Unused", ssid="Unused", auth_type="WPA2-PSK")]
+                        encryption={"method": "WPA2", "passphrase": "unit101-pass"}),
+             SZWLANFull(id="w4", name="Unused", ssid="Unused", auth_type="WPA2-PSK",
+                        encryption={"method": "WPA2", "passphrase": "unused-pass"})]
     m = {w.id: SZWLANGroupMember(id=w.id, name=w.name, ssid=w.ssid) for w in wlans}
     aps = [{"apMac": f"ap{i}", "deviceName": f"AP-{i}", "serial": f"S{i}", "apGroupId": SZ_DEFAULT_ID}
            for i in range(10)]
@@ -107,8 +108,21 @@ def inventory(groups=()):
                             ap_groups=[{"id": "r1-default", "name": "", "isDefault": True}, *groups])
 
 
-async def run_validate(options=None, inv=None):
-    snap = snapshot()
+async def run_validate(options=None, inv=None, r1_pp=None, snap=None):
+    """r1_pp: {network id: R1 passphrase | Exception}; unlisted networks carry SZ's own (same SSID)."""
+    snap = snap or snapshot()
+    inv = inv or inventory()
+    r1_pp = r1_pp or {}
+    sz_by_ssid = {w.ssid: (w.encryption or {}) for w in snap.wlans}
+
+    async def network_detail(net_id, tenant_id=None):
+        if isinstance(r1_pp.get(net_id), Exception):
+            raise r1_pp[net_id]
+        if net_id in r1_pp:
+            return {"wlan": {"passphrase": r1_pp[net_id]}}
+        net = next((n for n in [*inv.wifi_networks, *inv.tenant_networks] if n.get("id") == net_id), {})
+        enc = sz_by_ssid.get(net.get("ssid"), {})
+        return {"wlan": {k: enc[k] for k in ("passphrase", "saePassphrase") if enc.get(k)}}
 
     class R:
         async def get(self, k):
@@ -118,11 +132,12 @@ async def run_validate(options=None, inv=None):
         return R()
 
     async def fake_inventory(*a, **k):
-        return inv or inventory()
+        return inv
 
     validate_mod.get_redis_client = fake_redis
     validate_mod.capture_venue_inventory = fake_inventory
-    r1 = SimpleNamespace(radius_profiles=SimpleNamespace(get_radius_profiles=lambda t=None: []))
+    r1 = SimpleNamespace(radius_profiles=SimpleNamespace(get_radius_profiles=lambda t=None: []),
+                         networks=SimpleNamespace(get_wifi_network_by_id=network_detail))
     phase = validate_mod.ValidateMigrationPhase(PhaseContext(
         job_id="j", r1_client=r1, venue_id="v", tenant_id="t", options=options or {}))
     return await phase.execute(phase.Inputs(sz_snapshot_job_id="snap"))
@@ -456,9 +471,79 @@ async def main():
     failures += check("AP Mapping: the AP whose only own WLAN was excluded goes to the default group",
                       a0["group_key"] == "__default__" and "Unit101" not in a0["broadcast"], str(a0))
 
+    failures += await test_psk_passphrases()
+
     print(f"\n{'FAILED' if failures else 'All checks passed'}"
           f"{f' ({failures})' if failures else ''}")
     return 1 if failures else 0
+
+
+async def test_psk_passphrases():
+    """A PSK network carries SZ's own passphrase -- never a placeholder, never someone else's network."""
+    print("\nPSK passphrases")
+    f = 0
+    errors = lambda out: [c.description for c in out.validation_result.conflicts if c.severity == "error"]
+    warns = lambda out: [c.description for c in out.validation_result.conflicts if c.severity == "warning"]
+
+    # No passphrase from SZ: a blocking plan error, not a silent placeholder
+    snap = snapshot()
+    snap.wlans[0].encryption = {"method": "WPA2"}
+    out = await run_validate(snap=snap)
+    f += check("PSK WLAN with no SZ passphrase blocks the plan",
+               not out.validation_result.valid and any("Guest" in e and "no passphrase" in e for e in errors(out)),
+               str(errors(out)))
+
+    # Same name + SSID, activated nowhere, but another passphrase: not ours
+    inv = inventory()
+    inv.tenant_networks = [{"id": "n-guest", "name": "Guest", "ssid": "Guest", "nwSubType": "psk"}]
+    out = await run_validate(inv=inv, r1_pp={"n-guest": "someone-elses"})
+    u = out.unit_mappings["w1"]
+    f += check("same name + SSID but another passphrase: not reused, created as <name>_<venue>",
+               not u.resolved.network_id and u.plan.extra["r1_network_name"] == "Guest_V"
+               and any("different passphrase" in w for w in warns(out)) and out.validation_result.valid,
+               str((u.resolved.network_id, u.plan.extra.get("r1_network_name"), warns(out))))
+
+    out = await run_validate(inv=inv)
+    f += check("same passphrase: reused", out.unit_mappings["w1"].resolved.network_id == "n-guest",
+               str(out.unit_mappings["w1"].resolved.network_id))
+
+    out = await run_validate(inv=inv, r1_pp={"n-guest": RuntimeError("503")})
+    f += check("R1 network unreadable: blocks the plan rather than reusing blind",
+               not out.validation_result.valid and any("couldn't read the passphrase" in e for e in errors(out)),
+               str(errors(out)))
+
+    # WPA3: R1 stores the SAE key; reuse compares it
+    inv3 = inventory()
+    inv3.tenant_networks = [{"id": "n-s6", "name": "Secure6", "ssid": "Secure6", "nwSubType": "psk"}]
+    out = await run_validate(inv=inv3)
+    f += check("WPA3 network carrying SZ's SAE key: reused", out.unit_mappings["w2"].resolved.network_id == "n-s6",
+               str(warns(out)))
+
+    # create_networks: security from SZ's method, passphrases as SZ has them
+    from workflow.phases.sz_migration.create_networks import CreateNetworksPhase, psk_security
+    f += check("WPA23_Mixed stays mixed with its own SAE key (not WPA3-only)",
+               psk_security({"method": "WPA23_Mixed", "passphrase": "aaaaaaaa", "saePassphrase": "bbbbbbbb"})
+               == ("WPA2/WPA3", "aaaaaaaa", "bbbbbbbb"))
+    f += check("WPA3 uses the SAE passphrase", psk_security({"method": "WPA3", "saePassphrase": "bbbbbbbb"})
+               == ("WPA3", "bbbbbbbb", None))
+    sent = {}
+
+    async def create_wifi_network(**kw):
+        sent.update(kw)
+        return {"id": "n"}
+    phase = CreateNetworksPhase.__new__(CreateNetworksPhase)
+    phase.r1_client = SimpleNamespace(networks=SimpleNamespace(create_wifi_network=create_wifi_network))
+    phase.tenant_id, phase.venue_id = "t", "v"
+    err = await raises(phase._create_psk_network({"sz_wlan_name": "Guest", "encryption": {"method": "WPA2"}},
+                                                 "Guest", "Guest", 1))
+    f += check("no passphrase at create time: fails the WLAN, nothing sent",
+               err and "no passphrase" in err and not sent, str((err, sent)))
+    await phase._create_psk_network({"encryption": {"method": "WPA23_Mixed", "passphrase": "aaaaaaaa",
+                                                    "saePassphrase": "bbbbbbbb"}}, "M", "M", 1)
+    f += check("mixed create sends both of SZ's keys",
+               (sent.get("security_type"), sent.get("passphrase"), sent.get("sae_passphrase"))
+               == ("WPA2/WPA3", "aaaaaaaa", "bbbbbbbb"), str({k: sent.get(k) for k in ("security_type",)}))
+    return f
 
 
 if __name__ == "__main__":

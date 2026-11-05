@@ -112,39 +112,29 @@ export default function Step6Results({ state, dispatch }: Props) {
   const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
-    if (state.finalJobId) {
-      fetchResults();
-    }
-  }, [state.finalJobId]);
+    fetchResults();
+  }, [state.finalJobId, state.venueConfigJobId, state.apMappingJobId]);
 
+  // Every stage is optional (a second zone into an already-built venue skips
+  // Create WLANs), so each read is independent and none of them gates the page.
   const fetchResults = async () => {
-    if (!state.finalJobId) return;
     setLoading(true);
-    apiFetch(`${API_URL}/sz-migration/workflow/${state.finalJobId}/outcome`)
-      .then(r => (r.ok ? r.json() : null)).then(d => d && setBreakdown(d)).catch(() => {});
-    if (state.venueConfigJobId) {
-      apiFetch(`${API_URL}/sz-migration/venue-config/${state.venueConfigJobId}/report`)
-        .then(r => (r.ok ? r.json() : null)).then(d => d && setVenueReport(d)).catch(() => {});
-    }
-    if (state.apMappingJobId) {
-      apiFetch(`${API_URL}/sz-migration/ap-mapping/${state.apMappingJobId}/report`)
-        .then(r => (r.ok ? r.json() : null)).then(d => d && setApReport(d)).catch(() => {});
-    }
-
-    try {
-      const res = await apiFetch(`${API_URL}/jobs/${state.finalJobId}/status`);
-      if (res.ok) {
-        const data = await res.json();
-        setResult(data);
-      }
-    } catch {
-      // Non-critical
-    } finally {
-      setLoading(false);
-    }
+    const getJson = (url: string) =>
+      apiFetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    const [status, outcome, venue, ap] = await Promise.all([
+      state.finalJobId ? getJson(`${API_URL}/jobs/${state.finalJobId}/status`) : null,
+      state.finalJobId ? getJson(`${API_URL}/sz-migration/workflow/${state.finalJobId}/outcome`) : null,
+      state.venueConfigJobId ? getJson(`${API_URL}/sz-migration/venue-config/${state.venueConfigJobId}/report`) : null,
+      state.apMappingJobId ? getJson(`${API_URL}/sz-migration/ap-mapping/${state.apMappingJobId}/report`) : null,
+    ]);
+    setResult(status);
+    setBreakdown(outcome);
+    setVenueReport(venue);
+    setApReport(ap);
+    setLoading(false);
   };
 
-  if (loading) {
+  if (loading && !result && !venueReport && !apReport) {
     return (
       <div className="bg-white rounded-lg shadow p-8 flex flex-col items-center">
         <Loader2 size={32} className="text-blue-600 animate-spin mb-3" />
@@ -153,35 +143,42 @@ export default function Step6Results({ state, dispatch }: Props) {
     );
   }
 
-  if (!result) {
-    return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <p className="text-gray-500">No results available yet.</p>
-        <button
-          onClick={fetchResults}
-          className="mt-3 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-        >
-          Refresh
-        </button>
-      </div>
-    );
-  }
-
-  const isCompleted = result.status === 'COMPLETED';
-  const isFailed = result.status === 'FAILED';
-  const isPartial = result.status === 'PARTIAL';
-
   // Get WLAN-specific phase stats (create_networks is the best proxy for per-WLAN progress)
-  const networkPhase = result.progress.phase_stats?.create_networks;
+  const networkPhase = result?.progress?.phase_stats?.create_networks;
   const wlanTotal = networkPhase?.total || state.planResult?.unit_count || 0;
   const wlanCompleted = networkPhase?.completed || 0;
   const wlanFailed = networkPhase?.failed || 0;
 
   // Created resources
-  const createdNetworks = result.created_resources?.wifi_networks || [];
-  const createdRadius = result.created_resources?.radius_profiles || [];
-  const createdDpskPools = result.created_resources?.dpsk_pools || [];
-  const createdIdentityGroups = result.created_resources?.identity_groups || [];
+  const createdNetworks = result?.created_resources?.wifi_networks || [];
+  const createdRadius = result?.created_resources?.radius_profiles || [];
+  const createdDpskPools = result?.created_resources?.dpsk_pools || [];
+  const createdIdentityGroups = result?.created_resources?.identity_groups || [];
+
+  // Each stage's outcome, so the header can summarise the run even when a
+  // stage was skipped or its verify step flagged differences.
+  const venueVerify: any[] = venueReport?.verify ?? [];
+  const venueStatus: 'ok' | 'warn' | 'skip' = !state.venueConfigJobId ? 'skip'
+    : !venueVerify.length || venueVerify.some(v => v.status !== 'verified') ? 'warn' : 'ok';
+  const wlanStatus: 'ok' | 'warn' | 'fail' | 'skip' = !state.finalJobId ? 'skip'
+    : !breakdown ? (!result ? 'warn' : wlanFailed || result.status === 'FAILED' ? 'fail' : 'ok')
+    : breakdown.units_with_failures ? 'warn'
+    : breakdown.activated === breakdown.to_activate ? 'ok' : 'warn';
+  const apV = apReport?.verify ?? {};
+  const apC = apV.counts ?? {};
+  const apPlaced = (apC.aps ?? 0) - (apC.aps_unmapped ?? 0) - (apC.aps_blocked ?? 0) - (apC.aps_keep ?? 0)
+    - (apC.aps_not_in_r1 ?? 0);
+  const apDiffer = apV.differing_total ?? 0;
+  const apStatus: 'ok' | 'warn' | 'skip' = !state.apMappingJobId ? 'skip'
+    : !apV.counts || apDiffer || (apC.aps_already ?? 0) < apPlaced ? 'warn' : 'ok';
+
+  const stages = [venueStatus, wlanStatus, apStatus];
+  const overall = stages.includes('fail') ? 'fail'
+    : stages.includes('warn') ? 'warn'
+    : stages.every(s => s === 'skip') ? 'warn' : 'ok';
+  const isCompleted = overall === 'ok';
+  const isFailed = overall === 'fail';
+  const isPartial = overall === 'warn';
 
   return (
     <div className="space-y-6">
@@ -199,9 +196,9 @@ export default function Step6Results({ state, dispatch }: Props) {
             <h3 className="text-xl font-bold">
               {isCompleted ? 'Migration Complete' :
                isFailed ? 'Migration Failed' :
-               'Migration Partially Complete'}
+               'Migration Complete — with items to check'}
             </h3>
-            <p className="text-sm text-gray-500 font-mono">{result.job_id}</p>
+            {result?.job_id && <p className="text-sm text-gray-500 font-mono">{result.job_id}</p>}
           </div>
         </div>
 
@@ -213,12 +210,11 @@ export default function Step6Results({ state, dispatch }: Props) {
 
       {/* 1. Venue Configuration */}
       {(() => {
-        const verify: any[] = venueReport?.verify ?? [];
+        const verify = venueVerify;
         const ok = verify.filter(v => v.status === 'verified').length;
         const off = verify.filter(v => v.status !== 'verified');
         return (
-          <StageCard n={1} title="Venue Configuration"
-                     status={!state.venueConfigJobId ? 'skip' : !verify.length ? 'warn' : off.length ? 'warn' : 'ok'}>
+          <StageCard n={1} title="Venue Configuration" status={venueStatus}>
             {!state.venueConfigJobId ? (
               <div className="text-sm text-gray-500">Not run — the venue's settings were left as R1 had them.</div>
             ) : !verify.length ? (
@@ -246,9 +242,12 @@ export default function Step6Results({ state, dispatch }: Props) {
       })()}
 
       {/* 2. WLANs */}
-      <StageCard n={2} title="WLANs"
-                 status={!breakdown ? (wlanFailed ? 'fail' : 'ok') : breakdown.units_with_failures ? 'warn'
-                   : breakdown.activated === breakdown.to_activate ? 'ok' : 'warn'}>
+      <StageCard n={2} title="WLANs" status={wlanStatus}>
+        {!state.finalJobId ? (
+          <div className="text-sm text-gray-500">Not run in this session — no WLANs were created.</div>
+        ) : !result && !breakdown ? (
+          <div className="text-sm text-gray-500">Couldn't read the Create WLANs job — try Refresh.</div>
+        ) : (<>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
           <Tile value={wlanTotal} label="WLANs" />
           {breakdown ? (
@@ -295,6 +294,7 @@ export default function Step6Results({ state, dispatch }: Props) {
             ))}
           </div>
         )}
+        </>)}
       </StageCard>
 
       {/* 3. AP Groups */}
@@ -314,14 +314,9 @@ export default function Step6Results({ state, dispatch }: Props) {
 
       {/* 4. AP Mapping */}
       {(() => {
-        const v = apReport?.verify ?? {};
-        const c = v.counts ?? {};
-        const placed = (c.aps ?? 0) - (c.aps_unmapped ?? 0) - (c.aps_blocked ?? 0) - (c.aps_keep ?? 0)
-          - (c.aps_not_in_r1 ?? 0);
-        const differ = v.differing_total ?? 0;
+        const v = apV, c = apC, placed = apPlaced, differ = apDiffer;
         return (
-          <StageCard n={4} title="AP Mapping"
-                     status={!state.apMappingJobId ? 'skip' : !v.counts ? 'warn' : differ || (c.aps_already ?? 0) < placed ? 'warn' : 'ok'}>
+          <StageCard n={4} title="AP Mapping" status={apStatus}>
             {!state.apMappingJobId ? (
               <div className="text-sm text-gray-500">Skipped — configuration only; no APs were brought into R1.</div>
             ) : !v.counts ? (
@@ -348,6 +343,7 @@ export default function Step6Results({ state, dispatch }: Props) {
       })()}
 
       {/* Details: the raw phases and created resources, for digging in */}
+      {result && (
       <details className="bg-white rounded-lg shadow p-4">
         <summary className="font-semibold cursor-pointer select-none text-sm">Create WLANs job details — phases and created resources</summary>
         <div className="mt-4 space-y-6">
@@ -355,8 +351,8 @@ export default function Step6Results({ state, dispatch }: Props) {
       <div className="bg-white rounded-lg shadow p-6">
         <h4 className="font-semibold mb-3">Workflow Phases</h4>
         <div className="space-y-2">
-          {result.phases.map(phase => {
-            const stats = result.progress.phase_stats?.[phase.id];
+          {(result.phases ?? []).map(phase => {
+            const stats = result.progress?.phase_stats?.[phase.id];
             const isPerUnit = stats && 'total' in stats;
             return (
               <div
@@ -488,9 +484,10 @@ export default function Step6Results({ state, dispatch }: Props) {
 
         </div>
       </details>
+      )}
 
       {/* Errors */}
-      {result.errors.length > 0 && (
+      {(result?.errors?.length ?? 0) > 0 && result && (
         <div className="bg-red-50 border border-red-200 rounded-lg shadow p-6">
           <h4 className="font-semibold text-red-800 mb-2">Errors</h4>
           <div className="space-y-1">
@@ -508,9 +505,10 @@ export default function Step6Results({ state, dispatch }: Props) {
       <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={fetchResults}
-          className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm font-medium flex items-center gap-2"
+          disabled={loading}
+          className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm font-medium flex items-center gap-2 disabled:opacity-60"
         >
-          <RotateCcw size={14} />
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
           Refresh
         </button>
         {state.extractionJobId && (
@@ -531,21 +529,25 @@ export default function Step6Results({ state, dispatch }: Props) {
             Export CSV
           </button>
         )}
-        <button
-          onClick={() => setShowReport(v => !v)}
-          className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm font-medium flex items-center gap-2"
-        >
-          <Printer size={14} />
-          {showReport ? 'Hide Report' : 'Print Report'}
-        </button>
-        <a
-          href={`/jobs/${state.finalJobId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
-        >
-          Full Job Monitor
-        </a>
+        {result && (
+          <button
+            onClick={() => setShowReport(v => !v)}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm font-medium flex items-center gap-2"
+          >
+            <Printer size={14} />
+            {showReport ? 'Hide Report' : 'Print Report'}
+          </button>
+        )}
+        {state.finalJobId && (
+          <a
+            href={`/jobs/${state.finalJobId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
+          >
+            Full Job Monitor
+          </a>
+        )}
         {state.destVenueId && (
           // Opens the audit fresh: the URL hand-off didn't fully load it, and
           // picking the zone + venue there is quick.

@@ -146,7 +146,8 @@ def _snapshot():
             SZWLANFull(id="w-res", name="Resident", ssid="Resident", auth_type="DPSK"),
             SZWLANFull(id="w-corp", name="Corp", ssid="Corp", auth_type="WPA2-Enterprise",
                        auth_service_id="s-cp"),
-            SZWLANFull(id="w-guest", name="Guest", ssid="Guest", auth_type="WPA2-PSK"),
+            SZWLANFull(id="w-guest", name="Guest", ssid="Guest", auth_type="WPA2-PSK",
+                       encryption={"method": "WPA2", "passphrase": "guest-pass-123"}),
         ],
         referenced_objects={"auth_service:s-cp": SZReferencedObject(
             ref_type="auth_service", id="s-cp", name="cloudpath",

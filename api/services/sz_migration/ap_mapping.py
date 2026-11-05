@@ -163,7 +163,11 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
     picked = None if selected is None else {_serial(x) for x in selected}
     sz_raw = {_serial(a.get("serial")): a for a in snapshot.aps if a.get("serial")}
     sz_group_name = {g.id: g.name for g in snapshot.ap_groups}
-    all_ap_ssids = sorted({w["ssid"] for w in layout["wlans"] if w["mode"] == "all_ap_groups"})
+    all_ap_ssids = sorted({w["ssid"] for w in layout["wlans"] if w["mode"] == "all_ap_groups"}
+                          | {u["ssid"] for u in layout["unbroadcast"] if u.get("activation") == "all_ap_groups"})
+    # Activated although no SZ AP broadcasts them (the operator's choice): an
+    # AP gaining one in R1 isn't a broadcast difference.
+    on_purpose = sorted({u["ssid"] for u in layout["unbroadcast"] if u["mode"] == "activate"})
 
     # ── Groups ─────────────────────────────────────────────────────
     groups: List[Dict[str, Any]] = []
@@ -179,7 +183,7 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
     for g in layout["groups"] + [x for x in layout["staged"]["groups"] if x["chosen"]]:
         row = {"key": g["key"], "name": g["name"], "r1_id": g["r1_id"], "exists": g["exists"],
                "create": g["create"], "ap_count": g["ap_count"], "ssids": g["ssids"],
-               "staged": bool(g.get("staged"))}
+               "staged": bool(g.get("staged")), "active_ssids": g.get("active_ssids") or []}
         if g["exists"] or g["create"]:
             groups.append(row)
         else:
@@ -187,8 +191,8 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         add_targets(g["aps"], {"key": g["key"], "name": g["name"], "id": g["r1_id"],
                                "ready": g["exists"] or g["create"], "create": g["create"],
                                "staged": bool(g.get("staged")),
-                               # what an AP in it broadcasts: staged groups carry nothing active
-                               "broadcast": sorted(set(all_ap_ssids) | (set() if g.get("staged") else set(g["ssids"])))})
+                               # what an AP in it broadcasts: staged groups carry only what's activated
+                               "broadcast": sorted(set(all_ap_ssids) | _group_active(g))})
     dflt = {"key": DEFAULT_KEY, "name": "(default)", "id": default.get("id"), "ready": bool(default.get("id")),
             "create": False, "staged": False, "broadcast": all_ap_ssids}
     add_targets(layout["default_group"]["aps"], dflt)
@@ -266,7 +270,7 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
             g = plan_by_name[f]
             target[key] = {"key": g["key"], "name": g["name"], "id": g["r1_id"], "ready": True, "create": g["create"],
                            "staged": g["staged"], **auto, "manual_status": "planned",
-                           "broadcast": sorted(set(all_ap_ssids) | (set() if g["staged"] else set(g["ssids"])))}
+                           "broadcast": sorted(set(all_ap_ssids) | _group_active(g))}
         else:
             name = r1_group_name(want)
             if name.casefold() not in {m.casefold() for m in manual_missing}:
@@ -424,6 +428,7 @@ def plan_ap_mapping(snapshot: SZMigrationSnapshot, inv: R1VenueInventory,
         "create_groups": sorted({r["group_name"] for r in aps if r["group_create"] and r["action"] in ("move", "add")},
                                 key=str.casefold),
         "staged": {"unpaired": layout["staged"]["unpaired"], "conflicts": layout["staged"]["conflicts"]},
+        "activated_unbroadcast": on_purpose,
         "aps": aps,
         "activations": activations,
         "counts": {
@@ -463,9 +468,8 @@ def _name_targets(groups: List[Dict[str, Any]], inv: R1VenueInventory, default_i
     for g in groups:
         cands.append({"key": g["key"], "name": g["name"], "id": g["r1_id"], "ready": True, "create": g["create"],
                       "staged": g["staged"],
-                      # staged or not built in Create WLANs: nothing is activated on it
-                      "broadcast": sorted(set(all_ap_ssids) | (set() if g["staged"] or g.get("unbuilt")
-                                                               else set(g["ssids"]))),
+                      # staged: only its activated WLANs; not built in Create WLANs: nothing
+                      "broadcast": sorted(set(all_ap_ssids) | (set() if g.get("unbuilt") else _group_active(g))),
                       "ssids": g["ssids"]})
         if g["r1_id"]:
             seen_ids.add(g["r1_id"])
@@ -517,6 +521,11 @@ def unit_in_ap_name(name: Optional[str]) -> Optional[str]:
     """
     nums = [t for t in re.findall(r"[0-9a-z]+", (name or "").casefold()) if t.isdigit() and len(t) >= 3]
     return nums[0] if len(set(nums)) == 1 else None
+
+
+def _group_active(g: Dict[str, Any]) -> set:
+    """SSIDs activated on a plan group itself: all of them, or a staged group's activated ones only."""
+    return set(g.get("active_ssids") or []) if g.get("staged") else set(g["ssids"])
 
 
 def _unbuilt(g: Dict[str, Any]) -> Dict[str, Any]:

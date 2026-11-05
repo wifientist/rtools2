@@ -86,7 +86,8 @@ def _snapshot():
                    auth_service_id="s-cp"),
         SZWLANFull(id="w-lab", name="Lab", ssid="Lab", auth_type="WPA2-Enterprise",
                    auth_service_id="s-lab"),
-        SZWLANFull(id="w-guest", name="Guest", ssid="Guest", auth_type="WPA2-PSK"),
+        SZWLANFull(id="w-guest", name="Guest", ssid="Guest", auth_type="WPA2-PSK",
+                       encryption={"method": "WPA2", "passphrase": "guest-pass-123"}),
     ]
     refs = dict([
         ref("s-cp", "cloudpath", "10.0.0.5"),

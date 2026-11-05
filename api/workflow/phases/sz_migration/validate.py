@@ -30,6 +30,7 @@ from services.sz_migration.field_mappings import build_r1_advanced_settings
 from services.sz_migration.radius_choices import referenced_services, r1_profile_summary
 from services.sz_migration.dpsk_choices import load_r1_dpsk, validate_dpsk_plan
 from services.sz_migration.r1_layout import build_layout, wlan_activations, without_wlans
+from services.sz_migration.passphrase_check import compare_passphrases
 from services.wlan_grabber import build_spec as build_wispr_spec, sz_portal_facts
 from services.r1_inventory import capture_venue_inventory
 
@@ -76,7 +77,8 @@ def _network_venues(net: Dict[str, Any]) -> set:
     return ids
 
 
-def _network_name(inv: R1VenueInventory, name: str, ssid: str, taken: set) -> Tuple[str, Optional[Dict[str, Any]], str]:
+def _network_name(inv: R1VenueInventory, name: str, ssid: str, taken: set,
+                  not_ours: frozenset = frozenset()) -> Tuple[str, Optional[Dict[str, Any]], str]:
     """
     (R1 network name to use, existing network to reuse or None, note).
 
@@ -88,9 +90,11 @@ def _network_name(inv: R1VenueInventory, name: str, ssid: str, taken: set) -> Tu
     as in SZ. A "<name>_<venue>" an earlier run created is ours too, and is
     reused rather than skipped for "<name>_<venue>2" (a re-run used to make
     a duplicate of every renamed WLAN). taken: names already planned this
-    run (casefolded).
+    run (casefolded). not_ours: network ids ruled out by the caller (a PSK
+    network whose passphrase isn't SZ's is someone else's).
     """
-    ours = lambda n: n.get("ssid") in (None, ssid) and _network_venues(n) <= {inv.venue_id}
+    ours = lambda n: (n.get("ssid") in (None, ssid) and _network_venues(n) <= {inv.venue_id}
+                      and n.get("id") not in not_ours)
     exact = inv.network_in_tenant(name)
     if exact and ours(exact):
         return name, exact, ""
@@ -224,8 +228,10 @@ class ValidateMigrationPhase(PhaseExecutor):
             f"Placement: {ls['all_ap_wlans']} WLAN(s) on All AP Groups, {ls['groups']} AP Group(s) "
             f"({ls['groups_existing']} exist, {ls['groups_to_create']} to create, "
             f"{ls['groups_pending']} not created)"
-            + (f"; {ls.get('staged_groups', 0)} staged AP Group(s) for {ls.get('staged_wlans', 0)} WLAN(s) "
-               "no AP broadcasts (built, not activated)" if ls.get("staged_groups") else "")
+            + (f"; {ls.get('staged_groups', 0)} per-unit AP Group(s) for WLANs no AP broadcasts "
+               f"({ls.get('staged_wlans', 0)} staged, {ls.get('activated_unbroadcast', 0)} activated"
+               + (f", {ls['unit_groups_empty']} with no AP" if ls.get("unit_groups_empty") else "") + ")"
+               if ls.get("staged_groups") else "")
         )
 
         # ── Run security mapper ───────────────────────────────────────
@@ -295,15 +301,22 @@ class ValidateMigrationPhase(PhaseExecutor):
                     resource_type="ap_group", name=g["name"], action="skip",
                     notes=["Not created by choice: its WLANs are not activated for these APs"],
                 ))
-        # Staged: WLANs no AP broadcasts in SZ, created with their paired AP
-        # Group built -- here, with the rest of the configuration -- and never
-        # activated. AP Mapping only moves APs into it.
+        # Per-unit groups for WLANs no AP broadcasts in SZ, built here with the
+        # rest of the configuration: staged (nothing activated) or activated
+        # -- the latter even with no AP in them. AP Mapping only moves APs in.
         for g in (x for x in layout["staged"]["groups"] if x["chosen"]):
+            active = g.get("active_ssids") or []
+            idle = [s for s in g["ssids"] if s not in active]
+            notes = []
+            if active:
+                notes.append(f"Activated: {', '.join(active[:3])}{'…' if len(active) > 3 else ''}")
+            if idle:
+                notes.append(f"Staged for {', '.join(idle[:3])}: built, not activated")
+            notes.append(f"{g['ap_count']} AP(s) pair with it ({', '.join(a['name'] for a in g['aps'][:3])})"
+                         if g["ap_count"] else "No AP pairs with it — built empty")
             actions.append(ResourceAction(
                 resource_type="ap_group", name=g["name"], action="reuse" if g["exists"] else "create",
-                existing_id=g["r1_id"] if g["exists"] else None,
-                notes=[f"Staged for {', '.join(g['ssids'][:3])}: built, not activated",
-                       f"{g['ap_count']} AP(s) pair with it ({', '.join(a['name'] for a in g['aps'][:3])})"],
+                existing_id=g["r1_id"] if g["exists"] else None, notes=notes,
             ))
         for msg in layout["staged"]["conflicts"]:
             apg_conflicts.append(ConflictDetail(resource_type="ap_group", resource_name="staging",
@@ -417,11 +430,46 @@ class ValidateMigrationPhase(PhaseExecutor):
                     description=f"{wlan.name}: {ssid_note}", severity="warning"))
             r1_name, existing_network, name_note = _network_name(
                 r1_inventory, _r1_name_base(wlan.name), r1_ssid, planned_names)
+            # A PSK network is reused only when it carries SZ's passphrase:
+            # same name + SSID and unactivated can still be another property's.
+            rejected: set = set()
+            sz_has_pp = bool((wlan.encryption or {}).get("passphrase") or (wlan.encryption or {}).get("saePassphrase"))
+            while r1_type == "psk" and sz_has_pp and existing_network and existing_network.get("id"):
+                verdict = await self._reuse_passphrase(existing_network["id"], wlan.encryption)
+                if verdict == "match":
+                    break
+                if verdict == "unknown":
+                    radius_conflicts.append(ConflictDetail(
+                        unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
+                        description=(f"{wlan.name}: couldn't read the passphrase of R1's '{existing_network.get('name')}' "
+                                     "to confirm it's this WLAN's before reusing it — run the plan again"),
+                        severity="error"))
+                    break
+                rejected.add(existing_network["id"])
+                setting_warnings.append(ConflictDetail(
+                    unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
+                    description=(f"{wlan.name}: R1's '{existing_network.get('name')}' has the same SSID but a different "
+                                 "passphrase — not reused (another property's)"),
+                    severity="warning"))
+                r1_name, existing_network, name_note = _network_name(
+                    r1_inventory, _r1_name_base(wlan.name), r1_ssid, planned_names, frozenset(rejected))
             planned_names.add(r1_name.casefold())
             if name_note:
                 setting_warnings.append(ConflictDetail(
                     unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
                     description=f"{wlan.name}: {name_note}", severity="warning"))
+
+            # A PSK network is only ever created with SZ's own passphrase. None
+            # from SZ blocks the plan -- never a placeholder.
+            if r1_type == "psk" and not sz_has_pp:
+                radius_conflicts.append(ConflictDetail(
+                    unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
+                    description=(f"{wlan.name}: SZ gave no passphrase for this PSK WLAN"
+                                 + (f" (R1's existing '{r1_name}' would be reused with whatever passphrase it has)"
+                                    if existing_network else "")
+                                 + " — re-run the extraction with an SZ admin allowed to read WLAN passphrases, "
+                                   "set the passphrase in SZ, or exclude this WLAN"),
+                    severity="error"))
 
             # Pre-compute R1 advanced settings from SZ raw data
             dropped: List[Dict[str, Any]] = []
@@ -595,6 +643,21 @@ class ValidateMigrationPhase(PhaseExecutor):
             ap_groups_to_create=sorted({g["name"] for g in layout["groups"] if g["create"]}
                                        | {g["name"] for g in layout["staged"]["groups"] if g["create"]}),
         )
+
+    async def _reuse_passphrase(self, network_id: str, sz_encryption: Optional[Dict[str, Any]]) -> str:
+        """match | differs | unknown: does the R1 network carry SZ's passphrase? Compared as fingerprints."""
+        try:
+            detail = await self.r1_client.networks.get_wifi_network_by_id(network_id, self.tenant_id)
+        except Exception as e:
+            logger.warning(f"Reuse check: couldn't read R1 network {network_id}: {e}")
+            return "unknown"
+        check = compare_passphrases(sz_encryption, (detail or {}).get("wlan") or {})
+        detail = None
+        if check["status"] == "match":
+            return "match"
+        # R1 has none / differs: not this WLAN's network. Nothing on SZ's side
+        # is blocked separately (no passphrase from SZ is an error of its own).
+        return "differs" if check["status"] in ("differs", "missing_in_r1") else "unknown"
 
     async def _apply_radius_decisions(self, snapshot: SZMigrationSnapshot, radius_users: Optional[set] = None):
         """
