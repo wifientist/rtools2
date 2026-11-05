@@ -110,8 +110,12 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
                     concurrency: int = CONCURRENCY, wait_seconds: int = WAIT_SECONDS,
                     log_label: str = "[AP Groups]", confirm_seconds: int = 0,
                     progress: Optional[Callable[[str], Awaitable[None]]] = None,
-                    retry_name_clash: bool = True) -> List[Dict[str, Any]]:
+                    retry_name_clash: bool = True,
+                    count: Optional[Callable[[int, int, int], Awaitable[None]]] = None) -> List[Dict[str, Any]]:
     """
+    count(done, failed, total): the same R1 task progress as numbers, for a
+    progress bar -- once per progress tick and when the wait ends.
+
     Submit and confirm. Each row: {serial, ap_name, to_group_id, to_group_name,
     op: "move" | "add", description (adds, optional)} (other keys are kept). Sets status
     moved | added | failed | unconfirmed and error, in place; returns rows.
@@ -162,17 +166,25 @@ async def place_aps(r1_client, tenant_id: str, venue_id: str, rows: List[Dict[st
             global_timeout_seconds=wait_seconds, progress_callback=record,
         ))
         # Big batches take minutes in R1: say how far along it is meanwhile.
-        while progress and not waiter.done():
+        if count:
+            await count(0, 0, len(request_of))
+        while (progress or count) and not waiter.done():
             done, _ = await asyncio.wait({waiter}, timeout=TASK_PROGRESS_SECONDS)
             if not done:
                 ok = sum(finished.values())
-                await progress(f"R1 finished {ok} of {len(request_of)} AP task(s)"
-                               + (f", {len(finished) - ok} failed" if len(finished) > ok else "")
-                               + "; still waiting on the rest...")
+                if count:
+                    await count(ok, len(finished) - ok, len(request_of))
+                if progress:
+                    await progress(f"R1 finished {ok} of {len(request_of)} AP task(s)"
+                                   + (f", {len(finished) - ok} failed" if len(finished) > ok else "")
+                                   + "; still waiting on the rest...")
         try:
             task_results = await waiter or {}
         except Exception as e:
             logger.warning(f"{log_label} Waiting on {len(request_of)} AP tasks stopped early: {e}")
+        if count:
+            ok = sum(finished.values())
+            await count(ok, len(finished) - ok, len(request_of))
 
     # Confirm against R1's AP list -- the truth, not the task answers -- re-reading
     # until everything submitted has landed, R1 refused it, or time runs out.

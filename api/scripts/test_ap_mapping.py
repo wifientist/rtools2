@@ -29,6 +29,10 @@ WHAT THIS GUARDS
      empty, before the APs are placed (group_create / create_groups).
  10. By name: the unit anywhere in the name as a token ("*20102-NEW"), and
      derived groups Create WLANs didn't build are candidates (created here).
+ 13. Activate WLANs no AP broadcasts: per-unit ones on their unit's group
+     (paired staged group, derived / R1 group of that name, else a new empty
+     one), no unit -> All AP Groups; AP Mapping's expected broadcast follows.
+ 14. Verify: an AP that only gains WLANs activated on purpose isn't a difference.
 
 Usage:
     docker compose exec backend python scripts/test_ap_mapping.py
@@ -760,10 +764,126 @@ def test_map_creates_groups():
     return f
 
 
+def test_activate_unbroadcast():
+    print("\n13. Activating WLANs no AP broadcasts on their unit's AP Group")
+    f = 0
+    snap = snapshot()
+    # "unit-102@Site": no WLAN Group, unit from the name -> the derived unit-102 group.
+    # "Lobby": no unit at all -> All AP Groups.
+    snap.wlans += [SZWLANFull(id="w10", name="unit-102@Site", ssid="u102-iot", auth_type="WPA2-PSK",
+                              encryption={"method": "WPA2"}),
+                   SZWLANFull(id="w11", name="Lobby", ssid="Lobby", auth_type="WPA2-PSK",
+                              encryption={"method": "WPA2"})]
+    ids = ["w6", "w6b", "w7", "w8", "w9", "w10", "w11"]
+    choices = {**CHOICES, "activate_unbroadcast": ids}
+    layout = build_layout(snap, inventory(), choices)
+    rows = {u["id"]: u for u in layout["unbroadcast"]}
+    by = {g["name"]: g for g in layout["staged"]["groups"]}
+    acts = wlan_activations(layout)
+    tgt = lambda w: [(t["r1_ap_group_name"], t["r1_ap_group_create"]) for t in acts[w].get("targets", [])]
+
+    f += check("paired: Unit106 + Unit106-IoT activated on AP-6, built and filled with AP-6",
+               by["AP-6"]["chosen"] and by["AP-6"]["active_ssids"] == ["Unit106", "Unit106-IoT"]
+               and [a["name"] for a in by["AP-6"]["aps"]] == ["AP-6"]
+               and tgt("w6") == [("AP-6", True)] and tgt("w6b") == [("AP-6", True)], str((by.get("AP-6"), acts["w6"])))
+    f += check("unpaired, own WLAN Group: Orphan gets an empty 'nobody' group, activated",
+               by["nobody"]["ap_count"] == 0 and by["nobody"]["create"] and tgt("w8") == [("nobody", True)],
+               str(by.get("nobody")))
+    f += check("its unit's AP already has a broadcast group: Unit100 still gets group 'AP-0', empty",
+               by["AP-0"]["ap_count"] == 0 and tgt("w9") == [("AP-0", True)] and not layout["staged"]["conflicts"],
+               str((by.get("AP-0"), layout["staged"]["conflicts"])))
+    g102 = next(g for g in layout["groups"] if g["key"] == K102)
+    f += check("unit from 'unit-102@Site' joins the SZ-derived unit-102 group",
+               "w10" in g102["wlan_ids"] and "u102-iot" in g102["ssids"] and rows["w10"]["unit_group"] == K102
+               and tgt("w10") == [("unit-102", True)], str((g102["ssids"], acts["w10"])))
+    f += check("no unit: Lobby goes on All AP Groups, counted toward every group's 15",
+               acts["w11"]["mode"] == "all_ap_groups" and rows["w11"]["activation"] == "all_ap_groups"
+               and g102["ssid_total"] == len({"Guest", "Secure6", "Lobby", "Unit102", "u102-iot"}),
+               str((acts["w11"], g102["ssid_total"])))
+    f += check("radios for an un-broadcast WLAN: the zone's bands", acts["w8"]["targets"][0]["r1_radio_types"]
+               == ["2.4-GHz", "5-GHz"], str(acts["w8"]))
+    s = layout["summary"]
+    f += check("summary counts activated + empty unit groups",
+               s["activated_unbroadcast"] == 7 and s["activated_all_ap"] == 1 and s["unit_groups_empty"] == 2, str(s))
+    f += check("no clash, not blocked", not layout["blocked"], str(layout["warnings"]))
+
+    plan = plan_ap_mapping(snap, inventory(), choices)
+    ap = {a["name"]: a for a in plan["aps"]}
+    f += check("AP Mapping: AP-6 broadcasts its activated unit WLANs; every AP gets Lobby",
+               {"Unit106", "Unit106-IoT", "Lobby"} <= set(ap["AP-6"]["broadcast"])
+               and "Lobby" in ap["AP-3"]["broadcast"], str((ap["AP-6"]["broadcast"], ap["AP-3"]["broadcast"])))
+    f += check("AP Mapping: AP-1 (unit-102) broadcasts the joined u102-iot",
+               "u102-iot" in ap["AP-1"]["broadcast"], str(ap["AP-1"]["broadcast"]))
+    f += check("verify knows what was activated on purpose",
+               set(plan["activated_unbroadcast"]) == {"Unit106", "Unit106-IoT", "Unit107", "Orphan", "Unit100",
+                                                      "u102-iot", "Lobby"}, str(plan["activated_unbroadcast"]))
+
+    # An earlier run's empty unit group in R1: reused, not created again
+    inv = inventory()
+    inv.ap_groups.append({"id": "g-nobody", "name": "nobody"})
+    again = build_layout(snap, inv, choices)
+    nb = next(g for g in again["staged"]["groups"] if g["name"] == "nobody")
+    f += check("re-run: the R1 group of that name is reused", nb["exists"] and not nb["create"]
+               and wlan_activations(again)["w8"]["targets"][0]["r1_ap_group_id"] == "g-nobody", str(nb))
+
+    # Mixed: one WLAN of a paired group staged, the other activated
+    mixed = build_layout(snap, inventory(), {**CHOICES, "stage_unbroadcast": ["w6b"], "activate_unbroadcast": ["w6"]})
+    g6 = next(g for g in mixed["staged"]["groups"] if g["name"] == "AP-6")
+    macts = wlan_activations(mixed)
+    f += check("mixed group: only the activated WLAN is active there",
+               g6["active_ssids"] == ["Unit106"] and macts["w6b"]["mode"] == "none"
+               and [t["r1_ap_group_name"] for t in macts["w6"]["targets"]] == ["AP-6"], str((g6, macts.get("w6b"))))
+    return f
+
+
+async def _verify(plan, broadcast_aps):
+    """Run verify_ap_mapping against a stubbed plan + audit."""
+    p = phases.VerifyApMappingPhase.__new__(phases.VerifyApMappingPhase)
+    saved = {}
+    async def fresh(_):
+        return None, None, plan
+    async def emit(*a, **k):
+        pass
+    p.fresh, p.emit, p.job_id = fresh, emit, "j"
+    orig_audit, orig_save, orig_match = phases.build_broadcast_audit, phases.save_report, phases.build_matching
+    phases.build_broadcast_audit = lambda *a: SimpleNamespace(aps=broadcast_aps, counts={"aps_compared": len(broadcast_aps)})
+    phases.build_matching = lambda *a: None
+    async def save(job, kind, report):
+        saved[kind] = report
+    phases.save_report = save
+    try:
+        try:
+            await p.execute(p.Inputs(sz_snapshot_job_id="s"))
+            err = None
+        except RuntimeError as e:
+            err = str(e)
+    finally:
+        phases.build_broadcast_audit, phases.save_report, phases.build_matching = orig_audit, orig_save, orig_match
+    return err, saved.get("verify")
+
+
+def test_verify_on_purpose():
+    print("\n14. Verify: gaining a WLAN activated on purpose is not a difference")
+    f = 0
+    counts = {k: 0 for k in ("aps", "aps_unmapped", "aps_blocked", "aps_not_in_r1", "aps_keep", "aps_already",
+                             "wlans", "wlans_no_network", "wlans_already")}
+    plan = {"counts": counts, "aps": [], "activations": [], "create_groups": [], "groups": [],
+            "activated_unbroadcast": ["Lobby"]}
+    ap = lambda n, extra, missing=(): SimpleNamespace(name=n, serial=n, status="differs", extra_in_r1=list(extra),
+                                                       missing_in_r1=list(missing), sz_ap_group="d", r1_ap_group="d")
+    err, rep = asyncio.run(_verify(plan, [ap("A", ["Lobby"]), ap("B", ["Lobby", "Other"]), ap("C", ["Lobby"], ["X"])]))
+    f += check("only-Lobby AP passes; extra Other or missing X still differ",
+               rep["differing_total"] == 2 and rep["gained_on_purpose"] == 1 and err and "2 AP(s)" in err,
+               str((err, rep and rep["differing_total"])))
+    err, rep = asyncio.run(_verify(plan, [ap("A", ["Lobby"])]))
+    f += check("all differences on purpose: the phase passes", err is None and rep["differing_total"] == 0, str(err))
+    return f
+
+
 if __name__ == "__main__":
     failures = sum(t() for t in (test_layout_radios, test_plan, test_place_aps, test_map_phase,
                                  test_graph, test_staging, test_selection, test_name_clash_retry,
                                  test_place_by_name, test_pending_tasks, test_by_name_tokens,
-                                 test_map_creates_groups))
+                                 test_map_creates_groups, test_activate_unbroadcast, test_verify_on_purpose))
     print(f"\n{'All checks passed' if not failures else f'{failures} check(s) failed'}")
     sys.exit(1 if failures else 0)

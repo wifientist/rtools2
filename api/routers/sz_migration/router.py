@@ -1161,6 +1161,7 @@ class LayoutChoices(BaseModel):
     group_names: Dict[str, str] = Field(default_factory=dict)
     include_unbroadcast: List[str] = Field(default_factory=list)
     stage_unbroadcast: List[str] = Field(default_factory=list)
+    activate_unbroadcast: List[str] = Field(default_factory=list)  # activate on the unit's AP Group / All AP Groups
     pairing: Dict[str, str] = Field(default_factory=dict)   # mode: wlan_group | pattern; wlan_pattern; ap_pattern
     excluded_wlans: List[str] = Field(default_factory=list)  # not migrated at all (test / temp SSIDs...)
 

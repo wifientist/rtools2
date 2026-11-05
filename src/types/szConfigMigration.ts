@@ -130,6 +130,8 @@ export interface LayoutChoices {
   group_names: Record<string, string>;    // key -> name
   include_unbroadcast: string[];          // wlan ids: create only
   stage_unbroadcast?: string[];           // wlan ids: create + build/fill their paired AP Group, not activated
+  activate_unbroadcast?: string[];        // wlan ids: create + activate on their unit's AP Group (built even with
+                                          // no AP), or All AP Groups when they have no unit
   pairing?: { mode: 'wlan_group' | 'pattern'; wlan_pattern?: string; ap_pattern?: string };
   excluded_wlans?: string[];              // wlan ids not migrated at all (test / temp SSIDs...)
 }
@@ -144,6 +146,7 @@ export interface LayoutCatalogWlan {
 
 export const DEFAULT_LAYOUT_CHOICES: LayoutChoices = {
   all_ap_wlans: null, create_groups: [], group_names: {}, include_unbroadcast: [], stage_unbroadcast: [],
+  activate_unbroadcast: [],
   pairing: { mode: 'wlan_group' },
 };
 
@@ -165,6 +168,9 @@ export interface LayoutWlan {
   unready_note?: string;
 }
 
+// What happens to a WLAN no SZ AP broadcasts
+export type UnbroadcastMode = 'skip' | 'create' | 'stage' | 'activate';
+
 export interface LayoutGroup {
   key: string;
   name: string;
@@ -183,8 +189,9 @@ export interface LayoutGroup {
   ssid_total: number;
   over_limit: boolean;
   radio_types?: Record<string, string[]>;   // wlan id -> R1 radios for THIS group's APs
-  staged?: boolean;                         // per-unit group for WLANs no AP broadcasts: built, not activated
-  chosen?: boolean;                         // per-unit group ticked to build (its WLANs staged)
+  staged?: boolean;                         // per-unit group for WLANs no AP broadcasts
+  chosen?: boolean;                         // per-unit group ticked to build (its WLANs staged or activated)
+  active_ssids?: string[];                  // per-unit group: the SSIDs activated on it (the rest staged)
 }
 
 export interface R1Layout {
@@ -202,12 +209,18 @@ export interface R1Layout {
     staged_wlans?: number;
     staged_groups?: number;
     staged_aps?: number;
+    activated_unbroadcast?: number;
+    activated_all_ap?: number;
+    unit_groups_empty?: number;
   };
   default_group: { ap_count: number; ssid_total: number; over_limit: boolean };
   wlans: LayoutWlan[];
   groups: LayoutGroup[];
   unbroadcast: Array<{ id: string; name: string; ssid: string; auth_type: string; reason: string; included: boolean;
-                       mode: 'skip' | 'create' | 'stage'; paired_aps: string[]; paired_group: string | null }>;
+                       mode: UnbroadcastMode; paired_aps: string[]; paired_group: string | null;
+                       unit?: string | null;                                  // the unit it looks like; null = not per-unit
+                       activation?: 'ap_group' | 'all_ap_groups' | null;     // where it's activated (mode activate)
+                       unit_group?: string | null }>;                         // key of the group it's activated on
   staged: { groups: LayoutGroup[]; unpaired: string[]; conflicts: string[]; mode: string };
   catalog?: LayoutCatalogWlan[];
   warnings: Array<{ message: string; severity: 'error' | 'warning' }>;

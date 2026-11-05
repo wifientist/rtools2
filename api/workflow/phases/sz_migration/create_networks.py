@@ -33,6 +33,23 @@ FIND_DELAYS = (2, 3, 5, 5, 10, 10, 15, 15)       # ~65s of re-reads by name
 RETRY_DELAYS = (10, 30)                         # pauses before a 2nd / 3rd create
 
 
+def psk_security(encryption: Dict[str, Any]):
+    """
+    (R1 security type, passphrase, separate SAE passphrase or None) from SZ's
+    encryption block -- by SZ's method, not the auth-type label (WPA23_Mixed
+    reads as "WPA3" there, and would become WPA3-only in R1, locking out
+    WPA2 clients). Passphrases are SZ's own; None when SZ has none.
+    """
+    method = str(encryption.get("method") or "").upper()
+    pp, sae = encryption.get("passphrase") or None, encryption.get("saePassphrase") or None
+    if method == "WPA23_MIXED":
+        main = pp or sae
+        return "WPA2/WPA3", main, (sae if sae and sae != main else None)
+    if method == "WPA3":
+        return "WPA3", sae or pp, None
+    return "WPA2", pp or sae, None       # WPA2, WPA_Mixed (R1 has no WPA1)
+
+
 @register_phase("create_networks", "Create WiFi Networks")
 class CreateNetworksPhase(PhaseExecutor):
     """Per-WLAN phase: create or reuse WiFi network in R1."""
@@ -269,23 +286,21 @@ class CreateNetworksPhase(PhaseExecutor):
         return self.Outputs(network_id=net_id, reused=False)
 
     async def _create_psk_network(self, extra, name, ssid, vlan_id):
-        """Create a PSK network, extracting passphrase from SZ encryption config."""
+        """
+        Create a PSK network with SZ's own passphrase. Never a placeholder:
+        no passphrase from SZ fails this WLAN for the operator to resolve.
+        """
         encryption = extra.get("encryption") or {}
-        passphrase = (
-            encryption.get("passphrase")
-            or encryption.get("saePassphrase")
-            or "changeme12345"
-        )
-
-        sz_auth = extra.get("sz_auth_type", "")
-        if "WPA3" in sz_auth:
-            security_type = "WPA3"
-        elif "WPA2" in sz_auth:
-            security_type = "WPA2"
-        else:
-            security_type = "WPA3"
+        label = extra.get("sz_wlan_name") or name
+        security_type, passphrase, sae = psk_security(encryption)
+        if not passphrase:
+            raise RuntimeError(
+                f"[{label}] SZ gave no passphrase for this PSK WLAN — not created. "
+                "Re-run the extraction (the SZ admin must be allowed to read WLAN passphrases), "
+                "or set the WLAN's passphrase in SZ, then run Create WLANs again")
 
         return await self.r1_client.networks.create_wifi_network(
+            sae_passphrase=sae,
             tenant_id=self.tenant_id,
             venue_id=self.venue_id,
             name=name,

@@ -404,10 +404,14 @@ class NetworksService:
         vlan_id: int = 1,
         description: str = None,
         advanced_customization: dict = None,
-        wait_for_completion: bool = True
+        wait_for_completion: bool = True,
+        sae_passphrase: str = None,
     ):
         """
         Create a new WiFi network (SSID) in RuckusONE
+
+        sae_passphrase: WPA2/WPA3 mixed only -- the WPA3 (SAE) key when it
+        differs from the WPA2 one; None = the same as passphrase.
 
         Args:
             tenant_id: Tenant/EC ID
@@ -445,7 +449,7 @@ class NetworksService:
         elif wlan_security == WlanSecurity.WPA23_MIXED:
             # Mixed mode needs both
             wlan_settings["passphrase"] = passphrase
-            wlan_settings["saePassphrase"] = passphrase
+            wlan_settings["saePassphrase"] = sae_passphrase or passphrase
         else:
             # Fallback for other types (WPA, etc.)
             wlan_settings["passphrase"] = passphrase

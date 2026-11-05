@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, AlertCircle, Search } from 'lucide-react';
-import type { R1Layout, LayoutChoices, LayoutGroup } from '@/types/szConfigMigration';
+import type { R1Layout, LayoutChoices, LayoutGroup, UnbroadcastMode } from '@/types/szConfigMigration';
+
+const MODE_LABEL: Record<UnbroadcastMode, string> = {
+  skip: 'Skip', create: 'Create', stage: '+ Stage', activate: 'Activate',
+};
 
 interface Props {
   layout: R1Layout;
@@ -42,15 +46,17 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
     keys.forEach(k => (on ? next.add(k) : next.delete(k)));
     return { ...c, create_groups: [...next] };
   };
-  const withMode = (c: LayoutChoices, ids: string[], mode: 'skip' | 'create' | 'stage'): LayoutChoices => {
+  const withMode = (c: LayoutChoices, ids: string[], mode: UnbroadcastMode): LayoutChoices => {
     const create = new Set(c.include_unbroadcast);
     const stage = new Set(c.stage_unbroadcast ?? []);
+    const activate = new Set(c.activate_unbroadcast ?? []);
     ids.forEach(id => {
-      create.delete(id); stage.delete(id);
+      create.delete(id); stage.delete(id); activate.delete(id);
       if (mode === 'create') create.add(id);
       if (mode === 'stage') stage.add(id);
+      if (mode === 'activate') activate.add(id);
     });
-    return { ...c, include_unbroadcast: [...create], stage_unbroadcast: [...stage] };
+    return { ...c, include_unbroadcast: [...create], stage_unbroadcast: [...stage], activate_unbroadcast: [...activate] };
   };
   const setCreate = (keys: string[], on: boolean) => onChange(withCreate(choices, keys, on));
 
@@ -70,8 +76,8 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
     next.has(id) ? next.delete(id) : next.add(id);
     onChange({ ...choices, include_unbroadcast: [...next] });
   };
-  // skip / create / stage, per WLAN no AP broadcasts
-  const setMode = (ids: string[], mode: 'skip' | 'create' | 'stage') => onChange(withMode(choices, ids, mode));
+  // skip / create / stage / activate, per WLAN no AP broadcasts
+  const setMode = (ids: string[], mode: UnbroadcastMode) => onChange(withMode(choices, ids, mode));
   const pairing = choices.pairing ?? { mode: 'wlan_group' as const };
   const setPairing = (p: Partial<NonNullable<LayoutChoices['pairing']>>) =>
     onChange({ ...choices, pairing: { ...pairing, ...p } });
@@ -86,6 +92,8 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
   }, [layout.unbroadcast, unbroadcastFilter]);
   const nCreate = layout.unbroadcast.filter(u => u.mode === 'create').length;
   const nStage = layout.unbroadcast.filter(u => u.mode === 'stage').length;
+  const nActivate = layout.unbroadcast.filter(u => u.mode === 'activate').length;
+  const nPerUnit = layout.unbroadcast.filter(u => u.unit).length;
   const staged = layout.staged;
 
   // Property-wide candidates first; the long tail of single-unit WLANs on request.
@@ -123,24 +131,33 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
   const newVisible = groups.filter(g => !g.exists && !g.staged).map(g => g.key);
   const stagedVisible = groups.filter(g => g.staged);
   const stagedChosen = stagedGroups.filter(g => g.chosen);
-  // A per-unit group's tick is its WLANs' staging: ticked = build it (WLAN
-  // created, not activated); unticked = create the WLAN only.
-  const withStaged = (c: LayoutChoices, gs: LayoutGroup[], on: boolean) =>
-    withMode(c, gs.flatMap(g => g.wlan_ids), on ? 'stage' : 'create');
+  // A per-unit group's tick is its WLANs' staging: ticked = build it (WLANs
+  // created; activated ones stay activated, the rest staged); unticked =
+  // create the WLANs only.
+  const withStaged = (c: LayoutChoices, gs: LayoutGroup[], on: boolean) => {
+    const ids = gs.flatMap(g => g.wlan_ids);
+    if (!on) return withMode(c, ids, 'create');
+    const active = new Set(c.activate_unbroadcast ?? []);
+    return withMode(c, ids.filter(id => !active.has(id)), 'stage');
+  };
   const setStaged = (gs: LayoutGroup[], on: boolean) => onChange(withStaged(choices, gs, on));
   const tickable = newVisible.length + stagedVisible.length;
   // Tick or untick the shown rows, SZ-derived and per-unit, in one update.
   const tickShown = (on: boolean) =>
     onChange(withStaged(withCreate(choices, newVisible, on), stagedVisible, on));
 
-  // The approach (the default): every group SZ's broadcast needs, and every
-  // WLAN no AP broadcasts created + staged. Anything else is the operator's
-  // override, read back from the ticks as custom.
+  // The approach (the default): every group SZ's broadcast needs; of the
+  // WLANs no AP broadcasts, the per-unit ones activated on their unit's group
+  // and the rest created + staged. Anything else is the operator's override,
+  // read back from the ticks as custom.
   const szToCreate = layout.groups.filter(g => !g.exists).map(g => g.key);
   const szReady = layout.groups.every(g => g.exists || g.create);
-  const setAsIs = () => onChange(withMode(withCreate(choices, szToCreate, true), layout.unbroadcast.map(u => u.id), 'stage'));
+  const perUnitIds = layout.unbroadcast.filter(u => u.unit).map(u => u.id);
+  const otherIds = layout.unbroadcast.filter(u => !u.unit).map(u => u.id);
+  const setAsIs = () => onChange(withMode(withMode(withCreate(choices, szToCreate, true), perUnitIds, 'activate'),
+                                          otherIds, 'stage'));
   const approach: 'mirror' | 'custom' =
-    szReady && layout.unbroadcast.every(u => u.mode === 'stage') ? 'mirror' : 'custom';
+    szReady && layout.unbroadcast.every(u => u.mode === (u.unit ? 'activate' : 'stage')) ? 'mirror' : 'custom';
   const szTicked = layout.groups.filter(g => g.exists || g.create).length;
 
   return (
@@ -187,14 +204,16 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
                   ? 'border-indigo-500 ring-1 ring-indigo-300 bg-indigo-50/50' : 'border-gray-200 hover:border-gray-300'}`}>
           <div className="text-sm font-semibold text-gray-800">
             <input type="radio" readOnly checked={approach === 'mirror'} className="mr-1.5 align-middle" />
-            SZ as-is (default)
+            SZ as-is, every unit WLAN on (default)
           </div>
           <div className="text-xs text-gray-600 mt-1">
-            R1 AP Groups where SZ actually broadcasts different WLANs ({s.groups} here), so every AP broadcasts exactly
-            what it broadcasts in SZ today.
-            {layout.unbroadcast.length > 0 && <> The {layout.unbroadcast.length} WLAN(s) no AP broadcasts are created
-              and staged{stagedGroups.length > 0 && <> in {stagedGroups.length} per-unit AP Group(s)</>}, not
-              activated — each unit ready to switch on later.</>}
+            R1 AP Groups where SZ actually broadcasts different WLANs ({s.groups} here), so every AP broadcasts what it
+            broadcasts in SZ today.
+            {nPerUnit > 0 && <> The {nPerUnit} per-unit WLAN(s) no AP broadcasts (wrong AP Group mapping, AP-level WLAN
+              Group overrides) are activated anyway, each on an AP Group named for its unit — built even when no AP
+              lands in it.</>}
+            {layout.unbroadcast.length - nPerUnit > 0 && <> The {layout.unbroadcast.length - nPerUnit} other
+              WLAN(s) no AP broadcasts are created and staged, not activated.</>}
             {approach === 'custom' && <> <span className="text-indigo-700 font-medium">Click to go back to this.</span></>}
           </div>
         </button>
@@ -279,9 +298,9 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
         <p className="text-xs text-gray-500 mb-2">
           Every AP Group Create WLANs builds. <b>From the SZ broadcast</b>: APs left with the same WLANs become one group;
           groups already in the R1 venue are reused, tick the ones to create — a group not created leaves its WLANs
-          inactive for those APs. <b>Per-unit (staged)</b>: one group per unit for WLANs no AP broadcasts in SZ, built
-          with its AP(s) paired by name and its WLAN not activated — ready to switch on later. AP Mapping (the last
-          step) puts the APs into all of them.
+          inactive for those APs. <b>Per-unit</b>: one group per unit for WLANs no AP broadcasts in SZ, built with the
+          AP(s) paired by name (or none) and the unit's WLAN activated on it, or staged (not activated) when you choose
+          that. AP Mapping (the last step) puts the APs into all of them.
         </p>
 
         {layout.unbroadcast.length > 0 && (
@@ -292,8 +311,9 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
                 ? <>{layout.unbroadcast.length} WLAN(s) no AP broadcasts in SZ, none pairs with an AP by name — see the
                     pairing rule in section 3.</>
                 : <>{stagedChosen.length} of {stagedGroups.length} per-unit group(s) ticked to build
-                    ({layout.summary.staged_aps ?? 0} AP(s)) — each for WLANs no AP broadcasts in SZ, created but not
-                    activated.
+                    ({layout.summary.staged_aps ?? 0} AP(s)
+                    {(layout.summary.unit_groups_empty ?? 0) > 0 && <>; {layout.summary.unit_groups_empty} with no AP</>})
+                    — each for WLANs no AP broadcasts in SZ: {nActivate} activated, {nStage} staged.
                     {(layout.staged?.unpaired.length ?? 0) > 0 && <> {layout.staged.unpaired.length} staged WLAN(s) pair with no AP.</>}</>}
             </span>
             {stagedGroups.length > 0 && (
@@ -391,10 +411,12 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
         <section>
           <h4 className="text-sm font-semibold text-gray-800">3. WLANs no AP broadcasts ({layout.unbroadcast.length})</h4>
           <p className="text-xs text-gray-500 mb-2">
-            Create + stage by default; change it per WLAN as needed. <b>Skip</b>: not migrated. <b>Create</b>: the WLAN is created in R1, nothing else.{' '}
-            <b>Create + stage</b>: the WLAN is created, its AP Group built and filled with the AP(s) it pairs with, and
-            nothing is activated — turning it on later is just activating the WLAN on that group. Only APs that broadcast
-            just the All AP Groups WLANs can be staged, so staging never changes what an AP broadcasts.
+            Per-unit WLANs are activated by default, the rest created + staged; change it per WLAN as needed.{' '}
+            <b>Skip</b>: not migrated. <b>Create</b>: the WLAN is created in R1, nothing else.{' '}
+            <b>+ Stage</b>: the WLAN is created, its AP Group built and filled with the AP(s) it pairs with, and nothing is
+            activated. <b>Activate</b>: a per-unit WLAN is activated on the AP Group named for its unit — the group it
+            pairs into, else an SZ-broadcast or R1 group of that name, else a new one, built even if no AP lands in it;
+            a WLAN with no unit goes on All AP Groups (every AP broadcasts it).
           </p>
 
           <div className="flex flex-wrap items-center gap-3 mb-2 text-xs">
@@ -405,20 +427,21 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
                      className="pl-7 pr-2 py-1 border border-gray-300 rounded w-full" />
             </div>
             <span className="text-gray-500">
-              {layout.unbroadcast.length - nCreate - nStage} skipped · {nCreate} create · {nStage} create + stage
+              {layout.unbroadcast.length - nCreate - nStage - nActivate} skipped · {nCreate} create
+              · {nStage} create + stage · {nActivate} activate
             </span>
             <span className="ml-auto flex gap-3">
-              {(['skip', 'create', 'stage'] as const).map(m => (
+              {(['skip', 'create', 'stage', 'activate'] as const).map(m => (
                 <button key={m} disabled={disabled} onClick={() => setMode(unbroadcast.map(u => u.id), m)}
                         className={`${m === 'skip' ? 'text-gray-500' : 'text-indigo-600'} hover:underline disabled:text-gray-400`}>
-                  {m === 'skip' ? 'Skip' : m === 'create' ? 'Create' : 'Create + stage'}{' '}
+                  {m === 'stage' ? 'Create + stage' : MODE_LABEL[m]}{' '}
                   {unbroadcast.length === layout.unbroadcast.length ? 'all' : `${unbroadcast.length} shown`}
                 </button>
               ))}
             </span>
           </div>
 
-          {nStage > 0 && (
+          {(nStage > 0 || nActivate > 0) && (
             <div className="border border-indigo-100 bg-indigo-50/40 rounded px-3 py-2 mb-2 text-xs space-y-1.5">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-semibold text-gray-700">Pairing</span>
@@ -460,26 +483,39 @@ export default function WlanPlacement({ layout, choices, onChange, disabled }: P
             {unbroadcast.map(u => (
               <div key={u.id} className="flex items-center gap-2 px-3 py-1 text-xs">
                 <div className="inline-flex rounded border border-gray-300 overflow-hidden flex-shrink-0">
-                  {(['skip', 'create', 'stage'] as const).map(m => (
+                  {(['skip', 'create', 'stage', 'activate'] as const).map(m => (
                     <button key={m} disabled={disabled} onClick={() => setMode([u.id], m)}
+                            title={m === 'activate' && !u.unit ? 'No unit to name an AP Group after: activated on All AP Groups' : undefined}
                             className={`px-1.5 py-0.5 ${u.mode === m
-                              ? (m === 'skip' ? 'bg-gray-600 text-white' : 'bg-indigo-600 text-white')
+                              ? (m === 'skip' ? 'bg-gray-600 text-white' : m === 'activate' ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white')
                               : 'bg-white text-gray-600'}`}>
-                      {m === 'skip' ? 'Skip' : m === 'create' ? 'Create' : '+ Stage'}
+                      {MODE_LABEL[m]}
                     </button>
                   ))}
                 </div>
                 <span className="font-medium">{u.name}</span>
                 <span className="text-gray-400">{u.auth_type}</span>
-                {/* WLAN -> AP Group: the per-unit group it pairs into (built only when staged) */}
-                <span className={u.mode === 'stage' ? (u.paired_group ? 'text-indigo-700' : 'text-amber-700') : 'text-gray-400'}
-                      title={u.paired_aps.length ? `AP(s): ${u.paired_aps.join(', ')}` : 'Pairs with no AP'}>
-                  {u.paired_group
-                    ? <>→ AP Group <b>{u.paired_group}</b>{u.paired_aps.length > 1 ? ` (${u.paired_aps.length} APs)` : ''}
-                        {u.mode !== 'stage' && ' — not built'}</>
-                    : <>→ (default) · All APs{u.mode === 'stage' ? ' — no unit AP pairs' : ''}</>}
-                  {u.mode !== 'skip' && <span className="text-gray-400"> · not activated</span>}
-                </span>
+                {/* WLAN -> AP Group: the per-unit group it pairs into / is activated on */}
+                {u.mode === 'activate' ? (
+                  <span className={u.activation === 'all_ap_groups' ? 'text-amber-700' : 'text-green-700'}
+                        title={u.paired_aps.length ? `AP(s): ${u.paired_aps.join(', ')}` : 'No AP lands in it'}>
+                    {u.activation === 'all_ap_groups'
+                      ? <>→ <b>All AP Groups</b> — no unit, every AP broadcasts it</>
+                      : <>→ AP Group <b>{u.paired_group}</b>
+                          {u.paired_aps.length ? (u.paired_aps.length > 1 ? ` (${u.paired_aps.length} APs)` : ` (${u.paired_aps[0]})`)
+                            : ' (no AP)'} · activated</>}
+                  </span>
+                ) : (
+                  <span className={u.mode === 'stage' ? (u.paired_group ? 'text-indigo-700' : 'text-amber-700') : 'text-gray-400'}
+                        title={u.paired_aps.length ? `AP(s): ${u.paired_aps.join(', ')}` : 'Pairs with no AP'}>
+                    {u.paired_group
+                      ? <>→ AP Group <b>{u.paired_group}</b>{u.paired_aps.length > 1 ? ` (${u.paired_aps.length} APs)` : ''}
+                          {u.mode !== 'stage' && ' — not built'}</>
+                      : <>→ (default) · All APs{u.mode === 'stage' ? ' — no unit AP pairs' : ''}</>}
+                    {u.mode !== 'skip' && <span className="text-gray-400"> · not activated</span>}
+                    {u.unit && u.mode !== 'skip' && <span className="text-gray-400"> · unit {u.unit}</span>}
+                  </span>
+                )}
                 <span className="ml-auto text-gray-400">{u.reason}</span>
               </div>
             ))}
@@ -498,10 +534,12 @@ function GroupRow({ g, disabled, onCreate, onRename }: {
     <tr className={g.over_limit ? 'bg-red-50' : g.staged ? (g.chosen ? 'bg-indigo-50/30' : 'bg-gray-50/60') : g.exists ? 'bg-green-50/40' : g.create ? '' : 'bg-gray-50/60'}>
       <td className="px-3 py-1.5">
         {g.staged ? (
-          <label className="flex items-center gap-1.5" title="Ticked: built with its AP(s), its WLAN created but not activated. Unticked: the WLAN only.">
+          <label className="flex items-center gap-1.5" title="Ticked: built with its AP(s) (if any); activated WLANs stay activated, the rest staged. Unticked: the WLANs only.">
             <input type="checkbox" checked={!!g.chosen} disabled={disabled} onChange={e => onCreate(e.target.checked)} />
             <span className={`text-[10px] font-bold ${g.chosen ? 'text-indigo-700' : 'text-gray-400'}`}>
               PER-UNIT · {g.chosen ? (g.exists ? 'IN R1' : 'BUILD') : 'NOT BUILT'}
+              {g.chosen && (g.active_ssids?.length ?? 0) > 0 && <span className="text-green-700"> · ACTIVE</span>}
+              {g.chosen && g.ap_count === 0 && <span className="text-gray-500"> · NO AP</span>}
             </span>
           </label>
         ) : g.exists ? (

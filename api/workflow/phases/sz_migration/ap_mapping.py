@@ -148,7 +148,10 @@ class ApMappingPlanPhase(_Stage):
                 continue   # listed below with the groups to create
             notes = [f"{len(members)} AP(s): {moves} to move, {adds} to add, "
                      f"{len(members) - moves - adds} already in it", "SSIDs: " + ", ".join(g["ssids"])]
-            if g["staged"]:
+            if g["staged"] and g.get("active_ssids"):
+                notes.append("Per-unit: " + ", ".join(g["active_ssids"]) + " activated here though no AP "
+                             "broadcasts them in SZ")
+            elif g["staged"]:
                 notes.append("Staged: its WLAN(s) are created but NOT activated — no AP broadcasts them in SZ")
             actions.append(ResourceAction(resource_type="ap_group", name=g["name"],
                                           action="update" if moves or adds else "reuse", notes=notes))
@@ -307,7 +310,11 @@ class MapApsPhase(_Stage):
         budget = min(MAP_MAX_WAIT_SECONDS, max(120, 3 * len(rows)))
         await ap_group_ops.place_aps(self.r1_client, self.tenant_id, self.venue_id, rows, self.read_aps,
                                      log_label="[SZ AP Mapping]", wait_seconds=budget,
-                                     confirm_seconds=budget, progress=self.emit)
+                                     confirm_seconds=budget, progress=self.emit,
+                                     count=lambda done, failed, total: self.emit_progress(
+                                         done, total, failed, item_name="AP",
+                                         detail=f"R1 confirmed {done} of {total} AP task(s)"
+                                                + (f", {failed} failed" if failed else "")))
         rows += refused + group_failed
         counts: Dict[str, int] = {}
         for r in rows:
@@ -351,6 +358,12 @@ class VerifyApMappingPhase(_Stage):
                 if a["action"] == "keep" or a.get("fallback_default") or a.get("by_name") or a.get("manual")}
         # Kept on purpose (R1 adds SSIDs SZ doesn't broadcast there): listed, not failed.
         differing = [a for a in broadcast.aps if a.status == "differs" and (a.serial or "").upper() not in kept]
+        # Activated on purpose though no SZ AP broadcasts them: an AP whose only
+        # difference is gaining those is as planned -- listed, not failed.
+        on_purpose = set(plan.get("activated_unbroadcast") or [])
+        gained = [a for a in differing if not a.missing_in_r1 and a.extra_in_r1
+                  and set(a.extra_in_r1) <= on_purpose]
+        differing = [a for a in differing if a not in gained]
         not_mapped = [a for a in plan["aps"] if a["action"] in ("move", "add")]
         not_active = [a for a in plan["activations"] if a["status"] in ("needed", "conflict")]
 
@@ -365,6 +378,8 @@ class VerifyApMappingPhase(_Stage):
                            "extra_in_r1": a.extra_in_r1, "sz_ap_group": a.sz_ap_group,
                            "r1_ap_group": a.r1_ap_group} for a in differing[:SAMPLE]],
             "differing_total": len(differing),
+            "gained_on_purpose": len(gained),
+            "activated_unbroadcast": sorted(on_purpose),
             "not_in_r1": c["aps_not_in_r1"],
             "fallback_default": [{"name": a["name"], "serial": a["serial"], "wanted_group": a.get("wanted_group")}
                                  for a in plan["aps"] if a.get("fallback_default")][:SAMPLE],
@@ -384,7 +399,8 @@ class VerifyApMappingPhase(_Stage):
                         f"{c['aps'] - c['aps_unmapped'] - c['aps_blocked'] - c['aps_not_in_r1'] - c['aps_keep']}"
                         f"; WLANs active as planned: {c['wlans_already']} of {c['wlans'] - c['wlans_no_network']}")
         await self.emit(f"Broadcast: {len(differing)} AP(s) differ from SZ "
-                        f"(of {broadcast.counts.get('aps_compared', 0)} compared)",
+                        f"(of {broadcast.counts.get('aps_compared', 0)} compared)"
+                        + (f"; {len(gained)} more only gain WLAN(s) activated on purpose" if gained else ""),
                         "success" if not differing else "warning")
         problems = []
         if plan["create_groups"]:

@@ -127,23 +127,26 @@ export default function Step4Review({ state, dispatch }: Props) {
   const converted = new Set(convertible.filter(w => state.authConversions[w.id]).map(w => w.id));
   const updateConversions = (c: Record<string, 'dpsk'>) => dispatch({ type: 'SET_AUTH_CONVERSIONS', conversions: c });
 
-  // Defaults, once per extraction and only over untouched choices: SZ as-is
-  // (every SZ-broadcast AP Group built), every WLAN no AP broadcasts created +
-  // staged, and every RADIUS-backed WLAN converted to R1 DPSK. The operator
-  // backs out of any of them on this step.
+  // Defaults, once per extraction and only over untouched choices: every
+  // SZ-broadcast AP Group built; of the WLANs no AP broadcasts, the per-unit
+  // ones activated on their unit's AP Group (built even with no AP in it) and
+  // the rest created + staged; every RADIUS-backed WLAN converted to R1 DPSK.
+  // The operator backs out of any of them on this step.
   useEffect(() => {
     const job = state.extractionJobId;
     if (!job || !layout || state.layoutDefaultsFor === job) return;
     const c = state.layoutChoices;
     const untouched = c.all_ap_wlans == null && !c.create_groups.length && !c.include_unbroadcast.length
-      && !(c.stage_unbroadcast ?? []).length && !Object.keys(c.group_names).length;
+      && !(c.stage_unbroadcast ?? []).length && !(c.activate_unbroadcast ?? []).length
+      && !Object.keys(c.group_names).length;
     dispatch({
       type: 'APPLY_WLAN_DEFAULTS', jobId: job,
       choices: untouched ? {
         ...c,
         create_groups: layout.groups.filter(g => !g.exists).map(g => g.key),
         include_unbroadcast: [],
-        stage_unbroadcast: layout.unbroadcast.map(u => u.id),
+        activate_unbroadcast: layout.unbroadcast.filter(u => u.unit).map(u => u.id),
+        stage_unbroadcast: layout.unbroadcast.filter(u => !u.unit).map(u => u.id),
       } : c,
     });
   }, [layout, state.extractionJobId]);
