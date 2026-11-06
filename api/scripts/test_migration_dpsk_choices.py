@@ -301,8 +301,9 @@ async def main():
     failures += check("re-run: pool already linked -> no link PUT, same result",
                       r1.networks.linked == [] and out.dpsk_pool_id == "pool-new-1", str(r1.networks.linked))
 
-    # 9. legacy
-    out = await run_validate({})
+    # 9. legacy (no DPSK choices; the RADIUS server has its secret typed --
+    # without one the plan now stops, see test_migration_radius_choices)
+    out = await run_validate({"radius_decisions": {"s-cp": {"action": "create", "secret_provided": True}}})
     failures += check("no DPSK choices -> no pool key, plan valid (legacy path)",
                       out.validation_result.valid
                       and "dpsk_pool_key" not in out.unit_mappings["w-res"].plan.extra)

@@ -9,11 +9,13 @@ import DpskChoicesPanel, { type DpskWlan } from './DpskChoicesPanel';
 import RadiusMapping from './RadiusMapping';
 import MigrationBlueprint from './MigrationBlueprint';
 import AuthConversionPanel, { type ConvertibleWlan } from './AuthConversionPanel';
+import ExistingNetworksPanel, { effectiveChoice } from './ExistingNetworksPanel';
 import { fixSection } from './PlanDetails';
 import { CONVERTIBLE_TYPES } from '@/types/szConfigMigration';
 import type {
   WizardState, WizardAction, ResolverResult, TypeMapping, PlanResult,
   RadiusChoices, RadiusDecision, WlanFallback, DpskChoices, DpskPoolSpec, R1Layout, LayoutChoices,
+  NetworkMatches,
 } from '@/types/szConfigMigration';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -27,10 +29,10 @@ interface Props {
   dispatch: React.Dispatch<WizardAction>;
 }
 
-type Section = 'wlans' | 'placement' | 'auth' | 'blueprint' | 'networks' | 'dpsk' | 'radius';
+type Section = 'wlans' | 'placement' | 'existing' | 'auth' | 'blueprint' | 'networks' | 'dpsk' | 'radius';
 
 export default function Step4Review({ state, dispatch }: Props) {
-  const [openSections, setOpenSections] = useState<Set<Section>>(new Set(['wlans', 'placement', 'auth']));
+  const [openSections, setOpenSections] = useState<Set<Section>>(new Set(['wlans', 'placement', 'existing', 'auth']));
   const [resolving, setResolving] = useState(false);
   const [planning, setPlanning] = useState(false);
 
@@ -127,6 +129,44 @@ export default function Step4Review({ state, dispatch }: Props) {
   const converted = new Set(convertible.filter(w => state.authConversions[w.id]).map(w => w.id));
   const updateConversions = (c: Record<string, 'dpsk'>) => dispatch({ type: 'SET_AUTH_CONVERSIONS', conversions: c });
 
+  // ── Existing R1 networks with each WLAN's SSID ──────────────────
+  // Read once the venue has been re-read (and on demand): one R1 read per
+  // same-SSID PSK network to compare passphrases, so not on every change.
+  const [netMatches, setNetMatches] = useState<NetworkMatches | null>(null);
+  const [netLoading, setNetLoading] = useState(false);
+  const [netError, setNetError] = useState<string | null>(null);
+  const networkChoices = state.networkChoices ?? {};
+  const loadNetMatches = async () => {
+    if (!state.extractionJobId || !state.r1SnapshotJobId || !state.r1ControllerId) return;
+    setNetLoading(true);
+    setNetError(null);
+    try {
+      const res = await apiFetch(`${API_URL}/sz-migration/network-matches/${state.extractionJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          r1_controller_id: state.r1ControllerId,
+          tenant_id: state.tenantId,
+          r1_snapshot_job_id: state.r1SnapshotJobId,
+          auth_conversions: state.authConversions,
+          excluded_wlans: state.layoutChoices.excluded_wlans ?? [],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Reading R1 networks failed: ${res.status}`);
+      }
+      setNetMatches(await res.json());
+    } catch (e: any) {
+      setNetError(e.message);
+    } finally {
+      setNetLoading(false);
+    }
+  };
+  useEffect(() => { if (r1ReadAt) loadNetMatches(); }, [r1ReadAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const netWlans = (netMatches?.wlans ?? []).filter(w => !notMigrated.has(w.id));
+  const netReuse = netWlans.filter(w => effectiveChoice(w, networkChoices).action === 'reuse').length;
+
   // Defaults, once per extraction and only over untouched choices: every
   // SZ-broadcast AP Group built; of the WLANs no AP broadcasts, the per-unit
   // ones activated on their unit's AP Group (built even with no AP in it) and
@@ -190,9 +230,14 @@ export default function Step4Review({ state, dispatch }: Props) {
       action: svc.suggestion.action, r1_profile_id: svc.suggestion.r1_profile_id,
     };
   }
+  // Like for like: a created profile needs SZ's real secret (SZ doesn't
+  // expose it, so it's typed here), and a linked one must not still carry
+  // an old run's placeholder. Never a placeholder.
+  const placeholderProfiles = new Set((radiusChoices?.r1_profiles ?? []).filter(p => p.placeholder_secret).map(p => p.id));
   const decisionsComplete = radiusServices.every(svc => {
     const d = decisions[svc.id];
-    if (d.action === 'existing') return !!d.r1_profile_id;
+    if (d.action === 'existing') return !!d.r1_profile_id && !placeholderProfiles.has(d.r1_profile_id);
+    if (d.action === 'create') return !!secretSet[svc.id];
     if (d.action === 'skip') {
       return svc.used_by.filter(u => u.role === 'authentication' && usesRadius(u.wlan_id))
         .every(u => !!state.wlanFallbacks[u.wlan_id]);
@@ -353,6 +398,10 @@ export default function Step4Review({ state, dispatch }: Props) {
           sz_snapshot_job_id: state.extractionJobId,
           layout_choices: state.layoutChoices,
           auth_conversions: Object.fromEntries([...converted].map(id => [id, 'dpsk'])),
+          // Only choices made; the rest get the same suggestion server-side.
+          network_choices: Object.fromEntries(
+            Object.entries(networkChoices).filter(([id]) => !notMigrated.has(id)),
+          ),
           // Always sent (possibly empty): a service only converted WLANs used
           // gets no decision, and so is not created.
           ...({
@@ -518,6 +567,44 @@ export default function Step4Review({ state, dispatch }: Props) {
             ) : (
               <div className="text-sm text-gray-500 flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" /> Working out placement…
+              </div>
+            )}
+          </AccordionPanel>
+
+          <AccordionPanel
+            title="Existing R1 networks"
+            subtitle={netMatches
+              ? (netWlans.length
+                  ? `${netWlans.length} WLAN SSID${netWlans.length === 1 ? '' : 's'} already in R1 · ${netReuse} reuse, ${netWlans.length - netReuse} create new`
+                  : 'No migrated SSID exists in R1 yet')
+              : netLoading ? 'Reading R1 networks and comparing passphrases…' : netError ? 'Not read' : ''}
+            section="existing"
+            isOpen={openSections.has('existing')}
+            onToggle={toggleSection}
+            badge={netWlans.some(w => effectiveChoice(w, networkChoices).action === 'create') ? 'SECOND SSID' : undefined}
+            badgeColor="amber"
+          >
+            <div className="flex items-center justify-end gap-2 mb-2 text-xs text-gray-500">
+              {netError && <span className="text-red-700">{netError}</span>}
+              {netMatches && !netLoading && <span>Matched against R1 by SSID</span>}
+              <button type="button" onClick={loadNetMatches} disabled={netLoading || r1Reading || planning}
+                      className="px-2 py-0.5 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1">
+                {netLoading && <Loader2 size={12} className="animate-spin" />}
+                Re-check
+              </button>
+            </div>
+            {netMatches ? (
+              <div className={netLoading ? 'opacity-60 pointer-events-none' : ''}>
+                <ExistingNetworksPanel matches={netMatches} choices={networkChoices} notMigrated={notMigrated}
+                                       disabled={planning}
+                                       onChange={c => dispatch({ type: 'SET_NETWORK_CHOICES', choices: c })} />
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 flex items-center gap-2">
+                {netLoading && <Loader2 size={14} className="animate-spin" />}
+                {netLoading ? 'Reading R1 networks with these SSIDs…'
+                  : netError ? 'Without this list the plan still applies the suggestion to every WLAN.'
+                  : 'Waiting for the venue to be re-read…'}
               </div>
             )}
           </AccordionPanel>

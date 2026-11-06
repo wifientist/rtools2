@@ -133,11 +133,17 @@ export default function RadiusMapping({
                 >
                   <option value="">Choose an R1 profile…</option>
                   {profiles.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.primary ? ` — ${p.primary}` : ''}{p.primary && p.primary === svc.primary ? '  (same server)' : ''}{p.placeholder_secret ? '  ⚠ placeholder secret' : ''}
+                    <option key={p.id} value={p.id} disabled={p.placeholder_secret}>
+                      {p.name}{p.primary ? ` — ${p.primary}` : ''}{p.primary && p.primary === svc.primary ? '  (same server)' : ''}{p.placeholder_secret ? '  — placeholder secret, set the real one in R1 first' : ''}
                     </option>
                   ))}
                 </select>
+                {profiles.find(p => p.id === d.r1_profile_id)?.placeholder_secret && (
+                  <div className="text-[11px] text-red-700 mt-1">
+                    This R1 profile still has a placeholder shared secret from an earlier run — it authenticates nobody.
+                    Set SZ's real secret on it in R1 (then Refresh), or choose Create and type the secret.
+                  </div>
+                )}
               </div>
             )}
 
@@ -145,13 +151,13 @@ export default function RadiusMapping({
               <div className="pl-6 space-y-1">
                 <label className="flex items-center gap-2 text-xs text-gray-700 flex-wrap">
                   <Lock size={12} className="text-gray-500" />
-                  Shared secret (optional)
+                  Shared secret (required)
                   <input
                     type="password"
                     autoComplete="new-password"
                     spellCheck={false}
-                    placeholder={secretSet[svc.id] ? 'Set — type to replace' : 'Leave blank to use a placeholder'}
-                    className="border border-gray-300 rounded px-2 py-1 text-xs flex-1 min-w-[10rem] max-w-xs bg-white"
+                    placeholder={secretSet[svc.id] ? 'Set — type to replace' : "SZ's shared secret for this server"}
+                    className={`border rounded px-2 py-1 text-xs flex-1 min-w-[10rem] max-w-xs bg-white ${secretSet[svc.id] ? 'border-gray-300' : 'border-red-400'}`}
                     disabled={disabled}
                     // Uncontrolled on purpose: the value is never read back
                     // into the page, only handed to the parent as it is typed.
@@ -162,7 +168,8 @@ export default function RadiusMapping({
                 <div className="text-[11px] text-gray-500 pl-5">
                   {secretSet[svc.id]
                     ? 'Sent to R1 when the profile is created. It is not saved with this migration and is never shown again. Re-enter it if you leave this page before building the plan.'
-                    : 'SZ does not expose shared secrets. Blank creates the profile with a placeholder — authentication fails until you set it in R1.'}
+                    : <span className="text-red-700">SZ's API doesn't return shared secrets, so type the one SZ uses for this
+                        server. The plan won't build without it: the profile is created with the real secret or not at all.</span>}
                 </div>
               </div>
             )}

@@ -298,8 +298,9 @@ async def main():
     failures += check("case-only clash with another property's network: created as <name>_<venue>, SSID unchanged",
                       ex["Guest"].plan.extra["r1_network_name"] == "Guest_V" and ex["Guest"].plan.extra["ssid"] == "Guest"
                       and not ex["Guest"].resolved.network_id, str(ex["Guest"].plan.extra.get("r1_network_name")))
-    failures += check("exact name held by another venue's network: not reused, renamed",
-                      ex["Secure6"].plan.extra["r1_network_name"] == "Secure6_V" and not ex["Secure6"].resolved.network_id)
+    failures += check("shared network on another venue, same SSID + passphrase: reused, not copied",
+                      ex["Secure6"].resolved.network_id == "n-theirs" and ex["Secure6"].plan.extra["r1_network_name"] == "Secure6",
+                      str((ex["Secure6"].resolved.network_id, ex["Secure6"].plan.extra.get("r1_network_name"))))
     failures += check("an earlier run's network (activated nowhere) is reused under its name",
                       ex["Unit101"].resolved.network_id == "n-ours" and ex["Unit101"].plan.extra["r1_network_name"] == "Unit101")
     warns = [c.description for c in out.validation_result.conflicts if c.resource_type == "wifi_network"]
@@ -320,9 +321,12 @@ async def main():
     failures += check("re-run: the earlier run's 'Guest_V' is reused, no 'Guest_V2'",
                       ex["Guest"].resolved.network_id == "n-guest-v" and ex["Guest"].plan.extra["r1_network_name"] == "Guest_V"
                       and acts.get("Guest") is not None and acts["Guest"].action == "reuse"
-                      and "reusing 'Guest_V'" in " ".join(acts["Guest"].notes),
+                      and "already on this venue" in " ".join(acts["Guest"].notes),
                       str((ex["Guest"].plan.extra.get("r1_network_name"), acts.get("Guest"))))
-    failures += check("re-run: 'Secure6_V' with another SSID is not ours -> 'Secure6_V2' created",
+    # Create new chosen on Review: 'Secure6' and 'Secure6_V' (another SSID) are taken -> 'Secure6_V2'
+    out = await run_validate({"network_choices": {"w2": {"action": "create"}}}, inv=rerun)
+    ex = {u.plan.extra["sz_wlan_name"]: u for u in out.unit_mappings.values()}
+    failures += check("Create new chosen: next free name 'Secure6_V2', nothing reused",
                       ex["Secure6"].plan.extra["r1_network_name"] == "Secure6_V2" and not ex["Secure6"].resolved.network_id,
                       str(ex["Secure6"].plan.extra.get("r1_network_name")))
 
@@ -493,23 +497,57 @@ async def test_psk_passphrases():
                not out.validation_result.valid and any("Guest" in e and "no passphrase" in e for e in errors(out)),
                str(errors(out)))
 
-    # Same name + SSID, activated nowhere, but another passphrase: not ours
+    # Ours (activated nowhere / on this venue) with another passphrase -- SZ's
+    # unit passwords changed since the first run: reused, SZ's passphrase set
+    # on it. Never a renamed copy with the same SSID.
     inv = inventory()
     inv.tenant_networks = [{"id": "n-guest", "name": "Guest", "ssid": "Guest", "nwSubType": "psk"}]
-    out = await run_validate(inv=inv, r1_pp={"n-guest": "someone-elses"})
+    out = await run_validate(inv=inv, r1_pp={"n-guest": "older-pass"})
     u = out.unit_mappings["w1"]
-    f += check("same name + SSID but another passphrase: not reused, created as <name>_<venue>",
-               not u.resolved.network_id and u.plan.extra["r1_network_name"] == "Guest_V"
-               and any("different passphrase" in w for w in warns(out)) and out.validation_result.valid,
+    f += check("ours with another passphrase: reused, SZ's passphrase set on it (no copy)",
+               u.resolved.network_id == "n-guest" and u.plan.extra["set_passphrase"] is True
+               and any("passphrase is set to SZ's" in w for w in warns(out)) and out.validation_result.valid,
                str((u.resolved.network_id, u.plan.extra.get("r1_network_name"), warns(out))))
 
     out = await run_validate(inv=inv)
-    f += check("same passphrase: reused", out.unit_mappings["w1"].resolved.network_id == "n-guest",
+    f += check("same passphrase: reused, nothing written", out.unit_mappings["w1"].resolved.network_id == "n-guest"
+               and out.unit_mappings["w1"].plan.extra["set_passphrase"] is False,
                str(out.unit_mappings["w1"].resolved.network_id))
 
     out = await run_validate(inv=inv, r1_pp={"n-guest": RuntimeError("503")})
-    f += check("R1 network unreadable: blocks the plan rather than reusing blind",
-               not out.validation_result.valid and any("couldn't read the passphrase" in e for e in errors(out)),
+    f += check("ours, R1 passphrase unreadable: reused and SZ's set (Create WLANs re-reads to confirm)",
+               out.unit_mappings["w1"].resolved.network_id == "n-guest"
+               and out.unit_mappings["w1"].plan.extra["set_passphrase"] is True, str(errors(out)))
+
+    out = await run_validate({"network_choices": {"w1": {"action": "reuse", "network_id": "n-guest",
+                                                        "passphrase": "keep"}}},
+                             inv=inv, r1_pp={"n-guest": "older-pass"})
+    f += check("Keep R1's passphrase chosen: reused, nothing written, warned",
+               out.unit_mappings["w1"].resolved.network_id == "n-guest"
+               and out.unit_mappings["w1"].plan.extra["set_passphrase"] is False
+               and any("KEEPS R1's passphrase" in w for w in warns(out)), str(warns(out)))
+
+    # Another property's network with this SSID and another passphrase: a new
+    # network is suggested (listed for the operator); reusing it is a choice.
+    shared = inventory()
+    shared.tenant_networks = [{"id": "n-theirs", "name": "Guest", "ssid": "Guest", "nwSubType": "psk",
+                               "venueIds": ["other-venue"]}]
+    out = await run_validate(inv=shared, r1_pp={"n-theirs": "their-pass"})
+    u = out.unit_mappings["w1"]
+    f += check("another venue's same-SSID network, other passphrase: created new, the existing one named",
+               not u.resolved.network_id and u.plan.extra["r1_network_name"] == "Guest_V"
+               and any("second network with SSID 'Guest'" in w and "'Guest'" in w for w in warns(out)),
+               str((u.resolved.network_id, warns(out))))
+    out = await run_validate({"network_choices": {"w1": {"action": "reuse", "network_id": "n-theirs",
+                                                        "passphrase": "sz"}}},
+                             inv=shared, r1_pp={"n-theirs": "their-pass"})
+    f += check("reuse a shared network + set SZ's passphrase: honoured, warns it changes other venues",
+               out.unit_mappings["w1"].resolved.network_id == "n-theirs"
+               and out.unit_mappings["w1"].plan.extra["set_passphrase"] is True
+               and any("other venue(s) too" in w for w in warns(out)), str(warns(out)))
+    out = await run_validate({"network_choices": {"w1": {"action": "reuse", "network_id": "gone"}}}, inv=shared)
+    f += check("a chosen network that no longer has the SSID blocks the plan",
+               not out.validation_result.valid and any("no longer has this SSID" in e for e in errors(out)),
                str(errors(out)))
 
     # WPA3: R1 stores the SAE key; reuse compares it
@@ -543,6 +581,36 @@ async def test_psk_passphrases():
     f += check("mixed create sends both of SZ's keys",
                (sent.get("security_type"), sent.get("passphrase"), sent.get("sae_passphrase"))
                == ("WPA2/WPA3", "aaaaaaaa", "bbbbbbbb"), str({k: sent.get(k) for k in ("security_type",)}))
+
+    # Reused network: SZ's passphrase written, then read back -- a write R1
+    # didn't keep fails the WLAN.
+    stored = {"wlan": {"ssid": "M", "wlanSecurity": "WPA23Mixed", "passphrase": "old-pass-1", "saePassphrase": "old-pass-1"}}
+    puts = []
+
+    async def get_net(nid, tid=None):
+        import copy
+        return copy.deepcopy(stored)
+
+    async def put_net(nid, payload, tenant_id=None, wait_for_completion=False):
+        puts.append(payload)
+        stored["wlan"] = dict(payload["wlan"])
+
+    async def nothing(*a, **k):
+        return None
+    phase.r1_client = SimpleNamespace(networks=SimpleNamespace(get_wifi_network_by_id=get_net, update_wifi_network=put_net))
+    phase.emit = phase.record_change = nothing
+    enc = {"method": "WPA23_Mixed", "passphrase": "aaaaaaaa", "saePassphrase": "bbbbbbbb"}
+    await phase._set_sz_passphrase("n", {"encryption": enc}, "M", "M")
+    f += check("set passphrase on a reused mixed network: both of SZ's keys written, security unchanged",
+               len(puts) == 1 and stored["wlan"]["passphrase"] == "aaaaaaaa" and stored["wlan"]["saePassphrase"] == "bbbbbbbb"
+               and stored["wlan"]["wlanSecurity"] == "WPA23Mixed")
+
+    async def put_ignored(nid, payload, tenant_id=None, wait_for_completion=False):
+        puts.append(payload)        # R1 accepts, keeps the old value
+    stored["wlan"]["passphrase"] = "old-pass-1"
+    phase.r1_client.networks.update_wifi_network = put_ignored
+    err = await raises(phase._set_sz_passphrase("n", {"encryption": enc}, "M", "M"))
+    f += check("R1 not showing SZ's passphrase after the write fails the WLAN", err and "doesn't show it" in err, str(err))
     return f
 
 

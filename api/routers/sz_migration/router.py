@@ -106,6 +106,8 @@ from workflow.workflows.sz_ap_mapping import SZApMappingWorkflow
 from workflow.phases.sz_migration.ap_mapping import load_report as load_ap_mapping_report
 from services.sz_migration.ap_mapping import plan_ap_mapping
 from services.sz_migration.r1_layout import r1_group_name
+from services.sz_migration import network_reuse
+from workflow.phases.sz_migration.validate import _r1_ssid as r1_ssid_of, _r1_name_base as r1_name_base
 from services import ap_group_ops
 from workflow.phases.sz_migration.venue_config import load_stage_report
 from workflow.events import WorkflowEventPublisher
@@ -1174,6 +1176,71 @@ class LayoutRequest(BaseModel):
 ApMappingPlanRequest.model_rebuild()   # its layout_choices names LayoutChoices, defined just above
 
 
+class NetworkMatchRequest(BaseModel):
+    r1_controller_id: int
+    tenant_id: Optional[str] = None
+    r1_snapshot_job_id: str
+    auth_conversions: Dict[str, Literal["dpsk"]] = Field(default_factory=dict)
+    excluded_wlans: List[str] = Field(default_factory=list)
+
+
+@router.post("/network-matches/{sz_snapshot_job_id}")
+@require_beta()
+async def get_network_matches(
+    sz_snapshot_job_id: str,
+    request: NetworkMatchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    For each WLAN, the R1 networks that already broadcast its SSID (this
+    venue, unactivated, or shared on other venues) and the suggested choice
+    -- reuse one or create new -- for Review. The plan applies the same
+    suggestion to any WLAN left unchosen. PSK passphrases are compared as
+    fingerprints: a verdict per network, never a passphrase.
+    """
+    await _require_owner("sz", sz_snapshot_job_id, current_user, db)
+    await _require_owner("r1", request.r1_snapshot_job_id, current_user, db)
+    raw = await _get_snapshot_raw(sz_snapshot_job_id)
+    r1_raw = await _get_r1_snapshot_raw(request.r1_snapshot_job_id)
+    if not raw or not r1_raw:
+        raise HTTPException(status_code=404, detail="SZ or R1 snapshot not found or expired")
+    controller = validate_controller_access(request.r1_controller_id, current_user, db)
+    if controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="R1 controller must be RuckusONE")
+    tenant_id = resolve_tenant_id(controller, request.tenant_id)
+    r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
+
+    snapshot = SZMigrationSnapshot.model_validate_json(raw)
+    inventory = R1VenueInventory.model_validate_json(r1_raw)
+    mappings = map_all_wlans(snapshot.wlans)
+    excluded = set(request.excluded_wlans)
+    wlans = []
+    for w in snapshot.wlans:
+        ssid = r1_ssid_of(w.ssid)[0]
+        if w.id in excluded or not ssid:
+            continue
+        r1_type = getattr(mappings.get(w.id), "r1_network_type", None)
+        if request.auth_conversions.get(w.id) == "dpsk":
+            r1_type = "dpsk"
+        wlans.append({"id": w.id, "name": r1_name_base(w.name), "sz_name": w.name, "ssid": ssid,
+                      "r1_type": r1_type, "encryption": w.encryption,
+                      "sz_has_passphrase": bool((w.encryption or {}).get("passphrase")
+                                                or (w.encryption or {}).get("saePassphrase"))})
+    rows = await network_reuse.match_all(r1_client, tenant_id, inventory, wlans)
+    out = []
+    for w in wlans:
+        if not rows[w["id"]]:
+            continue
+        out.append({
+            "id": w["id"], "name": w["sz_name"], "ssid": w["ssid"], "r1_type": w["r1_type"],
+            "sz_has_passphrase": w["sz_has_passphrase"],
+            "candidates": rows[w["id"]],
+            "suggestion": network_reuse.suggest(rows[w["id"]], w["r1_type"], w["sz_has_passphrase"]),
+        })
+    return {"wlans": out, "checked": len(wlans), "venue_name": inventory.venue_name}
+
+
 @router.post("/layout/{sz_snapshot_job_id}")
 @require_beta()
 async def get_r1_layout(
@@ -1331,6 +1398,25 @@ class MigrationPlanRequest(BaseModel):
     # Keyed by SZ WLAN id: external-auth WLANs (external DPSK, Enterprise) to
     # move onto R1's own DPSK service. Absent = keep them external.
     auth_conversions: Dict[str, Literal["dpsk"]] = Field(default_factory=dict)
+    # Keyed by SZ WLAN id: reuse which existing R1 network (by SSID), or create
+    # new. Absent = the suggestion (network_reuse.suggest).
+    network_choices: Dict[str, "NetworkChoice"] = Field(default_factory=dict)
+
+
+class NetworkChoice(BaseModel):
+    action: Literal["reuse", "create"]
+    network_id: Optional[str] = None
+    # reuse a PSK network: write SZ's passphrase onto it, or keep R1's
+    passphrase: Optional[Literal["sz", "keep"]] = None
+
+    @model_validator(mode="after")
+    def _reuse_names_network(self):
+        if self.action == "reuse" and not self.network_id:
+            raise ValueError("reuse needs network_id")
+        return self
+
+
+MigrationPlanRequest.model_rebuild()
 
 
 class MigrationPlanResponse(BaseModel):
@@ -1702,6 +1788,7 @@ async def create_migration_plan(
         "dpsk_assignments": dict(request.dpsk_assignments),
         "layout_choices": request.layout_choices.model_dump() if request.layout_choices else None,
         "auth_conversions": dict(request.auth_conversions),
+        "network_choices": {k: v.model_dump() for k, v in request.network_choices.items()},
     }
     if request.dpsk_pools is not None:
         options["dpsk_pools"] = {k: v.model_dump() for k, v in request.dpsk_pools.items()}

@@ -26,8 +26,9 @@ from schemas.sz_migration import SZMigrationSnapshot
 RADIUS_SECRET_KEY = "sz_migration:radius_secret:{job_id}"
 RADIUS_SECRET_TTL = 6 * 3600
 
-# Written when no shared secret is given. A profile still carrying it rejects
-# every request; Review flags such profiles and never suggests linking one.
+# What older runs wrote when no shared secret was given. Never written any
+# more (no secret = the plan stops); kept only to recognise those profiles:
+# they reject every request, so Review blocks linking one.
 PLACEHOLDER_RADIUS_SECRET = "CHANGE_ME_after_migration"
 
 ACTIONS = ("create", "existing", "skip")
@@ -123,17 +124,15 @@ def suggest(service: Dict[str, Any], r1_profiles: List[Dict[str, Any]]) -> Dict[
             if p.get("primary") == service["primary"]:
                 return {"action": "existing", "r1_profile_id": p["id"],
                         "reason": f"R1 profile '{p['name']}' uses the same server"}
-    for p in candidates:
+    for p in usable:
         if p.get("name") == service["name"]:
-            reason = f"R1 already has a profile named '{p['name']}'"
-            if p.get("placeholder_secret"):
-                reason += (" — it still has the placeholder secret: set the secret in R1, "
-                           "or delete it there and choose Create")
-            return {"action": "existing", "r1_profile_id": p["id"], "reason": reason}
+            return {"action": "existing", "r1_profile_id": p["id"],
+                    "reason": f"R1 already has a profile named '{p['name']}'"}
     if not service.get("primary"):
         return {"action": "skip", "r1_profile_id": None,
                 "reason": "No server address in the SZ snapshot to create from"}
-    return {"action": "create", "r1_profile_id": None, "reason": "No matching R1 profile"}
+    return {"action": "create", "r1_profile_id": None,
+            "reason": "No usable matching R1 profile — type SZ's shared secret to create it"}
 
 
 def sz_server_details(snapshot: SZMigrationSnapshot, service_id: str) -> Dict[str, Any]:

@@ -171,6 +171,39 @@ export interface LayoutWlan {
 // What happens to a WLAN no SZ AP broadcasts
 export type UnbroadcastMode = 'skip' | 'create' | 'stage' | 'activate';
 
+// ── Existing R1 networks with a WLAN's SSID (Review) ──────────────
+export interface NetworkCandidate {
+  network_id: string;
+  name: string;
+  type: string | null;            // psk | dpsk | aaa | open | wispr
+  type_matches: boolean;
+  on_this_venue: boolean;
+  other_venues: number;
+  passphrase: 'match' | 'differs' | 'unknown' | null;   // PSK only; a verdict, never the value
+}
+
+export interface NetworkChoice {
+  action: 'reuse' | 'create';
+  network_id?: string;
+  passphrase?: 'sz' | 'keep' | null;   // reusing a PSK network: write SZ's onto it, or keep R1's
+}
+
+export interface NetworkMatchWlan {
+  id: string;
+  name: string;
+  ssid: string;
+  r1_type: string | null;
+  sz_has_passphrase: boolean;
+  candidates: NetworkCandidate[];
+  suggestion: NetworkChoice & { reason: string };
+}
+
+export interface NetworkMatches {
+  wlans: NetworkMatchWlan[];
+  checked: number;
+  venue_name: string;
+}
+
 export interface LayoutGroup {
   key: string;
   name: string;
@@ -383,6 +416,9 @@ export interface WizardState {
   dpskAssignments: Record<string, string>;          // wlan id -> pool key
   layoutChoices: LayoutChoices;
   authConversions: Record<string, 'dpsk'>;   // wlan id -> converted to R1 DPSK
+  // wlan id -> reuse which existing R1 network (by SSID) / create new.
+  // Absent = the suggestion. Optional: sessions saved before it lack it.
+  networkChoices?: Record<string, NetworkChoice>;
   // Extraction job whose WLAN-step defaults (SZ as-is placement, create + stage,
   // convert to R1 DPSK) were filled in -- once per extraction, never over choices made.
   layoutDefaultsFor?: string | null;
@@ -426,6 +462,7 @@ export type WizardAction =
   | { type: 'CLEAR_PLAN' }
   | { type: 'SET_LAYOUT_CHOICES'; choices: LayoutChoices }
   | { type: 'SET_AUTH_CONVERSIONS'; conversions: Record<string, 'dpsk'> }
+  | { type: 'SET_NETWORK_CHOICES'; choices: Record<string, NetworkChoice> }
   | { type: 'APPLY_WLAN_DEFAULTS'; jobId: string; choices?: LayoutChoices; conversions?: Record<string, 'dpsk'> }
   | { type: 'SET_VENUE_SETTINGS'; sections: string[] | null }
   | { type: 'SET_VENUE_CONFIG_JOB'; jobId: string }
@@ -466,6 +503,7 @@ export const INITIAL_STATE: WizardState = {
   dpskAssignments: {},
   layoutChoices: DEFAULT_LAYOUT_CHOICES,
   authConversions: {},
+  networkChoices: {},
   venueSettings: null,
   venueConfigJobId: null,
   apMappingJobId: null,
@@ -617,6 +655,7 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         dpskAssignments: {},
         layoutChoices: DEFAULT_LAYOUT_CHOICES,
         authConversions: {},
+        networkChoices: {},
         venueSettings: null,
         venueConfigJobId: null,
         apMappingJobId: null,
@@ -648,6 +687,8 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
         // R1 profile ids belong to the tenant: a new destination re-asks.
         radiusDecisions: action.tenantId === state.tenantId ? state.radiusDecisions : null,
         dpskPools: action.tenantId === state.tenantId ? state.dpskPools : null,
+        // "On this venue" and the networks themselves are per venue / tenant.
+        networkChoices: action.venueId === state.destVenueId ? state.networkChoices : {},
       };
 
     case 'SET_R1_SNAPSHOT':
@@ -696,6 +737,9 @@ function wizardReducerInner(state: WizardState, action: WizardAction): WizardSta
 
     case 'SET_AUTH_CONVERSIONS':
       return { ...state, authConversions: action.conversions, planJobId: null, planResult: null };
+
+    case 'SET_NETWORK_CHOICES':
+      return { ...state, networkChoices: action.choices, planJobId: null, planResult: null };
 
     case 'APPLY_WLAN_DEFAULTS': {
       // Marks the defaults done for this extraction; fills in only what is given.

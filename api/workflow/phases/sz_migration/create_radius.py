@@ -18,7 +18,7 @@ from workflow.phases.phase_executor import PhaseExecutor
 from redis_client import get_redis_client
 from schemas.sz_migration import SZMigrationSnapshot
 from services.sz_migration.radius_choices import (
-    PLACEHOLDER_RADIUS_SECRET, RADIUS_SECRET_KEY, referenced_services, sz_server_details,
+    RADIUS_SECRET_KEY, r1_profile_summary, referenced_services, sz_server_details,
 )
 
 
@@ -72,6 +72,7 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
 
         mappings: Dict[str, str] = {}
         created = reused = skipped = 0
+        blocked: List[str] = []     # services that can't be copied like for like: fail the phase
 
         for i, s in enumerate(services):
             await self.emit_progress(i, len(services), item_name="RADIUS service")
@@ -113,6 +114,12 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
                 self.tenant_id, details["name"],
             )
             if existing and existing.get("id"):
+                if r1_profile_summary(existing)["placeholder_secret"]:
+                    existing = None
+                    blocked.append(f"'{details['name']}' — R1's profile of that name still has a placeholder "
+                                   "secret from an earlier run; set SZ's real secret on it in R1, or delete it there")
+                    continue
+                existing = {"id": existing["id"]}       # the rest carries the secret
                 mappings[sid] = existing["id"]
                 reused += 1
                 await self.emit(
@@ -127,12 +134,10 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
             raw_secret = await redis.hget(secret_key, sid)
             secret = raw_secret.decode() if isinstance(raw_secret, bytes) else raw_secret
             if not secret:
-                secret = PLACEHOLDER_RADIUS_SECRET
-                await self.emit(
-                    f"RADIUS '{details['name']}' — no shared secret given; using a placeholder. "
-                    "Set it in R1 before this network can authenticate.",
-                    "warning",
-                )
+                # Like for like or not at all: never a placeholder secret.
+                blocked.append(f"'{details['name']}' — no shared secret (SZ's API doesn't return it); type SZ's "
+                               "secret under RADIUS Servers on Review and build the plan again")
+                continue
 
             primary, secondary = details["primary"], details["secondary"]
             result = await self.r1_client.radius_profiles.create_radius_profile(
@@ -161,6 +166,12 @@ class CreateRadiusProfilesPhase(PhaseExecutor):
             })
 
         await self.emit_progress(len(services), len(services), item_name="RADIUS service")
+        if blocked:
+            for b in blocked:
+                await self.emit(f"RADIUS {b}", "error")
+                await self.record_change("failed", "radius_profiles", b.split("'")[1], detail=b)
+            raise RuntimeError(f"{len(blocked)} RADIUS profile(s) not created without SZ's real shared secret: "
+                               + "; ".join(blocked))
         await self.emit(
             f"RADIUS profiles: {created} created, {reused} linked existing, {skipped} not migrated",
             "success",
