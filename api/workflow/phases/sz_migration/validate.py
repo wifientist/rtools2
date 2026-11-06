@@ -30,7 +30,9 @@ from services.sz_migration.field_mappings import build_r1_advanced_settings
 from services.sz_migration.radius_choices import referenced_services, r1_profile_summary
 from services.sz_migration.dpsk_choices import load_r1_dpsk, validate_dpsk_plan
 from services.sz_migration.r1_layout import build_layout, wlan_activations, without_wlans
-from services.sz_migration.passphrase_check import compare_passphrases
+from services.sz_migration.network_reuse import (
+    R1_SUBTYPE, match_all, plan_type, resolve as resolve_network, tenant_networks,
+)
 from services.wlan_grabber import build_spec as build_wispr_spec, sz_portal_facts
 from services.r1_inventory import capture_venue_inventory
 
@@ -71,58 +73,29 @@ def _r1_name_base(name: str) -> str:
     return n if len(n) >= 2 else f"{n or 'WLAN'}-net"
 
 
-def _network_venues(net: Dict[str, Any]) -> set:
-    ids = set(net.get("venueIds") or [])
-    ids |= {v.get("venueId") for v in net.get("venueApGroups") or [] if v.get("venueId")}
-    return ids
-
-
-def _network_name(inv: R1VenueInventory, name: str, ssid: str, taken: set,
-                  not_ours: frozenset = frozenset()) -> Tuple[str, Optional[Dict[str, Any]], str]:
+def _free_name(inv: R1VenueInventory, name: str, ssid: str, taken: set) -> Tuple[str, str]:
     """
-    (R1 network name to use, existing network to reuse or None, note).
-
-    Reuse only what is surely ours: same exact name and SSID, activated
-    nowhere or only on this venue (an earlier run). Any other clash -- the
-    name differing only in case (R1 treats those as the same name), or held
-    by another property's network, or with another SSID -- creates this one
-    under "<name>_<venue>" (number added if needed); the SSID stays exactly
-    as in SZ. A "<name>_<venue>" an earlier run created is ours too, and is
-    reused rather than skipped for "<name>_<venue>2" (a re-run used to make
-    a duplicate of every renamed WLAN). taken: names already planned this
-    run (casefolded). not_ours: network ids ruled out by the caller (a PSK
-    network whose passphrase isn't SZ's is someone else's).
+    (R1 name for a NEW network, note). SZ's name when no R1 network holds it
+    (R1 names ignore case) and this plan hasn't used it; else
+    "<name>_<venue>" (number added if needed). The SSID stays exactly SZ's.
+    Whether to reuse an existing network is decided before this
+    (network_reuse: by SSID, chosen on Review), never by name here.
     """
-    ours = lambda n: (n.get("ssid") in (None, ssid) and _network_venues(n) <= {inv.venue_id}
-                      and n.get("id") not in not_ours)
-    exact = inv.network_in_tenant(name)
-    if exact and ours(exact):
-        return name, exact, ""
-    folded = {(n.get("name") or "").casefold(): n for n in [*inv.wifi_networks, *inv.tenant_networks]}
-    clash = exact or folded.get(name.casefold())
-    if not clash and name.casefold() not in taken:
-        return name, None, ""
-    where = sorted(_network_venues(clash)) if clash else []
-    held = (f"R1 already has '{clash.get('name')}'" + (" (another property's network)" if where and where != [inv.venue_id] else "")
-            if clash else "Another WLAN in this plan has that name")
+    held = {(n.get("name") or "").casefold(): n for n in tenant_networks(inv)}
+    if name.casefold() not in held and name.casefold() not in taken:
+        return name, ""
+    clash = held.get(name.casefold())
+    why = f"R1 already has '{clash.get('name')}'" if clash else "Another WLAN in this plan has that name"
     venue = re.sub(r"\s+", "_", (inv.venue_name or "venue").strip())
     for i in range(1, 100):
         suffix = f"_{venue}" if i == 1 else f"_{venue}{i}"
-        candidate = name[:max(2, R1_NETWORK_NAME_MAX - len(suffix))] + suffix
-        candidate = candidate[:R1_NETWORK_NAME_MAX]
-        if candidate.casefold() in taken:
-            continue
-        prior = folded.get(candidate.casefold())
-        if prior is None:
+        candidate = (name[:max(2, R1_NETWORK_NAME_MAX - len(suffix))] + suffix)[:R1_NETWORK_NAME_MAX]
+        if candidate.casefold() not in taken and candidate.casefold() not in held:
             break
-        if ours(prior):
-            return (prior.get("name") or candidate, prior,
-                    f"{held} — reusing '{prior.get('name')}' from an earlier run; SSID stays '{ssid}'")
-    return candidate, None, f"{held} — created as '{candidate}'; SSID stays '{ssid}'"
+    return candidate, f"{why} — created as '{candidate}'; SSID stays '{ssid}'"
 
 
-# R1 nwSubType -> the plan's network types, for "reused as a different type".
-_R1_SUBTYPE = {"PSK": "psk", "DPSK": "dpsk", "AAA": "aaa", "OPEN": "open", "GUEST": "wispr"}
+_SUBTYPE_OF = {v: k for k, v in R1_SUBTYPE.items()}
 
 
 # R1 caps how many networks one DPSK service can bind (64 on the tenants we've
@@ -322,6 +295,20 @@ class ValidateMigrationPhase(PhaseExecutor):
             apg_conflicts.append(ConflictDetail(resource_type="ap_group", resource_name="staging",
                                                 description=msg, severity="warning"))
 
+        # ── Existing R1 networks with each WLAN's SSID ────────────────
+        # Reuse is by SSID, chosen on Review (network_choices); with no choice,
+        # the suggestion: this venue's network, else an unactivated one, else a
+        # shared one on other venues that matches. PSK passphrases compared
+        # here in one pass.
+        network_choices: Dict[str, Dict[str, Any]] = self.context.options.get("network_choices") or {}
+        await self.emit("Matching WLANs to existing R1 networks by SSID...")
+        reuse_rows = await match_all(self.r1_client, self.tenant_id, r1_inventory, [
+            {"id": w.id, "name": _r1_name_base(w.name), "ssid": _r1_ssid(w.ssid)[0] or "",
+             "r1_type": getattr(type_mappings.get(w.id), "r1_network_type", None), "encryption": w.encryption}
+            for w in snapshot.wlans if w.id in placements
+        ])
+        reused_by: Dict[str, str] = {}    # R1 network id -> SZ WLAN name that reuses it
+
         for wlan in snapshot.wlans:
             wlan_id = wlan.id
             mapping = type_mappings.get(wlan_id)
@@ -415,9 +402,9 @@ class ValidateMigrationPhase(PhaseExecutor):
                 wispr_facts = spec["portal"]   # no key: create_networks reads it from the snapshot
                 notes = "; ".join(spec["notes"]) or notes
 
-            # The R1 network: reuse ours (an earlier run's -- anywhere in the
-            # tenant, activated here or nowhere), else create, under another
-            # name when this one is taken by someone else's network.
+            # The R1 network: an existing one with this SSID (chosen on
+            # Review, else the suggestion), or a new one -- under another
+            # name when SZ's is taken.
             r1_ssid, ssid_error, ssid_note = _r1_ssid(wlan.ssid)
             if ssid_error:
                 radius_conflicts.append(ConflictDetail(
@@ -428,31 +415,54 @@ class ValidateMigrationPhase(PhaseExecutor):
                 setting_warnings.append(ConflictDetail(
                     unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
                     description=f"{wlan.name}: {ssid_note}", severity="warning"))
-            r1_name, existing_network, name_note = _network_name(
-                r1_inventory, _r1_name_base(wlan.name), r1_ssid, planned_names)
-            # A PSK network is reused only when it carries SZ's passphrase:
-            # same name + SSID and unactivated can still be another property's.
-            rejected: set = set()
             sz_has_pp = bool((wlan.encryption or {}).get("passphrase") or (wlan.encryption or {}).get("saePassphrase"))
-            while r1_type == "psk" and sz_has_pp and existing_network and existing_network.get("id"):
-                verdict = await self._reuse_passphrase(existing_network["id"], wlan.encryption)
-                if verdict == "match":
-                    break
-                if verdict == "unknown":
-                    radius_conflicts.append(ConflictDetail(
-                        unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
-                        description=(f"{wlan.name}: couldn't read the passphrase of R1's '{existing_network.get('name')}' "
-                                     "to confirm it's this WLAN's before reusing it — run the plan again"),
-                        severity="error"))
-                    break
-                rejected.add(existing_network["id"])
-                setting_warnings.append(ConflictDetail(
+            rows = reuse_rows.get(wlan_id, [])
+            for c in rows:     # the type may have changed above (converted to DPSK)
+                c["type_matches"] = c["type"] is None or c["type"] == plan_type(r1_type)
+            choice = network_choices.get(wlan_id)
+            # Two SZ WLANs can share an SSID: a suggestion never hands both the same network.
+            pick = resolve_network(choice, rows if choice else [c for c in rows if c["network_id"] not in reused_by],
+                                   r1_type, sz_has_pp)
+            if pick["action"] == "reuse" and not pick.get("error") and pick["network_id"] in reused_by:
+                pick["error"] = (f"R1's '{pick['row']['name']}' is already chosen for {reused_by[pick['network_id']]} "
+                                 "— one R1 network per WLAN; choose another or Create new")
+            if pick.get("error"):
+                radius_conflicts.append(ConflictDetail(
                     unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
-                    description=(f"{wlan.name}: R1's '{existing_network.get('name')}' has the same SSID but a different "
-                                 "passphrase — not reused (another property's)"),
-                    severity="warning"))
-                r1_name, existing_network, name_note = _network_name(
-                    r1_inventory, _r1_name_base(wlan.name), r1_ssid, planned_names, frozenset(rejected))
+                    description=f"{wlan.name}: {pick['error']}", severity="error"))
+                continue
+            existing_network, name_note, set_passphrase = None, "", False
+            if pick["action"] == "reuse":
+                c = pick["row"]
+                reused_by[c["network_id"]] = wlan.name
+                existing_network = {"id": c["network_id"], "name": c["name"], "nwSubType": _SUBTYPE_OF.get(c["type"])}
+                r1_name = c["name"]
+                set_passphrase = pick.get("passphrase") == "sz" and c["passphrase"] != "match"
+                cautions = []
+                if c["other_venues"]:
+                    cautions.append(f"shared with {c['other_venues']} other venue(s) — its settings are R1's, "
+                                    "not changed by this migration")
+                if set_passphrase:
+                    cautions.append("its passphrase is set to SZ's"
+                                    + (f" — on the {c['other_venues']} other venue(s) too" if c["other_venues"] else ""))
+                elif plan_type(r1_type) == "psk" and c["passphrase"] == "differs":
+                    cautions.append("KEEPS R1's passphrase, which is not SZ's — clients need R1's")
+                elif plan_type(r1_type) == "psk" and c["passphrase"] == "unknown":
+                    cautions.append("its passphrase couldn't be read to compare with SZ's")
+                if cautions:
+                    setting_warnings.append(ConflictDetail(
+                        unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
+                        description=f"{wlan.name}: reuses R1's '{c['name']}' — {'; '.join(cautions)}",
+                        severity="warning"))
+            else:
+                r1_name, name_note = _free_name(r1_inventory, _r1_name_base(wlan.name), r1_ssid, planned_names)
+                if rows:
+                    others = ", ".join(f"'{c['name']}'" for c in rows[:3])
+                    setting_warnings.append(ConflictDetail(
+                        unit_id=wlan_id, resource_type="wifi_network", resource_name=wlan.name,
+                        description=(f"{wlan.name}: a second network with SSID '{r1_ssid}' is created — R1 already "
+                                     f"has {others} ({pick['reason']})"),
+                        severity="warning"))
             planned_names.add(r1_name.casefold())
             if name_note:
                 setting_warnings.append(ConflictDetail(
@@ -510,6 +520,9 @@ class ValidateMigrationPhase(PhaseExecutor):
                     "accounting_service_id": wlan.accounting_service_id,
                     # Pre-computed R1 advanced settings (MFP, rate limits, radio, etc.)
                     "r1_advanced_settings": r1_advanced,
+                    # Reusing an R1 network whose passphrase isn't SZ's: Create
+                    # WLANs writes SZ's onto it (chosen or suggested on Review).
+                    "set_passphrase": set_passphrase,
                 },
             )
 
@@ -522,9 +535,9 @@ class ValidateMigrationPhase(PhaseExecutor):
                 resolved.extra["network_reused"] = True
                 will_reuse += 1
                 reuse_notes = []
-                have = _R1_SUBTYPE.get(str(existing_network.get("nwSubType") or "").upper())
-                want = "dpsk" if r1_type == "dpsk_external" else r1_type
-                if have and want in _R1_SUBTYPE.values() and have != want:
+                have = R1_SUBTYPE.get(str(existing_network.get("nwSubType") or "").upper())
+                want = plan_type(r1_type)
+                if have and want in R1_SUBTYPE.values() and have != want:
                     msg = (f"{wlan.name}: R1 already has it as {have.upper()}, the plan makes it {want.upper()} — "
                            "it's reused as it is (the type isn't changed); delete or rename it in R1 to recreate")
                     reuse_notes.append(msg)
@@ -536,8 +549,8 @@ class ValidateMigrationPhase(PhaseExecutor):
                     name=wlan.name,
                     action="reuse",
                     existing_id=existing_network.get("id"),
-                    notes=([name_note] if name_note else []) + (
-                        reuse_notes or ["Already in R1 (an earlier run?) — reused, not created again"]),
+                    notes=[f"R1's '{r1_name}': {pick['reason']}"
+                           + (" (suggested)" if pick["chosen_by"] == "suggested" else "")] + reuse_notes,
                 ))
             else:
                 will_create += 1
@@ -644,21 +657,6 @@ class ValidateMigrationPhase(PhaseExecutor):
                                        | {g["name"] for g in layout["staged"]["groups"] if g["create"]}),
         )
 
-    async def _reuse_passphrase(self, network_id: str, sz_encryption: Optional[Dict[str, Any]]) -> str:
-        """match | differs | unknown: does the R1 network carry SZ's passphrase? Compared as fingerprints."""
-        try:
-            detail = await self.r1_client.networks.get_wifi_network_by_id(network_id, self.tenant_id)
-        except Exception as e:
-            logger.warning(f"Reuse check: couldn't read R1 network {network_id}: {e}")
-            return "unknown"
-        check = compare_passphrases(sz_encryption, (detail or {}).get("wlan") or {})
-        detail = None
-        if check["status"] == "match":
-            return "match"
-        # R1 has none / differs: not this WLAN's network. Nothing on SZ's side
-        # is blocked separately (no passphrase from SZ is an error of its own).
-        return "differs" if check["status"] in ("differs", "missing_in_r1") else "unknown"
-
     async def _apply_radius_decisions(self, snapshot: SZMigrationSnapshot, radius_users: Optional[set] = None):
         """
         Turn the Review step's RADIUS choices into plan actions and conflicts.
@@ -732,14 +730,17 @@ class ValidateMigrationPhase(PhaseExecutor):
                     ))
                     continue
                 if p.get("placeholder_secret"):
+                    # Like for like: a profile on an old run's placeholder authenticates nobody.
                     conflicts.append(ConflictDetail(
                         resource_type="radius_profile", resource_name=p["name"],
                         description=(
-                            f"R1 profile '{p['name']}' still has the placeholder shared secret — "
-                            f"{users} will not authenticate until you set it in R1"
+                            f"R1 profile '{p['name']}' still has a placeholder shared secret from an earlier "
+                            f"run — {users} would authenticate nobody. Set SZ's real secret on it in R1, or "
+                            "choose Create and type the secret"
                         ),
-                        severity="warning",
+                        severity="error",
                     ))
+                    continue
                 actions.append(ResourceAction(
                     resource_type="radius_profile", name=p["name"], action="reuse",
                     existing_id=p["id"],
@@ -751,18 +752,22 @@ class ValidateMigrationPhase(PhaseExecutor):
                 )
                 if same_name is not None:
                     # The phase links a same-named profile rather than create a
-                    # duplicate, and leaves its secret alone. Say so now.
+                    # duplicate, and leaves its secret alone. Say so now -- and
+                    # stop if that profile is on a placeholder.
+                    placeholder = bool(same_name.get("placeholder_secret"))
                     conflicts.append(ConflictDetail(
                         resource_type="radius_profile", resource_name=s["name"],
                         description=(
                             f"R1 already has a profile named '{s['name']}' — Create will link it "
                             "instead, and any secret entered here is NOT applied to it"
-                            + (" (it still has the placeholder secret)"
-                               if same_name.get("placeholder_secret") else "")
-                            + ". Choose Use existing, or delete or rename it in R1 first."
+                            + (". It still has a placeholder shared secret from an earlier run, so it "
+                               "would authenticate nobody: set SZ's real secret on it in R1, or delete it there"
+                               if placeholder else ". Choose Use existing, or delete or rename it in R1 first.")
                         ),
-                        severity="warning",
+                        severity="error" if placeholder else "warning",
                     ))
+                    if placeholder:
+                        continue
                 if not s.get("primary"):
                     conflicts.append(ConflictDetail(
                         resource_type="radius_profile", resource_name=s["name"],
@@ -774,16 +779,19 @@ class ValidateMigrationPhase(PhaseExecutor):
                     ))
                     continue
                 notes = [f"{s['primary']} (used by {users})"]
-                if not d.get("secret_provided"):
+                # Like for like: SZ's API doesn't return shared secrets, so the
+                # operator types it on Review. None = blocked, never a placeholder.
+                if not d.get("secret_provided") and same_name is None:
                     conflicts.append(ConflictDetail(
                         resource_type="radius_profile", resource_name=s["name"],
                         description=(
-                            f"RADIUS '{s['name']}' will be created with a placeholder shared "
-                            "secret — authentication fails until you set it in R1"
+                            f"RADIUS '{s['name']}' ({s['primary']}): no shared secret — SZ's API doesn't "
+                            "return it, so type SZ's secret under RADIUS Servers, or use an existing R1 "
+                            f"profile that has it. Used by {users}"
                         ),
-                        severity="warning",
+                        severity="error",
                     ))
-                    notes.append("placeholder shared secret")
+                    continue
                 actions.append(ResourceAction(
                     resource_type="radius_profile", name=s["name"], action="create", notes=notes,
                 ))

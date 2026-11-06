@@ -17,6 +17,7 @@ from redis_client import get_redis_client
 from services.ap_group_ops import api_error, is_transient, still_running
 from schemas.sz_migration import SZMigrationSnapshot
 from services.portal_key import controller_portal_key
+from services.sz_migration.passphrase_check import compare_passphrases
 from services.wlan_grabber import build_spec as build_wispr_spec, build_wispr_payload, wispr_radius_settings
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor
@@ -82,7 +83,10 @@ class CreateNetworksPhase(PhaseExecutor):
 
         # Fast path: already resolved from validation
         if inputs.network_id:
-            await self.emit(f"[{wlan_name}] Network already exists (reused)")
+            await self.emit(f"[{wlan_name}] Reusing R1's '{r1_name}'")
+            if plan_extra.get("set_passphrase"):
+                with self.r1_wait_notices(f"[{wlan_name}] "):
+                    await self._set_sz_passphrase(inputs.network_id, plan_extra, r1_name, wlan_name)
             await self.record_change("reused", "wifi_networks", r1_name, resource_id=inputs.network_id)
             return self.Outputs(network_id=inputs.network_id, reused=True)
 
@@ -139,6 +143,47 @@ class CreateNetworksPhase(PhaseExecutor):
             await self._link_radius(plan_extra, net_id, wlan_name)
 
         return self.Outputs(network_id=net_id, reused=False)
+
+    async def _set_sz_passphrase(self, network_id: str, extra: Dict[str, Any], r1_name: str, wlan_name: str):
+        """
+        Put SZ's passphrase on a reused R1 PSK network (chosen on Review), then
+        read it back: the WLAN fails unless R1 then carries SZ's passphrase.
+        R1's security type is left as it is; only the key fields change.
+        """
+        encryption = extra.get("encryption") or {}
+        _, main, sae = psk_security(encryption)
+        if not main:
+            raise RuntimeError(f"[{wlan_name}] SZ gave no passphrase to set on R1's '{r1_name}' — left unchanged")
+        network = await self.r1_client.networks.get_wifi_network_by_id(network_id, self.tenant_id)
+        wlan = (network or {}).get("wlan")
+        if not network or wlan is None:
+            raise RuntimeError(f"[{wlan_name}] Couldn't read R1's '{r1_name}' to set its passphrase")
+        security = str(wlan.get("wlanSecurity") or "")
+        if security == "WPA3":
+            wlan["saePassphrase"] = main
+            if wlan.get("passphrase"):
+                wlan["passphrase"] = main
+        else:
+            wlan["passphrase"] = main
+            if "WPA23" in security.upper():
+                wlan["saePassphrase"] = sae or main
+        await self.emit(f"[{wlan_name}] Setting SZ's passphrase on R1's '{r1_name}'...")
+        try:
+            await self.r1_client.networks.update_wifi_network(
+                network_id, network, tenant_id=self.tenant_id, wait_for_completion=True)
+        except Exception as e:
+            raise RuntimeError(f"[{wlan_name}] R1 refused SZ's passphrase on '{r1_name}': {api_error(e)}")
+        finally:
+            network = wlan = None
+        after = await self.r1_client.networks.get_wifi_network_by_id(network_id, self.tenant_id)
+        check = compare_passphrases(encryption, (after or {}).get("wlan") or {})
+        after = None
+        if check["status"] != "match":
+            raise RuntimeError(f"[{wlan_name}] Set SZ's passphrase on R1's '{r1_name}', but R1 doesn't show it "
+                               f"({check['note'] or check['status']}) — check the network in R1")
+        await self.emit(f"[{wlan_name}] R1's '{r1_name}' now has SZ's passphrase", "success")
+        await self.record_change("updated", "wifi_networks", r1_name, resource_id=network_id,
+                                 detail="passphrase set to SZ's")
 
     async def _find_settled(self, r1_name: str) -> Optional[str]:
         """The network's id by exact name, re-read while R1's query index catches up."""
@@ -271,18 +316,26 @@ class CreateNetworksPhase(PhaseExecutor):
             acct = mappings.get(spec.get("accounting_service_id") or "")
             if acct and acct != auth_profile:
                 profiles.append(("accounting", acct))
+            # Like for like: a portal network without SZ's RADIUS (or its proxy
+            # setting) authenticates differently from SZ -- fail the WLAN, loudly.
+            # (A re-run finds the network by name and won't redo this.)
+            missing = []
             for label, pid in profiles:
                 try:
                     await self.r1_client.radius_profiles.link_radius_to_network(
                         network_id=net_id, radius_profile_id=pid, tenant_id=self.tenant_id)
                 except Exception as e:
-                    await self.emit(f"[{wlan_name}] RADIUS {label} profile not linked: {e}", "warning")
+                    missing.append(f"RADIUS {label} profile not linked ({api_error(e)})")
             settings = wispr_radius_settings(spec)
             if settings:
                 try:
                     await self.r1_client.networks.update_radius_settings_on_network(net_id, settings, self.tenant_id)
                 except Exception as e:
-                    await self.emit(f"[{wlan_name}] RADIUS proxy setting not applied: {e}", "warning")
+                    missing.append(f"RADIUS proxy setting not applied ({api_error(e)})")
+            if missing:
+                raise RuntimeError(f"[{wlan_name}] WISPr network '{name}' was created, but: {'; '.join(missing)} — "
+                                   "guests can't authenticate as on SZ. Fix it on the network in R1, or delete the "
+                                   "network and run Create WLANs again")
         return self.Outputs(network_id=net_id, reused=False)
 
     async def _create_psk_network(self, extra, name, ssid, vlan_id):

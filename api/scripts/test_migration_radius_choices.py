@@ -44,7 +44,7 @@ from schemas.sz_migration import (
 )
 from schemas.r1_inventory import R1VenueInventory
 from services.sz_migration.radius_choices import (
-    RADIUS_SECRET_KEY, r1_profile_summary, referenced_services, suggest,
+    PLACEHOLDER_RADIUS_SECRET, RADIUS_SECRET_KEY, r1_profile_summary, referenced_services, suggest,
 )
 from workflow.phases.phase_executor import PhaseContext
 import workflow.phases.sz_migration.validate as validate_mod
@@ -255,13 +255,16 @@ async def main():
                       str(errors(out)))
 
     out = await run_validate(snap, {"radius_decisions": base, "wlan_fallbacks": {"w-lab": "skip"}})
+    failures += check("no secret -> the plan is blocked (never a placeholder)",
+                      not out.validation_result.valid
+                      and any("acct" in e and "no shared secret" in e for e in errors(out)), str(errors(out)))
+    with_secret = dict(base, **{"s-acct": {"action": "create", "secret_provided": True}})
+    out = await run_validate(snap, {"radius_decisions": with_secret, "wlan_fallbacks": {"w-lab": "skip"}})
     failures += check("fallback 'skip' -> plan valid, WLAN has no unit",
                       out.validation_result.valid and "w-lab" not in out.unit_mappings,
                       str(errors(out)))
     failures += check("skipped WLAN is shown as skipped on Review",
                       out.type_mappings["w-lab"]["r1_network_type"] == "skipped")
-    failures += check("no secret -> placeholder warning",
-                      any("placeholder" in w for w in warnings(out)), str(warnings(out)))
     acts = {(a.resource_type, a.name): a.action for a in out.validation_result.actions}
     failures += check("existing profile listed as reuse",
                       acts.get(("radius_profile", "Cloudpath-Prod")) == "reuse", str(acts))
@@ -281,27 +284,28 @@ async def main():
     # The failed run's leftover: same name + server as SZ, placeholder secret.
     leftover = [{"id": "rp-left", "name": "cloudpath", "type": "AUTHENTICATION",
                  "primary": {"ip": "10.0.0.5", "port": 1812,
-                             "sharedSecret": radius_mod.PLACEHOLDER_RADIUS_SECRET}}]
+                             "sharedSecret": PLACEHOLDER_RADIUS_SECRET}}]
     lsum = [r1_profile_summary(p) for p in leftover]
     failures += check("placeholder profile is flagged, secret not exposed",
                       lsum[0]["placeholder_secret"] is True
-                      and radius_mod.PLACEHOLDER_RADIUS_SECRET not in json.dumps(lsum))
+                      and PLACEHOLDER_RADIUS_SECRET not in json.dumps(lsum))
     sug = suggest(cp, lsum)
-    failures += check("a placeholder profile is never suggested as 'same server'",
-                      "same server" not in sug["reason"] and "placeholder" in sug["reason"], sug["reason"])
+    failures += check("a placeholder profile is never suggested (not by server, not by name)",
+                      sug["action"] == "create", str(sug))
     out = await run_validate(snap, {"radius_decisions": {
         "s-cp": {"action": "create", "secret_provided": True},
         "s-acct": {"action": "skip"}, "s-lab": {"action": "skip"}},
         "wlan_fallbacks": {"w-lab": "skip"}}, r1=FakeR1(profiles=leftover))
-    failures += check("Create colliding with an existing name warns the secret won't apply",
-                      any("NOT applied" in w and "placeholder" in w for w in warnings(out)),
-                      str(warnings(out)))
+    failures += check("Create colliding with a same-named placeholder profile blocks the plan",
+                      not out.validation_result.valid
+                      and any("NOT applied" in e and "placeholder" in e for e in errors(out)), str(errors(out)))
     out = await run_validate(snap, {"radius_decisions": {
         "s-cp": {"action": "existing", "r1_profile_id": "rp-left"},
         "s-acct": {"action": "skip"}, "s-lab": {"action": "skip"}},
         "wlan_fallbacks": {"w-lab": "skip"}}, r1=FakeR1(profiles=leftover))
-    failures += check("linking a placeholder profile warns",
-                      any("placeholder" in w for w in warnings(out)), str(warnings(out)))
+    failures += check("linking a placeholder profile blocks the plan",
+                      not out.validation_result.valid and any("placeholder" in e for e in errors(out)),
+                      str(errors(out)))
 
     # 7. phase
     decisions = {"s-cp": {"action": "existing", "r1_profile_id": "rp-cp"},
@@ -330,16 +334,41 @@ async def main():
                       not r1.radius_profiles.created
                       and out.radius_profile_mappings.get("s-lab") == "rp-lab-name")
 
-    out, r1, *_ = await run_radius(snap, {"radius_decisions": {
-        "s-cp": {"action": "skip"}, "s-lab": {"action": "skip"},
-        "s-acct": {"action": "create", "secret_provided": False}}})
-    failures += check("no secret -> placeholder",
-                      r1.radius_profiles.created[0]["primary_secret"]
-                      == radius_mod.PLACEHOLDER_RADIUS_SECRET)
+    r1 = FakeR1()
+    try:
+        await run_radius(snap, {"radius_decisions": {
+            "s-cp": {"action": "skip"}, "s-lab": {"action": "skip"},
+            "s-acct": {"action": "create", "secret_provided": False}}}, r1=r1)
+        err = None
+    except RuntimeError as e:
+        err = str(e)
+    failures += check("no secret at create time -> phase fails, nothing created (never a placeholder)",
+                      err and "acct" in err and not r1.radius_profiles.created, str(err))
 
-    # 8. legacy
-    out, r1, *_ = await run_radius(snap, {}, r1=FakeR1(profiles=[]))
-    failures += check("no choices (older plan) -> creates every referenced service",
+    r1 = FakeR1(profiles=leftover)
+    try:
+        await run_radius(snap, {"radius_decisions": {
+            "s-acct": {"action": "skip"}, "s-lab": {"action": "skip"},
+            "s-cp": {"action": "create", "secret_provided": True}}}, secrets={"s-cp": SECRET}, r1=r1)
+        err = None
+    except RuntimeError as e:
+        err = str(e)
+    failures += check("same-named R1 profile on a placeholder is not linked -> phase fails",
+                      err and "placeholder" in err and not r1.radius_profiles.created, str(err))
+
+    # 8. legacy: an older plan (no choices) still creates every service, and
+    # with no secrets typed that now fails instead of writing placeholders.
+    r1 = FakeR1(profiles=[])
+    try:
+        await run_radius(snap, {}, r1=r1)
+        err = None
+    except RuntimeError as e:
+        err = str(e)
+    failures += check("no choices (older plan), no secrets -> fails, nothing created",
+                      err and not r1.radius_profiles.created, str(err))
+    out, r1, *_ = await run_radius(snap, {}, secrets={"s-cp": SECRET, "s-acct": SECRET, "s-lab": SECRET},
+                                   r1=FakeR1(profiles=[]))
+    failures += check("no choices (older plan) with secrets -> creates every referenced service",
                       len(r1.radius_profiles.created) == 3, str(len(r1.radius_profiles.created)))
 
     # 9. verbose logging
