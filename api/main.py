@@ -153,6 +153,9 @@ app.include_router(wlan_grabber_router, tags=["WLAN Grabber"])
 # APG Cleanup — AP Groups: inspect, rename, delete, move APs in (beta-gated; replaces AP Regroup)
 from routers.apg_cleanup.router import router as apg_cleanup_router
 app.include_router(apg_cleanup_router, tags=["APG Cleanup"])
+# WLAN Wiz — read-only: tenant WLANs + a venue's AP Groups / APs in one view (alpha-gated)
+from routers.wlan_wiz.router import router as wlan_wiz_router
+app.include_router(wlan_wiz_router, tags=["WLAN Wiz"])
 # Venue Checkup — a venue's settings; per-AP-model ones editable (beta-gated)
 from routers.venue_checkup.router import router as venue_checkup_router
 from routers.config_rules.router import router as config_rules_router
