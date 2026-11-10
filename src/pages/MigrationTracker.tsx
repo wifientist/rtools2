@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload } from "lucide-react";
+import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload, CalendarClock } from "lucide-react";
 import { apiFetch } from "@/utils/api";
 import TrackerGantt from "@/components/migration-tracker/TrackerGantt";
+import BumpPanel from "@/components/migration-tracker/BumpPanel";
 import TrackerTable, { type MissBody, type MissMigrationBody, type MissValidationBody } from "@/components/migration-tracker/TrackerTable";
 import {
-  STAGES, TONE_CLASSES, parsePaste, stageOf, siteStatus, todayISO,
-  type PasteResult, type TrackerSite,
+  STAGES, TONE_CLASSES, bumpCandidate, parsePaste, stageOf, siteStatus, todayISO,
+  type BumpCandidate, type PasteResult, type TrackerSite,
 } from "@/components/migration-tracker/trackerModel";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
@@ -100,6 +101,19 @@ export default function MigrationTracker() {
   const onMissMigration = (id: number, body: MissMigrationBody) => guard(async () => {
     replace(await call(`${BASE}/${id}/miss-migration`, { method: "POST", body: JSON.stringify(body) }));
   });
+  // Bulk bump: no guard, so a failure stops the run and the panel says where.
+  const [bumpOpen, setBumpOpen] = useState(false);
+  const onBump = async (c: BumpCandidate) => {
+    const id = c.site.id;
+    const base = { missed_on: c.due, push_later: true, note: null };
+    const [path, body] =
+      c.step.key === "config_pushed" ? ["miss-config", { ...base, new_config: c.newDate }]
+      : c.step.key === "validation" ? ["miss-validation", { ...base, new_validation: c.newDate }]
+      : ["miss-migration", { missed_on: c.due, new_hw: c.newDate, note: null }];
+    replace(await call(`${BASE}/${id}/${path}`, { method: "POST", body: JSON.stringify(body) }));
+  };
+  const pendingCount = useMemo(() => sites.filter((s) => bumpCandidate(s, today, today)).length, [sites, today]);
+
   const onDeleteEvent = (id: number, index: number) => guard(async () => {
     replace(await call(`${BASE}/${id}/events/${index}`, { method: "DELETE" }));
   });
@@ -215,6 +229,16 @@ export default function MigrationTracker() {
               {lastEdit.updated_by ? ` by ${lastEdit.updated_by}` : ""}
             </span>
           )}
+          {canEdit && (
+            <button
+              onClick={() => setBumpOpen((o) => !o)}
+              disabled={loading || pendingCount === 0}
+              title="Record every step still pending today or earlier as missed and move it to the next workday"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-amber-300 text-sm text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+            >
+              <CalendarClock size={14} /> Bump pending{pendingCount > 0 ? ` (${pendingCount})` : ""}
+            </button>
+          )}
           <button
             onClick={() => void onExport()}
             disabled={loading || sites.length === 0}
@@ -275,6 +299,10 @@ export default function MigrationTracker() {
           )}
           <button onClick={() => setPendingImport(null)} className="text-blue-700 hover:underline">Cancel</button>
         </div>
+      )}
+
+      {bumpOpen && canEdit && (
+        <BumpPanel sites={sites} today={today} onBump={onBump} onClose={() => setBumpOpen(false)} />
       )}
 
       {notice && (

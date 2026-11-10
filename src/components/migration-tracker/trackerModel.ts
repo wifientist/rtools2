@@ -408,3 +408,30 @@ export function parsePaste(text: string): PasteResult {
     warnings,
   };
 }
+
+// ---------- Bulk bump ----------
+
+/** One site's step that is still pending on or before the cutoff, and where a bump would move it. */
+export interface BumpCandidate {
+  site: TrackerSite;
+  step: (typeof STEPS)[number];
+  due: string;
+  newDate: string;
+}
+
+/**
+ * The earliest step that isn't ticked done and is due on or before `cutoff`, if any.
+ * It moves to the next workday after today (or after the due date, if that's later),
+ * so an old miss doesn't land in the past and stay overdue. Only one step per site:
+ * a bumped config already pushes validation + HW along with it.
+ */
+export function bumpCandidate(site: TrackerSite, cutoff: string, today: string): BumpCandidate | null {
+  if (site.hw_migrated_done) return null;
+  for (const step of STEPS) {
+    const due = site[step.key];
+    if (!due || site[step.doneKey]) continue;
+    if (due > cutoff) return null;
+    return { site, step, due, newDate: toISO(nextWorkday(parseISO(due > today ? due : today))) };
+  }
+  return null;
+}
