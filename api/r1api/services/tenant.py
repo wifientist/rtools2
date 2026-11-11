@@ -24,10 +24,7 @@ class TenantService:
         """
         Get all venues for a tenant
         """
-        if self.client.ec_type == "MSP":
-            return self.client.safe_json(await asyncio.to_thread(self.client.get, "/venues", override_tenant_id=tenant_id))
-        else:
-            return self.client.safe_json(await asyncio.to_thread(self.client.get, "/venues"))
+        return await self.client.venues.get_venues(tenant_id)
 
     async def get_tenant_aps(self, tenant_id: str):
         """

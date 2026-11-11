@@ -10,16 +10,54 @@ class VenueService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
 
+    def query_all_venues(self, tenant_id: str, fields: list | None = None, page_size: int = 500) -> list:
+        """
+        Every venue in a tenant, via POST /venues/query.
+
+        GET /venues (deprecated in the spec) was retired by R1 around
+        2026-11-11: it now answers 405 VENUE-10000 for every tenant.
+        /venues/query pages 1-indexed and returns the same row fields.
+        Raises on HTTP errors so callers never mistake a failure for
+        "this tenant has no venues".
+
+        Note: sync. Call via asyncio.to_thread from async contexts.
+        """
+        override = {"override_tenant_id": tenant_id} if self.client.ec_type == "MSP" and tenant_id else {}
+        rows: list = []
+        page = 1
+        while True:
+            body: dict = {"page": page, "pageSize": page_size}
+            if fields:
+                body["fields"] = list(fields)
+            resp = self.client.post("/venues/query", payload=body, **override)
+            if not resp.ok:
+                raise RuntimeError(f"/venues/query HTTP {resp.status_code}: {resp.text[:200]}")
+            data = resp.json() or {}
+            batch = data.get("data") or []
+            rows.extend(batch)
+            total = data.get("totalCount", len(rows))
+            if not batch or len(rows) >= total:
+                return rows
+            page += 1
+
+    _ADDRESS_FIELDS = ("addressLine", "city", "country", "countryCode",
+                       "latitude", "longitude", "timezone", "notes")
+
     async def get_venues(self, tenant_id: str):
         """
-        Get all venues for a tenant
+        Get all venues for a tenant (a list of venue rows).
+
+        Rows keep the old GET /venues shape — a nested `address` and `tags` —
+        so the venue pickers and every page they hand a venue to read the
+        same fields as before. The flat /venues/query fields stay alongside.
         """
-        if self.client.ec_type == "MSP":
-            resp = (await asyncio.to_thread(self.client.get, "/venues", override_tenant_id=tenant_id)).json()
-            return resp
-        else:
-            resp = (await asyncio.to_thread(self.client.get, "/venues")).json()
-            return resp
+        rows = await asyncio.to_thread(self.query_all_venues, tenant_id)
+        for row in rows:
+            if not isinstance(row.get("address"), dict):
+                row["address"] = {k: row.get(k) for k in self._ADDRESS_FIELDS}
+            if row.get("tags") is None and "tagList" in row:
+                row["tags"] = row.get("tagList")
+        return rows
 
     async def get_venue(self, tenant_id: str, venue_id: str):
         """
@@ -179,24 +217,6 @@ class VenueService:
 
         return {'data': deduplicated_aps, 'totalCount': len(deduplicated_aps)}
 
-    async def get_ap_by_tenant_venue_serial(self, tenant_id: str, venue_id: str, serial_number: str):
-        """
-        Get a specific AP in a venue by serial number
-        """
-        # body = {
-        #     'fields': ["name","status","model","networkStatus","macAddress","venueName","switchName","meshRole","clientCount","apGroupId","apGroupName","lanPortStatuses","tags","serialNumber","radioStatuses","venueId","poePort","firmwareVersion","uptime","afcStatus","powerSavingStatus"],
-        #     'sortField': 'name',
-        #     'sortOrder': 'ASC',
-        #     'filters': {
-        #         'venueId': [venue_id],
-        #         'serialNumber': [serial_number]
-        #     }
-        # }
-        if self.client.ec_type == "MSP":
-            return (await asyncio.to_thread(self.client.post, f"/venues/{venue_id}/aps/{serial_number}", override_tenant_id=tenant_id)).json()
-        else:
-            return (await asyncio.to_thread(self.client.post, f"/venues/{venue_id}/aps/{serial_number}")).json()
-
     async def update_ap(
         self,
         tenant_id: str,
@@ -268,30 +288,49 @@ class VenueService:
             response.raise_for_status()
             return None
 
+    AP_GROUP_FIELDS = ["id", "name", "venueId", "isDefault", "description", "apSerialNumbers"]
+
+    def query_all_ap_groups(self, tenant_id: str = None, venue_id: str = None,
+                            fields: list = None, page_size: int = 1000) -> list:
+        """
+        Every AP group (optionally one venue's) via POST /venues/apGroups/query.
+
+        Replaces GET /venues/apGroups and GET /venues/{id}/apGroups (deprecated,
+        removal allowed since 2026-08-31). Pages from 1 and honours pageSize;
+        the "only returns 25" seen before was just its default page size
+        (checked 2026-11-11: 5,175 groups over 6 pages, no repeats).
+
+        Rows carry apSerialNumbers, not the GETs' `aps` objects; `aps` is
+        rebuilt as [{serialNumber, apGroupId, venueId}] for older readers. The
+        GETs' per-AP radio blobs are gone, and nothing read them.
+
+        Raises on HTTP errors. Note: sync.
+        """
+        override = {"override_tenant_id": tenant_id} if self.client.ec_type == "MSP" and tenant_id else {}
+        rows: list = []
+        page = 1
+        while True:
+            body = {"fields": list(fields or self.AP_GROUP_FIELDS), "page": page, "pageSize": page_size}
+            if venue_id:
+                body["filters"] = {"venueId": [venue_id]}
+            resp = self.client.post("/venues/apGroups/query", payload=body, **override)
+            if not resp.ok:
+                raise RuntimeError(f"/venues/apGroups/query HTTP {resp.status_code}: {resp.text[:200]}")
+            data = resp.json() or {}
+            batch = data.get("data") or []
+            rows.extend(batch)
+            if not batch or len(rows) >= (data.get("totalCount") or 0):
+                break
+            page += 1
+        for row in rows:
+            if "aps" not in row and "apSerialNumbers" in row:
+                row["aps"] = [{"serialNumber": sn, "apGroupId": row.get("id"), "venueId": row.get("venueId")}
+                              for sn in row.get("apSerialNumbers") or []]
+        return rows
+
     async def get_ap_groups(self, tenant_id: str = None):
-        """
-        Get all AP groups for a tenant (simple GET without filtering)
-
-        Note: This returns a simple list. For more advanced querying with filters,
-        use query_ap_groups() instead.
-        """
-        logger.debug(f"get_ap_groups called - tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
-
-        if self.client.ec_type == "MSP" and tenant_id:
-            response = (await asyncio.to_thread(self.client.get, "/venues/apGroups", override_tenant_id=tenant_id)).json()
-        else:
-            response = (await asyncio.to_thread(self.client.get, "/venues/apGroups")).json()
-
-        logger.debug(f"AP Groups Response Type: {type(response)}")
-
-        if isinstance(response, dict):
-            logger.debug(f"AP Groups Response Keys: {response.keys()}")
-            if 'data' in response:
-                logger.debug(f"AP Groups Count: {len(response.get('data', []))}")
-        elif isinstance(response, list):
-            logger.debug(f"AP Groups Count (list): {len(response)}")
-
-        return response
+        """Every AP group in the tenant, as a list (see query_all_ap_groups)."""
+        return await asyncio.to_thread(self.query_all_ap_groups, tenant_id)
 
     async def get_ap_group(self, tenant_id: str, venue_id: str, ap_group_id: str):
         """
@@ -415,12 +454,15 @@ class VenueService:
 
     async def get_ap_radio_settings(self, tenant_id: str, venue_id: str):
         """
-        Get AP radio settings for a venue
+        Get AP radio settings for a venue, in v1.1: R1 names it current while
+        plain JSON still gets v1, which the spec lets go any time since
+        2026-08-31 (same top-level and per-band keys, checked 2026-11-11).
         """
+        accept = "application/vnd.ruckus.v1.1+json"
         if self.client.ec_type == "MSP":
-            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apRadioSettings", override_tenant_id=tenant_id)).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apRadioSettings", override_tenant_id=tenant_id, accept=accept)).json()
         else:
-            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apRadioSettings")).json()
+            return (await asyncio.to_thread(self.client.get, f"/venues/{venue_id}/apRadioSettings", accept=accept)).json()
 
     async def get_wifi_available_channels(self, tenant_id: str, venue_id: str):
         """
@@ -1042,102 +1084,6 @@ class VenueService:
             return result
         else:
             logger.error(f"[activate_ssid_on_venue] FAILED: {response.status_code} - {response.text}")
-            response.raise_for_status()
-            return None
-
-    async def activate_network_direct(
-        self,
-        tenant_id: str,
-        venue_id: str,
-        network_id: str,
-        ap_group_id: str,
-        ap_group_name: str = "",
-        radio_types: list = None,
-        vlan_id: int = None,
-        wait_for_completion: bool = True,
-    ):
-        """
-        Activate a WiFi network directly on a specific AP Group in one step.
-
-        Uses the deprecated but still-active POST /networkActivations endpoint.
-        This bypasses the 3-step process (venue-wide activate → move to AP group)
-        by going directly to the target AP group with isAllApGroups=false.
-
-        Eliminates:
-        - The "All AP Groups" intermediate state
-        - The 15-SSID venue-wide slot pressure
-        - The orphan cascade when step 2 of the old process fails
-
-        Args:
-            tenant_id: Tenant/EC ID
-            venue_id: Venue ID
-            network_id: WiFi Network ID to activate
-            ap_group_id: Target AP Group ID
-            ap_group_name: AP Group name (included in payload for R1)
-            radio_types: Radio types (default: ["2.4-GHz", "5-GHz"])
-            vlan_id: VLAN ID for the AP group binding (default: None, omitted)
-            wait_for_completion: If True, wait for async task to complete
-
-        Returns:
-            Response dict with requestId for activity tracking
-        """
-        logger.info(
-            f"[activate_network_direct] POST /networkActivations "
-            f"network={network_id[:12]}... → apGroup={ap_group_id[:12]}..."
-        )
-
-        if radio_types is None:
-            radio_types = ["2.4-GHz", "5-GHz"]
-
-        ap_group_entry = {
-            "apGroupId": ap_group_id,
-            "apGroupName": ap_group_name,
-            "radio": "Both",
-            "radioTypes": radio_types,
-        }
-        if vlan_id is not None:
-            ap_group_entry["vlanId"] = vlan_id
-
-        payload = {
-            "venueId": venue_id,
-            "networkId": network_id,
-            "isAllApGroups": False,
-            "apGroups": [ap_group_entry],
-            "scheduler": {"type": "ALWAYS_ON"},
-        }
-
-        if self.client.ec_type == "MSP":
-            response = await asyncio.to_thread(
-                self.client.post,
-                "/networkActivations",
-                payload=payload,
-                override_tenant_id=tenant_id,
-            )
-        else:
-            response = await asyncio.to_thread(
-                self.client.post,
-                "/networkActivations",
-                payload=payload,
-            )
-
-        logger.info(f"[activate_network_direct] Response: {response.status_code}")
-
-        if response.status_code in [200, 201, 202]:
-            result = response.json() if response.content else {"status": "accepted"}
-            request_id = result.get('requestId') if response.status_code == 202 else None
-            logger.info(f"[activate_network_direct] Success (requestId: {request_id})")
-
-            if response.status_code == 202 and wait_for_completion:
-                if request_id:
-                    logger.info(f"[activate_network_direct] Waiting for task {request_id}...")
-                    await self.client.await_task_completion(request_id, override_tenant_id=tenant_id)
-                    logger.info(f"[activate_network_direct] Task complete")
-
-            return result
-        else:
-            logger.error(
-                f"[activate_network_direct] FAILED: {response.status_code} - {response.text}"
-            )
             response.raise_for_status()
             return None
 
@@ -2669,21 +2615,4 @@ class VenueService:
 
     async def set_ap_led_settings(self, tenant_id: str, venue_id: str, serial_number: str, payload: dict, wait_for_completion: bool = True):
         return await self._put_ap_setting(tenant_id, venue_id, serial_number, "ledSettings", payload, wait_for_completion)
-
-    # --- Provisioning ---
-
-    async def provision_ap(self, tenant_id: str, serial_number: str):
-        """Provision a new AP into RuckusONE by serial number."""
-        payload = {"serialNumbers": [serial_number]}
-        if self.client.ec_type == "MSP":
-            response = await asyncio.to_thread(self.client.post, "/deviceProvisions/aps", payload=payload, override_tenant_id=tenant_id)
-        else:
-            response = await asyncio.to_thread(self.client.post, "/deviceProvisions/aps", payload=payload)
-
-        if response.status_code in [200, 201, 202]:
-            return response.json() if response.content else {"status": "accepted"}
-        else:
-            logger.error(f"Failed to provision AP {serial_number}: {response.status_code} - {response.text}")
-            response.raise_for_status()
-            return None
 

@@ -88,6 +88,7 @@ async def lifespan(app: FastAPI):
     from jobs.data_studio_export_job import ensure_registered as ensure_data_studio_export
     from jobs.fileshare_cleanup_job import ensure_registered as ensure_fileshare_cleanup
     from jobs.stranded_job_reaper import ensure_registered as ensure_stranded_reaper
+    from jobs.r1_deprecation_watch_job import ensure_registered as ensure_r1_deprecation_watch
     await ensure_stranded_reaper(scheduler)
     await ensure_snapshot_job(scheduler)
     await ensure_redis_cleanup(scheduler)
@@ -95,6 +96,7 @@ async def lifespan(app: FastAPI):
     await ensure_report_dispatcher(scheduler)
     await ensure_data_studio_export(scheduler)
     await ensure_fileshare_cleanup(scheduler)
+    await ensure_r1_deprecation_watch(scheduler)
 
     yield
 
@@ -167,6 +169,8 @@ app.include_router(migration_tracker_router)
 
 from routers.r1_call_timing import router as r1_call_timing_router
 app.include_router(r1_call_timing_router)
+from routers.r1_deprecations import router as r1_deprecations_router
+app.include_router(r1_deprecations_router)
 
 app.include_router(status.router)
 app.include_router(opt43.router)

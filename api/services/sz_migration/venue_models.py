@@ -11,8 +11,9 @@ model at the venue, one list per kind:
     apModelBandModeSettings         [{model, bandMode}]
 
 A SZ LAN port points at a zone Ethernet Port Profile (type, untagged VLAN,
-VLAN members, 802.1X, ...). R1 takes type and VLANs inline on the port, so
-no R1 Ethernet Port Profile is created; what the profile carries beyond that
+VLAN members, 802.1X, ...). Type and VLANs are carried; since 2026-11-11 R1
+holds them only on an R1 Ethernet Port Profile, which lan_ports reuses or
+creates under the SZ profile's name. What the profile carries beyond that
 (802.1X, client isolation, tunnelling, user-side limits) is noted, not sent.
 
 Sections hold what the zone sets for each of its models. What is actually
@@ -109,6 +110,10 @@ def build_model_sections(zone_models: Dict[str, Dict[str, Any]], section_cls) ->
                     port["untagId"] = int(prof["untagId"])
                 if prof.get("vlanMembers"):
                     port["vlanMembers"] = str(prof["vlanMembers"])
+                if prof.get("name"):
+                    # Which R1 Ethernet Port Profile to use or create (lan_ports);
+                    # not a port setting, so never compared or sent as one.
+                    port["profileName"] = str(prof["name"])
                 extras = _profile_extras(prof)
                 if extras:
                     lan.notes.append(f"{model} {p.get('portName')}: profile '{prof.get('name')}' also has "
@@ -227,7 +232,10 @@ def _lan_entry(e: Dict[str, Any], cap: Dict[str, Any], notes: List[str]) -> Opti
     def in_order(ports: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         return sorted(ports.values(), key=lambda p: int(p["portId"]) if p["portId"].isdigit() else 0)
 
-    if desired != defaults:
+    def settings_only(ports: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        return {pid: {k: v for k, v in p.items() if k != "profileName"} for pid, p in ports.items()}
+
+    if settings_only(desired) != defaults:
         if cap.get("requireOneEnabledTrunkPort") and not any(
                 p["enabled"] and p.get("type") == "TRUNK" for p in desired.values()):
             notes.append(f"{model}: R1 needs one enabled trunk port and the zone leaves none — ports not pushed")

@@ -1,5 +1,6 @@
 import Toolbar from "@/components/Toolbar";
 import Sidebar from "@/components/Sidebar";
+import R1DeprecationBanner from "@/components/R1DeprecationBanner";
 import { useState } from "react";
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
@@ -9,6 +10,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
+      <R1DeprecationBanner />
       {/* Top fixed-height toolbar */}
       <Toolbar onControllerSwitched={() => setControllerSwitches((n) => n + 1)} />
 

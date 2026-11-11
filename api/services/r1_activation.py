@@ -19,6 +19,9 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
 Emit = Optional[Callable[..., Awaitable[None]]]
 
+# Groups of ONE network bound at once (steps 2-3), after step 1 has landed.
+GROUP_CONCURRENCY = 8
+
 
 async def venue_state(r1_client, tenant_id: str, venue_id: str, network_id: str) -> Tuple[str, Set[str]]:
     """('not_found' | 'specific' | 'venue_wide', bound AP Group ids) for this venue."""
@@ -69,7 +72,8 @@ async def activate_on_groups(r1_client, tenant_id: str, venue_id: str, network_i
     """
     step1_groups = [{"apGroupId": t["id"], "radioTypes": t["radio_types"], "radio": "Both"} for t in todo]
     errors: List[str] = []
-    for i, t in enumerate(todo):
+
+    async def one(i: int, t: Dict[str, Any]) -> None:
         try:
             await r1_client.venues.activate_ssid_for_ap_group_direct(
                 tenant_id=tenant_id,
@@ -90,6 +94,28 @@ async def activate_on_groups(r1_client, tenant_id: str, venue_id: str, network_i
             errors.append(f"'{t['name']}': {e}")
             if emit:
                 await emit(f"{label}Activation on '{t['name']}' reported: {e}", "warning")
+
+    if not todo:
+        return errors
+    # The first group carries step 1 (the venue association, once per
+    # network) and must finish before any other group's step 2. After that,
+    # steps 2-3 are per-group resources and run side by side: 5 groups of one
+    # network concurrently bound cleanly in 7.5s on SuperSandbox (2026-11-06),
+    # where one at a time is ~6.5s per group (a 119-group guest SSID took
+    # ~13 min).
+    rest = list(enumerate(todo))
+    if state != "specific":
+        await one(*rest.pop(0))
+        if errors:
+            # No association, so every other group's step 2 would only fail
+            # the same way; the caller's read-back + retry picks them up.
+            return errors
+    sem = asyncio.Semaphore(GROUP_CONCURRENCY)
+
+    async def gated(i: int, t: Dict[str, Any]) -> None:
+        async with sem:
+            await one(i, t)
+    await asyncio.gather(*(gated(i, t) for i, t in rest))
     return errors
 
 

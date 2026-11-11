@@ -1,21 +1,20 @@
 """
 V2 Phase: Activate Network on AP Group (Direct)
 
-Activates a WiFi network (SSID) directly on a specific AP Group using
-the POST /networkActivations endpoint with isAllApGroups=false.
+Activates a WiFi network (SSID) directly on a specific AP Group, never
+putting it on All AP Groups, via venues.activate_ssid_for_ap_group_direct:
+  1. PUT /venues/{v}/wifiNetworks/{n} (or .../settings when already on the
+     venue) with isAllApGroups=false and this group
+  2. PUT /venues/{v}/wifiNetworks/{n}/apGroups/{g}
+  3. PUT /venues/{v}/wifiNetworks/{n}/apGroups/{g}/settings
 
-This is a single-step replacement for the old 3-step process:
-  Old: activate venue-wide → settings → apGroups → apGroups/settings
-  New: POST /networkActivations with apGroups=[{apGroupId: ...}]
-
-Benefits:
+Until 2026-11-11 this was one POST /networkActivations. R1 deprecated that
+(removal allowed since 2026-08-31), so it moved to the same three supported
+PUTs the Cloudpath import and the SZ migration already use. Still:
 - No intermediate "All AP Groups" state
 - No 15-SSID venue-wide slot pressure
-- No orphan cascade if the move step fails
-- 1 API call instead of 4
 
-The /networkActivations endpoint is deprecated in R1 but still active.
-The old phase (activate_network.py) is kept as a fallback.
+The old venue-wide-then-move phase (activate_network.py) is kept as a fallback.
 """
 
 import logging
@@ -32,7 +31,8 @@ class ActivateNetworkDirectPhase(PhaseExecutor):
     """
     Activate a WiFi network directly on a specific AP Group.
 
-    Single-step via POST /networkActivations.
+    Three ordered PUTs via venues.activate_ssid_for_ap_group_direct (was the
+    deprecated POST /networkActivations until 2026-11-11).
     Idempotent - handles already-activated gracefully.
     """
 
@@ -91,7 +91,6 @@ class ActivateNetworkDirectPhase(PhaseExecutor):
                 f"AP Group '{inputs.ap_group_name}'..."
             )
 
-        use_activity_tracker = self.context.activity_tracker is not None
         # None => omit vlanId => the AP Group inherits the network's VLAN,
         # which is what doing this by hand in R1 produces.
         vlan_id = (
@@ -101,33 +100,23 @@ class ActivateNetworkDirectPhase(PhaseExecutor):
         )
 
         try:
-            result = await self.r1_client.venues.activate_network_direct(
+            # Three ordered PUTs (venue association with isAllApGroups=false and
+            # this group, bind the group, group settings). Replaced the single
+            # POST /networkActivations on 2026-11-11: deprecated, removal allowed
+            # since 2026-08-31. Same result: the SSID goes straight to the group
+            # and never onto All AP Groups. For an SSID already venue-wide,
+            # already_activated routes step 1 to .../settings, which moves it
+            # onto this group (what the POST did). Each step waits for the
+            # previous one, as the Cloudpath import's activate_ap_group does.
+            await self.r1_client.venues.activate_ssid_for_ap_group_direct(
                 tenant_id=self.tenant_id,
                 venue_id=self.venue_id,
-                network_id=inputs.network_id,
+                wifi_network_id=inputs.network_id,
                 ap_group_id=inputs.ap_group_id,
-                ap_group_name=inputs.ap_group_name,
                 vlan_id=vlan_id,
-                wait_for_completion=not use_activity_tracker,
+                already_activated=inputs.already_activated,
+                wait_for_completion=True,
             )
-
-            # If using tracker, wait via centralized polling
-            if use_activity_tracker and result:
-                request_id = result.get('requestId') if isinstance(result, dict) else None
-                if request_id:
-                    activity_result = await self.fire_and_wait(request_id)
-                    if not activity_result.success:
-                        # Verify actual state before declaring failure
-                        state = await self._check_ssid_venue_state(inputs)
-                        if state == 'specific':
-                            logger.warning(
-                                f"[{inputs.unit_number}] Activity timed out but "
-                                f"SSID IS on specific AP group — treating as success"
-                            )
-                        else:
-                            raise RuntimeError(
-                                f"Direct activation failed: {activity_result.error}"
-                            )
 
             logger.info(
                 f"[{inputs.unit_number}] SSID '{display_name}' activated on "
@@ -201,8 +190,8 @@ class ActivateNetworkDirectPhase(PhaseExecutor):
         return PhaseValidation(
             valid=True,
             will_create=True,
-            estimated_api_calls=1,
+            estimated_api_calls=3,
             notes=[
-                "Direct activation to specific AP group (POST /networkActivations)"
+                "Direct activation to specific AP group (3 ordered PUTs, never All AP Groups)"
             ],
         )

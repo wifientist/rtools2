@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/utils/api";
+import R1DeprecationReport from "@/components/R1DeprecationReport";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -89,6 +90,7 @@ const R1CallTiming = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-4">
+      <R1DeprecationReport />
       <h1 className="text-2xl font-bold mb-1">R1 Call Timing</h1>
       <p className="text-sm text-gray-600 mb-4">
         In seconds, kept for 30 days and saved every 30 seconds. Select a row to see it per UTC hour.

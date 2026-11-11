@@ -15,8 +15,9 @@ Step 1 (the venue association) runs ONCE per network:
 Re-sending step 1 with a one-group list may REPLACE the association's group
 list, so it must never run twice for a network. Units are AP Groups and run
 in parallel, so when one network targets several groups, a per-network lock
-serialises them and the first one through records that step 1 is done -- the
-query index may not show the association yet when the next unit reads it.
+covers the state read and step 1; the first one through records that step 1
+is done -- the query index may not show the association yet when the next
+unit reads it. Steps 2-3 for later groups run outside the lock, in parallel.
 
 A WLAN with a `vlan` gets it as this group's VLAN override (steps 1 and 3
 carry it). One already bound to the group is only touched when its current
@@ -176,22 +177,35 @@ class ActivateWlansPhase(PhaseExecutor):
                 action += f" (VLAN {w['vlan']})"
             await self.emit(f"[{group}] '{label}': {action}...")
 
-            await self.r1_client.venues.activate_ssid_for_ap_group_direct(
-                tenant_id=self.tenant_id,
-                venue_id=self.venue_id,
-                wifi_network_id=network_id,
-                ap_group_id=ap_group_id,
-                radio_types=w.get("radio_types") or None,
-                # None = inherit the network VLAN; a value is this group's override.
-                vlan_id=w.get("vlan"),
-                dpsk_service_id=w.get("dpsk_pool_id") or None,
-                # venue_wide: the association exists, so step 1 goes to /settings.
-                already_activated=state == "venue_wide",
-                skip_step1=step1_done,
-                wait_for_completion=True,
-            )
-            _associated.add(key)
-            return True
+            if not step1_done:
+                # Step 1 (with this group's steps 2-3) under the lock: the
+                # venue association must be made exactly once per network.
+                await self._direct(network_id, ap_group_id, w, state, skip_step1=False)
+                _associated.add(key)
+                return True
+
+        # Association in place: steps 2-3 for this group are its own
+        # resources, so other groups of the same network bind side by side
+        # (5 at once on one network bound cleanly on SuperSandbox, 2026-11-06).
+        await self._direct(network_id, ap_group_id, w, state, skip_step1=True)
+        return True
+
+    async def _direct(self, network_id: str, ap_group_id: str, w: Dict[str, Any],
+                      state: str, skip_step1: bool) -> None:
+        await self.r1_client.venues.activate_ssid_for_ap_group_direct(
+            tenant_id=self.tenant_id,
+            venue_id=self.venue_id,
+            wifi_network_id=network_id,
+            ap_group_id=ap_group_id,
+            radio_types=w.get("radio_types") or None,
+            # None = inherit the network VLAN; a value is this group's override.
+            vlan_id=w.get("vlan"),
+            dpsk_service_id=w.get("dpsk_pool_id") or None,
+            # venue_wide: the association exists, so step 1 goes to /settings.
+            already_activated=state == "venue_wide",
+            skip_step1=skip_step1,
+            wait_for_completion=True,
+        )
 
     async def validate(self, inputs: 'Inputs') -> PhaseValidation:
         return PhaseValidation(

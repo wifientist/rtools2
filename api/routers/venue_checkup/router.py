@@ -42,6 +42,7 @@ from dependencies import get_current_user, get_db
 from models.user import User
 from routers.tenant_scope import resolve_tenant_id
 from services import ap_group_ops
+from services.sz_migration import lan_ports
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ READ_CONCURRENCY = 8
 
 # key -> (label, venue path suffix, also on AP Groups)
 MODEL_SETTINGS: Dict[str, tuple] = {
+    # Read and written through services.sz_migration.lan_ports (LAN_SETTING),
+    # not this path: GET/PUT apModelLanPortSettings are deprecated.
     "lan_ports": ("LAN ports", "apModelLanPortSettings", False),
     "led": ("LED", "apModelLedSettings", False),
     "band_mode": ("Band mode", "apModelBandModeSettings", True),
@@ -84,11 +87,33 @@ VENUE_SETTINGS: List[tuple] = [
     ("Reboot timeout", "apRebootTimeoutSettings"),
     ("Smart monitor", "apSmartMonitorSettings"),
     ("TLS key enhanced", "apTlsKeyEnhancedSettings"),
-    ("Rogue AP", "rogueApSettings"),
-    ("Syslog", "syslogSettings"),
-    ("SNMP agent", "snmpAgentSettings"),
+    # roguePolicySettings replaced the deprecated rogueApSettings (2026-11-11).
+    # Rogue detection on/off is no longer here: it is whether a rogue policy
+    # is attached to the venue (the venue row's rogueDetection).
+    ("Rogue AP policy", "roguePolicySettings"),
+    # Syslog and SNMP moved to tenant-wide profiles (VENUE_PROFILES below):
+    # R1 flags syslogSettings / snmpAgentSettings deprecated (2026-11-11).
     ("AAA", "aaaSettings"),
-    ("Wi-Fi", "wifiSettings"),
+]
+# "Wi-Fi" (wifiSettings) removed 2026-11-11: R1 flags it deprecated in favour
+# of apRadioSettings (the Radio row), and its body carries the venue's AP
+# admin password in clear text, which this page showed raw.
+
+# R1 names v1.1 as current for these while plain JSON still gets v1, which the
+# spec lets go (2026-11-11); shown raw, so the current shape is the one to show.
+VENUE_ACCEPT: Dict[str, str] = {
+    "apRadioSettings": "application/vnd.ruckus.v1.1+json",
+    "apMeshSettings": "application/vnd.ruckus.v1.1+json",
+    "aaaSettings": "application/vnd.ruckus.v1.1+json",
+}
+
+# Venue settings that are now tenant-wide profiles: (label, query, fields
+# shown). The row shows the profiles whose venueIds include this venue.
+# SNMP rows also hold community names and users (credentials): not shown.
+VENUE_PROFILES: List[tuple] = [
+    ("Syslog", "/syslogServerProfiles/query",
+     ["id", "name", "primaryServer", "secondaryServer", "facility", "flowLevel"]),
+    ("SNMP agent", "/snmpAgentProfiles/query", ["id", "name"]),
 ]
 
 
@@ -141,10 +166,11 @@ def _setting_path(venue_id: str, setting: str, ap_group_id: Optional[str]) -> st
     return f"/venues/{venue_id}/{suffix}"
 
 
-async def _get(r1_client, tenant_id: str, path: str) -> Dict[str, Any]:
+async def _get(r1_client, tenant_id: str, path: str, accept: Optional[str] = None) -> Dict[str, Any]:
     """{ok, data} or {ok: False, error} -- one failed read never sinks the page."""
     try:
-        resp = await asyncio.to_thread(_call, r1_client, "get", path, tenant_id)
+        kw = {"accept": accept} if accept else {}
+        resp = await asyncio.to_thread(_call, r1_client, "get", path, tenant_id, **kw)
         if not resp.ok:
             return {"ok": False, "status": resp.status_code, "error": _api_error(_HttpError(resp))}
         return {"ok": True, "data": resp.json() if resp.content else None}
@@ -214,10 +240,11 @@ async def read_venue(
     venue_id = request.venue_id
 
     try:
-        venue, aps_resp, groups_resp = await asyncio.gather(
+        # AP groups via the query: GET /venues/{id}/apGroups is deprecated.
+        venue, aps_resp, groups_raw = await asyncio.gather(
             r1_client.venues.get_venue(tenant_id, venue_id),
             r1_client.venues.get_aps_by_tenant_venue(tenant_id, venue_id),
-            _get(r1_client, tenant_id, f"/venues/{venue_id}/apGroups"),
+            _groups(r1_client, tenant_id, venue_id),
         )
     except Exception as e:
         logger.exception(f"[Venue Checkup] R1 read failed for venue {venue_id}")
@@ -229,22 +256,36 @@ async def read_venue(
         "ap_group_id": a.get("apGroupId"), "ap_group_name": a.get("apGroupName"),
     } for a in (aps_resp.get("data") or [])]
 
-    groups_raw = groups_resp.get("data") if groups_resp["ok"] else []
-    if isinstance(groups_raw, dict):
-        groups_raw = groups_raw.get("data") or []
     groups = [{"id": g.get("id"), "name": g.get("name") or ("(default)" if g.get("isDefault") else g.get("id")),
                "is_default": bool(g.get("isDefault"))} for g in (groups_raw or []) if g.get("id")]
 
     sem = asyncio.Semaphore(READ_CONCURRENCY)
 
-    async def limited(path: str) -> Dict[str, Any]:
+    async def limited(path: str, accept: Optional[str] = None) -> Dict[str, Any]:
         async with sem:
-            return await _get(r1_client, tenant_id, path)
+            return await _get(r1_client, tenant_id, path, accept)
 
-    model_jobs = {k: limited(f"/venues/{venue_id}/{v[1]}") for k, v in MODEL_SETTINGS.items()}
+    model_jobs = {k: limited(f"/venues/{venue_id}/{v[1]}") for k, v in MODEL_SETTINGS.items()
+                  if k != LAN_SETTING}
     group_jobs = {(g["id"], k): limited(f"/venues/{venue_id}/apGroups/{g['id']}/{v[1]}")
                   for g in groups for k, v in MODEL_SETTINGS.items() if v[2]}
-    venue_jobs = {suffix: limited(f"/venues/{venue_id}/{suffix}") for _, suffix in VENUE_SETTINGS}
+    venue_jobs = {suffix: limited(f"/venues/{venue_id}/{suffix}", VENUE_ACCEPT.get(suffix))
+                  for _, suffix in VENUE_SETTINGS}
+
+    async def venue_profiles(path: str, fields: List[str]) -> Dict[str, Any]:
+        async with sem:
+            try:
+                resp = await asyncio.to_thread(_call, r1_client, "post", path, tenant_id,
+                                               payload={"page": 1, "pageSize": 500})
+                if not resp.ok:
+                    return {"ok": False, "status": resp.status_code, "error": _api_error(_HttpError(resp))}
+                rows = (resp.json() or {}).get("data") or []
+                used = [{k: r.get(k) for k in fields} for r in rows if venue_id in (r.get("venueIds") or [])]
+                return {"ok": True, "data": {"profiles": used}}
+            except Exception as e:
+                return {"ok": False, "error": _api_error(e)}
+    for _, path, fields in VENUE_PROFILES:
+        venue_jobs[path] = venue_profiles(path, fields)
     caps_job = limited(f"/venues/{venue_id}/apModelCapabilities")
 
     keys = list(model_jobs) + list(group_jobs) + list(venue_jobs) + ["__caps"]
@@ -252,6 +293,10 @@ async def read_venue(
     by_key = dict(zip(keys, results))
 
     caps = by_key["__caps"]
+    cap_rows = {m.get("model"): m for m in ((caps.get("data") or {}).get("apModels") or [])
+                if m.get("model")} if caps["ok"] and isinstance(caps.get("data"), dict) else {}
+    by_key[LAN_SETTING] = await _read_lan(r1_client, tenant_id, venue_id,
+                                          sorted({a["model"] for a in aps if a["model"] in cap_rows}), cap_rows)
     catalog = sorted({m.get("model") for m in ((caps.get("data") or {}).get("apModels") or [])
                       if m.get("model")}) if caps["ok"] and isinstance(caps.get("data"), dict) else []
 
@@ -289,6 +334,7 @@ async def read_venue(
                                    "key": k, "label": v[0], **r})
 
     venue_settings = [{"label": label, "path": suffix, **by_key[suffix]} for label, suffix in VENUE_SETTINGS]
+    venue_settings += [{"label": label, "path": path, **by_key[path]} for label, path, _ in VENUE_PROFILES]
 
     counts = Counter(a["model"] or "?" for a in aps)
     models = [{"model": m, "ap_count": n,
@@ -311,6 +357,69 @@ async def read_venue(
     }
 
 
+LAN_SETTING = "lan_ports"
+
+
+async def _groups(r1_client, tenant_id: str, venue_id: str) -> List[Dict[str, Any]]:
+    """The venue's AP groups, or [] -- one failed read never sinks the page."""
+    try:
+        return await asyncio.to_thread(r1_client.venues.query_all_ap_groups, tenant_id, venue_id,
+                                       ["id", "name", "isDefault"])
+    except Exception as e:
+        logger.warning(f"[Venue Checkup] AP groups unreadable for venue {venue_id}: {e}")
+        return []
+
+
+async def _read_lan(r1_client, tenant_id: str, venue_id: str, models: List[str],
+                    caps: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    LAN ports & PoE for the models with APs here, in the old list shape.
+    GET apModelLanPortSettings (all ~50 catalog models in one call) is
+    deprecated; its replacement takes a few calls per model and port, so only
+    the venue's own models are read.
+    """
+    try:
+        return {"ok": True, "data": await lan_ports.read_entries(r1_client, tenant_id, venue_id, models, caps),
+                "note": "Only the AP models present at this venue are read."}
+    except Exception as e:
+        return {"ok": False, "error": _api_error(e)}
+
+
+async def _change_lan(request, r1_client, tenant_id: str, user_email: str) -> Dict[str, Any]:
+    """
+    LAN ports & PoE for one model through R1's per-model/per-port API.
+    update: make the model match the entry; delete: put it back on R1's
+    defaults (the old list PUT dropped the entry, which meant the same).
+    Non-default ports reuse an existing plain Ethernet Port Profile with the
+    same type/VLANs; none is created here (see ProfileChooser.match_any).
+    """
+    venue_id, model = request.venue_id, request.model
+    caps_resp = await _get(r1_client, tenant_id, f"/venues/{venue_id}/apModelCapabilities")
+    caps = {m.get("model"): m for m in ((caps_resp.get("data") or {}).get("apModels") or [])
+            if m.get("model")} if caps_resp["ok"] else {}
+    if model not in caps:
+        raise HTTPException(status_code=400, detail=f"R1 doesn't offer {model} at this venue")
+    profiles = await lan_ports.list_profiles(r1_client, tenant_id)
+    before = (await lan_ports.read_entries(r1_client, tenant_id, venue_id, [model], caps, profiles))[0]
+    if request.action == "delete":
+        wanted = lan_ports.default_entry(model, caps[model])
+    else:
+        wanted = {**before, **request.entry, "model": model}
+    chooser = lan_ports.ProfileChooser(r1_client, tenant_id, "", profiles, match_any=True)
+    notes: List[str] = []
+    logger.info(f"[Venue Checkup] {user_email} {request.action} {model} LAN ports at {venue_id} "
+                f"(tenant {tenant_id}); before={before}")
+    try:
+        await lan_ports.write_entry(r1_client, tenant_id, venue_id, wanted, caps[model], before, chooser, notes)
+    except Exception as e:
+        logger.error(f"[Venue Checkup] LAN ports {model} at {venue_id} failed: {e}")
+        return {"status": "failed", "path": "LAN ports", "model": model, "before": before, "after": before,
+                "sent": wanted, "error": _api_error(e), "notes": notes}
+    after = (await lan_ports.read_entries(r1_client, tenant_id, venue_id, [model], caps))[0]
+    return {"status": "done", "path": "LAN ports", "model": model, "before": before, "after": after,
+            "sent": wanted, "list_after": [after], "notes": notes}
+
+
 @router.post("/model-setting")
 @require_beta()
 async def change_model_setting(
@@ -330,6 +439,8 @@ async def change_model_setting(
     controller = _check_controller(request.controller_id, current_user, db)
     tenant_id = resolve_tenant_id(controller, request.tenant_id)
     r1_client = create_r1_client_from_controller(request.controller_id, db)
+    if request.setting == LAN_SETTING:
+        return await _change_lan(request, r1_client, tenant_id, current_user.email)
     path = _setting_path(request.venue_id, request.setting, request.ap_group_id)
     model = request.model
 

@@ -166,18 +166,78 @@ class FakeR1:
         self.current.setdefault("apModelCapabilities", {"apModels": CAPS})
         self.fail_paths = fail_paths
         self.ignore_paths = ignore_paths
-        self.venues = list(venues)
+        self.venue_rows = list(venues)
+        # Ethernet Port Profiles (tenant-wide) with their per-venue attachments,
+        # per-model PoE, and per-port on/off -- R1's LAN port model since the
+        # apModelLanPortSettings PUT was deprecated.
+        self.eth_profiles = [
+            {"id": "p-access", "name": "Default Access Port", "type": "ACCESS", "untagId": 1, "vlanMembers": "1",
+             "isDefault": True, "authType": "DISABLED", "venueActivations": []},
+            {"id": "p-trunk", "name": "Default Trunk Port (WAN)", "type": "TRUNK", "untagId": 1,
+             "vlanMembers": "1-4094", "isDefault": True, "authType": "DISABLED", "venueActivations": []},
+        ]
+        self.poe = {}          # model -> {poeMode, poeOut}
+        self.port_on = {}      # (model, port) -> enabled
+        # stands in for r1_client.venues (VenueService); /venues/query replaced GET /venues
+        self.venues = type("FakeVenues", (), {"query_all_venues": lambda _s, tenant_id, fields=None: list(self.venue_rows)})()
+
+    def _lan(self, method, path, payload):
+        """R1's LAN port endpoints, or None for any other path."""
+        import re
+        m = re.match(r"^/venues/([^/]+)/apModels/([^/]+)/(lanPortSpecificSettings|lanPorts/([^/]+)/(settings|ethernetPortProfiles/([^/]+)))$", path)
+        if path == "/ethernetPortProfiles/query":
+            return Resp(200, {"data": self.eth_profiles, "totalCount": len(self.eth_profiles)})
+        if path == "/ethernetPortProfiles" and method == "post":
+            new = {**payload, "id": f"p-{len(self.eth_profiles)}", "venueActivations": []}
+            self.eth_profiles.append(new)
+            return Resp(202, {"requestId": "r-prof", "response": {"id": new["id"]}})
+        if re.match(r"^/venues/[^/]+$", path) and method == "get":
+            return Resp(200, {"id": path.rsplit("/", 1)[1], "name": "Lofts at Mercer"})
+        if not m:
+            return None
+        venue, model, kind, port = m.group(1), m.group(2), m.group(3), m.group(4)
+        if any(p in path for p in self.fail_paths):
+            return Resp(500, {"errors": [{"message": "Internal Server Error"}]})
+        ignored = any(p in path for p in self.ignore_paths)
+        if kind == "lanPortSpecificSettings":
+            if method == "get":
+                cap = next(c for c in CAPS if c["model"] == model)
+                return Resp(200, self.poe.get(model) or ({"poeMode": "Auto", "poeOut": False}
+                                                         if cap.get("canSupportPoeMode") else {}))
+            if not ignored:
+                self.poe[model] = dict(payload)
+            return Resp(202, {"requestId": "r-poe"})
+        if m.group(5) == "settings":
+            if method == "get":
+                return Resp(200, {"enabled": self.port_on.get((model, port), True), "clientIsolationEnabled": False})
+            if not ignored:
+                self.port_on[(model, port)] = payload["enabled"]
+            return Resp(202, {"requestId": "r-port"})
+        profile_id = m.group(6)
+        if not ignored:
+            for prof in self.eth_profiles:
+                prof["venueActivations"] = [a for a in prof["venueActivations"]
+                                            if (a["apModel"], str(a["portId"])) != (model, port)]
+            next(p for p in self.eth_profiles if p["id"] == profile_id)["venueActivations"].append(
+                {"venueId": venue, "apModel": model, "portId": int(port)})
+        return Resp(202, {"requestId": "r-act"})
 
     def get(self, path, accept=None, override_tenant_id=None, params=None):
         self.calls.append(("get", path, accept, override_tenant_id, None))
+        lan = self._lan("get", path, None)
+        if lan is not None:
+            return lan
         if path == "/venues":
-            return Resp(200, self.venues)
+            return Resp(405, {"errors": [{"code": "VENUE-10000"}]})  # retired by R1 2026-11-11
         if path == "/venues/tags":
             return Resp(200, ["CID:1", "B", "CID:1"])
         return Resp(200, self.current.get(path.rsplit("/", 1)[1], {}))
 
     def put(self, path, payload=None, override_tenant_id=None, content_type=None):
         self.calls.append(("put", path, content_type, override_tenant_id, payload))
+        lan = self._lan("put", path, payload)
+        if lan is not None:
+            return lan
         if any(p in path for p in self.fail_paths):
             return Resp(400, {"errors": [{"message": "Invalid channel 149 for country"}]})
         if not any(p in path for p in self.ignore_paths):
@@ -187,7 +247,10 @@ class FakeR1:
 
     def post(self, path, payload=None, override_tenant_id=None, params=None):
         self.calls.append(("post", path, None, override_tenant_id, payload))
-        self.venues.append({"id": "new-venue-id", "name": payload["name"]})
+        lan = self._lan("post", path, payload)
+        if lan is not None:
+            return lan
+        self.venue_rows.append({"id": "new-venue-id", "name": payload["name"]})
         return Resp(202, {"requestId": "r-venue", "response": {"id": "new-venue-id", "name": payload["name"]}})
 
     async def await_task_completion(self, request_id, override_tenant_id=None, **kw):
@@ -430,7 +493,8 @@ def main() -> int:
     failures += check("H550 pushed alone, as a complete entry (all 5 ports), LAN3 on VLAN 30",
                       [e["model"] for e in push] == ["H550"] and len(h550.get("lanPorts", [])) == 5
                       and h550["lanPorts"][2] == {"portId": "3", "enabled": True, "type": "ACCESS",
-                                                  "untagId": 30, "vlanMembers": "30"}, str(push))
+                                                  "untagId": 30, "vlanMembers": "30",
+                                                  "profileName": "Unit ports"}, str(push))
     failures += check("complete entry: R1's defaults fill PoE mode / PoE out (a partial entry 500s in R1)",
                       h550.get("poeMode") == "Auto" and h550.get("poeOut") is False, str(h550))
     poe_only = [{"model": "H550", "poeMode": "802.3at"}]
@@ -459,23 +523,48 @@ def main() -> int:
     failures += check("verify compares only what is pushed (R510 on defaults, H375 absent: no difference)",
                       diffs == [], str(diffs))
 
-    # R1 fails the whole list for one model it won't take: each model then goes on its own.
-    class OneBadModel(FakeR1):
-        def put(self, path, payload=None, override_tenant_id=None, content_type=None):
-            if "apModelLanPortSettings" in path and any(e.get("model") == "R510" for e in payload):
-                self.calls.append(("put", path, content_type, override_tenant_id, payload))
-                return Resp(500, {"errors": [{"message": "Internal Server Error"}]})
-            return super().put(path, payload, override_tenant_id, content_type)
+    # Models are written one at a time: one R1 refuses doesn't stop the others.
     two = build_settings_plan(ZONE, MODELS_CUSTOM)
     lan_two = section(two, "model_lan_ports")
     lan_two.body = [e for e in lan_two.body if e["model"] != "R510"] + [{"model": "R510", "poeMode": "802.3at"}]
-    r1 = OneBadModel()
+    r1 = FakeR1(fail_paths=("/apModels/R510/",))
     res = asyncio.run(apply_settings(r1, "t", "v", two, ["model_lan_ports"]))[0]
-    puts = [c[4] for c in r1.calls if c[0] == "put"]
     failures += check("one model R1 refuses: the others still land, the offender is named",
                       res["status"] == "failed" and res.get("pushed") == ["H550"]
-                      and res["error"].startswith("R510:") and len(puts) == 3
-                      and [e["model"] for e in r1.current["apModelLanPortSettings"]] == ["H550"], str((res, puts)))
+                      and res["error"].startswith("R510:"), str(res))
+    unit = next((p for p in r1.eth_profiles if p["name"] == "Unit ports"), None)
+    failures += check("H550 LAN3 got an R1 profile under the SZ profile's name (ACCESS 30), attached to port 3",
+                      unit is not None and unit["type"] == "ACCESS" and unit["untagId"] == 30
+                      and unit["venueActivations"] == [{"venueId": "v", "apModel": "H550", "portId": 3}]
+                      and "description" not in unit, str(unit))
+    failures += check("ports already at R1's default are left alone (no attach for LAN1/2/4/5)",
+                      not any(a["apModel"] == "H550" and a["portId"] != 3
+                              for p in r1.eth_profiles for a in p["venueActivations"]), str(r1.eth_profiles))
+    failures += check("no deprecated apModelLanPortSettings call is made",
+                      not any("apModelLanPortSettings" in c[1] for c in r1.calls))
+    failures += check("R510's PoE refused, H550's PoE untouched (already Auto/off)",
+                      "R510" not in r1.poe and "H550" not in r1.poe, str(r1.poe))
+
+    # The SZ name is taken in R1 with other settings: "<name>_<venue>".
+    r1 = FakeR1()
+    r1.eth_profiles.append({"id": "p-x", "name": "Unit ports", "type": "ACCESS", "untagId": 99, "vlanMembers": "99",
+                            "authType": "DISABLED", "venueActivations": []})
+    res = asyncio.run(apply_settings(r1, "t", "v", build_settings_plan(ZONE, MODELS_CUSTOM), ["model_lan_ports"]))[0]
+    names = [p["name"] for p in r1.eth_profiles]
+    failures += check("name taken with other VLANs: created 'Unit ports_Lofts at Mercer', old one untouched",
+                      res["status"] == "applied" and "Unit ports_Lofts at Mercer" in names
+                      and next(p for p in r1.eth_profiles if p["id"] == "p-x")["venueActivations"] == []
+                      and any("Created Ethernet Port Profile" in n for n in res["notes"]), str((res, names)))
+    # ...and the same name with the same settings is reused, not duplicated.
+    r1 = FakeR1()
+    r1.eth_profiles.append({"id": "p-u", "name": "Unit ports", "type": "ACCESS", "untagId": 30, "vlanMembers": "30",
+                            "authType": "DISABLED", "venueActivations": []})
+    asyncio.run(apply_settings(r1, "t", "v", build_settings_plan(ZONE, MODELS_CUSTOM), ["model_lan_ports"]))
+    failures += check("same name, same settings: reused (no new profile)",
+                      [p["name"] for p in r1.eth_profiles].count("Unit ports") == 1
+                      and not any(c[1] == "/ethernetPortProfiles" and c[0] == "post" for c in r1.calls)
+                      and next(p for p in r1.eth_profiles if p["id"] == "p-u")["venueActivations"]
+                      == [{"venueId": "v", "apModel": "H550", "portId": 3}])
 
     print("\n12. Read-back")
     snap = SZMigrationSnapshot(zone=SZZoneSnapshot(id="z", name="Z", raw=ZONE), zone_ap_models=MODELS_CUSTOM,
@@ -485,7 +574,7 @@ def main() -> int:
     run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
     out = run(venue_config_mod.VerifyVenueSettingsPhase, {}, r1)
     failures += check("verified when R1 holds what was written", out.verified == len(full["sections"]), str(out))
-    r1 = FakeR1(ignore_paths=("apModelLanPortSettings",))
+    r1 = FakeR1(ignore_paths=("/lanPorts/",))
     run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
     try:
         run(venue_config_mod.VerifyVenueSettingsPhase, {}, r1)
@@ -496,9 +585,10 @@ def main() -> int:
     failures += check("verify results kept in the stage report even when failing", "verify" in R.reports)
     r1 = FakeR1()
     run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
-    lan_put = next(c[4] for c in r1.calls if c[0] == "put" and c[1].endswith("apModelLanPortSettings"))
-    failures += check("the LAN-port PUT carries only H550 -- no other model, no H375",
-                      [e["model"] for e in lan_put] == ["H550"], str([e["model"] for e in lan_put]))
+    lan_writes = {c[1].split("/apModels/")[1].split("/")[0] for c in r1.calls
+                  if c[0] == "put" and "/apModels/" in c[1]}
+    failures += check("LAN-port writes touch only H550 -- no other model, no H375",
+                      lan_writes == {"H550"}, str(lan_writes))
     r1 = FakeR1()
     run(phase_mod.ApplyVenueSettingsPhase, {}, r1)
     plan_out = run(venue_config_mod.VenueConfigPlanPhase, {"venue_settings": ["radio", "model_leds"]}, r1)

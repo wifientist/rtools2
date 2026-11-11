@@ -41,6 +41,83 @@ def parse_r1_date(value):
         return None
 
 
+def _int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _shape_compliance(entry: dict) -> dict:
+    """
+    One /entitlements/compliances/query entry -> the summary the UIs read.
+
+    Current shape (live since ~2026-11-11):
+        activeLicenses.paid.{total, nextExpirationDate, nextExpiringCount}
+        licensesUsed.{self,mspCustomers}.total      licenses assigned/used
+        licensesAvailable.mspCustomers.total        headroom (= total - used)
+        mspEcSummary.usedSummary[{type, installedCount, licensesUsed}]
+        mspEcSummary.totalLicensesUsed              consumed by devices
+    `used` keeps R1's licensesUsed so used + available = total_paid, as
+    before; what devices actually consume is `consumed_by_devices`.
+
+    The older shape (flat fields inside mspEcSummary) is still read when it
+    turns up.
+    """
+    msp_summary = entry.get("mspEcSummary") or {}
+    self_summary = entry.get("self") or {}
+
+    if "activeLicenses" in entry or "usedSummary" in msp_summary:
+        paid = (entry.get("activeLicenses") or {}).get("paid") or {}
+        used = entry.get("licensesUsed") or {}
+        avail = entry.get("licensesAvailable") or {}
+        next_exp = parse_r1_date(paid.get("nextExpirationDate"))
+        return {
+            "license_type": entry.get("licenseType"),
+            "tenant_name": None,
+            "total_paid": _int(paid.get("total")),
+            "used": _int((used.get("mspCustomers") or {}).get("total"))
+                    + _int((used.get("self") or {}).get("total")),
+            "available": _int((avail.get("mspCustomers") or {}).get("total")),
+            "consumed_by_devices": _int(msp_summary.get("totalLicensesUsed")),
+            "out_of_compliance": _int((entry.get("outOfCompliance") or {}).get("total")),
+            "expiring_soon": _int(paid.get("nextExpiringCount")),
+            "next_expiration_date": next_exp.isoformat() if next_exp else None,
+            "consolidated_sku_enabled": False,
+            "extended_trial_enabled": False,
+            "device_breakdown": [
+                {
+                    "device_type": d.get("type"),
+                    "installed": _int(d.get("installedCount")),
+                    "used": _int(d.get("licensesUsed")),
+                }
+                for d in msp_summary.get("usedSummary") or []
+            ],
+            "self_licenses": _int(self_summary.get("totalLicensesUsed")),
+        }
+
+    return {
+        "license_type": entry.get("licenseType"),
+        "tenant_name": msp_summary.get("tenantName"),
+        "total_paid": _int(msp_summary.get("totalActivePaidLicenseCount")),
+        "used": _int(msp_summary.get("licensesUsed")),
+        "available": _int(msp_summary.get("licenseGap")),
+        "expiring_soon": _int(msp_summary.get("nextTotalPaidExpiringLicenseCount")),
+        "next_expiration_date": msp_summary.get("nextPaidExpirationDate"),
+        "consolidated_sku_enabled": bool(msp_summary.get("consolidatedSkuEnabled")),
+        "extended_trial_enabled": bool(msp_summary.get("extendedTrialEnabled")),
+        "device_breakdown": [
+            {
+                "device_type": d.get("deviceType"),
+                "installed": _int(d.get("installedDeviceCount")),
+                "used": _int(d.get("usedLicenseCount")),
+            }
+            for d in msp_summary.get("deviceCompliances") or []
+        ],
+        "self_licenses": _int(self_summary.get("totalActivePaidAssignedLicenseCount")),
+    }
+
+
 class EntitlementsService:
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
@@ -96,12 +173,16 @@ class EntitlementsService:
             return {"error": f"HTTP {resp.status_code}"}
 
         payload = resp.json() or {}
-        compliances = payload.get("compliances") or []
+        # R1 moved the list from "compliances" to "data" and reshaped every
+        # entry around 2026-11-11 (see _shape_compliance). Read either.
+        compliances = payload.get("data")
+        if compliances is None:
+            compliances = payload.get("compliances")
         # Filter out null entries — some filter combinations return [null].
-        compliances = [c for c in compliances if c]
+        compliances = [c for c in (compliances or []) if c]
 
         if not compliances:
-            logger.info("[compliance_summary] empty compliances array")
+            logger.info(f"[compliance_summary] empty compliances array, keys={list(payload)}")
             return {"error": "no compliance data returned"}
 
         # The endpoint returns one entry per licenseType. Today that's just
@@ -110,39 +191,7 @@ class EntitlementsService:
             (c for c in compliances if c.get("licenseType") == "APSW"),
             compliances[0],
         )
-
-        msp_summary = entry.get("mspEcSummary") or {}
-        self_summary = entry.get("self") or {}
-
-        device_breakdown = []
-        for dev in msp_summary.get("deviceCompliances") or []:
-            device_breakdown.append(
-                {
-                    "device_type": dev.get("deviceType"),
-                    "installed": int(dev.get("installedDeviceCount") or 0),
-                    "used": int(dev.get("usedLicenseCount") or 0),
-                }
-            )
-
-        result = {
-            "license_type": entry.get("licenseType"),
-            "tenant_name": msp_summary.get("tenantName"),
-            "total_paid": int(msp_summary.get("totalActivePaidLicenseCount") or 0),
-            "used": int(msp_summary.get("licensesUsed") or 0),
-            "available": int(msp_summary.get("licenseGap") or 0),
-            "expiring_soon": int(
-                msp_summary.get("nextTotalPaidExpiringLicenseCount") or 0
-            ),
-            "next_expiration_date": msp_summary.get("nextPaidExpirationDate"),
-            "consolidated_sku_enabled": bool(
-                msp_summary.get("consolidatedSkuEnabled")
-            ),
-            "extended_trial_enabled": bool(msp_summary.get("extendedTrialEnabled")),
-            "device_breakdown": device_breakdown,
-            "self_licenses": int(
-                self_summary.get("totalActivePaidAssignedLicenseCount") or 0
-            ),
-        }
+        result = _shape_compliance(entry)
 
         logger.info(
             f"[compliance_summary] total_paid={result['total_paid']} "
@@ -443,9 +492,35 @@ class EntitlementsService:
         }
         return segments, cliffs, summary
 
+    def query_entitlements(self, page_size: int = 1000) -> list:
+        """
+        Every purchased license block, via POST /entitlements/query (1-indexed).
+
+        Replaces GET /mspEntitlements (deprecated, removal allowed since
+        2026-08-31). Checked 2026-11-11: the same 26 blocks with the same sku,
+        quantity, dates, status and trial flag. Differences: dates come as
+        Java Date strings (parse_r1_date reads both), no `id` (use the unique
+        `externalId`), `licenseType` "APSW" instead of `deviceType` "MSP_APSW".
+        R1 ignores the filters (usageType, isAssignedLicense) on this call.
+
+        Raises on HTTP errors. Note: sync.
+        """
+        rows: list = []
+        page = 1
+        while True:
+            resp = self.client.post("/entitlements/query", payload={"page": page, "pageSize": page_size})
+            if not resp.ok:
+                raise RuntimeError(f"/entitlements/query HTTP {resp.status_code}: {resp.text[:200]}")
+            body = resp.json() or {}
+            batch = body.get("data") or []
+            rows.extend(batch)
+            if not batch or len(rows) >= (body.get("totalCount") or 0):
+                return rows
+            page += 1
+
     @staticmethod
     def _normalize_pool(raw):
-        """Shape /mspEntitlements rows into blocks the timeline can consume."""
+        """Shape entitlement rows (/entitlements/query, or the old /mspEntitlements) into timeline blocks."""
         blocks = []
         for e in raw or []:
             if not isinstance(e, dict):
@@ -454,10 +529,10 @@ class EntitlementsService:
             exp = parse_r1_date(e.get("expirationDate"))
             term_days = (exp - eff).days if eff and exp else None
             blocks.append({
-                "id": e.get("id"),
+                "id": e.get("id") or e.get("externalId"),
                 "sku": e.get("sku"),
                 "sku_tier": e.get("skuTier"),
-                "device_type": e.get("deviceType"),
+                "device_type": e.get("deviceType") or e.get("licenseType"),
                 "quantity": int(e.get("quantity") or 0),
                 "effective_date": eff,
                 "expiration_date": exp,
@@ -704,7 +779,7 @@ class EntitlementsService:
         Combines three sources:
           - GET  /mspEntitlements                 the purchased license pool
           - POST /entitlements/compliances/query  MSP-wide device counts vs licenses
-          - POST /mspecs/query + per-EC assignments query
+          - POST /tenants/query + per-EC assignments query
 
         The value over R1's native view is the capacity *step function*: a pool
         of 40 three-year and 20 five-year licenses is reported by R1 as a single
@@ -719,10 +794,7 @@ class EntitlementsService:
 
         # --- pool -----------------------------------------------------
         try:
-            resp = await asyncio.to_thread(self.client.get, "/mspEntitlements")
-            pool_raw = resp.json() if resp.ok else []
-            if not resp.ok:
-                result["warnings"].append(f"mspEntitlements HTTP {resp.status_code}")
+            pool_raw = await asyncio.to_thread(self.query_entitlements)
         except Exception as exc:
             logger.exception("[licensing] pool fetch failed")
             return {"error": f"Could not load MSP entitlements: {exc}"}

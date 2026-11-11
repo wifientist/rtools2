@@ -19,8 +19,10 @@ never a failure: a 403, a 429 or a missing key says nothing about the config.
 
 Field notes, checked live on SuperSandbox 2026-11-01:
   * dtimInterval is returned but is not in the 08122026 spec.
-  * Wi-Fi calling and the ACL flags are returned by the deprecated /networks/{id}
-    only, not /wifiNetworks/{id}, so they read from the "legacy" section.
+  * Wi-Fi calling and the ACL flags are not on /wifiNetworks/{id}. They read
+    from the "legacy" section, which since 2026-11-11 is built from which
+    profiles (Wi-Fi calling, access control, L2/L3 ACL) list the network in
+    their wifiNetworkIds, not from the deprecated /networks/{id}.
   * Venue 5 GHz is radioParams50G, AP Group 5 GHz is radioParams5G.
 """
 
