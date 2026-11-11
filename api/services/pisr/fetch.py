@@ -76,11 +76,19 @@ CLIENT_FIELDS = [
 
 # ── plumbing ─────────────────────────────────────────────────
 
-def _get(r1, path: str, tenant_id: Optional[str], params: Optional[Dict[str, Any]] = None):
+def _get(r1, path: str, tenant_id: Optional[str], params: Optional[Dict[str, Any]] = None,
+         accept: Optional[str] = None):
     """GET that adds the MSP tenant override only when the client is MSP-scoped."""
     if r1.ec_type == "MSP" and tenant_id:
-        return r1.get(path, params=params, override_tenant_id=tenant_id)
-    return r1.get(path, params=params)
+        return r1.get(path, params=params, override_tenant_id=tenant_id, accept=accept)
+    return r1.get(path, params=params, accept=accept)
+
+
+# R1 names v1.1 as current for venue radio and mesh while plain JSON still
+# gets v1, and the spec lets v1 go any time since 2026-08-31. Every field PISR
+# reads is the same in both (checked 2026-11-11), so v1.1 is asked for to keep
+# the day plain JSON moves from changing anything.
+V1_1 = "application/vnd.ruckus.v1.1+json"
 
 
 def _post(r1, path: str, payload: Dict[str, Any], tenant_id: Optional[str]):
@@ -129,16 +137,12 @@ def _rows(payload) -> List[Dict[str, Any]]:
 def venue_rows(r1, tenant_id: Optional[str]) -> List[Dict[str, Any]]:
     """
     Every venue in the tenant, enriched with the aggregate counts R1 already
-    keeps. Falls back to the plain venue list, which is always available — the
-    picker has to work even when the query endpoint does not.
+    keeps. There is no fallback any more: GET /venues, the plain list it used,
+    was retired by R1 (405) on 2026-11-11.
     """
     body = {"fields": VENUE_FIELDS, "sortField": "name", "sortOrder": "ASC",
             "page": 0, "pageSize": 500}
-    rows = _rows(_json(_post(r1, "/venues/query", body, tenant_id), "/venues/query"))
-    if rows:
-        return rows
-    logger.info("pisr: /venues/query gave nothing, falling back to GET /venues")
-    return _rows(_json(_get(r1, "/venues", tenant_id), "GET /venues", []))
+    return _rows(_json(_post(r1, "/venues/query", body, tenant_id), "/venues/query"))
 
 
 def venue_detail(r1, tenant_id: Optional[str], venue_id: str) -> Dict[str, Any]:
@@ -222,23 +226,73 @@ def ap_management_vlan(r1, tenant_id: Optional[str], venue_id: str) -> Optional[
 
 
 def dhcp_pools(r1, tenant_id: Optional[str], venue_id: str) -> List[Dict[str, Any]]:
-    return _rows(_json(_get(r1, f"/venues/{venue_id}/dhcpPools", tenant_id),
-                       "venue dhcpPools", []))
+    """
+    The venue's AP DHCP pools in the shape GET /venues/{id}/dhcpPools gave
+    (name, vlanId, subnet, range, DNS, lease, active, used/total IPs).
+
+    That GET is deprecated (removal allowed since 2026-08-31); its named
+    replacement wifiDhcpPoolUsages carries only name and IP counts. The rest
+    is joined by pool name from the venue's DHCP service profile:
+      1. POST /dhcpConfigServiceProfiles/query: the profile listing this venue
+      2. GET  /dhcpConfigServiceProfiles/{id}: the pool configuration
+      3. GET  /venues/{v}/dhcpConfigServiceProfiles/{id}: activeDhcpPoolNames
+      4. GET  /venues/{v}/wifiDhcpPoolUsages: used/total IPs
+    A venue without AP DHCP costs only the first call.
+
+    Built from the 11112026 spec on 2026-11-11: no venue on the MSP used AP
+    DHCP, so it is NOT yet checked against a live venue.
+    """
+    profiles = _rows(_json(_post(r1, "/dhcpConfigServiceProfiles/query",
+                                 {"fields": ["id", "name", "venueIds"], "page": 1, "pageSize": 500},
+                                 tenant_id), "dhcpConfigServiceProfiles/query", {}))
+    profile = next((p for p in profiles if venue_id in (p.get("venueIds") or [])), None)
+    if not profile:
+        return []
+    config = _json(_get(r1, f"/dhcpConfigServiceProfiles/{profile['id']}", tenant_id),
+                   "dhcpConfigServiceProfile", {}) or {}
+    venue_side = _json(_get(r1, f"/venues/{venue_id}/dhcpConfigServiceProfiles/{profile['id']}", tenant_id),
+                       "venue dhcpConfigServiceProfile", {}) or {}
+    usage_body = _json(_get(r1, f"/venues/{venue_id}/wifiDhcpPoolUsages", tenant_id),
+                       "venue wifiDhcpPoolUsages", {}) or {}
+    usages = {u.get("name"): u for u in (usage_body.get("wifiDhcpPoolUsages") or [])
+              if isinstance(u, dict)} if isinstance(usage_body, dict) else {}
+    active = venue_side.get("activeDhcpPoolNames") if isinstance(venue_side, dict) else None
+    rows = []
+    for pool in config.get("dhcpPools") or []:
+        name = pool.get("name")
+        use = usages.get(name) or {}
+        rows.append({
+            **pool,
+            "active": (name in active) if isinstance(active, list) else None,
+            "totalIpCount": use.get("totalIpCount"),
+            "usedIpCount": use.get("usedIpCount"),
+        })
+    return rows
 
 
 def ap_groups(r1, tenant_id: Optional[str], venue_id: str) -> List[Dict[str, Any]]:
-    return _rows(_json(_get(r1, f"/venues/{venue_id}/apGroups", tenant_id),
-                       "venue apGroups", []))
+    """
+    The venue's AP groups via POST /venues/apGroups/query, replacing the
+    deprecated GET /venues/{id}/apGroups, which also omitted `name`, so group
+    names in the report fell back to the AP's own apGroupName.
+    """
+    try:
+        return r1.venues.query_all_ap_groups(
+            tenant_id if r1.ec_type == "MSP" else None, venue_id,
+            fields=["id", "name", "venueId", "isDefault", "apSerialNumbers"])
+    except Exception as e:
+        logger.warning("pisr: venue apGroups query failed: %s", e)
+        return []
 
 
 def radio_settings(r1, tenant_id: Optional[str], venue_id: str) -> Dict[str, Any]:
-    body = _json(_get(r1, f"/venues/{venue_id}/apRadioSettings", tenant_id),
+    body = _json(_get(r1, f"/venues/{venue_id}/apRadioSettings", tenant_id, accept=V1_1),
                  "venue apRadioSettings", {}) or {}
     return body if isinstance(body, dict) else {}
 
 
 def mesh_settings(r1, tenant_id: Optional[str], venue_id: str) -> Dict[str, Any]:
-    body = _json(_get(r1, f"/venues/{venue_id}/apMeshSettings", tenant_id),
+    body = _json(_get(r1, f"/venues/{venue_id}/apMeshSettings", tenant_id, accept=V1_1),
                  "venue apMeshSettings", {}) or {}
     return body if isinstance(body, dict) else {}
 
@@ -481,14 +535,34 @@ def dpsk_passphrase_count(r1, tenant_id: Optional[str], pool_id: str) -> Optiona
 POLICY_PAGE_SIZE = 500
 
 
+def _query_all_pages(r1, path: str, tenant_id: Optional[str], what: str) -> List[Dict[str, Any]]:
+    """
+    Every row of a Spring-paged /query endpoint (`content` + `paging`).
+
+    These page from 0 in the body (`page: 1` is the SECOND page; on a set of 13
+    it returns nothing, which once read as "the query form returns zero rows").
+    A failed page ends the read with what came before, like the rest of PISR.
+    """
+    rows: List[Dict[str, Any]] = []
+    page = 0
+    while True:
+        body = _json(_post(r1, path, {"page": page, "pageSize": POLICY_PAGE_SIZE}, tenant_id), what, {}) or {}
+        batch = _rows(body)
+        rows.extend(batch)
+        total = (body.get("paging") or {}).get("totalCount") if isinstance(body, dict) else None
+        if not batch or len(batch) < POLICY_PAGE_SIZE or (total is not None and len(rows) >= total):
+            return rows
+        page += 1
+
+
 def policy_sets(r1, tenant_id: Optional[str]) -> List[Dict[str, Any]]:
     """
     Adaptive policy sets, with the counts and names R1 already denormalises.
 
-    GET, not POST /policySets/query — the query form returns zero rows on every
-    tenant tested while the GET returns the full list.
+    POST /policySets/query (0-indexed). The GET it replaces is deprecated and
+    returned only its first page of 10: Beltway has 13 sets and PISR saw 10.
     """
-    return _rows(_json(_get(r1, "/policySets", tenant_id), "GET /policySets", []))
+    return _query_all_pages(r1, "/policySets/query", tenant_id, "/policySets/query")
 
 
 def adaptive_policies(r1, tenant_id: Optional[str]) -> List[Dict[str, Any]]:
@@ -502,13 +576,12 @@ def adaptive_policies(r1, tenant_id: Optional[str]) -> List[Dict[str, Any]]:
     /policyTemplates/{id}/policies returns a thinner row whose
     `radiusAttributeGroupId` is always null.
 
-    0-INDEXED and honours `size` (page 1 of 200 returns nothing when there are
-    54 policies). Note that is the opposite of /dpskServices/query, which 500s
-    on page 0.
+    POST /policyTemplates/policies/query, 0-indexed, replacing the deprecated
+    GET. Checked 2026-11-11 on Beltway: the same 7,811 policies with identical
+    onMatchResponse. The GET was read as one page of 500, so PISR saw 500.
     """
-    return _rows(_json(_get(r1, "/policyTemplates/policies", tenant_id,
-                            params={"page": 0, "size": POLICY_PAGE_SIZE}),
-                       "GET /policyTemplates/policies", []))
+    return _query_all_pages(r1, "/policyTemplates/policies/query", tenant_id,
+                            "/policyTemplates/policies/query")
 
 
 def radius_attribute_groups(r1, tenant_id: Optional[str]) -> List[Dict[str, Any]]:

@@ -476,10 +476,49 @@ async def main():
                       a0["group_key"] == "__default__" and "Unit101" not in a0["broadcast"], str(a0))
 
     failures += await test_psk_passphrases()
+    failures += await test_group_concurrency()
 
     print(f"\n{'FAILED' if failures else 'All checks passed'}"
           f"{f' ({failures})' if failures else ''}")
     return 1 if failures else 0
+
+
+async def test_group_concurrency():
+    """activate_on_groups: step 1 alone first, then the other groups side by side."""
+    from services import r1_activation
+    f = 0
+
+    def client(fail_step1=False):
+        log, live = [], {"now": 0, "peak": 0}
+
+        async def direct(**kw):
+            log.append(("start", kw["ap_group_id"], kw["skip_step1"], live["now"]))
+            live["now"] += 1
+            live["peak"] = max(live["peak"], live["now"])
+            await asyncio.sleep(0.01)
+            live["now"] -= 1
+            if fail_step1 and not kw["skip_step1"]:
+                raise RuntimeError("step 1 refused")
+        return SimpleNamespace(venues=SimpleNamespace(activate_ssid_for_ap_group_direct=direct)), log, live
+
+    todo = [{"id": f"g{i}", "name": f"G{i}", "radio_types": ["2.4-GHz", "5-GHz"]} for i in range(20)]
+    c, log, live = client()
+    errs = await r1_activation.activate_on_groups(c, "t", "v", "n", todo, "not_found")
+    f += check("new association: group 1 alone with step 1, nothing else in flight",
+               log[0] == ("start", "g0", False, 0) and all(s for _, _, s, _ in log[1:]), str(log[:3]))
+    f += check("then the other 19 overlap, capped",
+               len(log) == 20 and 1 < live["peak"] <= r1_activation.GROUP_CONCURRENCY and not errs,
+               f"peak {live['peak']}")
+
+    c, log, live = client()
+    await r1_activation.activate_on_groups(c, "t", "v", "n", todo[:5], "specific")
+    f += check("association exists: every group skips step 1, all run side by side",
+               len(log) == 5 and all(s for _, _, s, _ in log) and live["peak"] == 5, str(log))
+
+    c, log, live = client(fail_step1=True)
+    errs = await r1_activation.activate_on_groups(c, "t", "v", "n", todo, "not_found")
+    f += check("step 1 fails: the other groups are not attempted", len(log) == 1 and len(errs) == 1, str(errs))
+    return f
 
 
 async def test_psk_passphrases():

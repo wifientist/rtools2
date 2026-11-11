@@ -150,7 +150,7 @@ def drift(r1, template_id: str, tenant_id: str, context: str = "MSP") -> Dict[st
 
 def ec_names(r1) -> Dict[str, str]:
     """EC id -> name, so appliedOnTenants can be read by a human."""
-    response = r1.post("/mspecs/query", payload={
+    response = r1.post("/tenants/query", payload={
         "fields": ["id", "name"], "sortField": "name", "sortOrder": "ASC",
     })
     if not response.ok:

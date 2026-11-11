@@ -68,6 +68,15 @@ async def _read(r1_client, tenant_id: str, method: str, path: str, **kw) -> Dict
         return {"ok": False, "error": ap_group_ops.api_error(e)}
 
 
+# Legacy WLAN flag -> the profile query whose rows name the networks it is on.
+LEGACY_FLAG_SOURCES = {
+    "wifiCallingEnabled": "/wifiCallingServiceProfiles/query",
+    "accessControlEnable": "/accessControlProfiles/query",
+    "l2AclEnable": "/l2AclPolicies/query",
+    "l3AclEnable": "/l3AclPolicies/query",
+}
+
+
 async def _query_all(r1_client, tenant_id: str, path: str, fields: List[str],
                      filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Every row of a query endpoint. These page from 1, and raise rather than return a part."""
@@ -178,6 +187,32 @@ class ConfigRulesWlansPhase(PhaseExecutor):
                 targets.append({"id": row["id"], "name": row.get("name"), "venue_ids": venues})
         total, done, failed = len(targets), 0, 0
         await self.emit(f"Reading {total} WLAN(s) on the chosen venues, out of {len(rows)} in the tenant")
+
+        # The "legacy" flags (Wi-Fi calling, access control, L2/L3 ACL) came
+        # from GET /networks/{id}, deprecated with removal allowed since
+        # 2026-08-31; /wifiNetworks/{id} does not carry them. In R1's model
+        # each is a profile activated on the network, and every profile row
+        # lists its wifiNetworkIds, so four tenant-wide queries replace one
+        # call per WLAN. Checked 2026-11-11 against /networks/{id} on 465
+        # networks (210 with Wi-Fi calling, 189 with access control): no
+        # differences. L2/L3 ACL had no live examples to check against.
+        legacy_sets: Dict[str, set] = {}
+        legacy_error: Optional[str] = None
+        if legacy:
+            try:
+                for flag, path in LEGACY_FLAG_SOURCES.items():
+                    profiles = await _query_all(self.r1_client, self.tenant_id, path, ["id", "wifiNetworkIds"])
+                    legacy_sets[flag] = {n for p in profiles for n in p.get("wifiNetworkIds") or []}
+            except Exception as e:
+                legacy_error = f"Could not read the network profiles: {e}"
+                await self.emit(legacy_error, "warning")
+
+        def legacy_section(network_id: str) -> Dict[str, Any]:
+            if legacy_error:
+                return {"ok": False, "error": legacy_error}
+            body = {"wlan": {"advancedCustomization": {
+                flag: network_id in ids for flag, ids in legacy_sets.items()}}}
+            return extract(body, "legacy")
         semaphore = asyncio.Semaphore(WLAN_CONCURRENCY)
         networks: Dict[str, Any] = {}
 
@@ -196,7 +231,7 @@ class ConfigRulesWlansPhase(PhaseExecutor):
                 if wifi:
                     sections["wifi"] = await section(f"/wifiNetworks/{target['id']}", "wifi")
                 if legacy:
-                    sections["legacy"] = await section(f"/networks/{target['id']}", "legacy")
+                    sections["legacy"] = legacy_section(target["id"])
                 networks[target["id"]] = {**target, "sections": sections}
                 done += 1
                 failed += 0 if all(s.get("ok") for s in sections.values()) else 1
@@ -254,12 +289,24 @@ class ConfigRulesVenuePhase(PhaseExecutor):
                 capture["sections"][VENUE_ROW] = {"ok": False, "error": result.get("error") or "Venue not returned"}
 
         async def groups() -> None:
-            listed = await limited("get", f"/venues/{venue_id}/apGroups")
-            if not listed["ok"]:
-                capture["groups_error"] = listed["error"]
-                return
-            body = listed["body"]
-            rows = body if isinstance(body, list) else (body or {}).get("data") or []
+            # POST /venues/apGroups/query replaces the deprecated GET
+            # /venues/{id}/apGroups (which also left out `name`). 1-indexed;
+            # pageSize must be given or it stops at 25.
+            rows: List[Dict[str, Any]] = []
+            page = 1
+            while True:
+                listed = await limited("post", "/venues/apGroups/query", payload={
+                    "fields": ["id", "name", "isDefault"], "filters": {"venueId": [venue_id]},
+                    "page": page, "pageSize": 1000})
+                if not listed["ok"]:
+                    capture["groups_error"] = listed["error"]
+                    return
+                body = listed["body"] or {}
+                batch = body.get("data") or []
+                rows.extend(batch)
+                if not batch or len(rows) >= (body.get("totalCount") or 0):
+                    break
+                page += 1
 
             async def one(group: Dict[str, Any]) -> Dict[str, Any]:
                 result = await limited("get", f"/venues/{venue_id}/apGroups/{group['id']}/radioSettings")

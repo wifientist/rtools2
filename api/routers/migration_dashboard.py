@@ -456,6 +456,15 @@ def _maybe_capture_snapshot(
 ) -> None:
     """Save a daily snapshot if data has changed since the last one."""
     try:
+        # A tenant that failed to read counts as 0 APs; saving that would
+        # record a fake drop (2026-11-11: R1 retired GET /venues, every EC
+        # errored, and the day's snapshot said 0 APs).
+        if progress_data.get("errors"):
+            logger.warning(
+                f"Skipping snapshot for controller {controller_id}: "
+                f"{progress_data['errors']} tenant(s) errored"
+            )
+            return
         cutoff = datetime.utcnow() - timedelta(hours=24)
         recent = (
             db.query(MigrationDashboardSnapshot)
@@ -971,24 +980,20 @@ async def fetch_controller_progress(
                 # (The tenant-wide /venues/aps/query call caps at ~1000 rows and
                 # ignores the `page` parameter, so per-venue is the only way to
                 # get complete results.)
-                venue_result = await asyncio.to_thread(
-                    r1_client.get,
-                    "/venues",
-                    override_tenant_id=tenant_id,
-                )
-
                 venue_list = []
                 venue_map: dict[str, dict] = {}
 
-                if venue_result.ok:
-                    venue_data = venue_result.json()
-                    if isinstance(venue_data, list):
-                        venue_list = venue_data
-                        venue_count = len(venue_data)
-                    elif isinstance(venue_data, dict):
-                        venue_list = venue_data.get("data", [])
-                        venue_count = venue_data.get("totalCount", len(venue_list))
+                try:
+                    venue_list = await asyncio.to_thread(
+                        r1_client.venues.query_all_venues,
+                        tenant_id,
+                        ["id", "name"],
+                    )
+                except Exception as ve:
+                    error = f"venues query failed: {ve}"
 
+                if not error:
+                    venue_count = len(venue_list)
                     # Pre-seed venue_map so 0-AP venues still appear in venue_stats.
                     for v in venue_list:
                         vid = v.get("id", "")
@@ -1001,8 +1006,6 @@ async def fetch_controller_progress(
                             "offline": 0,
                             "client_count": 0,
                         }
-                else:
-                    error = f"venues GET HTTP {venue_result.status_code}"
 
                 venue_ids_list = [v.get("id") for v in venue_list if v.get("id")]
 

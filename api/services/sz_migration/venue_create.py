@@ -30,6 +30,7 @@ import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
+from services.sz_migration import lan_ports
 from services.sz_migration.venue_models import customise
 from services.sz_migration.venue_settings import (
     V1, V1_1, _METHOD, _MESH_RADIO, bss_min_rate_6g, channel_width, mbps, tx_power,
@@ -484,11 +485,9 @@ async def list_venue_tags(r1_client, tenant_id: Optional[str]) -> List[str]:
 
 
 async def _find_venue_by_name(r1_client, tenant_id: Optional[str], name: str) -> Optional[Dict[str, Any]]:
-    resp = await asyncio.to_thread(r1_client.get, "/venues", **_kw(r1_client, tenant_id))
-    if resp.status_code != 200:
-        return None
-    body = resp.json()
-    rows = body if isinstance(body, list) else (body or {}).get("data", [])
+    # Raises when R1 can't list venues: answering None would read as "name is
+    # free" and let a duplicate create through (GET /venues died 2026-11-11).
+    rows = await asyncio.to_thread(r1_client.venues.query_all_venues, tenant_id)
     return next((v for v in rows if (v.get("name") or "").strip().lower() == name.strip().lower()), None)
 
 
@@ -518,6 +517,46 @@ async def create_venue(r1_client, tenant_id: Optional[str], body: Dict[str, Any]
     return {"id": venue_id, "name": body["name"]}
 
 
+LAN_SECTION = "model_lan_ports"
+
+
+async def apply_lan_section(r1_client, tenant_id: Optional[str], venue_id: str,
+                            push: List[Dict[str, Any]], caps: Dict[str, Dict[str, Any]],
+                            out: Dict[str, Any], notes: List[str]) -> Dict[str, Any]:
+    """
+    LAN ports & PoE through R1's per-model/per-port API (lan_ports), which
+    replaced the deprecated apModelLanPortSettings PUT on 2026-11-11. One
+    model at a time, so one R1 refuses doesn't stop the rest; the result has
+    the same shape as the other per-model sections.
+    """
+    kw = _kw(r1_client, tenant_id)
+    try:
+        venue = await asyncio.to_thread(lambda: r1_client.get(f"/venues/{venue_id}", **kw))
+        venue_name = ((venue.json() or {}).get("name") if venue.status_code == 200 else None) or venue_id
+        profiles = await lan_ports.list_profiles(r1_client, tenant_id)
+        current = {e["model"]: e for e in await lan_ports.read_entries(
+            r1_client, tenant_id, venue_id, [e["model"] for e in push], caps, profiles)}
+    except Exception as e:
+        logger.error(f"[SZ Migration] Venue {venue_id} LAN ports: reading R1 failed: {e}")
+        return {**out, "status": "failed", "error": f"Reading R1's LAN ports: {str(e)[:400]}", "notes": notes}
+    chooser = lan_ports.ProfileChooser(r1_client, tenant_id, venue_name, profiles)
+    pushed, failed = [], []
+    for e in push:
+        try:
+            await lan_ports.write_entry(r1_client, tenant_id, venue_id, e, caps.get(e["model"]) or {},
+                                        current.get(e["model"]) or {}, chooser, notes)
+            pushed.append(e["model"])
+        except Exception as ex:
+            logger.error(f"[SZ Migration] Venue {venue_id} LAN ports {e['model']} failed: {ex}")
+            failed.append(f"{e['model']}: {str(ex)[:300]}")
+    if chooser.created:
+        notes.append(f"Created Ethernet Port Profile(s): {', '.join(chooser.created)}")
+    result = {**out, "notes": notes, "pushed": pushed}
+    if failed:
+        return {**result, "status": "failed", "error": "; ".join(failed)}
+    return {**result, "status": "applied"}
+
+
 async def apply_settings(r1_client, tenant_id: Optional[str], venue_id: str,
                          plan: Dict[str, Any], keys: List[str]) -> List[Dict[str, Any]]:
     """
@@ -540,6 +579,9 @@ async def apply_settings(r1_client, tenant_id: Optional[str], venue_id: str,
             notes.append(f"R1 defaults kept for: {', '.join(defaults)}")
         if not push:
             return {**out, "status": "applied", "notes": notes + ["Nothing differs from R1's defaults — nothing written"]}
+        if sec.key == LAN_SECTION:
+            async with sem:
+                return await apply_lan_section(r1_client, tenant_id, venue_id, push, caps, out, notes)
         async def put(entries: List[Dict[str, Any]]) -> Optional[str]:
             """None when R1 took them, else R1's reason."""
             try:
@@ -650,8 +692,8 @@ def diff_section(sec: "_Section", current: Any,
                 if k == "lanPorts":
                     ports = {p.get("portId"): p for p in r.get("lanPorts") or []}
                     for p in v:
-                        _diff({x: y for x, y in p.items() if x != "portId"}, ports.get(p["portId"]),
-                              f"{e['model']} port {p['portId']}", out)
+                        _diff({x: y for x, y in p.items() if x not in ("portId", "profileName")},
+                              ports.get(p["portId"]), f"{e['model']} port {p['portId']}", out)
                 else:
                     _diff(v, r.get(k), f"{e['model']}.{k}", out)
     else:
@@ -680,6 +722,14 @@ async def verify_settings(r1_client, tenant_id: Optional[str], venue_id: str,
             out.update(pushed=[e["model"] for e in push], defaults=defaults)
             if not push:
                 return {**out, "status": "verified", "differences": []}
+        if sec.key == LAN_SECTION:
+            try:
+                current = await lan_ports.read_entries(r1_client, tenant_id, venue_id,
+                                                       [e["model"] for e in push], caps)
+            except Exception as e:
+                return {**out, "status": "unreadable", "error": str(e)[:300], "differences": []}
+            diffs = diff_section(sec, current, caps)
+            return {**out, "status": "differs" if diffs else "verified", "differences": diffs}
         try:
             resp = await asyncio.to_thread(
                 lambda: r1_client.get(f"/venues/{venue_id}/{sec.path}", accept=sec.media, **kw))

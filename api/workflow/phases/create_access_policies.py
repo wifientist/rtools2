@@ -49,9 +49,9 @@ SET_ADD_RETRY_SECONDS = 2
 # Set adds slow as the set grows, so tuning runs compare at the same size.
 SET_SIZE_BUCKET = 50
 # R1 can fail a create on its side ("Assign radius attribute group failed") and
-# take the same request a moment later.
-POLICY_CREATE_ATTEMPTS = 2
-POLICY_CREATE_RETRY_SECONDS = 2
+# take the same request a moment later. The wait grows per attempt (3s, then 6s).
+POLICY_CREATE_ATTEMPTS = 3
+POLICY_CREATE_RETRY_SECONDS = 3
 
 # Pattern to detect unit-specific SSIDs like "108@Property_Name"
 from workflow.phases.cloudpath.unit_ssid import (  # noqa: F401
@@ -927,7 +927,7 @@ class CreateAccessPoliciesPhase(PhaseExecutor):
                                 f"Policy {policy_id} failed in R1, creating it "
                                 f"again: {create_err}"
                             )
-                            await asyncio.sleep(POLICY_CREATE_RETRY_SECONDS)
+                            await asyncio.sleep(POLICY_CREATE_RETRY_SECONDS * attempt)
 
                     # Username and SSID conditions, anchored for exact match
                     await self.r1_client.policy_sets.create_string_condition(

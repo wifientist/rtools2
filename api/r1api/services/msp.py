@@ -45,7 +45,9 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_EC']}
         }
-        return self._json(await asyncio.to_thread(self.client.post, "/mspecs/query", payload=body), "the MSP-EC list")
+        # /mspecs/query is deprecated (R1: "use /tenants/query"); the same body
+        # returns the same rows, fields and order (checked 2026-11-11).
+        return self._json(await asyncio.to_thread(self.client.post, "/tenants/query", payload=body), "the MSP-EC list")
 
     async def get_msp_tech_partners(self):
         if self.client.ec_type != "MSP":
@@ -56,13 +58,18 @@ class MspService:
             'sortOrder': 'ASC',
             'filters': {'tenantType': ['MSP_INSTALLER', 'MSP_INTEGRATOR']}
         }
-        return self._json(await asyncio.to_thread(self.client.post, "/techpartners/mspecs/query", payload=body), "the tech-partner list")
+        # Was /techpartners/mspecs/query, which answered 0 for an MSP login (it
+        # lists a tech partner's own customers). /tenants/query with this filter
+        # returns the MSP's installers and integrators, which is what this wants.
+        return self._json(await asyncio.to_thread(self.client.post, "/tenants/query", payload=body), "the tech-partner list")
 
     async def get_msp_labels(self):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
         logger.debug("Fetching MSP labels")
-        response = await asyncio.to_thread(self.client.get, "/mspLabels")
+        # /mspLabels is deprecated (R1: "use /brandings"); /brandings returns
+        # the same fields plus domain_suffix (checked 2026-11-11).
+        response = await asyncio.to_thread(self.client.get, "/brandings")
         logger.debug(f"MSP labels response: {response.status_code}")
 
         if response.ok:
@@ -78,12 +85,23 @@ class MspService:
     async def get_entitlements(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self._json(await asyncio.to_thread(self.client.get, "/entitlements"), "entitlements")
+        # GET /entitlements is deprecated; /entitlements/query is the named
+        # replacement. It returns the 26 purchased blocks; the 6 assigned-license
+        # rows GET /entitlements added are not in it (R1 ignores its filters).
+        try:
+            return await asyncio.to_thread(self.client.entitlements.query_entitlements)
+        except RuntimeError as e:
+            raise HTTPException(502, f"RUCKUS ONE could not list entitlements: {e}")
 
     async def get_msp_entitlements(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
-        return self._json(await asyncio.to_thread(self.client.get, "/mspEntitlements"), "MSP entitlements")
+        # GET /mspEntitlements is deprecated; /entitlements/query returns the
+        # same blocks (see EntitlementsService.query_entitlements).
+        try:
+            return await asyncio.to_thread(self.client.entitlements.query_entitlements)
+        except RuntimeError as e:
+            raise HTTPException(502, f"RUCKUS ONE could not list MSP entitlements: {e}")
 
     async def get_msp_admins(self): #, r1_client: R1Client = None):
         if self.client.ec_type != "MSP":
@@ -94,7 +112,9 @@ class MspService:
         if self.client.ec_type != "MSP":
             return {"success": False, "error": "Unavailable for non-MSP clients."}
         return self._json(
-            await asyncio.to_thread(self.client.get, f"/mspCustomers/{tenant_id}/admins", override_tenant_id=tenant_id),
+            # /mspCustomers/{id}/admins is deprecated; /tenants/{id}/admins
+            # returns the same admins and fields (checked 2026-11-11).
+            await asyncio.to_thread(self.client.get, f"/tenants/{tenant_id}/admins", override_tenant_id=tenant_id),
             "customer admins",
         )
 

@@ -228,9 +228,9 @@ async def delete_profile(
 
 def _read_roster(r1_client) -> List[Dict[str, str]]:
     tenants: List[Dict[str, str]] = []
-    page = 1  # /mspecs/query is 1-indexed
+    page = 1  # /tenants/query is 1-indexed
     while True:
-        response = r1_client.post("/mspecs/query", payload={
+        response = r1_client.post("/tenants/query", payload={
             "fields": ["id", "name", "tenantType"], "filters": {"tenantType": ["MSP_EC"]},
             "sortField": "name", "sortOrder": "ASC", "page": page, "pageSize": 500,
         })

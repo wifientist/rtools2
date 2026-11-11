@@ -19,8 +19,9 @@ Dependency graph (parallel execution):
 activate_network and assign_aps run in PARALLEL after both
 create_ap_group and create_psk_network complete.
 
-activate_network uses POST /networkActivations for single-step direct
-activation to specific AP groups (no venue-wide intermediate state).
+activate_network activates each SSID directly on its unit's AP group (three
+ordered PUTs; no venue-wide intermediate state). It used the deprecated
+POST /networkActivations until 2026-11-11.
 """
 
 from workflow.workflows.definition import Workflow, Phase
@@ -95,8 +96,9 @@ PerUnitPSKWorkflow = Workflow(
         # Depends on BOTH create_ap_group (need ap_group_id) and create_psk_network
         # (need network_id). Runs in PARALLEL with assign_aps.
         #
-        # Uses POST /networkActivations for single-step direct activation
-        # to a specific AP group (no venue-wide intermediate state).
+        # Direct activation to a specific AP group (no venue-wide
+        # intermediate state): three ordered PUTs, which replaced the
+        # deprecated POST /networkActivations on 2026-11-11.
         # No activation_slot needed — never goes venue-wide.
         #
         # Old 3-step phase (activate_network.py) kept as fallback.
@@ -104,8 +106,8 @@ PerUnitPSKWorkflow = Workflow(
             id="activate_network",
             name="Activate Networks",
             description=(
-                "Activate SSIDs directly on specific AP Groups via "
-                "POST /networkActivations (single-step)."
+                "Activate SSIDs directly on specific AP Groups "
+                "(never on All AP Groups)."
             ),
             executor="workflow.phases.activate_network_direct.ActivateNetworkDirectPhase",
             depends_on=["create_ap_group", "create_psk_network"],

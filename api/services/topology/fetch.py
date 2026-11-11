@@ -276,7 +276,5 @@ def venues(r1, tenant_id: Optional[str]):
     response = _post(r1, "/venues/query", tenant_id,
                      {"fields": list(VENUE_FIELDS), "page": 0, "pageSize": 1000,
                       "sortField": "name", "sortOrder": "ASC"})
-    rows = _rows(response)
-    if rows:
-        return rows
-    return _rows(_get(r1, "/venues", tenant_id))
+    # No GET /venues fallback: R1 retired it (405) on 2026-11-11.
+    return _rows(response)

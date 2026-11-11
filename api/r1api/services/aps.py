@@ -1,22 +1,14 @@
-import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class ApService:
+    """
+    Placeholder: R1Client still builds `client.aps`. AP calls live in
+    VenueService. get_ap_overrides (GET /apconfig) was removed 2026-11-11:
+    R1 answers 404, it was never a real route, and nothing called it.
+    """
+
     def __init__(self, client):
         self.client = client  # back-reference to main R1Client
-
-    async def get_ap_overrides(self, tenant_id: str):
-        """
-        Get all AP for a tenant
-        """
-        logger.debug(f"getting AP for tenant_id: {tenant_id}, ec_type: {self.client.ec_type}")
-        if self.client.ec_type == "MSP":
-            logger.debug("Using MSP-specific endpoint overriding tenant_id")
-            return (await asyncio.to_thread(self.client.get, "/apconfig", override_tenant_id=tenant_id)).json()
-        else:
-            return (await asyncio.to_thread(self.client.get, "/apconfig")).json()
-
-# TODO - Implement actual AP related methods, /apconfig isn't an actual route

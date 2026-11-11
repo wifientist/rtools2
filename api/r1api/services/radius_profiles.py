@@ -22,6 +22,13 @@ from r1api.constants import R1StatusCode
 logger = logging.getLogger(__name__)
 
 
+# R1 names v1.1 as this route's current version (ruckus-current-version) while
+# plain requests still get v1. v1.1 is v1 plus autoFallbackDisable and
+# radSecOptions, sharedSecret kept (checked 2026-11-11). Pinned so the day the
+# default moves changes nothing here.
+PROFILE_MEDIA_TYPE = "application/vnd.ruckus.v1.1+json"
+
+
 class RadiusProfileService:
     def __init__(self, client):
         self.client = client
@@ -31,24 +38,44 @@ class RadiusProfileService:
         tenant_id: str = None,
     ) -> List[Dict[str, Any]]:
         """
-        Get all RADIUS server profiles via GET endpoint.
+        Every RADIUS server profile as a full row: primary/secondary as
+        {ip, port, sharedSecret}, which r1_profile_summary needs to spot a
+        placeholder secret.
 
-        Args:
-            tenant_id: Tenant/EC ID (required for MSP)
+        GET /radiusServerProfiles (the list) is deprecated, removal allowed
+        since 2026-08-31. Its replacement /radiusServerProfiles/query never
+        returns sharedSecret and gives primary as "ip:port", so the ids come
+        from the query and each row from GET /radiusServerProfiles/{id}, which
+        is not deprecated. Tenants hold a handful (max 4 on 2026-11-11).
 
-        Returns:
-            List of RADIUS profile dicts
+        Rows carry secrets: callers reduce them at once (r1_profile_summary).
+        Raises on HTTP errors, as the GET's .json() on an error body did.
         """
-        if self.client.ec_type == "MSP" and tenant_id:
-            response = self.client.get("/radiusServerProfiles", override_tenant_id=tenant_id)
-        else:
-            response = self.client.get("/radiusServerProfiles")
+        override = {"override_tenant_id": tenant_id} if self.client.ec_type == "MSP" and tenant_id else {}
+        ids: List[str] = []
+        page = 1
+        while True:
+            response = self.client.post(
+                "/radiusServerProfiles/query",
+                payload={"fields": ["id"], "page": page, "pageSize": 500}, **override,
+            )
+            response.raise_for_status()
+            data = response.json() or {}
+            batch = data.get("data") or []
+            ids.extend(r["id"] for r in batch if r.get("id"))
+            if not batch or len(ids) >= (data.get("totalCount") or 0):
+                break
+            page += 1
 
-        data = response.json()
-        # GET returns a plain list
-        if isinstance(data, list):
-            return data
-        return data.get("data", [])
+        rows: List[Dict[str, Any]] = []
+        for profile_id in ids:
+            response = self.client.get(f"/radiusServerProfiles/{profile_id}", accept=PROFILE_MEDIA_TYPE, **override)
+            if response.status_code == 404:
+                continue  # deleted between the list and the read
+            response.raise_for_status()
+            # Not safe_json: its failure path logs the body, which has the secret.
+            rows.append(response.json())
+        return rows
 
     def find_radius_profile_by_name(
         self,
@@ -338,10 +365,10 @@ class RadiusProfileService:
         try:
             if self.client.ec_type == "MSP" and tenant_id:
                 response = await asyncio.to_thread(
-                    self.client.get, endpoint, override_tenant_id=tenant_id,
+                    self.client.get, endpoint, override_tenant_id=tenant_id, accept=PROFILE_MEDIA_TYPE,
                 )
             else:
-                response = await asyncio.to_thread(self.client.get, endpoint)
+                response = await asyncio.to_thread(self.client.get, endpoint, accept=PROFILE_MEDIA_TYPE)
         except Exception:
             logger.warning(f"Could not read RADIUS profile {radius_profile_id}")
             return None

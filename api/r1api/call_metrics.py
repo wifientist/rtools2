@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import redis
 
+from r1api import deprecation_watch
+
 logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "r1:call_metrics:"
@@ -125,6 +127,7 @@ def record_call(method: str, path: str, response, seconds: float) -> None:
     try:
         label = f"{method.upper()} {route_label(path)}"
         record(KIND_CALL, label, status_group(response.status_code), seconds)
+        deprecation_watch.observe(label, response)
         if response.status_code == 202:
             _track_accepted(response, label)
         elif response.ok and path.startswith("/activities") and _sent:
