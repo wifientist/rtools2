@@ -417,12 +417,15 @@ export interface BumpCandidate {
   step: (typeof STEPS)[number];
   due: string;
   newDate: string;
+  /** Each workday from `due` up to (not including) `newDate`; a bump records one miss per day. */
+  missDays: string[];
 }
 
 /**
  * The earliest step that isn't ticked done and is due on or before `cutoff`, if any.
  * It moves to the next workday after today (or after the due date, if that's later),
- * so an old miss doesn't land in the past and stay overdue. Only one step per site:
+ * so an old miss doesn't land in the past and stay overdue. Every workday in between is
+ * recorded as its own miss, so the history shows each day that slipped. Only one step per site:
  * a bumped config already pushes validation + HW along with it.
  */
 export function bumpCandidate(site: TrackerSite, cutoff: string, today: string): BumpCandidate | null {
@@ -431,7 +434,10 @@ export function bumpCandidate(site: TrackerSite, cutoff: string, today: string):
     const due = site[step.key];
     if (!due || site[step.doneKey]) continue;
     if (due > cutoff) return null;
-    return { site, step, due, newDate: toISO(nextWorkday(parseISO(due > today ? due : today))) };
+    const newDate = toISO(nextWorkday(parseISO(due > today ? due : today)));
+    const missDays = [due];
+    for (let d = toISO(nextWorkday(parseISO(due))); d < newDate; d = toISO(nextWorkday(parseISO(d)))) missDays.push(d);
+    return { site, step, due, newDate, missDays };
   }
   return null;
 }

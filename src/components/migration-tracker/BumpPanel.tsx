@@ -6,7 +6,8 @@ import {
 
 /**
  * Bulk bump: every site whose next step is still unticked on or before the cutoff
- * gets that step recorded as missed (no reason) and moved to the next workday.
+ * gets that step recorded as missed (no reason) on each workday from its due date
+ * through today, ending on the next workday.
  * Validation + HW are pushed along, as with a single miss. Each row goes through
  * the same endpoint a single "Record miss" does.
  */
@@ -78,7 +79,7 @@ export default function BumpPanel({
           Include steps due today
         </label>
         <span className="text-xs text-gray-600">
-          Each is recorded as missed with no reason and moved to the next workday; later steps move with it.
+          Each workday from the due date on is recorded as a miss with no reason, ending on the next workday; later steps move with it.
         </span>
         <button onClick={onClose} disabled={busy} className="ml-auto text-xs text-amber-800 hover:underline">Close</button>
       </div>
@@ -108,7 +109,10 @@ export default function BumpPanel({
                   <td className="px-2 py-1 font-medium text-gray-800">{c.site.site_name}</td>
                   <td className="px-2 py-1">{c.step.label}</td>
                   <td className={`px-2 py-1 ${c.due < today ? "text-red-700" : ""}`}>{fmtShort(c.due)}</td>
-                  <td className="px-2 py-1">{fmtShort(c.newDate)}</td>
+                  <td className="px-2 py-1">
+                    {fmtShort(c.newDate)}
+                    {c.missDays.length > 1 && <span className="text-gray-500"> ({c.missDays.length} misses)</span>}
+                  </td>
                   <td className="px-2 py-1 text-gray-500">{knockOn(c)}</td>
                 </tr>
               ))}
