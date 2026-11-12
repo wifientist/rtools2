@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import {
-  bumpCandidate, fmtShort, prevWorkday, parseISO, toISO, previewMissConfig, previewMissValidation,
-  type BumpCandidate, type TrackerSite,
+  bumpCandidate, bumpPlan, fmtShort, previewMissConfig, previewMissValidation,
+  type BumpCandidate, type BumpMode, type TrackerSite,
 } from "./trackerModel";
 
 /**
- * Bulk bump: every site whose next step is still unticked on or before the cutoff
- * gets that step recorded as missed (no reason) on each workday from its due date
- * through today, ending on the next workday.
+ * Bulk bump, two ways: overdue steps become due today, or overdue + due-today steps
+ * become due the next workday. Each workday from a step's due date up to its new date
+ * is recorded as a miss (no reason).
  * Validation + HW are pushed along, as with a single miss. Each row goes through
  * the same endpoint a single "Record miss" does.
  */
@@ -19,14 +19,14 @@ export default function BumpPanel({
   onBump: (c: BumpCandidate) => Promise<void>;
   onClose: () => void;
 }) {
-  const [includeToday, setIncludeToday] = useState(true);
-  const cutoff = includeToday ? today : toISO(prevWorkday(parseISO(today)));
+  const [mode, setMode] = useState<BumpMode>("today");
+  const { cutoff, target } = bumpPlan(mode, today);
   const candidates = useMemo(
     () => sites
-      .map((s) => bumpCandidate(s, cutoff, today))
+      .map((s) => bumpCandidate(s, cutoff, target))
       .filter((c): c is BumpCandidate => !!c)
       .sort((a, b) => a.due.localeCompare(b.due) || a.site.site_name.localeCompare(b.site.site_name)),
-    [sites, cutoff, today]);
+    [sites, cutoff, target]);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
@@ -74,12 +74,17 @@ export default function BumpPanel({
     <div className="p-3 rounded border border-amber-300 bg-amber-50 text-sm space-y-2">
       <div className="flex flex-wrap items-center gap-3">
         <span className="font-medium text-amber-900">Bump pending steps</span>
-        <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
-          <input type="checkbox" checked={includeToday} onChange={(e) => setIncludeToday(e.target.checked)} />
-          Include steps due today
-        </label>
+        {([
+          ["today", `Overdue → due today (${fmtShort(bumpPlan("today", today).target)})`],
+          ["tomorrow", `Overdue + due today → ${fmtShort(bumpPlan("tomorrow", today).target)}`],
+        ] as [BumpMode, string][]).map(([m, label]) => (
+          <label key={m} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+            <input type="radio" name="bump-mode" checked={mode === m} disabled={busy} onChange={() => setMode(m)} />
+            {label}
+          </label>
+        ))}
         <span className="text-xs text-gray-600">
-          Each workday from the due date on is recorded as a miss with no reason, ending on the next workday; later steps move with it.
+          Each workday from the due date on is recorded as a miss with no reason; later steps move with it.
         </span>
         <button onClick={onClose} disabled={busy} className="ml-auto text-xs text-amber-800 hover:underline">Close</button>
       </div>

@@ -5,7 +5,7 @@ import TrackerGantt from "@/components/migration-tracker/TrackerGantt";
 import BumpPanel from "@/components/migration-tracker/BumpPanel";
 import TrackerTable, { type MissBody, type MissMigrationBody, type MissValidationBody } from "@/components/migration-tracker/TrackerTable";
 import {
-  STAGES, TONE_CLASSES, bumpCandidate, parsePaste, stageOf, siteStatus, todayISO,
+  STAGES, TONE_CLASSES, bumpCandidate, bumpPlan, parsePaste, stageOf, siteStatus, todayISO,
   type BumpCandidate, type PasteResult, type TrackerSite,
 } from "@/components/migration-tracker/trackerModel";
 
@@ -118,7 +118,10 @@ export default function MigrationTracker() {
       replace(await call(`${BASE}/${id}/${path}`, { method: "POST", body: JSON.stringify(body) }));
     }
   };
-  const pendingCount = useMemo(() => sites.filter((s) => bumpCandidate(s, today, today)).length, [sites, today]);
+  const pendingCount = useMemo(() => {
+    const { cutoff, target } = bumpPlan("tomorrow", today);
+    return sites.filter((s) => bumpCandidate(s, cutoff, target)).length;
+  }, [sites, today]);
 
   const onDeleteEvent = (id: number, index: number) => guard(async () => {
     replace(await call(`${BASE}/${id}/events/${index}`, { method: "DELETE" }));

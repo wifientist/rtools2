@@ -421,23 +421,36 @@ export interface BumpCandidate {
   missDays: string[];
 }
 
+/** The two bulk bump choices: overdue steps up to today, or overdue + due today on to tomorrow. */
+export type BumpMode = "today" | "tomorrow";
+
 /**
- * The earliest step that isn't ticked done and is due on or before `cutoff`, if any.
- * It moves to the next workday after today (or after the due date, if that's later),
- * so an old miss doesn't land in the past and stay overdue. Every workday in between is
- * recorded as its own miss, so the history shows each day that slipped. Only one step per site:
- * a bumped config already pushes validation + HW along with it.
+ * What a bump takes in and where it lands. "today": anything due before today becomes due
+ * today. "tomorrow": anything due today or earlier becomes due the next workday.
+ * On a weekend "today" means the coming Monday.
  */
-export function bumpCandidate(site: TrackerSite, cutoff: string, today: string): BumpCandidate | null {
+export function bumpPlan(mode: BumpMode, today: string): { cutoff: string; target: string } {
+  const workToday = onOrAfterWorkday(parseISO(today));
+  return mode === "today"
+    ? { cutoff: toISO(addDays(workToday, -1)), target: toISO(workToday) }
+    : { cutoff: toISO(workToday), target: toISO(nextWorkday(workToday)) };
+}
+
+/**
+ * The earliest step that isn't ticked done and is due on or before `cutoff`, if any, moved to
+ * `target`. Every workday from the due date up to the target is recorded as its own miss, so
+ * the history shows each day that slipped. Only one step per site: a bumped config already
+ * pushes validation + HW along with it.
+ */
+export function bumpCandidate(site: TrackerSite, cutoff: string, target: string): BumpCandidate | null {
   if (site.hw_migrated_done) return null;
   for (const step of STEPS) {
     const due = site[step.key];
     if (!due || site[step.doneKey]) continue;
     if (due > cutoff) return null;
-    const newDate = toISO(nextWorkday(parseISO(due > today ? due : today)));
     const missDays = [due];
-    for (let d = toISO(nextWorkday(parseISO(due))); d < newDate; d = toISO(nextWorkday(parseISO(d)))) missDays.push(d);
-    return { site, step, due, newDate, missDays };
+    for (let d = toISO(nextWorkday(parseISO(due))); d < target; d = toISO(nextWorkday(parseISO(d)))) missDays.push(d);
+    return { site, step, due, newDate: target, missDays };
   }
   return null;
 }
