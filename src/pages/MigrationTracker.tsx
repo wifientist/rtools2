@@ -103,14 +103,20 @@ export default function MigrationTracker() {
   });
   // Bulk bump: no guard, so a failure stops the run and the panel says where.
   const [bumpOpen, setBumpOpen] = useState(false);
+  // One miss per workday from the due date on (9th -> 10th, 10th -> 11th, ...), so each
+  // slipped day shows in the history rather than a single jump to the final date.
   const onBump = async (c: BumpCandidate) => {
     const id = c.site.id;
-    const base = { missed_on: c.due, push_later: true, note: null };
-    const [path, body] =
-      c.step.key === "config_pushed" ? ["miss-config", { ...base, new_config: c.newDate }]
-      : c.step.key === "validation" ? ["miss-validation", { ...base, new_validation: c.newDate }]
-      : ["miss-migration", { missed_on: c.due, new_hw: c.newDate, note: null }];
-    replace(await call(`${BASE}/${id}/${path}`, { method: "POST", body: JSON.stringify(body) }));
+    for (let i = 0; i < c.missDays.length; i++) {
+      const missed_on = c.missDays[i];
+      const to = c.missDays[i + 1] ?? c.newDate;
+      const base = { missed_on, push_later: true, note: null };
+      const [path, body] =
+        c.step.key === "config_pushed" ? ["miss-config", { ...base, new_config: to }]
+        : c.step.key === "validation" ? ["miss-validation", { ...base, new_validation: to }]
+        : ["miss-migration", { missed_on, new_hw: to, note: null }];
+      replace(await call(`${BASE}/${id}/${path}`, { method: "POST", body: JSON.stringify(body) }));
+    }
   };
   const pendingCount = useMemo(() => sites.filter((s) => bumpCandidate(s, today, today)).length, [sites, today]);
 
