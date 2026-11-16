@@ -26,6 +26,15 @@ Checks that block the plan (errors), because R1 would refuse the activation:
     chose a pool for those (options.dpsk_link_pool_id): then the link is
     planned and the link_dpsk_pools phase makes it before activation.
 Rows whose AP or WLAN can't be resolved are skipped with a warning.
+
+With the create_missing option ({type: dpsk|psk|open, security, dpsk_pool,
+psk_names}), a WLAN that matches no network by name or SSID is planned for
+creation instead (networks_to_create; create_missing_wlans makes it): name =
+SSID = the wlan value, network VLAN = its first row's vlan (default 1), and
+only a row whose vlan differs from that becomes an AP-Group override. Such a
+WLAN rides in its units as network_id "" + create_name. Not created when:
+the name differs only in case from an existing network (R1 name filters
+ignore case), R1 would refuse it as an SSID, or (PSK) no passphrase came.
 """
 
 import asyncio
@@ -36,8 +45,9 @@ from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 
 from services.wlan_activator import (
-    index_networks, is_dpsk, radio_types_for, resolve_network, venue_state,
+    index_networks, is_dpsk, r1_name_problem, radio_types_for, resolve_network, venue_state,
 )
+from workflow.phases.create_missing_wlans import CREATE_TYPES, PSK_SECURITY, find_pool
 from workflow.phases.registry import register_phase
 from workflow.phases.phase_executor import PhaseExecutor, PhaseValidation
 from workflow.phases.ap_fields import (
@@ -59,6 +69,13 @@ def _sample(items: List[str], n: int = 5) -> str:
     return ", ".join(items[:n]) + (f" …+{len(items) - n}" if len(items) > n else "")
 
 
+def _count_by(values) -> Dict[Any, int]:
+    out: Dict[Any, int] = defaultdict(int)
+    for v in values:
+        out[v] += 1
+    return dict(out)
+
+
 @register_phase("validate_wlan_activator", "Validate & Plan WLAN Activation")
 class ValidateWlanActivatorPhase(PhaseExecutor):
     """Resolve the rows against the venue and build one unit per AP Group."""
@@ -68,6 +85,8 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
         options: Dict[str, Any] = Field(default_factory=dict)
         # A job option: the engine passes job options as top-level inputs, not under `options`.
         dpsk_link_pool_id: Optional[str] = None
+        # A job option too: create WLANs that do not exist (see module docstring).
+        create_missing: Dict[str, Any] = Field(default_factory=dict)
 
     class Outputs(BaseModel):
         unit_mappings: Dict[str, UnitMapping] = Field(default_factory=dict)
@@ -79,6 +98,7 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
         ap_groups_to_reuse: List[str] = Field(default_factory=list)
         dpsk_links_to_make: Dict[str, str] = Field(default_factory=dict)   # network id -> pool id
         dpsk_link_names: Dict[str, str] = Field(default_factory=dict)
+        networks_to_create: List[Dict[str, Any]] = Field(default_factory=list)
 
     async def execute(self, inputs: 'Inputs') -> 'Outputs':
         rows = []
@@ -119,6 +139,18 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             raise RuntimeError(f"Could not list WiFi networks: {e}")
         nets_by_name, nets_by_ssid = index_networks(networks)
         tenant_ssids = set(nets_by_ssid)
+        names_folded = {k.casefold(): k for k in nets_by_name}
+
+        create = dict(inputs.create_missing or (inputs.options or {}).get("create_missing") or {})
+        create_type = str(create.get("type") or "").lower()
+        if create_type and create_type not in CREATE_TYPES:
+            raise ValueError(f"create_missing type must be one of {', '.join(CREATE_TYPES)}")
+        security = create.get("security") or "WPA2"
+        if create_type == "psk" and security not in PSK_SECURITY:
+            raise ValueError(f"PSK security must be one of {', '.join(PSK_SECURITY)}")
+        psk_names = set(create.get("psk_names") or [])
+        new_wlans: Dict[str, Dict[str, Any]] = {}        # wlan -> {name, ssid, type, vlan}
+        not_creatable: Dict[str, str] = {}
 
         await self.emit(
             f"Venue has {len(all_venue_aps)} APs and {len(existing_groups)} AP Groups; "
@@ -142,8 +174,12 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             network = None
             if row["wlan"]:
                 network, reason = resolve_network(row["wlan"], nets_by_name, nets_by_ssid)
+                if not network and create_type and reason == "no network with this name or SSID":
+                    network = self._plan_create(
+                        row, create_type, security, psk_names, names_folded, new_wlans, not_creatable)
                 if not network:
-                    unresolved.setdefault(row["wlan"], reason)
+                    if row["wlan"] not in not_creatable:
+                        unresolved.setdefault(row["wlan"], reason)
                     continue
                 wlans_by_group[group][network["id"]] = network
             else:
@@ -177,6 +213,16 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             group_of_serial[serial] = group
             serials_by_group[group].append(serial)
 
+        for wlan, reason in sorted(not_creatable.items()):
+            conflicts.append(ConflictDetail(
+                resource_type="wlan", resource_name=wlan,
+                description=f"Not in R1 and not created: {reason}. Its rows are skipped.",
+                severity="warning",
+            ))
+        if new_wlans:
+            await self.emit(f"{len(new_wlans)} missing WLAN(s) will be created as {create_type.upper()}")
+            if create_type == "dpsk":
+                await self._check_create_pool(create.get("dpsk_pool") or {}, conflicts)
         if unresolved:
             for wlan, reason in sorted(unresolved.items()):
                 conflicts.append(ConflictDetail(
@@ -349,14 +395,20 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
                     new_here += 1
                 if state == "venue_wide":
                     venue_wide_moves.add(n.get("name") or n["id"])
-                wlans.append({
+                entry = {
                     "network_id": n["id"],
                     "name": n.get("name") or "",
                     "ssid": n.get("ssid") or "",
                     "dpsk_pool_id": dpsk_pool.get(n["id"]),
                     "radio_types": radios.get(n["id"]) or radio_types_for(n, tenant_ssids),
                     "vlan": vlan,
-                })
+                }
+                if n.get("_create"):
+                    # The id is known only once create_missing_wlans has run.
+                    planned = new_wlans[n["name"]]
+                    entry.update(network_id="", create_name=n["name"], create_type=planned["type"],
+                                 vlan=None if vlan in (None, planned["vlan"]) else vlan)
+                wlans.append(entry)
             activations += len(wlans)
 
             # SSIDs this group would carry: venue-wide ones it inherits, the
@@ -416,6 +468,18 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             action="update", resource_type="access_points", name=f"{len(group_of_serial)} APs moved",
             notes=[f"{len(unmatched)} rows matched no AP in this venue"] if unmatched else [],
         ))
+        if new_wlans:
+            pool = create.get("dpsk_pool") or {}
+            actions.append(ResourceAction(
+                action="create", resource_type="wifi_networks",
+                name=f"{len(new_wlans)} {create_type.upper()} WLAN(s)",
+                notes=[_sample(sorted(new_wlans), 8)]
+                + ([f"PSK security {security}"] if create_type == "psk" else [])
+                + ([f"DPSK pool: new '{pool.get('name')}'" if pool.get("mode") == "new"
+                    else "DPSK pool: the existing one chosen"] if create_type == "dpsk" else [])
+                + [f"{c} with network VLAN {v}" for v, c in sorted(
+                    _count_by(n["vlan"] for n in new_wlans.values()).items())],
+            ))
         if dpsk_links:
             actions.append(ResourceAction(
                 action="update", resource_type="dpsk_links",
@@ -460,6 +524,7 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
             ap_groups_to_reuse=to_reuse,
             dpsk_links_to_make=dpsk_links,
             dpsk_link_names=dpsk_link_names,
+            networks_to_create=list(new_wlans.values()),
             validation_result=ValidationResult(
                 valid=bool(unit_mappings) and not errors,
                 conflicts=conflicts,
@@ -467,12 +532,76 @@ class ValidateWlanActivatorPhase(PhaseExecutor):
                     total_units=len(unit_mappings),
                     ap_groups_to_create=len(to_create),
                     ap_groups_to_reuse=len(to_reuse),
-                    networks_to_reuse=len(planned_ids),
-                    total_api_calls=len(to_create) + len(group_of_serial) + 3 * activations,
+                    networks_to_reuse=len(planned_ids) - len(new_wlans),
+                    networks_to_create=len(new_wlans),
+                    total_api_calls=len(to_create) + 2 * len(new_wlans)
+                    + len(group_of_serial) + 3 * activations,
                 ),
                 actions=actions,
             ),
         )
+
+    @staticmethod
+    def _plan_create(
+        row: Dict[str, str], create_type: str, security: str, psk_names: Set[str],
+        names_folded: Dict[str, str], new_wlans: Dict[str, Dict[str, Any]],
+        not_creatable: Dict[str, str],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        A stand-in network for a WLAN to create, or None (reason in
+        not_creatable). The first row for a WLAN sets its network VLAN.
+        """
+        wlan = row["wlan"]
+        if wlan in not_creatable:
+            return None
+        if wlan not in new_wlans:
+            clash = names_folded.get(wlan.casefold())
+            reason = (
+                f"R1 already has '{clash}' (differs only in case) — use that name" if clash
+                else r1_name_problem(wlan)
+                or ("no passphrase given for it (passphrase column)"
+                    if create_type == "psk" and wlan not in psk_names else "")
+            )
+            if reason:
+                not_creatable[wlan] = reason
+                return None
+            vlan = int(row["vlan"]) if row["vlan"].isdigit() and 1 <= int(row["vlan"]) <= 4094 else 1
+            new_wlans[wlan] = {"name": wlan, "ssid": wlan, "type": create_type, "vlan": vlan}
+        return {
+            "id": f"new:{wlan}", "name": wlan, "ssid": wlan, "_create": True,
+            # radio_types_for: WPA3 PSK gets 6 GHz too.
+            "securityProtocol": "WPA3" if create_type == "psk" and security == "WPA3" else "",
+        }
+
+    async def _check_create_pool(self, pool: Dict[str, Any], conflicts: List[ConflictDetail]) -> None:
+        """The pool new DPSK WLANs link to must exist, or be creatable."""
+        mode = pool.get("mode")
+        if mode == "existing":
+            found = None
+            try:
+                found = await self.r1_client.dpsk.get_dpsk_pool(pool.get("pool_id"), self.tenant_id)
+            except Exception as e:
+                logger.warning(f"DPSK pool {pool.get('pool_id')} lookup failed: {e}")
+            if not (found or {}).get("id"):
+                conflicts.append(ConflictDetail(
+                    resource_type="dpsk_pool", resource_name=pool.get("pool_id") or "(none)",
+                    description="The DPSK pool chosen for the new DPSK WLANs was not found in this tenant.",
+                    severity="error",
+                ))
+        elif mode == "new" and (pool.get("name") or "").strip():
+            name = pool["name"].strip()
+            if await find_pool(self.r1_client, self.tenant_id, name):
+                conflicts.append(ConflictDetail(
+                    resource_type="dpsk_pool", resource_name=name,
+                    description="A DPSK pool with this name already exists; the new WLANs link to it unchanged.",
+                    severity="warning",
+                ))
+        else:
+            conflicts.append(ConflictDetail(
+                resource_type="dpsk_pool", resource_name="(none)",
+                description="New DPSK WLANs need a pool: choose an existing one or name a new one.",
+                severity="error",
+            ))
 
     async def validate(self, inputs: 'Inputs') -> PhaseValidation:
         return PhaseValidation(

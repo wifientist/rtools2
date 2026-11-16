@@ -13,13 +13,19 @@ activated).
 ONE UNIT PER AP GROUP, like AP Regroup; create_ap_group and assign_aps are
 reused unchanged.
 
+A WLAN the list names that R1 does not have is skipped with a warning --
+or, with the create_missing option, created first (DPSK on a shared pool,
+PSK or Open), for venues whose AP Groups exist but whose WLANs never did.
+
 Flow:
     validate_wlan_activator (global)
-      └── link_dpsk_pools (global)  links the chosen pool to DPSK networks
-        │                           that have none; skipped otherwise
-        └── create_ap_group (per AP Group)
-                └── activate_wlans (per AP Group)
-                        └── assign_aps (per AP Group)
+      └── create_missing_wlans (global)  creates planned missing WLANs;
+        │                                skipped otherwise
+        └── link_dpsk_pools (global)  links the chosen pool to DPSK networks
+          │                           that have none; skipped otherwise
+          └── create_ap_group (per AP Group)
+                  └── activate_wlans (per AP Group)
+                          └── assign_aps (per AP Group)
 
 assign_aps runs after activation (as in the Cloudpath import): APs join a
 group that already carries its WLAN, and a failed activation leaves them
@@ -59,7 +65,24 @@ WlanActivatorWorkflow = Workflow(
                 "ap_groups_to_reuse",
                 "dpsk_links_to_make",
                 "dpsk_link_names",
+                "networks_to_create",
             ],
+            api_calls_per_unit=0,
+        ),
+        Phase(
+            id="create_missing_wlans",
+            name="Create Missing WLANs",
+            description=(
+                "Create each WLAN the list names that R1 does not have yet "
+                "(DPSK linked to the chosen pool, PSK, or Open), once, before "
+                "anything is activated. Skipped when none."
+            ),
+            executor="create_missing_wlans",
+            depends_on=["validate_wlan_activator"],
+            per_unit=False,
+            critical=True,
+            inputs=["networks_to_create", "create_missing"],
+            outputs=["created_networks", "create_failures", "created_dpsk_pool_id", "networks_created"],
             api_calls_per_unit=0,
         ),
         Phase(
@@ -70,7 +93,7 @@ WlanActivatorWorkflow = Workflow(
                 "(R1 refuses to activate those, WIFI-20300). Skipped when none."
             ),
             executor="link_dpsk_pools",
-            depends_on=["validate_wlan_activator"],
+            depends_on=["create_missing_wlans"],
             per_unit=False,
             critical=True,
             inputs=["dpsk_links_to_make", "dpsk_link_names"],
@@ -107,7 +130,10 @@ WlanActivatorWorkflow = Workflow(
             depends_on=["create_ap_group", "link_dpsk_pools"],
             per_unit=True,
             critical=True,
-            inputs=["unit_id", "unit_number", "ap_group_id", "ap_group_name", "wlans"],
+            inputs=[
+                "unit_id", "unit_number", "ap_group_id", "ap_group_name", "wlans",
+                "created_networks", "create_failures", "created_dpsk_pool_id",
+            ],
             outputs=["activated", "wlans_activated", "wlans_already_active"],
             api_calls_per_unit="dynamic",
             effect_field="wlans_activated",

@@ -10,6 +10,11 @@ the standard plan/confirm flow:
 - POST /wlan-activator/v2/{id}/confirm -> confirm and execute
 - GET  /wlan-activator/v2/{id}/graph  -> workflow graph
 
+With create_missing, WLANs the rows name that R1 lacks are created first
+(DPSK on a shared pool, PSK, or Open). PSK passphrases ride in the rows'
+`passphrase` field only as far as this endpoint: they are stripped from the
+job and kept in a Redis hash for create_missing_wlans.
+
 Uses WlanActivatorWorkflow:
 1. validate_wlan_activator (global) -> resolve APs, groups, WLANs
 2. create_ap_group (per group)      -> create any AP Group that is missing
@@ -33,7 +38,9 @@ from routers.tenant_scope import resolve_tenant_id
 from services.dpsk_pool_context import list_dpsk_pools, venue_pool_suggestion
 from services.wlan_activator import (
     DEFAULT_GROUP_PATTERN, DEFAULT_WLAN_PATTERN, build_suggestions, detect_property_suffix,
+    groups_needing_wlans,
 )
+from workflow.phases.create_missing_wlans import CREATE_TYPES, PSK_SECURITY, store_psk_secrets
 from workflow.events import WorkflowEventPublisher
 from workflow.v2.activity_tracker import ActivityTracker
 from workflow.v2.brain import WorkflowBrain
@@ -66,6 +73,44 @@ class WlanActivatorRequest(BaseModel):
     # A pool for DPSK networks that have none linked (R1 will not activate them).
     # None: such networks block the plan, as before.
     dpsk_link_pool_id: Optional[str] = None
+    # Create the WLANs that do not exist yet. None/absent: they are skipped, as before.
+    create_missing: Optional["CreateMissing"] = None
+
+
+class CreateMissingPool(BaseModel):
+    mode: str = "existing"          # "existing" | "new"
+    pool_id: Optional[str] = None   # existing
+    name: Optional[str] = None      # new: identity group + pool of this name
+
+
+class CreateMissing(BaseModel):
+    type: str = "dpsk"              # "dpsk" | "psk" | "open"
+    security: str = "WPA2"          # PSK only: WPA2 | WPA3 | WPA2/WPA3
+    dpsk_pool: CreateMissingPool = Field(default_factory=CreateMissingPool)
+
+
+WlanActivatorRequest.model_rebuild()
+
+
+def _take_passphrases(rows: List[Dict[str, str]]) -> Dict[str, str]:
+    """wlan -> passphrase (first row wins), removing them from the rows."""
+    out: Dict[str, str] = {}
+    for r in rows:
+        pp = r.pop("passphrase", None)
+        wlan = (r.get("wlan") or "").strip()
+        if pp and wlan and wlan not in out:
+            out[wlan] = pp
+    return out
+
+
+def _passphrase_problem(pp: str) -> str:
+    if len(pp) == 64:
+        return "" if all(c in "0123456789abcdefABCDEF" for c in pp) else "64 characters must be hex"
+    if not 8 <= len(pp) <= 63:
+        return f"{len(pp)} characters; 8-63 (or 64 hex)"
+    if not all(32 <= ord(c) < 127 for c in pp):
+        return "printable ASCII only"
+    return ""
 
 
 class V2PlanResponse(BaseModel):
@@ -89,6 +134,7 @@ class V2PlanResult(BaseModel):
     unresolved_wlans: List[Dict[str, str]] = []
     ap_groups_to_create: List[str] = []
     ap_groups_to_reuse: List[str] = []
+    networks_to_create: List[Dict[str, Any]] = []
 
 
 class V2ConfirmResponse(BaseModel):
@@ -177,6 +223,35 @@ async def create_plan(
     if not request.activations:
         raise HTTPException(status_code=400, detail="activations is empty - nothing to do")
 
+    # Passphrases never reach the job, whether or not they are used.
+    passphrases = _take_passphrases(request.activations)
+    options: Dict[str, Any] = {}
+    if request.dpsk_link_pool_id:
+        options['dpsk_link_pool_id'] = request.dpsk_link_pool_id
+    cm = request.create_missing
+    if cm:
+        if cm.type not in CREATE_TYPES:
+            raise HTTPException(status_code=400, detail=f"create_missing.type must be one of {', '.join(CREATE_TYPES)}")
+        if cm.type == "psk":
+            if cm.security not in PSK_SECURITY:
+                raise HTTPException(status_code=400, detail=f"PSK security must be one of {', '.join(PSK_SECURITY)}")
+            bad = [f"{w}: {why}" for w, pp in passphrases.items() if (why := _passphrase_problem(pp))]
+            if bad:
+                raise HTTPException(status_code=400, detail="Passphrase not usable - " + "; ".join(bad[:5]))
+        else:
+            passphrases = {}
+        if cm.type == "dpsk":
+            pool = cm.dpsk_pool
+            if pool.mode not in ("existing", "new") or not (pool.pool_id if pool.mode == "existing" else (pool.name or "").strip()):
+                raise HTTPException(status_code=400, detail="New DPSK WLANs need a pool: an existing pool id or a new pool name")
+        options['create_missing'] = {
+            **cm.model_dump(),
+            # Which WLANs HAVE a passphrase, never the passphrases.
+            "psk_names": sorted(passphrases),
+        }
+    else:
+        passphrases = {}
+
     logger.info(
         f"[WLAN Activator] Plan request - controller: {request.controller_id}, "
         f"venue: {request.venue_id}, rows: {len(request.activations)}"
@@ -194,9 +269,11 @@ async def create_plan(
         tenant_id=tenant_id,
         controller_id=request.controller_id,
         user_id=current_user.id,
-        options={'dpsk_link_pool_id': request.dpsk_link_pool_id} if request.dpsk_link_pool_id else {},
+        options=options,
         input_data={'activations': request.activations},
     )
+    await store_psk_secrets(job.id, passphrases)
+    passphrases = None
     background_tasks.add_task(run_v2_validation_background, job.id, request.controller_id)
 
     return V2PlanResponse(
@@ -239,6 +316,7 @@ async def get_plan(job_id: str, current_user: User = Depends(get_current_user)):
         result.unresolved_wlans = outputs.get("unresolved_wlans", []) or []
         result.ap_groups_to_create = outputs.get("ap_groups_to_create", []) or []
         result.ap_groups_to_reuse = outputs.get("ap_groups_to_reuse", []) or []
+        result.networks_to_create = outputs.get("networks_to_create", []) or []
         result.total_aps = sum(len(u.plan.ap_serial_numbers or []) for u in job.units.values())
         result.total_activations = sum(
             len(u.input_config.get("wlans") or []) for u in job.units.values()
@@ -377,9 +455,17 @@ async def suggest_mapping(
         extra_wlans=extra_wlans if extra_wlans else (None if detect_extras else []),
         companion_patterns=[p for p in (companion_patterns or []) if p.strip()],
     )
+    # Groups no unit claimed, with the unit WLAN each should carry: for venues
+    # whose AP Groups were built out but whose WLANs never existed.
+    claimed = {g for u in result.get("units", []) for g in u.get("ap_groups", [])}
+    needing = groups_needing_wlans(
+        groups, networks, wlan_pattern=wlan_pattern, group_pattern=group_pattern,
+        property_name=prop, claimed_groups=claimed,
+    )
     return {
         "venue_id": venue_id,
         "venue_name": venue_name,
+        "groups_needing_wlans": needing,
         "property_name": prop,
         "wlan_pattern": wlan_pattern,
         "group_pattern": group_pattern,

@@ -773,3 +773,92 @@ def build_suggestions(
         "unknown_extra_wlans": [n for n in extra_names if n not in by_name],
         "counts": counts,
     }
+
+
+# ============================================================================
+# WLANs that do not exist yet
+# ============================================================================
+
+# R1 SSIDs (and network names): 2-32 characters, no backtick, no leading or
+# trailing whitespace, no tab or newline (DpskWifiWlan.ssid in the spec).
+_R1_SSID = re.compile(r"[^`\s][^`\t\r\n]{0,30}[^`\s]")
+
+
+def r1_name_problem(value: str) -> str:
+    """Why R1 would refuse this as a network name / SSID, or ""."""
+    if not _R1_SSID.fullmatch(value or ""):
+        if len(value or "") > 32:
+            return f"{len(value)} characters; R1 allows 32"
+        if len(value or "") < 2:
+            return "shorter than 2 characters"
+        return "R1 refuses a backtick, a tab, or a leading/trailing space"
+    return ""
+
+
+def render_pattern(pattern: str, fields: Dict[str, str], property_name: str = "") -> Optional[str]:
+    """
+    Fill a WLAN pattern from captured fields: {unit}, {property}, {building}...
+    and "*" (the first wildcard, then the next). None when the pattern needs
+    a field the fields do not have.
+    """
+    out = (pattern or "").replace("{property}", property_name or "")
+    wild = iter(fields.get(f"*{i}") for i in range(1, 10))
+
+    def fill(m: re.Match) -> str:
+        value = next(wild) if m.group(0) == "*" else fields.get(m.group(1))
+        if value is None:
+            raise KeyError(m.group(0))
+        return value
+
+    try:
+        return _PLACEHOLDER.sub(fill, out)
+    except KeyError:
+        return None
+
+
+def groups_needing_wlans(
+    groups: List[Dict[str, Any]],
+    networks: List[Dict[str, Any]],
+    wlan_pattern: str = DEFAULT_WLAN_PATTERN,
+    group_pattern: str = DEFAULT_GROUP_PATTERN,
+    property_name: str = "",
+    claimed_groups: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
+    """
+    The other direction from build_suggestions: start from the venue's AP
+    Groups and name the unit WLAN each one should carry, for a venue whose
+    groups were built out but whose unit WLANs were never created.
+
+    Each non-default group that fits group_pattern and is not already a
+    unit's group (claimed_groups) gives its fields to wlan_pattern. The
+    WLAN goes to `missing` when no tenant network has that name or SSID,
+    to `existing` when one does (it is then just an activation).
+    """
+    rx = pattern_regex(group_pattern or DEFAULT_GROUP_PATTERN)
+    if rx is None:
+        return {"missing": [], "existing": [], "unmatched_groups": [], "invalid": [],
+                "error": "the AP Group pattern needs {unit}"}
+    by_name, by_ssid = index_networks(networks)
+    claimed = claimed_groups or set()
+    missing, existing, unmatched, invalid = [], [], [], []
+    for g in sorted(groups, key=lambda g: g.get("name") or ""):
+        name = g.get("name") or ""
+        if not name or g.get("isDefault") or name in claimed:
+            continue
+        m = rx.match(name)
+        if not m or not m.group("unit").strip():
+            unmatched.append(name)
+            continue
+        unit, fields = match_unit(m)
+        wlan = render_pattern(wlan_pattern, fields, property_name)
+        if wlan is None:
+            invalid.append({"ap_group": name, "reason": "the WLAN pattern uses a field the AP Group pattern does not capture"})
+            continue
+        row = {"ap_group": name, "unit": unit, "wlan": wlan}
+        if wlan in by_name or len(by_ssid.get(wlan) or []) == 1:
+            existing.append(row)
+        elif problem := r1_name_problem(wlan):
+            invalid.append({**row, "reason": problem})
+        else:
+            missing.append(row)
+    return {"missing": missing, "existing": existing, "unmatched_groups": unmatched, "invalid": invalid}

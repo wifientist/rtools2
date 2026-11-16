@@ -116,7 +116,7 @@ check("unknown pool blocks", not out.validation_result.valid
 print("\n4. Workflow order")
 deps = {p.id: p.depends_on for p in get_workflow("wlan_activator").phases}
 check("link before AP Groups and activation",
-      deps["link_dpsk_pools"] == ["validate_wlan_activator"] and deps["create_ap_group"] == ["link_dpsk_pools"], deps)
+      deps["link_dpsk_pools"] == ["create_missing_wlans"] and deps["create_ap_group"] == ["link_dpsk_pools"], deps)
 # The scheduler checks direct dependencies only, and pre-completes create_ap_group for groups
 # that exist -- so activation must name the link phase itself.
 check("activation depends on the link phase directly", "link_dpsk_pools" in deps["activate_wlans"], deps)
