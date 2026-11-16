@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload, CalendarClock } from "lucide-react";
+import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload, CalendarClock, FileSpreadsheet } from "lucide-react";
 import { apiFetch } from "@/utils/api";
 import TrackerGantt from "@/components/migration-tracker/TrackerGantt";
 import BumpPanel from "@/components/migration-tracker/BumpPanel";
 import TrackerTable, { type MissBody, type MissMigrationBody, type MissValidationBody } from "@/components/migration-tracker/TrackerTable";
 import {
-  STAGES, TONE_CLASSES, bumpCandidate, bumpPlan, parsePaste, stageOf, siteStatus, todayISO,
+  STAGES, TONE_CLASSES, bumpCandidate, bumpPlan, parsePaste, sitesToCsv, stageOf, siteStatus, todayISO,
   type BumpCandidate, type PasteResult, type TrackerSite,
 } from "@/components/migration-tracker/trackerModel";
 
@@ -194,6 +194,16 @@ export default function MigrationTracker() {
     () => [...sites].sort((a, b) => a.site_name.localeCompare(b.site_name, undefined, { numeric: true, sensitivity: "base" })),
     [sites]);
   const visible = ordered.filter((s) => matchesFilter(s, filter, today));
+
+  const onExportCsv = () => {
+    const blob = new Blob([sitesToCsv(visible, today)], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `migration-tracker-${filter}-${today}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const filterOptions: { key: TableFilter; label: string }[] = [
     { key: "active", label: "Active" },
     { key: "overdue", label: "Overdue" },
@@ -344,6 +354,15 @@ export default function MigrationTracker() {
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
           <h2 className="font-semibold text-gray-800">Sites</h2>
           {canEdit && <AddBar onAdd={onAdd} />}
+          {visible.length > 0 && (
+            <button
+              onClick={onExportCsv}
+              title="Download the sites shown below as CSV (current date per milestone)"
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50"
+            >
+              <FileSpreadsheet size={14} /> CSV
+            </button>
+          )}
           {sites.length > 0 && (
             <div className="w-full flex flex-wrap items-center gap-1.5">
               {filterOptions.map(({ key, label }) => {
