@@ -454,3 +454,26 @@ export function bumpCandidate(site: TrackerSite, cutoff: string, target: string)
   }
   return null;
 }
+
+/**
+ * The given sites as CSV, one row each. Milestone columns carry the current
+ * (most recent) date only; earlier dates from misses are summed into "Misses".
+ */
+export function sitesToCsv(sites: TrackerSite[], today: string): string {
+  const esc = (v: string | number | null | undefined) => {
+    const s = v == null ? "" : String(v);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = [
+    "Site", "Status", "Current vSZ", "Tenant", "SZ APs", "SZ WLANs", "Category",
+    ...STEPS.flatMap((s) => [s.label, `${s.label} done`]),
+    "Misses", "Notes",
+  ];
+  const rows = sites.map((site) => [
+    site.site_name, siteStatus(site, today).label, site.vsz, site.tenant,
+    site.sz_ap_count, site.sz_wlan_count, site.category,
+    ...STEPS.flatMap((s) => [site[s.key], site[s.key] ? (site[s.doneKey] ? "yes" : "no") : ""]),
+    site.events.length || "", site.notes,
+  ]);
+  return [header, ...rows].map((r) => r.map(esc).join(",")).join("\r\n") + "\r\n";
+}
