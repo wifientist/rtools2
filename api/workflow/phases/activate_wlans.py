@@ -33,7 +33,7 @@ were instead of moving them into a group with no WLAN.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -66,8 +66,13 @@ class ActivateWlansPhase(PhaseExecutor):
         unit_number: str
         ap_group_id: str = ""
         ap_group_name: str = ""
-        # [{network_id, name, ssid, dpsk_pool_id, radio_types, vlan}] from validation
+        # [{network_id, name, ssid, dpsk_pool_id, radio_types, vlan}] from validation;
+        # a WLAN this job creates has network_id "" and create_name instead.
         wlans: List[Dict[str, Any]] = Field(default_factory=list)
+        # From create_missing_wlans: name -> id, name -> why it failed.
+        created_networks: Dict[str, str] = Field(default_factory=dict)
+        create_failures: Dict[str, str] = Field(default_factory=dict)
+        created_dpsk_pool_id: Optional[str] = None
 
     class Outputs(BaseModel):
         activated: bool = True
@@ -81,6 +86,7 @@ class ActivateWlansPhase(PhaseExecutor):
             return self.Outputs()
         if not inputs.ap_group_id:
             raise RuntimeError(f"[{group}] No AP Group id - create_ap_group did not resolve one")
+        inputs.wlans = self._with_created_ids(inputs, group)
 
         done = already = 0
         errors: List[str] = []
@@ -114,6 +120,31 @@ class ActivateWlansPhase(PhaseExecutor):
             "success",
         )
         return self.Outputs(activated=True, wlans_activated=done, wlans_already_active=already)
+
+    @staticmethod
+    def _with_created_ids(inputs: 'Inputs', group: str) -> List[Dict[str, Any]]:
+        """
+        Planned-to-create WLANs get the id create_missing_wlans gave them
+        (and, for DPSK, the pool it linked). One that was not created fails
+        this group -- with the reason -- before anything is sent, so its APs
+        stay where they are.
+        """
+        out, missing = [], []
+        for w in inputs.wlans:
+            name = w.get("create_name")
+            if not name or w.get("network_id"):
+                out.append(w)
+                continue
+            net_id = inputs.created_networks.get(name)
+            if not net_id:
+                missing.append(f"'{name}' ({inputs.create_failures.get(name) or 'not created'})")
+                continue
+            out.append({**w, "network_id": net_id,
+                        "dpsk_pool_id": w.get("dpsk_pool_id") or (
+                            inputs.created_dpsk_pool_id if w.get("create_type") == "dpsk" else None)})
+        if missing:
+            raise RuntimeError(f"[{group}] WLAN not created, so nothing activated here: {', '.join(missing)}")
+        return out
 
     async def _not_bound(self, ap_group_id: str, wlans: List[Dict[str, Any]]) -> List[str]:
         """WLANs (with why) that R1 does not show bound to this group."""

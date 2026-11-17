@@ -17,7 +17,18 @@ interface Row {
   ap_group_name: string;
   wlan: string;
   vlan: string;
+  // Only for a PSK WLAN this run creates; stripped server-side before the job.
+  passphrase?: string;
 }
+
+interface GroupNeedingWlan {
+  ap_group: string;
+  unit: string;
+  wlan: string;
+  reason?: string;
+}
+
+type CreateType = "dpsk" | "psk" | "open";
 
 interface UnitAp {
   ap_serial: string;
@@ -67,6 +78,13 @@ interface SuggestResult {
   detected_companions: { pattern: string; units_matched: number; units_total: number }[];
   companion_ambiguous: { pattern: string; unit: string; networks: string[] }[];
   counts: Record<string, number>;
+  groups_needing_wlans?: {
+    missing: GroupNeedingWlan[];
+    existing: GroupNeedingWlan[];
+    unmatched_groups: string[];
+    invalid: GroupNeedingWlan[];
+    error?: string;
+  };
 }
 
 /** Split one CSV line, honouring double-quoted fields. */
@@ -97,9 +115,10 @@ function csvCell(v: unknown): string {
  * Parse the list.
  *
  * With a header, columns are found by name: ap_serial / ap_identifier /
- * ap_name (serial preferred), ap_group (or ap_group_name), wlan, vlan --
- * so the downloaded CSV comes straight back in. Without one, columns are
- * positional: ap[,ap_group[,wlan[,vlan]]].
+ * ap_name (serial preferred), ap_group (or ap_group_name), wlan, vlan,
+ * passphrase -- so the downloaded CSV comes straight back in. Without one,
+ * columns are positional: ap[,ap_group[,wlan[,vlan[,passphrase]]]].
+ * passphrase is used only for a PSK WLAN the run creates.
  *
  * A row with an AP but no AP Group is `incomplete`: the page fills it from
  * the suggestions, so a pasted list of AP names is enough. A row with
@@ -118,7 +137,7 @@ function parseCsv(text: string): { rows: Row[]; incomplete: Row[]; errors: strin
     const parts = splitCsvLine(line);
     const lower = parts.map((p) => p.toLowerCase());
     if (!cols && rows.length + incomplete.length === 0
-        && lower.some((h) => ["wlan", "ap_group", "ap_group_name", "ap_name", "ap_serial", "ap_identifier"].includes(h))) {
+        && lower.some((h) => ["wlan", "ap_group", "ap_group_name", "ap_name", "ap_serial", "ap_identifier", "passphrase"].includes(h))) {
       cols = {};
       lower.forEach((h, idx) => { cols![h] = idx; });
       return;
@@ -137,10 +156,11 @@ function parseCsv(text: string): { rows: Row[]; incomplete: Row[]; errors: strin
         ap_group_name: get("ap_group", "ap_group_name"),
         wlan: get("wlan", "ssid", "network"),
         vlan: get("vlan"),
+        passphrase: get("passphrase", "psk"),
       };
     } else {
-      const [ap = "", group = "", wlan = "", vlan = ""] = parts;
-      row = { ap_identifier: ap, ap_group_name: group, wlan, vlan };
+      const [ap = "", group = "", wlan = "", vlan = "", passphrase = ""] = parts;
+      row = { ap_identifier: ap, ap_group_name: group, wlan, vlan, passphrase };
     }
     if (row.vlan && !/^\d+$/.test(row.vlan)) {
       errors.push(`Line ${i + 1}: VLAN "${row.vlan}" is not a number`);
@@ -218,6 +238,19 @@ function WlanActivator() {
   const [dpskPools, setDpskPools] = useState<{ id: string; name: string }[]>([]);
   const [dpskSuggestion, setDpskSuggestion] = useState<{ pool_id: string; pool_name: string; reason: string } | null>(null);
   const [dpskLinkPool, setDpskLinkPool] = useState("");
+
+  // WLANs the list names that R1 does not have: skipped, unless created first.
+  const [createMissing, setCreateMissing] = useState(false);
+  const [createType, setCreateType] = useState<CreateType>("dpsk");
+  const [pskSecurity, setPskSecurity] = useState("WPA2");
+  const [poolMode, setPoolMode] = useState<"existing" | "new">("existing");
+  const [createPoolId, setCreatePoolId] = useState("");
+  const [newPoolName, setNewPoolName] = useState("");
+  useEffect(() => {
+    setCreateMissing(false);
+    setCreatePoolId("");
+    setNewPoolName("");
+  }, [venueId]);
   useEffect(() => {
     setDpskPools([]);
     setDpskSuggestion(null);
@@ -231,6 +264,8 @@ function WlanActivator() {
         setDpskPools(data.pools || []);
         setDpskSuggestion(data.suggestion || null);
         setDpskLinkPool(data.suggestion?.pool_id || "");
+        setCreatePoolId(data.suggestion?.pool_id || "");
+        setPoolMode(data.suggestion?.pool_id || (data.pools || []).length ? "existing" : "new");
       })
       .catch(() => {});
   }, [venueId, activeControllerId, effectiveTenantId]);
@@ -396,6 +431,20 @@ function WlanActivator() {
     setCsvText([LIST_HEADER, ...rowsToCsv(out, apNames)].join("\n"));
   };
 
+  // AP Groups whose unit WLAN R1 does not have: one AP-less row each, and
+  // switch on creating them. The plan still checks every one against R1.
+  const missingGroups = suggest?.groups_needing_wlans?.missing || [];
+  const useMissingGroups = () => {
+    const have = new Set(rows.map((r) => `${r.ap_group_name}\u0000${r.wlan}`));
+    const add = missingGroups
+      .filter((g) => !have.has(`${g.ap_group}\u0000${g.wlan}`))
+      .map((g) => ["", "", g.ap_group, g.wlan, ""].map(csvCell).join(","));
+    const base = csvText.trim() ? csvText.trimEnd().split(/\r?\n/) : [LIST_HEADER];
+    setCsvText([...base, ...add].join("\n"));
+    setCreateMissing(true);
+    if (!newPoolName) setNewPoolName(propertyName || venueName || "");
+  };
+
   // Every unit and AP with its status, for fixing up in a spreadsheet; the
   // first five columns upload straight back.
   const downloadCsv = () => {
@@ -436,6 +485,9 @@ function WlanActivator() {
     if (needsEcSelection && !ecId) return setError("Select an MSP-EC first");
     if (!venueId) return setError("Select a venue first");
     if (planRows.length === 0) return setError("Add at least one row with an AP Group");
+    if (createMissing && createType === "dpsk" && (poolMode === "existing" ? !createPoolId : !newPoolName.trim())) {
+      return setError("Choose the DPSK pool for the new DPSK WLANs, or name a new one");
+    }
 
     setProcessing(true);
     try {
@@ -448,6 +500,15 @@ function WlanActivator() {
           tenant_id: effectiveTenantId,
           activations: planRows,
           dpsk_link_pool_id: dpskLinkPool || null,
+          create_missing: createMissing
+            ? {
+                type: createType,
+                security: pskSecurity,
+                dpsk_pool: poolMode === "existing"
+                  ? { mode: "existing", pool_id: createPoolId || null }
+                  : { mode: "new", name: newPoolName.trim() },
+              }
+            : null,
         }),
       });
       if (!res.ok) {
@@ -624,6 +685,36 @@ function WlanActivator() {
             </div>
           )}
 
+          {/* AP Groups whose unit WLAN does not exist in R1 */}
+          {suggest?.groups_needing_wlans && (missingGroups.length > 0 || suggest.groups_needing_wlans.invalid.length > 0) && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded">
+              <div className="text-xs font-medium text-amber-900 mb-1">
+                {missingGroups.length} AP Group(s) whose unit WLAN is not in R1
+              </div>
+              <p className="text-xs text-amber-800 mb-2">
+                Each AP Group that fits <span className="font-mono">{groupPattern}</span> and has no unit WLAN gets{" "}
+                <span className="font-mono">{wlanPattern}</span>. From this venue:{" "}
+                <span className="font-mono">
+                  {missingGroups.slice(0, 3).map((g) => `${g.ap_group} → ${g.wlan}`).join(", ")}
+                  {missingGroups.length > 3 && `, …+${missingGroups.length - 3} more`}
+                </span>
+              </p>
+              {suggest.groups_needing_wlans.invalid.length > 0 && (
+                <p className="text-xs text-red-700 mb-2">
+                  Not usable as an R1 SSID, so left out:{" "}
+                  {suggest.groups_needing_wlans.invalid.slice(0, 4).map((g) => `${g.ap_group} (${g.reason})`).join("; ")}
+                  {suggest.groups_needing_wlans.invalid.length > 4 && ` …+${suggest.groups_needing_wlans.invalid.length - 4}`}
+                </p>
+              )}
+              {missingGroups.length > 0 && (
+                <button onClick={useMissingGroups} disabled={processing}
+                  className="px-3 py-1.5 text-xs rounded-md border border-amber-400 text-amber-900 bg-white hover:bg-amber-100 disabled:opacity-50">
+                  Add {missingGroups.length} rows to the list and create these WLANs
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2 mt-3">
             <button
               onClick={resuggest}
@@ -786,7 +877,8 @@ function WlanActivator() {
           matched by name, so the downloaded CSV uploads as-is. Without one they are positional. A line with just an
           AP name gets its unit's AP Group and WLANs filled in from R1. A blank AP means the group is created and activated
           with no AP moved. <strong>vlan</strong> sets that WLAN's VLAN on that AP Group; leave it blank to inherit
-          the network's VLAN. A WLAN is matched by network name first, then by SSID.
+          the network's VLAN. A WLAN is matched by network name first, then by SSID. An optional{" "}
+          <strong>passphrase</strong> column is used only for PSK WLANs this run creates.
         </p>
         {extraWlans.length > 0 && (
           <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
@@ -848,6 +940,74 @@ function WlanActivator() {
             The plan step checks each row against R1. Anything already in place, including its VLAN, is skipped. It
             also flags DPSK WLANs with no DPSK service and groups that would go over 15 SSIDs.
           </p>
+        </div>
+      )}
+
+      {venueId && (
+        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm">
+          <label className="flex items-center gap-2 text-gray-700">
+            <input type="checkbox" checked={createMissing} onChange={(e) => setCreateMissing(e.target.checked)} />
+            <span className="font-medium">Create WLANs that are not in R1 yet</span>
+          </label>
+          <p className="text-xs text-gray-500 mt-1 ml-6">
+            Off: a WLAN the list names that R1 does not have is skipped. On: it is created first, before anything is
+            activated. Name and SSID are the list's wlan value; the network VLAN is its first row's vlan (default 1);
+            a different vlan on another row becomes that AP Group's override.
+          </p>
+          {createMissing && (
+            <div className="mt-2 ml-6 flex flex-col gap-2">
+              <label className="flex flex-wrap items-center gap-2 text-gray-700">
+                Create as
+                <select className="px-2 py-1 border border-gray-300 rounded text-sm" value={createType}
+                  onChange={(e) => setCreateType(e.target.value as CreateType)}>
+                  <option value="dpsk">DPSK</option>
+                  <option value="psk">PSK</option>
+                  <option value="open">Open</option>
+                </select>
+                {createType === "psk" && (
+                  <select className="px-2 py-1 border border-gray-300 rounded text-sm" value={pskSecurity}
+                    onChange={(e) => setPskSecurity(e.target.value)}>
+                    <option value="WPA2">WPA2</option>
+                    <option value="WPA3">WPA3</option>
+                    <option value="WPA2/WPA3">WPA2/WPA3 mixed</option>
+                  </select>
+                )}
+              </label>
+              {createType === "dpsk" && (
+                <div className="flex flex-wrap items-center gap-2 text-gray-700">
+                  DPSK pool
+                  <select className="px-2 py-1 border border-gray-300 rounded text-sm" value={poolMode}
+                    onChange={(e) => setPoolMode(e.target.value as "existing" | "new")}>
+                    <option value="existing" disabled={dpskPools.length === 0}>existing</option>
+                    <option value="new">new</option>
+                  </select>
+                  {poolMode === "existing" ? (
+                    <select className="px-2 py-1 border border-gray-300 rounded text-sm" value={createPoolId}
+                      onChange={(e) => setCreatePoolId(e.target.value)}>
+                      <option value="">choose a pool…</option>
+                      {dpskPools.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{dpskSuggestion?.pool_id === p.id ? " (used in this venue)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className={`${inputCls} w-64`} value={newPoolName} placeholder="pool name"
+                      onChange={(e) => setNewPoolName(e.target.value)} />
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-gray-500">
+                {createType === "dpsk" &&
+                  (poolMode === "new"
+                    ? "A new identity group and DPSK pool of this name are created once (12-character keyboard-friendly passphrases, unlimited devices), and every new WLAN links to it."
+                    : "Every new WLAN links to this pool. Passphrases are not touched.")}
+                {createType === "psk" &&
+                  "Each WLAN needs a passphrase column value (8-63 characters). It goes to R1 only and is never kept in the job; a WLAN without one is not created."}
+                {createType === "open" && "No security. Use this for guest networks only."}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
