@@ -16,7 +16,14 @@ class TrackerSite(Base):
     id = Column(Integer, primary_key=True, index=True)
     site_name = Column(String, nullable=False)
     vsz = Column(String, nullable=True)
+    # Host of the SmartZone controller picked as `vsz` (controller rows are per
+    # user; the host is what every viewer's copy of that controller shares).
+    sz_host = Column(String, nullable=True)
     tenant = Column(String, nullable=True)
+    # The R1 tenant id of the controller picked as `tenant` (copied, so every
+    # viewer sees it whoever owns that controller), and the R1 venue id, typed in.
+    r1_tenant_id = Column(String, nullable=True)
+    venue_id = Column(String, nullable=True)
     sz_ap_count = Column(Integer, nullable=True)
     sz_wlan_count = Column(Integer, nullable=True)
     category = Column(String, nullable=True)
