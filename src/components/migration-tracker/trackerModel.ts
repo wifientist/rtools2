@@ -35,7 +35,13 @@ export interface TrackerSite {
   id: number;
   site_name: string;
   vsz: string | null;
+  /** Host of the SmartZone controller picked as `vsz`. */
+  sz_host: string | null;
   tenant: string | null;
+  /** R1 tenant id of the controller picked as `tenant`. */
+  r1_tenant_id: string | null;
+  /** R1 venue id, typed in by hand. */
+  venue_id: string | null;
   sz_ap_count: number | null;
   sz_wlan_count: number | null;
   category: string | null;
@@ -465,15 +471,72 @@ export function sitesToCsv(sites: TrackerSite[], today: string): string {
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const header = [
-    "Site", "Status", "Current vSZ", "Tenant", "SZ APs", "SZ WLANs", "Category",
+    "Site", "Status", "Current vSZ", "Tenant", "Tenant ID", "Venue ID", "SZ APs", "SZ WLANs", "Category",
     ...STEPS.flatMap((s) => [s.label, `${s.label} done`]),
     "Misses", "Notes",
   ];
   const rows = sites.map((site) => [
-    site.site_name, siteStatus(site, today).label, site.vsz, site.tenant,
+    site.site_name, siteStatus(site, today).label, site.vsz, site.tenant, site.r1_tenant_id, site.venue_id,
     site.sz_ap_count, site.sz_wlan_count, site.category,
     ...STEPS.flatMap((s) => [site[s.key], site[s.key] ? (site[s.doneKey] ? "yes" : "no") : ""]),
     site.events.length || "", site.notes,
   ]);
   return [header, ...rows].map((r) => r.map(esc).join(",")).join("\r\n") + "\r\n";
+}
+
+type ControllerLike = {
+  name: string; controller_type: string; controller_subtype: string | null;
+  r1_tenant_id: string | null; sz_host?: string | null;
+};
+
+/**
+ * A controller a site can be linked to. `id` is what the site stores — the R1
+ * tenant id, or the SZ host — because controller rows are per user and these
+ * are what every user's copy of the same controller has in common.
+ */
+export interface ControllerOption {
+  name: string;
+  id: string;
+  /** Other names it goes by, for matching typed text (the SZ host). */
+  aliases: string[];
+}
+
+function dedupe(opts: ControllerOption[]): ControllerOption[] {
+  const seen = new Set<string>();
+  return opts
+    .filter((o) => !seen.has(o.id) && !!seen.add(o.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The editor's non-MSP R1 controllers, keyed by tenant id. */
+export function tenantOptions(controllers: ControllerLike[]): ControllerOption[] {
+  return dedupe(controllers
+    .filter((c) => c.controller_type === "RuckusONE" && c.controller_subtype !== "MSP" && c.r1_tenant_id)
+    .map((c) => ({ name: c.name, id: c.r1_tenant_id!, aliases: [] })));
+}
+
+/** The editor's SmartZone controllers, keyed by host. */
+export function vszOptions(controllers: ControllerLike[]): ControllerOption[] {
+  return dedupe(controllers
+    .filter((c) => c.controller_type === "SmartZone" && c.sz_host)
+    .map((c) => ({ name: c.name, id: c.sz_host!.toLowerCase(), aliases: [c.sz_host!.split(".")[0]] })));
+}
+
+/**
+ * The controller hand-typed text most likely means: the only one whose name
+ * (with or without its parenthesised part) or alias ends with the text,
+ * ignoring case, spaces and punctuation — "Big South 2" -> "PROD-Comcast-BigSouth2",
+ * "central" -> "XMS-vsz-cen(tral)", "west-txs" -> host vsz-west-txs.
+ * A trailing "1" is dropped if nothing matches with it ("cen-bsr1" -> vsz-cen-bsr).
+ * Null when nothing or more than one controller fits.
+ */
+export function suggestController(typed: string | null, options: ControllerOption[]): ControllerOption | null {
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const keys = options.map((o) => [o.name, o.name.replace(/\([^)]*\)/g, ""), ...o.aliases].map(norm));
+  const find = (t: string) => options.filter((_, i) => keys[i].some((k) => k.endsWith(t)));
+  const t = norm(typed ?? "");
+  if (!t) return null;
+  let hits = find(t);
+  if (hits.length === 0 && t.length > 1 && t.endsWith("1")) hits = find(t.slice(0, -1));
+  return hits.length === 1 ? hits[0] : null;
 }

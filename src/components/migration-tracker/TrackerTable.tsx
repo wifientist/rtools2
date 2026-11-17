@@ -1,8 +1,9 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, Trash2, X, Check } from "lucide-react";
 import {
   STEPS, STEP_STYLES, TONE_CLASSES, defaultNewDate, fmtShort, isOverdue,
-  nextWorkday, parseISO, previewMissConfig, previewMissValidation, siteStatus, toISO, type EditableField, type TrackerSite,
+  nextWorkday, parseISO, previewMissConfig, previewMissValidation, siteStatus, toISO, type ControllerOption, type EditableField,
+  type TrackerSite,
 } from "./trackerModel";
 import DateInput from "./DateInput";
 
@@ -31,6 +32,12 @@ interface Props {
   canEdit: boolean;
   today: string;
   highlightId: number | null;
+  /** Controllers a tenant can be picked from (the editor's own non-MSP R1 controllers). */
+  tenants: ControllerOption[];
+  /** Controllers a vSZ can be picked from (the editor's own SmartZone controllers). */
+  vszs: ControllerOption[];
+  /** Show the Tenant ID and Venue ID columns. */
+  showIds: boolean;
   onPatch: (id: number, patch: Partial<TrackerSite>) => Promise<void>;
   onMissConfig: (id: number, body: MissBody) => Promise<void>;
   onMissValidation: (id: number, body: MissValidationBody) => Promise<void>;
@@ -44,7 +51,7 @@ interface Props {
  * (or on Enter); Escape puts it back. Viewers get the same table as text.
  */
 export default function TrackerTable({
-  sites, canEdit, today, highlightId, onPatch, onMissConfig, onMissValidation, onMissMigration, onDeleteEvent, onDelete,
+  sites, canEdit, today, highlightId, tenants, vszs, showIds, onPatch, onMissConfig, onMissValidation, onMissMigration, onDeleteEvent, onDelete,
 }: Props) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const categories = [...new Set(sites.map((s) => s.category).filter((c): c is string => !!c))].sort();
@@ -62,28 +69,65 @@ export default function TrackerTable({
     void onPatch(site.id, { [field]: value });
   };
 
-  const th = "px-2 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap";
+  const th = "relative px-2 py-2 text-left text-xs font-medium text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis";
+
+  // Columns in order. `width` is the starting width once someone resizes;
+  // `fixed` columns (the chevron and delete button) don't resize.
+  const columns: { key: string; label?: React.ReactNode; width: number; fixed?: boolean; right?: boolean }[] = [
+    { key: "expand", width: 28, fixed: true },
+    { key: "site_name", label: "Site", width: 220 },
+    { key: "status", label: "Status", width: 110 },
+    { key: "vsz", label: "Current vSZ", width: 190 },
+    { key: "tenant", label: "Tenant", width: 210 },
+    ...(showIds ? [{ key: "r1_tenant_id", label: "Tenant ID", width: 260 }, { key: "venue_id", label: "Venue ID", width: 260 }] : []),
+    { key: "sz_ap_count", label: "SZ APs", width: 80, right: true },
+    { key: "sz_wlan_count", label: "SZ WLANs", width: 90, right: true },
+    { key: "category", label: "Category", width: 120 },
+    ...STEPS.map((s) => ({ key: s.key, label: <span className={STEP_STYLES[s.color].text}>{s.label}</span>, width: 230 })),
+    { key: "notes", label: "Notes", width: 240 },
+    ...(canEdit ? [{ key: "delete", width: 32, fixed: true }] : []),
+  ];
+  const { widths, startResize, resetWidths } = useColumnWidths();
+  // The chevron and Site columns stay put when the table scrolls sideways.
+  // Sticky cells take the row's (opaque) background so nothing shows through.
+  const stickyExpand = "sticky left-0 z-10 bg-inherit";
+  const stickySite = "sticky left-[28px] z-10 bg-inherit shadow-[inset_-1px_0_0_#e5e7eb]";
+  const thRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
+  const widthOf = (c: (typeof columns)[number]) => (c.fixed ? c.width : widths?.[c.key] ?? c.width);
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
+      <table
+        className={`text-sm ${widths ? "table-fixed [&_td]:overflow-hidden [&_td]:!min-w-0" : "min-w-full"}`}
+        style={widths ? { width: columns.reduce((n, c) => n + widthOf(c), 0) } : undefined}
+      >
+        {widths && (
+          <colgroup>
+            {columns.map((c) => <col key={c.key} style={{ width: widthOf(c) }} />)}
+          </colgroup>
+        )}
         <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            <th className="w-6" />
-            <th className={th}>Site</th>
-            <th className={th}>Status</th>
-            <th className={th}>Current vSZ</th>
-            <th className={th}>Tenant</th>
-            <th className={`${th} text-right`}>SZ APs</th>
-            <th className={`${th} text-right`}>SZ WLANs</th>
-            <th className={th}>Category</th>
-            {STEPS.map((s) => (
-              <th key={s.key} className={th}>
-                <span className={STEP_STYLES[s.color].text}>{s.label}</span>
+          <tr className="bg-gray-50">
+            {columns.map((c) => (
+              <th
+                key={c.key}
+                ref={(el) => { thRefs.current[c.key] = el; }}
+                style={c.key === "expand" ? { width: 28, minWidth: 28, maxWidth: 28 } : undefined}
+                className={`${c.fixed ? "w-6" : `${th} ${c.right ? "text-right" : ""} ${c.key === "notes" && !widths ? "min-w-[220px]" : ""}`} ${
+                  c.key === "expand" ? stickyExpand : c.key === "site_name" ? stickySite : ""
+                }`}
+              >
+                {c.label}
+                {!c.fixed && (
+                  <span
+                    onMouseDown={(e) => startResize(e, c.key, columns.filter((x) => !x.fixed).map((x) => x.key), thRefs.current)}
+                    onDoubleClick={resetWidths}
+                    title="Drag to resize · double-click to reset all widths"
+                    className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300/60"
+                  />
+                )}
               </th>
             ))}
-            <th className={`${th} min-w-[220px]`}>Notes</th>
-            {canEdit && <th className="w-8" />}
           </tr>
         </thead>
         <tbody>
@@ -98,22 +142,36 @@ export default function TrackerTable({
                 <tr
                   id={`tracker-site-${site.id}`}
                   className={`border-b border-gray-100 align-top transition-colors ${
-                    highlightId === site.id ? "bg-yellow-50" : "hover:bg-gray-50/60"
+                    highlightId === site.id ? "bg-yellow-50" : "bg-white hover:bg-gray-50"
                   }`}
                 >
-                  <td className="pl-2 pt-2.5">
+                  <td className={`pl-2 pt-2.5 ${stickyExpand}`} style={{ width: 28, minWidth: 28, maxWidth: 28 }}>
                     <button onClick={() => toggle(site.id)} className="text-gray-400 hover:text-gray-700" title="History">
                       {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </button>
                   </td>
-                  <Cell site={site} field="site_name" canEdit={canEdit} save={save} className="font-medium min-w-[200px]" />
+                  <Cell site={site} field="site_name" canEdit={canEdit} save={save} className={`font-medium min-w-[200px] ${stickySite}`} />
                   <td className="px-2 py-2">
                     <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${TONE_CLASSES[status.tone]}`}>
                       {status.label}
                     </span>
                   </td>
-                  <Cell site={site} field="vsz" canEdit={canEdit} save={save} className="min-w-[110px]" />
-                  <Cell site={site} field="tenant" canEdit={canEdit} save={save} className="min-w-[110px]" />
+                  <ControllerCell
+                    site={site} canEdit={canEdit} options={vszs} onPatch={onPatch}
+                    nameField="vsz" idField="sz_host" what="vSZ"
+                  />
+                  <ControllerCell
+                    site={site} canEdit={canEdit} options={tenants} onPatch={onPatch}
+                    nameField="tenant" idField="r1_tenant_id" what="tenant"
+                  />
+                  {showIds && (
+                    <td className="px-2 py-2 font-mono text-xs text-gray-600 whitespace-nowrap">
+                      {site.r1_tenant_id ?? <span className="text-gray-300">—</span>}
+                    </td>
+                  )}
+                  {showIds && (
+                    <Cell site={site} field="venue_id" canEdit={canEdit} save={save} className="min-w-[280px] font-mono text-xs" />
+                  )}
                   <Cell site={site} field="sz_ap_count" kind="number" canEdit={canEdit} save={save} className="w-20 text-right" />
                   <Cell site={site} field="sz_wlan_count" kind="number" canEdit={canEdit} save={save} className="w-20 text-right" />
                   <Cell site={site} field="category" canEdit={canEdit} save={save} className="min-w-[100px]" list="tracker-categories" />
@@ -206,7 +264,7 @@ export default function TrackerTable({
                 {open && (
                   <tr className="border-b border-gray-200 bg-gray-50/70">
                     <td />
-                    <td colSpan={canEdit ? 12 : 11} className="px-2 py-3">
+                    <td colSpan={columns.length} className="px-2 py-3">
                       <History
                         site={site}
                         canEdit={canEdit}
@@ -229,6 +287,121 @@ export default function TrackerTable({
       </datalist>
     </div>
   );
+}
+
+/**
+ * A site's vSZ or R1 tenant, picked from the editor's controllers. Picking one
+ * stores its name and its id (SZ host / R1 tenant id). Text typed before the
+ * link existed, or a controller this editor doesn't have, stays listed as-is.
+ */
+function ControllerCell({
+  site, canEdit, options, onPatch, nameField, idField, what,
+}: {
+  site: TrackerSite;
+  canEdit: boolean;
+  options: ControllerOption[];
+  onPatch: (id: number, patch: Partial<TrackerSite>) => Promise<void>;
+  nameField: "vsz" | "tenant";
+  idField: "sz_host" | "r1_tenant_id";
+  what: string;
+}) {
+  const name = site[nameField];
+  const id = site[idField];
+  const linked = id ? options.find((o) => o.id === id) : undefined;
+  if (!canEdit) {
+    return (
+      <td className="px-2 py-2">
+        {name ?? <span className="text-gray-300">—</span>}
+        {name && !id && <span className="text-amber-600" title="Not linked to a controller"> *</span>}
+      </td>
+    );
+  }
+  // "" = none; "id:<id>" = a controller; "keep" = what's stored but not in the list.
+  const value = linked ? `id:${linked.id}` : name || id ? "keep" : "";
+  return (
+    <td className="px-1 py-1">
+      <select
+        value={value}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "keep") return;
+          const o = options.find((x) => `id:${x.id}` === v);
+          void onPatch(site.id, { [nameField]: o?.name ?? null, [idField]: o?.id ?? null });
+        }}
+        className={`w-full border rounded px-1 py-1 bg-transparent text-sm focus:outline-none focus:border-blue-400 ${
+          value === "keep" ? "border-amber-300 text-amber-800" : "border-transparent hover:border-gray-300"
+        }`}
+        title={value === "keep" ? (id ? `Linked to a ${what} controller you don't have` : `Typed text, not linked to a ${what} controller`) : undefined}
+      >
+        <option value="">—</option>
+        {value === "keep" && (
+          <option value="keep">
+            {name ?? id} {id ? "(not your controller)" : "(not linked)"}
+          </option>
+        )}
+        {options.map((o) => (
+          <option key={o.id} value={`id:${o.id}`}>{o.name}</option>
+        ))}
+      </select>
+    </td>
+  );
+}
+
+const WIDTHS_KEY = "tracker.table.widths";
+
+/**
+ * Column widths the viewer dragged, remembered in this browser. Null until the
+ * first drag: the table lays itself out automatically until then. The first
+ * drag freezes every column at its current width so only the dragged one moves.
+ */
+function useColumnWidths() {
+  const [widths, setWidths] = useState<Record<string, number> | null>(() => {
+    try {
+      const raw = localStorage.getItem(WIDTHS_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, number>) : null;
+    } catch {
+      return null;
+    }
+  });
+  const persist = (w: Record<string, number> | null) => {
+    try {
+      if (w) localStorage.setItem(WIDTHS_KEY, JSON.stringify(w));
+      else localStorage.removeItem(WIDTHS_KEY);
+    } catch { /* storage unavailable */ }
+  };
+
+  const startResize = (
+    e: React.MouseEvent, key: string, keys: string[], ths: Record<string, HTMLTableCellElement | null>,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const base: Record<string, number> = { ...(widths ?? {}) };
+    for (const k of keys) if (base[k] == null && ths[k]) base[k] = ths[k]!.offsetWidth;
+    const startX = e.clientX;
+    const startW = base[key] ?? ths[key]?.offsetWidth ?? 120;
+    let latest = base;
+    const move = (ev: MouseEvent) => {
+      latest = { ...base, [key]: Math.max(40, Math.round(startW + ev.clientX - startX)) };
+      setWidths(latest);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      document.body.style.cursor = "";
+      persist(latest);
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    setWidths(base);
+  };
+
+  const resetWidths = () => {
+    setWidths(null);
+    persist(null);
+  };
+
+  return { widths, startResize, resetWidths };
 }
 
 function Cell({

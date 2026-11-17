@@ -52,7 +52,10 @@ router = APIRouter(prefix="/tracker", tags=["Migration Tracker"])
 class SiteFields(BaseModel):
     site_name: Optional[str] = None
     vsz: Optional[str] = None
+    sz_host: Optional[str] = None
     tenant: Optional[str] = None
+    r1_tenant_id: Optional[str] = None
+    venue_id: Optional[str] = None
     sz_ap_count: Optional[int] = None
     sz_wlan_count: Optional[int] = None
     category: Optional[str] = None
@@ -184,7 +187,10 @@ def _serialize(site: TrackerSite) -> dict:
         "id": site.id,
         "site_name": site.site_name,
         "vsz": site.vsz,
+        "sz_host": site.sz_host,
         "tenant": site.tenant,
+        "r1_tenant_id": site.r1_tenant_id,
+        "venue_id": site.venue_id,
         "sz_ap_count": site.sz_ap_count,
         "sz_wlan_count": site.sz_wlan_count,
         "category": site.category,

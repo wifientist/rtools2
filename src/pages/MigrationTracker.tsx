@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload, CalendarClock, FileSpreadsheet } from "lucide-react";
+import { RefreshCw, Plus, ClipboardPaste, AlertTriangle, Download, Upload, CalendarClock, FileSpreadsheet, Link2 } from "lucide-react";
 import { apiFetch } from "@/utils/api";
+import { useAuth } from "@/context/AuthContext";
 import TrackerGantt from "@/components/migration-tracker/TrackerGantt";
 import BumpPanel from "@/components/migration-tracker/BumpPanel";
 import TrackerTable, { type MissBody, type MissMigrationBody, type MissValidationBody } from "@/components/migration-tracker/TrackerTable";
 import {
-  STAGES, TONE_CLASSES, bumpCandidate, bumpPlan, parsePaste, sitesToCsv, stageOf, siteStatus, todayISO,
+  STAGES, TONE_CLASSES, bumpCandidate, bumpPlan, parsePaste, sitesToCsv, stageOf, siteStatus, suggestController, tenantOptions, vszOptions, todayISO,
   type BumpCandidate, type PasteResult, type TrackerSite,
 } from "@/components/migration-tracker/trackerModel";
 
@@ -13,6 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const BASE = `${API_BASE_URL}/tracker/sites`;
 const TRACKER = `${API_BASE_URL}/tracker`;
 const FILTER_KEY = "tracker.table.filter";
+const SHOW_IDS_KEY = "tracker.table.showIds";
 
 type TableFilter = "active" | "overdue" | "all" | (typeof STAGES)[number]["key"];
 
@@ -43,6 +45,16 @@ export default function MigrationTracker() {
     setFilterState(f);
     try { localStorage.setItem(FILTER_KEY, f); } catch { /* storage unavailable */ }
   };
+  const [showIds, setShowIdsState] = useState<boolean>(() => {
+    try { return localStorage.getItem(SHOW_IDS_KEY) === "1"; } catch { return false; }
+  });
+  const setShowIds = (on: boolean) => {
+    setShowIdsState(on);
+    try { localStorage.setItem(SHOW_IDS_KEY, on ? "1" : "0"); } catch { /* storage unavailable */ }
+  };
+  const { controllers } = useAuth();
+  const tenants = useMemo(() => tenantOptions(controllers), [controllers]);
+  const vszs = useMemo(() => vszOptions(controllers), [controllers]);
   const today = todayISO();
 
   const call = useCallback(async (url: string, init?: RequestInit) => {
@@ -92,6 +104,32 @@ export default function MigrationTracker() {
     setSites((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
     replace(await call(`${BASE}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }));
   });
+  // Sites whose vSZ or tenant is still typed text that clearly names one of the editor's controllers.
+  const linkable = useMemo(
+    () => sites.flatMap((s) => {
+      const vsz = s.sz_host ? null : suggestController(s.vsz, vszs);
+      const tenant = s.r1_tenant_id ? null : suggestController(s.tenant, tenants);
+      const patch: Partial<TrackerSite> = {
+        ...(vsz ? { vsz: vsz.name, sz_host: vsz.id } : {}),
+        ...(tenant ? { tenant: tenant.name, r1_tenant_id: tenant.id } : {}),
+      };
+      const pairs = [
+        ...(vsz ? [`vSZ: ${s.vsz} -> ${vsz.name}`] : []),
+        ...(tenant ? [`Tenant: ${s.tenant} -> ${tenant.name}`] : []),
+      ];
+      return pairs.length ? [{ site: s, patch, pairs }] : [];
+    }),
+    [sites, tenants, vszs],
+  );
+  const onLinkControllers = () => {
+    const pairs = [...new Set(linkable.flatMap((l) => l.pairs))].sort();
+    if (!confirm(`Link ${linkable.length} site${linkable.length === 1 ? "" : "s"} to controllers?\n\n${pairs.join("\n")}`)) return;
+    void guard(async () => {
+      for (const { site, patch } of linkable) {
+        replace(await call(`${BASE}/${site.id}`, { method: "PATCH", body: JSON.stringify(patch) }));
+      }
+    });
+  };
   const onMissConfig = (id: number, body: MissBody) => guard(async () => {
     replace(await call(`${BASE}/${id}/miss-config`, { method: "POST", body: JSON.stringify(body) }));
   });
@@ -354,15 +392,32 @@ export default function MigrationTracker() {
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
           <h2 className="font-semibold text-gray-800">Sites</h2>
           {canEdit && <AddBar onAdd={onAdd} />}
+          <div className="ml-auto flex items-center gap-2">
+          {canEdit && linkable.length > 0 && (
+            <button
+              onClick={onLinkControllers}
+              title="Link sites whose vSZ or tenant is typed text to the matching controller, so the tenant ID is filled in"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-amber-300 text-sm text-amber-800 hover:bg-amber-50"
+            >
+              <Link2 size={14} /> Link controllers ({linkable.length})
+            </button>
+          )}
+          {sites.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none" title="Show the Tenant ID and Venue ID columns">
+              <input type="checkbox" checked={showIds} onChange={(e) => setShowIds(e.target.checked)} />
+              Show IDs
+            </label>
+          )}
           {visible.length > 0 && (
             <button
               onClick={onExportCsv}
-              title="Download the sites shown below as CSV (current date per milestone)"
-              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50"
+              title="Download the sites shown below as CSV (current date per milestone, plus tenant and venue IDs)"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50"
             >
               <FileSpreadsheet size={14} /> CSV
             </button>
           )}
+          </div>
           {sites.length > 0 && (
             <div className="w-full flex flex-wrap items-center gap-1.5">
               {filterOptions.map(({ key, label }) => {
@@ -402,6 +457,9 @@ export default function MigrationTracker() {
             canEdit={canEdit}
             today={today}
             highlightId={highlightId}
+            tenants={tenants}
+            vszs={vszs}
+            showIds={showIds}
             onPatch={onPatch}
             onMissConfig={onMissConfig}
             onMissValidation={onMissValidation}
