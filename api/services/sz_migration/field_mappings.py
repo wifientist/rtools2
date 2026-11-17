@@ -450,7 +450,20 @@ def build_r1_advanced_settings(sz_raw: dict, dropped: Optional[List[Dict[str, An
         set_nested(result, _strip_wlan(mapping.r1_path), r1_value)
 
     _reconcile_rates(result, sz_raw, dropped)
+    _reconcile_wifi_generations(result)
     return result
+
+
+def _reconcile_wifi_generations(result: dict) -> None:
+    """
+    R1 rule (WIFI-10483 "WiFi 6/7 must have the same value"): wifi6Enabled
+    and wifi7Enabled must match. SZ has only the Wi-Fi 6 toggle and R1
+    defaults wifi7Enabled to true, so an SZ WLAN with Wi-Fi 6 off (common
+    on guest SSIDs) would send 6=false / 7=true and the create would 422.
+    """
+    adv = result.get("advancedCustomization") or {}
+    if "wifi6Enabled" in adv:
+        adv["wifi7Enabled"] = adv["wifi6Enabled"]
 
 
 def _strip_wlan(r1_path: str) -> str:
