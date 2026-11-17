@@ -277,6 +277,29 @@ class LicenseEntitlement(BaseModel):
     perpetual: bool = False
 
 
+class BasicZoneNode(BaseModel):
+    """A zone with at least one AP online (inventory connectedAPs: Online + Flagged)"""
+    zone_id: str
+    name: str
+    aps_online: int = 0
+    aps_total: int = 0
+    clients: int = 0
+
+
+class BasicDomainNode(BaseModel):
+    """A domain holding, directly or below it, a zone with APs online. Counts include children."""
+    domain_id: str
+    name: str
+    aps_online: int = 0
+    aps_total: int = 0
+    clients: int = 0
+    zones: List[BasicZoneNode] = Field(default_factory=list)
+    children: List["BasicDomainNode"] = Field(default_factory=list)
+
+
+BasicDomainNode.model_rebuild()
+
+
 class BasicAuditResult(BaseModel):
     """Licenses and overall device counts. None means it couldn't be read, see errors."""
     controller_id: int
@@ -294,5 +317,8 @@ class BasicAuditResult(BaseModel):
     switch_license: Optional[LicenseUsage] = None
     licenses: List[LicenseUsage] = Field(default_factory=list)
     entitlements: List[LicenseEntitlement] = Field(default_factory=list)
+    zone_tree: Optional[List[BasicDomainNode]] = Field(
+        default=None, description="Domains and zones with APs online; None if it couldn't be read"
+    )
     error: Optional[str] = Field(default=None, description="The controller couldn't be read at all")
     errors: List[str] = Field(default_factory=list, description="Sections that couldn't be read")

@@ -10,13 +10,23 @@ call never reads as a count of 0.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from models.controller import Controller
-from schemas.sz_audit import BasicAuditResult, LicenseEntitlement, LicenseUsage
+from schemas.sz_audit import (
+    BasicAuditResult,
+    BasicDomainNode,
+    BasicZoneNode,
+    LicenseEntitlement,
+    LicenseUsage,
+)
 from szapi.client import SZClient
 
 logger = logging.getLogger(__name__)
+
+# Concurrent per-domain zone lists while placing zones in the domain tree
+ZONE_LIST_CONCURRENCY = 8
+UNKNOWN_DOMAIN_ID = "_unknown"
 
 AP_LICENSE_TYPE = "ap capacity license"
 SWITCH_LICENSE_TYPE = "switch capacity license"
@@ -77,6 +87,107 @@ def find_license(rows: List[LicenseUsage], license_type: str) -> Optional[Licens
     return next((r for r in rows if r.license_type.lower() == license_type), None)
 
 
+async def fetch_zone_domains(sz_client: SZClient) -> Tuple[List[Dict[str, Any]], Dict[str, str], List[str]]:
+    """
+    Domains, and which domain each zone sits in directly.
+
+    rkszones?domainId= may also list a subdomain's zones, so a zone listed by
+    several domains goes to the deepest one. Raises if the domain list can't
+    be read; a domain whose zones can't be read is reported in the errors.
+    """
+    domains = await sz_client.zones.get_domains(recursively=True, include_self=True)
+    parents = {d.get("id"): d.get("parentDomainId") for d in domains}
+
+    def depth(domain_id: str) -> int:
+        seen = set()
+        while parents.get(domain_id) in parents and domain_id not in seen:
+            seen.add(domain_id)
+            domain_id = parents[domain_id]
+        return len(seen)
+
+    # zoneCount 0 means nothing to list; a missing count is listed anyway
+    to_list = [d for d in domains if d.get("zoneCount") != 0]
+    semaphore = asyncio.Semaphore(ZONE_LIST_CONCURRENCY)
+
+    async def list_zones(domain: Dict[str, Any]):
+        async with semaphore:
+            return await sz_client.zones.get_zones(domain_id=domain.get("id"), list_size=1000)
+
+    listed = await asyncio.gather(*(list_zones(d) for d in to_list), return_exceptions=True)
+
+    zone_domain: Dict[str, str] = {}
+    failed = []
+    for domain, zones in zip(to_list, listed):
+        if isinstance(zones, Exception):
+            failed.append(domain.get("name") or domain.get("id"))
+            continue
+        for zone in zones:
+            current = zone_domain.get(zone.get("id"))
+            if current is None or depth(domain.get("id")) > depth(current):
+                zone_domain[zone.get("id")] = domain.get("id")
+
+    errors = []
+    if failed:
+        errors.append(
+            f"Zone hierarchy: zones of {len(failed)} domain(s) couldn't be listed "
+            f"({', '.join(failed[:5])}{', ...' if len(failed) > 5 else ''}); "
+            "their zones are under \"Domain not found\""
+        )
+    return domains, zone_domain, errors
+
+
+def build_zone_tree(
+    domains: List[Dict[str, Any]],
+    zone_domain: Dict[str, str],
+    by_zone_id: Dict[str, Dict[str, Any]],
+) -> List[BasicDomainNode]:
+    """Domain tree holding only zones with an AP online, and the domains above them"""
+    nodes = {
+        d.get("id"): BasicDomainNode(domain_id=d.get("id"), name=d.get("name") or d.get("id"))
+        for d in domains
+    }
+    parents = {d.get("id"): d.get("parentDomainId") for d in domains}
+
+    for zone_id, counts in by_zone_id.items():
+        if counts["connected"] <= 0:
+            continue
+        domain_id = zone_domain.get(zone_id)
+        if domain_id not in nodes:
+            domain_id = UNKNOWN_DOMAIN_ID
+            nodes.setdefault(domain_id, BasicDomainNode(domain_id=domain_id, name="Domain not found"))
+        nodes[domain_id].zones.append(BasicZoneNode(
+            zone_id=zone_id,
+            name=counts["name"] or zone_id,
+            aps_online=counts["connected"],
+            aps_total=counts["total"],
+            clients=counts["clients"],
+        ))
+
+    roots = []
+    for domain_id, node in nodes.items():
+        parent = parents.get(domain_id)
+        if parent in nodes and parent != domain_id:
+            nodes[parent].children.append(node)
+        else:
+            roots.append(node)
+
+    def prune(node: BasicDomainNode, seen: set) -> bool:
+        """Sum counts upward and drop branches without an online zone"""
+        seen.add(node.domain_id)
+        node.children = [c for c in node.children if c.domain_id not in seen and prune(c, seen)]
+        node.zones.sort(key=lambda z: z.name.lower())
+        node.children.sort(key=lambda c: c.name.lower())
+        for item in [*node.zones, *node.children]:
+            node.aps_online += item.aps_online
+            node.aps_total += item.aps_total
+            node.clients += item.clients
+        return bool(node.zones or node.children)
+
+    seen: set = set()
+    kept = [r for r in roots if prune(r, seen)]
+    return sorted(kept, key=lambda r: (r.domain_id == UNKNOWN_DOMAIN_ID, r.name.lower()))
+
+
 async def fetch_basic_audit(sz_client: SZClient, controller: Controller) -> BasicAuditResult:
     """Read one controller's licenses and counts. The client must be logged in."""
     result = BasicAuditResult(
@@ -85,12 +196,13 @@ async def fetch_basic_audit(sz_client: SZClient, controller: Controller) -> Basi
         host=controller.sz_host,
     )
 
-    summary, entitlements, devices, ap_online, switch_counts = await asyncio.gather(
+    summary, entitlements, devices, ap_online, switch_counts, zone_domains = await asyncio.gather(
         sz_client.system.get_licenses_summary(),
         sz_client.system.get_licenses(),
         sz_client.system.get_devices_summary(),
         sz_client.system.get_connected_ap_count(),
         sz_client.switches.get_switch_status_counts(),
+        fetch_zone_domains(sz_client),
         return_exceptions=True,
     )
 
@@ -125,6 +237,14 @@ async def fetch_basic_audit(sz_client: SZClient, controller: Controller) -> Basi
                 f"AP online count covers {ap_online['zones_read']} of "
                 f"{ap_online['zones_total']} zones, so it may be low"
             )
+
+    # The tree needs both: per-zone counts from inventory, placement from domains
+    if isinstance(zone_domains, Exception):
+        result.errors.append(f"Zone hierarchy: {zone_domains}")
+    elif not isinstance(ap_online, Exception):
+        domains, zone_domain, tree_errors = zone_domains
+        result.errors.extend(tree_errors)
+        result.zone_tree = build_zone_tree(domains, zone_domain, ap_online["by_zone_id"])
 
     if isinstance(switch_counts, Exception):
         result.errors.append(f"Switch online count: {switch_counts}")

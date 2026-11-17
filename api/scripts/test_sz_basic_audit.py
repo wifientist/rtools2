@@ -13,6 +13,9 @@ WHAT THIS GUARDS
      that never came back is reported rather than silently under-counting.
   5. A section that fails stays None with an error: never a count of 0.
   6. Switch list: a 404 (module off) means none, any other failure is an error.
+  7. Zone tree: only zones with an AP online, under their deepest listing
+     domain, with counts summed up; empty domains are dropped and a zone whose
+     domain couldn't be listed lands under "Domain not found".
 
 Usage:
     docker compose exec backend python scripts/test_sz_basic_audit.py
@@ -28,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from routers.sz.basic_audit import fetch_basic_audit
 from szapi.services.switches import SwitchService
 from szapi.services.system import SystemService
+from szapi.services.zones import ZoneService
 
 SUMMARY = {"list": [
     {"licenseTypeDescription": "AP Split Tunnel Capacity License", "capacityControlLicenseCount": {"usedCount": 0, "totalCount": 5}},
@@ -51,6 +55,8 @@ class FakeClient:
 
     async def _request(self, method, endpoint, use_root_url=False, **kwargs):
         answer = self.responses[endpoint.rsplit("/v11_1", 1)[-1]]
+        if callable(answer):
+            answer = answer(kwargs.get("params") or {})
         if isinstance(answer, list):
             answer = answer.pop(0)
         if isinstance(answer, Exception):
@@ -58,15 +64,39 @@ class FakeClient:
         return answer
 
 
+# root > east > east-1; "empty" has no online zone. rkszones for root also
+# lists the subdomain zones, which must still land in the deepest domain.
+DOMAINS = {"list": [
+    {"id": "root", "name": "Root", "zoneCount": 3},
+    {"id": "east", "name": "East", "parentDomainId": "root", "zoneCount": 2},
+    {"id": "east-1", "name": "East 1", "parentDomainId": "east", "zoneCount": 1},
+    {"id": "empty", "name": "Empty", "parentDomainId": "root", "zoneCount": 0},
+]}
+ZONES_BY_DOMAIN = {
+    "root": [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}, {"id": "c", "name": "C"}],
+    "east": [{"id": "b", "name": "B"}, {"id": "c", "name": "C"}],
+    "east-1": [{"id": "c", "name": "C"}],
+}
+
+
+def rkszones(params):
+    zones = ZONES_BY_DOMAIN[params["domainId"]]
+    if isinstance(zones, Exception):
+        raise zones
+    return {"totalCount": len(zones), "hasMore": False, "list": zones}
+
+
 def client(**overrides):
     responses = {
+        "/domains": DOMAINS,
+        "/rkszones": rkszones,
         "/licensesSummary": SUMMARY,
         "/licenses": LICENSES,
         "/system/devicesSummary": DEVICES,
         "/system/inventory": {"totalCount": 3, "hasMore": False, "list": [
-            {"zoneId": "a", "connectedAPs": 7},
-            {"zoneId": "b", "connectedAPs": 3},
-            {"zoneId": "c", "connectedAPs": 0},
+            {"zoneId": "a", "zoneName": "A", "connectedAPs": 7, "totalAPs": 8, "clients": 40},
+            {"zoneId": "b", "zoneName": "B", "connectedAPs": 3, "totalAPs": 3, "clients": 5},
+            {"zoneId": "c", "zoneName": "C", "connectedAPs": 0, "totalAPs": 4, "clients": 0},
         ]},
         "/switch": {"totalCount": 4, "hasMore": False, "list": [
             {"id": "1", "status": "ONLINE", "groupId": "g1"}, {"id": "2", "status": "ONLINE", "groupId": "g1"},
@@ -77,6 +107,7 @@ def client(**overrides):
     fake = FakeClient(responses)
     fake.system = SystemService(fake)
     fake.switches = SwitchService(fake)
+    fake.zones = ZoneService(fake)
     return fake
 
 
@@ -128,6 +159,33 @@ def main():
     r = audit(**{"/switch": ValueError("SmartZone API error (404): not found")})
     assert r.switches_online == 0 and r.errors == []
     print("ok  switch module off means none")
+
+    r = audit()
+    (root,) = r.zone_tree
+    assert (root.name, [z.name for z in root.zones]) == ("Root", ["A"]), root
+    (east,) = root.children  # "Empty" dropped, "East 1" (only offline zone C) dropped
+    assert (east.name, [z.name for z in east.zones], east.children) == ("East", ["B"], []), east
+    assert (root.aps_online, root.aps_total, root.clients) == (10, 11, 45)
+    print("ok  zone tree: online zones only, deepest domain, counts summed")
+
+    ZONES_BY_DOMAIN["east"] = ValueError("SmartZone API error (500): down")
+    try:
+        r = audit()
+    finally:
+        ZONES_BY_DOMAIN["east"] = [{"id": "b", "name": "B"}, {"id": "c", "name": "C"}]
+    assert [d.name for d in r.zone_tree] == ["Root"], r.zone_tree
+    assert [z.name for z in r.zone_tree[0].zones] == ["A", "B"]  # B falls back to root's listing
+    assert any("1 domain(s)" in e for e in r.errors), r.errors
+    print("ok  failed domain listing reported, zone kept")
+
+    r = audit(**{"/domains": ValueError("SmartZone API error (500): down")})
+    assert r.zone_tree is None and r.aps_online == 10
+    assert any(e.startswith("Zone hierarchy") for e in r.errors), r.errors
+    print("ok  domain list failure leaves the tree None")
+
+    r = audit(**{"/system/inventory": ValueError("boom")})
+    assert r.zone_tree is None
+    print("ok  no inventory, no tree")
 
     print("\nAll passed")
 

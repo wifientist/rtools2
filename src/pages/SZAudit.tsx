@@ -855,6 +855,25 @@ interface LicenseEntitlement {
   perpetual: boolean;
 }
 
+// Zone tree: only zones with an AP online (Online + Flagged); domain counts include children
+interface BasicZoneNode {
+  zone_id: string;
+  name: string;
+  aps_online: number;
+  aps_total: number;
+  clients: number;
+}
+
+interface BasicDomainNode {
+  domain_id: string;
+  name: string;
+  aps_online: number;
+  aps_total: number;
+  clients: number;
+  zones: BasicZoneNode[];
+  children: BasicDomainNode[];
+}
+
 interface BasicAuditResult {
   controller_id: number;
   controller_name: string;
@@ -871,6 +890,7 @@ interface BasicAuditResult {
   switch_license: LicenseUsage | null;
   licenses: LicenseUsage[];
   entitlements: LicenseEntitlement[];
+  zone_tree: BasicDomainNode[] | null;
   error: string | null;
   errors: string[];
 }
@@ -884,6 +904,137 @@ const sumKnown = (values: (number | null | undefined)[]): number | null =>
     : values.reduce<number>((sum, v) => sum + (v as number), 0);
 
 const formatCount = (value: number | null) => (value === null ? '-' : value.toLocaleString());
+
+const domainKey = (controllerId: number, domainId: string) => `${controllerId}:${domainId}`;
+
+const countDomainZones = (node: BasicDomainNode): number =>
+  node.zones.length + node.children.reduce((sum, c) => sum + countDomainZones(c), 0);
+
+const collectDomainKeys = (controllerId: number, nodes: BasicDomainNode[], keys: string[] = []): string[] => {
+  for (const node of nodes) {
+    keys.push(domainKey(controllerId, node.domain_id));
+    collectDomainKeys(controllerId, node.children, keys);
+  }
+  return keys;
+};
+
+// Component: one domain row of the zone tree, with its zones and subdomains when open
+function ZoneTreeDomain({ controllerId, node, depth, expanded, onToggle }: {
+  controllerId: number;
+  node: BasicDomainNode;
+  depth: number;
+  expanded: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  const key = domainKey(controllerId, node.domain_id);
+  const open = expanded.has(key);
+  const indent = { paddingLeft: `${0.75 + depth * 1.25}rem` };
+  return (
+    <>
+      <tr className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => onToggle(key)}>
+        <td className="px-3 py-1.5" style={indent}>
+          <span className="inline-flex items-center gap-1 font-medium text-gray-900">
+            {open ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+            {node.name}
+            <span className="ml-1 text-xs font-normal text-gray-500">({countDomainZones(node)} zones)</span>
+          </span>
+        </td>
+        <td className="px-3 py-1.5 font-medium">{node.aps_online.toLocaleString()} / {node.aps_total.toLocaleString()}</td>
+        <td className="px-3 py-1.5 font-medium">{node.clients.toLocaleString()}</td>
+      </tr>
+      {open && node.children.map(child => (
+        <ZoneTreeDomain key={child.domain_id} controllerId={controllerId} node={child} depth={depth + 1} expanded={expanded} onToggle={onToggle} />
+      ))}
+      {open && node.zones.map(zone => (
+        <tr key={zone.zone_id} className="border-t border-gray-100">
+          <td className="px-3 py-1.5 text-gray-700" style={{ paddingLeft: `${0.75 + (depth + 1) * 1.25 + 1.25}rem` }}>
+            <span className="inline-flex items-center gap-1.5">
+              <Wifi className="w-3.5 h-3.5 text-gray-400" />
+              {zone.name}
+            </span>
+          </td>
+          <td className="px-3 py-1.5">{zone.aps_online.toLocaleString()} / {zone.aps_total.toLocaleString()}</td>
+          <td className="px-3 py-1.5">{zone.clients.toLocaleString()}</td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// Component: domain > zone hierarchy per controller, zones with APs online only
+function BasicZoneTree({ results }: { results: BasicAuditResult[] }) {
+  const withTree = results.filter(r => r.zone_tree && r.zone_tree.length > 0);
+  // Controllers start open so the top-level domains show; deeper levels start closed
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(withTree.map(r => domainKey(r.controller_id, '')))
+  );
+  if (withTree.length === 0) return null;
+
+  const toggle = (key: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+  const expandAll = () => setExpanded(new Set(withTree.flatMap(r => [
+    domainKey(r.controller_id, ''),
+    ...collectDomainKeys(r.controller_id, r.zone_tree!),
+  ])));
+  const collapseAll = () => setExpanded(new Set());
+
+  return (
+    <div className="bg-white rounded-lg shadow overflow-x-auto mb-6">
+      <div className="px-3 pt-3 pb-2 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-medium text-gray-700">Domains and Zones With Online APs</h3>
+          <p className="text-xs text-gray-500">
+            Online includes Flagged. Per-zone counts come from the SZ inventory and can lag after APs move; Staging Zone always reads 0, so it isn't listed.
+          </p>
+        </div>
+        <div className="flex gap-2 text-xs shrink-0">
+          <button onClick={expandAll} className="text-blue-600 hover:underline">Expand all</button>
+          <button onClick={collapseAll} className="text-blue-600 hover:underline">Collapse all</button>
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
+          <tr>
+            <th className="px-3 py-2">Domain / Zone</th>
+            <th className="px-3 py-2">APs Online / Total</th>
+            <th className="px-3 py-2">Clients</th>
+          </tr>
+        </thead>
+        <tbody>
+          {withTree.map(r => {
+            const key = domainKey(r.controller_id, '');
+            const open = expanded.has(key);
+            const tree = r.zone_tree!;
+            const zoneCount = tree.reduce((sum, d) => sum + countDomainZones(d), 0);
+            return [
+              <tr key={key} className="border-t border-gray-200 bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => toggle(key)}>
+                <td className="px-3 py-2">
+                  <span className="inline-flex items-center gap-1 font-semibold text-gray-900">
+                    {open ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                    <Server className="w-4 h-4 text-gray-500" />
+                    {r.controller_name}
+                    <span className="ml-1 text-xs font-normal text-gray-500">({zoneCount} zones)</span>
+                  </span>
+                </td>
+                <td className="px-3 py-2 font-semibold">
+                  {tree.reduce((s, d) => s + d.aps_online, 0).toLocaleString()} / {tree.reduce((s, d) => s + d.aps_total, 0).toLocaleString()}
+                </td>
+                <td className="px-3 py-2 font-semibold">{tree.reduce((s, d) => s + d.clients, 0).toLocaleString()}</td>
+              </tr>,
+              ...(open ? tree.map(node => (
+                <ZoneTreeDomain key={`${r.controller_id}-${node.domain_id}`} controllerId={r.controller_id} node={node} depth={1} expanded={expanded} onToggle={toggle} />
+              )) : []),
+            ];
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 // Component: Licenses and overall counts per controller
 function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
@@ -1038,6 +1189,8 @@ function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
               </tbody>
             </table>
           </div>
+
+          <BasicZoneTree results={readable} />
         </>
       )}
     </>
@@ -1525,6 +1678,7 @@ export default function SZAudit() {
           switch_license: null,
           licenses: [],
           entitlements: [],
+          zone_tree: null,
           error: err instanceof Error ? err.message : 'Could not read controller',
           errors: []
         };

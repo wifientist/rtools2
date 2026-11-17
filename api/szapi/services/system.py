@@ -198,7 +198,7 @@ class SystemService:
         endpoint = f"/{self.client.api_version}/system/devicesSummary"
         return await self.client._request("GET", endpoint)
 
-    async def get_connected_ap_count(self) -> Dict[str, int]:
+    async def get_connected_ap_count(self) -> Dict[str, Any]:
         """
         Sum connected APs across zones from the system inventory.
 
@@ -209,11 +209,13 @@ class SystemService:
         Returns:
             Dict with connected, zones_with_connected, zones_read, zones_total,
             and connected_by_zone_name ({zone name: connected APs}, zones with
-            at least one; same-name zones are summed)
+            at least one; same-name zones are summed), and by_zone_id:
+            {zone ID: {name, connected, total, clients}} for every zone read
         """
         endpoint = f"/{self.client.api_version}/system/inventory"
         zones: Dict[str, int] = {}
         names: Dict[str, str] = {}
+        by_zone_id: Dict[str, Dict[str, Any]] = {}
         index = 0  # index is an offset, not a page number
         zones_total = 0
 
@@ -226,6 +228,12 @@ class SystemService:
             for zone in page:
                 zones[zone.get("zoneId")] = zone.get("connectedAPs") or 0
                 names[zone.get("zoneId")] = zone.get("zoneName") or ""
+                by_zone_id[zone.get("zoneId")] = {
+                    "name": zone.get("zoneName") or "",
+                    "connected": zone.get("connectedAPs") or 0,
+                    "total": zone.get("totalAPs") or 0,
+                    "clients": zone.get("clients") or 0,
+                }
 
             index += len(page)
             if not page or not result.get("hasMore"):
@@ -239,4 +247,5 @@ class SystemService:
             "connected_by_zone_name": _sum_by_name(
                 (names.get(zid, ""), count) for zid, count in zones.items() if count > 0
             ),
+            "by_zone_id": by_zone_id,
         }
