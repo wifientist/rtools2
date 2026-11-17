@@ -48,6 +48,7 @@ import WlanRename from "@/pages/WlanRename";
 import RadiusStandard from "@/pages/RadiusStandard";
 import ConfigRules from "@/pages/ConfigRules";
 import WlanGrabber from "@/pages/WlanGrabber";
+import ApPortGrabber from "@/pages/ApPortGrabber";
 import ApgCleanup from "@/pages/ApgCleanup";
 import WlanWiz from "@/pages/WlanWiz";
 import VenueCheckup from "@/pages/VenueCheckup";
@@ -120,6 +121,7 @@ const App = () => {
           <Route path="/wlan-rename" element={<AlphaRoute element={<WlanRename />} />} />
           <Route path="/radius-standard" element={<BetaRoute element={<RadiusStandard />} />} />
           <Route path="/wlan-grabber" element={<ProtectedRoute element={<WlanGrabber />} />} />
+          <Route path="/ap-port-grabber" element={<AlphaRoute element={<ApPortGrabber />} />} />
           <Route path="/apg-cleanup" element={<ProtectedRoute element={<ApgCleanup />} />} />
           <Route path="/wlan-wiz" element={<AlphaRoute element={<WlanWiz />} />} />
           <Route path="/venue-checkup" element={<BetaRoute element={<VenueCheckup />} />} />

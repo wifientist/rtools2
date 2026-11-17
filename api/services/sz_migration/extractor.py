@@ -203,6 +203,10 @@ async def extract_zone_snapshot(
     # ── Step 5c: Zone per-AP-model settings (PoE, LAN ports, LED...) ──
     zone_ap_models = await _fetch_zone_ap_models(sz_client, zone_id, all_aps_raw, progress, warnings)
 
+    # ── Step 5d: AP-Group per-model settings + every port profile (LAN port audit) ──
+    ap_lan = await _fetch_ap_lan_layers(sz_client, zone_id, all_aps_raw, ap_groups, ap_radio_config,
+                                        zone_ap_models, progress, warnings)
+
     # ── Step 6: Chase references ─────────────────────────────────────
     progress("references", "Scanning WLANs for foreign key references...")
 
@@ -295,6 +299,7 @@ async def extract_zone_snapshot(
         aps=all_aps_raw,
         ap_radio_config=ap_radio_config,
         zone_ap_models=zone_ap_models,
+        ap_lan=ap_lan,
         referenced_objects=referenced_objects,
         extraction_metadata=extraction_metadata,
         warnings=warnings,
@@ -307,6 +312,8 @@ async def extract_zone_snapshot(
 
 _AP_BANDS = ("radio24g", "radio5g", "radio5gLower", "radio5gUpper", "radio6g")
 AP_DETAIL_CONCURRENCY = 8
+# AP-level `specific` fields that decide its LAN ports (services/ap_port_grabber.sz_effective)
+_AP_LAN_FIELDS = ("lanPorts", "poeModeSetting", "poeOutPortEnabled")
 
 
 HOTSPOT_WLAN_TYPES = ("Hotspot", "Hotspot_MacByPass")
@@ -350,7 +357,10 @@ async def _fetch_ap_radio_config(sz_client, aps_raw, progress, warnings) -> Dict
             try:
                 d = await sz_client.aps.get_ap_details(mac)
                 rc = (d or {}).get("radioConfig") or {}
+                sp = (d or {}).get("specific") or {}
                 out[mac] = {
+                    # The AP's own LAN ports / PoE (null = inherits), for the LAN port audit
+                    "lan": {k: sp.get(k) for k in _AP_LAN_FIELDS},
                     "dual5g": rc.get("dual5gEnabled"),
                     "radios": {
                         b: {"wlan_group_id": (rc.get(b) or {}).get("wlanGroupId"),
@@ -418,3 +428,41 @@ async def _fetch_zone_ap_models(sz_client, zone_id, aps_raw, progress, warnings)
         ))
     progress("ap_models", f"Zone AP model settings read: {', '.join(models)}")
     return out
+
+
+async def _fetch_ap_lan_layers(sz_client, zone_id, aps_raw, ap_groups, ap_radio_config, zone_ap_models,
+                               progress, warnings) -> Optional[Dict[str, Any]]:
+    """
+    What decides each AP's LAN ports beyond the zone model settings: the AP
+    Group's per-model override (one GET per group+model the APs sit in) and
+    the Ethernet Port Profiles AP- and group-level ports point at that the
+    zone models don't. None when it could not be read at all.
+    """
+    from services.ap_port_grabber import sz_ap_fields
+    from services.ap_port_reads import read_sz_group_layers
+
+    group_names = {g.id: g.name for g in ap_groups}
+    aps = [sz_ap_fields(a) for a in aps_raw]
+    for a in aps:
+        a["group_name"] = a["group_name"] or group_names.get(a["group_id"])
+    known = {pid: p for e in zone_ap_models.values() for pid, p in (e.get("eth_profiles") or {}).items()}
+    layers = [e.get("settings") for e in zone_ap_models.values()] + [
+        v.get("lan") for v in ap_radio_config.values()]
+    progress("ap_lan", "Reading AP Group LAN port settings...")
+    try:
+        group_models, profiles = await read_sz_group_layers(
+            sz_client, zone_id, aps, layers, known_profiles=known, concurrency=AP_DETAIL_CONCURRENCY)
+    except Exception as e:
+        warnings.append(SZExtractionWarning(
+            phase="ap_lan", message=f"Could not read AP Group LAN port settings: {type(e).__name__}: {e}"[:300]))
+        return None
+    failed = [k for k, v in group_models.items() if isinstance(v, dict) and v.get("_error")]
+    if failed:
+        warnings.append(SZExtractionWarning(
+            phase="ap_lan",
+            message=f"Could not read {len(failed)} AP Group model setting(s); those APs' LAN ports can't be audited",
+            details={"group_models": failed[:20]},
+        ))
+    overriding = sum(1 for v in group_models.values() if isinstance(v, dict) and (v.get("lanPorts")))
+    progress("ap_lan", f"AP Group LAN ports read: {overriding} group/model pair(s) override the zone")
+    return {"group_models": group_models, "profiles": {**known, **profiles}}

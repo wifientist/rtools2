@@ -81,6 +81,7 @@ const Sidebar = () => {
         { to: "/migration-audit", icon: <SearchCheck size={20} />, label: "Migration Audit", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/wlan-vlan", icon: <Layers size={20} />, label: "WLAN VLAN", requiresAuth: true, rolesAllowed: ["user","admin"] },
         { to: "/wlan-grabber", icon: <Import size={20} />, label: "WLAN Grabber", requiresAuth: true, rolesAllowed: ["user","admin"] },
+        { to: "/ap-port-grabber", icon: <Cable size={20} />, label: "AP Port Grabber", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
         { to: "/migrate-sz-config", icon: <GitCompareArrows size={20} />, label: "Config Migration", requiresAuth: true, rolesAllowed: ["user","admin"], requiresBeta: true },
         { to: "/wlan-rename", icon: <PenLine size={20} />, label: "WLAN Rename", requiresAuth: true, rolesAllowed: ["user","admin"], requiresAlpha: true },
       ],

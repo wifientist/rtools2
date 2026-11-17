@@ -28,6 +28,7 @@ from services.sz_migration.audit_matching import build_matching
 from services.sz_migration.audit_scorecard import build_overview, build_scorecard
 from services.sz_migration.audit_portal import build_portal_audit, is_portal_wlan
 from services.sz_migration.venue_settings import compare_venue_settings
+from services.sz_migration.audit_lan_ports import build_lan_ports_audit
 from services.sz_migration.broadcast_model import build_broadcast_audit, r1_ssids_by_group
 from services.sz_migration.wlan_assignment import SzAssignments, r1_activation, r1_activation_lines
 from services.sz_migration.passphrase_check import PSK_AUTH_TYPES, compare_passphrases
@@ -58,6 +59,8 @@ def run_audit(
     auth_facts: Optional[Dict] = None,
     r1_venue_settings: Optional[Dict] = None,
     saved_portal_key_fp: Optional[str] = None,
+    r1_lan: Optional[Dict] = None,
+    r1_lan_read: Optional[Dict] = None,
 ) -> MigrationAuditReport:
     """
     Run the full three-way audit comparison.
@@ -87,6 +90,9 @@ def run_audit(
         compare_venue_settings(snapshot.zone.raw, r1_inventory.venue, r1_venue_settings)
         if r1_venue_settings is not None else None
     )
+
+    # Step 0d: per-AP LAN ports (R1 side: the last on-demand read, if any)
+    lan_ports_audit = build_lan_ports_audit(snapshot, r1_lan, r1_lan_read)
 
     # Step 1: Resolve WLAN activations
     resolver_result = resolve_wlan_activations(snapshot)
@@ -339,11 +345,12 @@ def run_audit(
         overview=build_overview(snapshot, r1_inventory, matching),
         venue_settings=venue_settings,
         broadcast=broadcast,
+        lan_ports=lan_ports_audit,
         portals=portals,
         unpaired_r1_portals=unpaired_portals,
         scorecard=build_scorecard(
             snapshot, r1_inventory, matching, venue_settings, broadcast, resolver_result, network_items,
-            ap_group_audits, auth_items if auth_facts is not None else None,
+            ap_group_audits, auth_items if auth_facts is not None else None, lan_ports_audit,
         ),
         networks=network_items,
         extra_r1_networks=extra_networks,

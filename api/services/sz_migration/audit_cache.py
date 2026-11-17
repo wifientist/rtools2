@@ -44,6 +44,7 @@ TTL_SECONDS = 7 * 24 * 3600
 # Bump when a capture's shape changes so old ones read as stale.
 SZ_CAPTURE_VERSION = 3   # 2: per-AP radio config (ap_radio_config); 3: passphrase fingerprints
 R1_CAPTURE_VERSION = 3   # 2: passphrase fingerprints; 3: all AP Groups (was first 25)
+R1_LAN_CAPTURE_VERSION = 1
 
 
 def sz_key(controller_id: int, zone_id: str) -> str:
@@ -52,6 +53,11 @@ def sz_key(controller_id: int, zone_id: str) -> str:
 
 def r1_key(controller_id: int, tenant_id: Optional[str], venue_id: str) -> str:
     return f"audit_cache:r1:{controller_id}:{tenant_id or '-'}:{venue_id}"
+
+
+def r1_lan_key(controller_id: int, tenant_id: Optional[str], venue_id: str) -> str:
+    """Per-AP LAN port read: its own entry, run on demand after the audit (one+ R1 GET per AP)."""
+    return f"audit_cache:r1lan:{controller_id}:{tenant_id or '-'}:{venue_id}"
 
 
 # Credentials the audit compares across sides: PSK passphrases and the portal
@@ -168,6 +174,19 @@ async def save_r1(controller_id: int, tenant_id: Optional[str], venue_id: str,
 async def load_r1(controller_id: int, tenant_id: Optional[str], venue_id: str
                   ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     return await _read(r1_key(controller_id, tenant_id, venue_id), R1_CAPTURE_VERSION)
+
+
+async def save_r1_lan(controller_id: int, tenant_id: Optional[str], venue_id: str,
+                      lan: Dict[str, Any]) -> Dict[str, Any]:
+    return await _write(r1_lan_key(controller_id, tenant_id, venue_id), {
+        "side": "r1_lan", "version": R1_LAN_CAPTURE_VERSION, "venue_id": venue_id,
+        "aps": len(lan.get("ap_states") or {}),
+    }, strip_credentials(lan))
+
+
+async def load_r1_lan(controller_id: int, tenant_id: Optional[str], venue_id: str
+                      ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    return await _read(r1_lan_key(controller_id, tenant_id, venue_id), R1_LAN_CAPTURE_VERSION)
 
 
 # ── Status / clear ────────────────────────────────────────────────────

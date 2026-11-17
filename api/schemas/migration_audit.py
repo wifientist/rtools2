@@ -292,6 +292,44 @@ class VenueSettingsAudit(BaseModel):
     errors: List[str] = Field(default_factory=list)
 
 
+class LanPortAuditRow(BaseModel):
+    """One SZ AP's effective LAN ports vs the same AP's in R1 (services/sz_migration/audit_lan_ports)."""
+    status: str             # match | differs | pending | not_in_r1 | unreadable
+    sz_name: Optional[str] = None
+    sz_mac: Optional[str] = None
+    serial: Optional[str] = None
+    model: Optional[str] = None
+    sz_group: Optional[str] = None
+    source: str = "—"       # where SZ's ports come from: AP override / AP Group '...' / Zone
+    r1_name: Optional[str] = None
+    r1_status: Optional[str] = None
+    r1_use_venue: Optional[bool] = None
+    sz_ports: List[str] = Field(default_factory=list)
+    r1_ports: List[str] = Field(default_factory=list)
+    changes: List[str] = Field(default_factory=list)   # "R1 now -> SZ" per differing port / PoE field
+    poe: Dict[str, Any] = Field(default_factory=dict)
+    r1_poe: Dict[str, Any] = Field(default_factory=dict)
+    uplink_ports: List[str] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+    blockers: List[str] = Field(default_factory=list)
+    extras: List[str] = Field(default_factory=list)    # SZ profile settings R1 ports don't carry
+
+
+class LanPortsAudit(BaseModel):
+    """AP LAN ports, SZ vs R1, per AP. available=False: not comparable this run (reason says why)."""
+    available: bool = True
+    reason: str = ""
+    # Not checked yet: the per-AP R1 read runs on demand (POST /audit/lan-ports)
+    deferred: bool = False
+    # From SZ alone: where each AP's ports come from {"ap": n, "group": n, "zone": n, "unknown": n}
+    sz_sources: Dict[str, int] = Field(default_factory=dict)
+    # The R1 read used: {captured_at, age_seconds, cached}
+    r1_read: Dict[str, Any] = Field(default_factory=dict)
+    rows: List[LanPortAuditRow] = Field(default_factory=list)
+    counts: Dict[str, int] = Field(default_factory=dict)
+    model_notes: List[str] = Field(default_factory=list)
+
+
 class ApBroadcast(BaseModel):
     """Which SSIDs one AP broadcasts on each controller (radio-agnostic for now)."""
     name: Optional[str] = None
@@ -446,6 +484,7 @@ class MigrationAuditReport(BaseModel):
     matching: AuditMatching = Field(default_factory=AuditMatching)
     venue_settings: Optional[VenueSettingsAudit] = None   # None: no live R1 read this run
     broadcast: Optional[BroadcastAudit] = None
+    lan_ports: Optional[LanPortsAudit] = None
     portals: List[PortalAudit] = Field(default_factory=list)
     unpaired_r1_portals: List[Dict[str, Any]] = Field(default_factory=list)   # R1 guest networks no SZ portal pairs with
     # Per side: {cached, captured_at, age_seconds, expires_in_seconds, ...}

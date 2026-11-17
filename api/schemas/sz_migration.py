@@ -265,6 +265,12 @@ class SZMigrationSnapshot(BaseModel):
     #   {model: {"settings": {...}, "eth_profiles": {profile_id: {...}}, "error": str}}
     # Empty in snapshots taken before model settings were read.
     zone_ap_models: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    # LAN port audit inputs beyond the zone models (each AP's own ports ride in
+    # ap_radio_config[mac]["lan"]):
+    #   {"group_models": {"group_id|model": settings | None (no override) | {"_error"}},
+    #    "profiles": {profile_id: Ethernet Port Profile | {"error"}}  -- every one referenced}
+    # None in snapshots taken before LAN ports were captured.
+    ap_lan: Optional[Dict[str, Any]] = None
     referenced_objects: Dict[str, SZReferencedObject] = Field(
         default_factory=dict,
         description="Chased references keyed by 'ref_type:id'"
