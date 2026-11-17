@@ -223,7 +223,7 @@ export default function ApPortGrabber() {
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
           <Cable size={24} className="text-indigo-600" />
           AP Port Grabber
-          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">alpha</span>
+          <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">beta</span>
         </h1>
         <p className="text-gray-500 text-sm mt-1">
           Give each R1 AP the LAN ports and PoE its SZ twin has — AP and AP Group overrides included, which R1 can
