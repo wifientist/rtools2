@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from schemas.migration_audit import (
     AlignmentCategory, APGroupActivationAudit, AuditMatching, AuthPath, AuthPathAudit, OverviewRow,
-    NetworkAuditItem, VenueSettingsAudit, BroadcastAudit,
+    NetworkAuditItem, VenueSettingsAudit, BroadcastAudit, LanPortsAudit,
 )
 from schemas.r1_inventory import R1VenueInventory
 from schemas.sz_migration import SZMigrationSnapshot
@@ -331,6 +331,29 @@ def _passphrases(auth_items: Optional[List[AuthPathAudit]]) -> AlignmentCategory
     return cat
 
 
+def lan_ports_category(lp: Optional[LanPortsAudit]) -> AlignmentCategory:
+    cat = AlignmentCategory(key="ap_lan_ports", label="AP LAN ports")
+    if lp is None or not lp.available:
+        cat.details.append(lp.reason if lp else "Not audited this run")
+        return cat
+    c = lp.counts
+    compared = c.get("match", 0) + c.get("differs", 0)
+    cat.sz_count = len(lp.rows)
+    cat.r1_count = compared + c.get("pending", 0)
+    cat.aligned_count = c.get("match", 0)
+    if compared:
+        cat.status = _status(c.get("match", 0), compared)
+    elif c.get("pending"):
+        cat.status = "pending"
+    for key, text in (("differs", "AP(s) whose R1 ports differ from SZ (AP Port Grabber fixes them)"),
+                      ("pending", "AP(s) R1 can't read ports for yet (not connected)"),
+                      ("not_in_r1", "SZ AP(s) not in the R1 venue"),
+                      ("unreadable", "AP(s) that could not be compared")):
+        if c.get(key):
+            cat.details.append(f"{c[key]} {text}")
+    return cat
+
+
 def build_scorecard(
     snapshot: SZMigrationSnapshot,
     inv: R1VenueInventory,
@@ -341,12 +364,14 @@ def build_scorecard(
     network_items: List[NetworkAuditItem],
     ap_group_audits: List[APGroupActivationAudit],
     auth_items: Optional[List[AuthPathAudit]],
+    lan_ports: Optional[LanPortsAudit] = None,
 ) -> List[AlignmentCategory]:
     return [
         _venue_config(venue_settings),
         _aps(matching, inv, snapshot),
         _ap_groups(matching, inv),
         _ap_membership(matching),
+        lan_ports_category(lan_ports),
         _wlan_groups(snapshot, inv, broadcast),
         _ssid_broadcast(broadcast),
         _wlans(snapshot, inv, matching, wlan_scopes(snapshot, broadcast)),

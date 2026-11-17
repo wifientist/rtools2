@@ -180,7 +180,7 @@ def main():
     # 9. scorecard
     sc = {c.key: c for c in report.scorecard}
     failures += check("scorecard has every category in order",
-                      [c.key for c in report.scorecard] == ["venue_config", "aps", "ap_groups", "ap_membership",
+                      [c.key for c in report.scorecard] == ["venue_config", "aps", "ap_groups", "ap_membership", "ap_lan_ports",
                                                             "wlan_groups", "ssid_broadcast", "wlans", "wlan_config",
                                                             "passphrases"])
     failures += check("AP row: 4 SZ / 3 R1 / 2 in both, partial",

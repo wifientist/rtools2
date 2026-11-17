@@ -14,11 +14,12 @@ import { Scorecard, VenueSettingsSection, MatchingSection, OverviewTable } from 
 import PortalSection from '@/components/migration-audit/PortalSection';
 import BroadcastSection from '@/components/migration-audit/BroadcastSection';
 import GapsSection from '@/components/migration-audit/GapsSection';
+import LanPortsSection from '@/components/migration-audit/LanPortsSection';
 import CachePanel, { ago } from '@/components/migration-audit/CachePanel';
 import type {
   MigrationAuditReport, AuditStatus, NetworkAuditItem,
   FieldComparisonItem, APGroupActivationAudit, ResourceCoverage,
-  AuthPathAudit, AuthPath, RadiusServerCheck,
+  AuthPathAudit, AuthPath, RadiusServerCheck, AlignmentCategory,
 } from '@/types/migrationAudit';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -75,6 +76,8 @@ export default function MigrationAudit() {
   // Execution
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<MigrationAuditReport | null>(null);
+  // The last audit's request, re-used by the on-demand LAN port check
+  const [lastAuditBody, setLastAuditBody] = useState<Record<string, any> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<AuditStatus | null>(null);
   const [progressId, setProgressId] = useState<string | null>(null);
@@ -175,6 +178,7 @@ export default function MigrationAudit() {
     }
     body.progress_id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     setProgressId(body.progress_id);
+    setLastAuditBody(body);
 
     try {
       const data = await apiPost<MigrationAuditReport>(`${API_URL}/sz-migration/audit`, body);
@@ -202,6 +206,23 @@ export default function MigrationAudit() {
     } finally {
       setRunning(false);
     }
+  };
+
+  // ── On-demand LAN port check: per-AP R1 reads, after the audit (big sites hit the 5-min proxy limit) ──
+  const checkLanPorts = async () => {
+    if (!lastAuditBody) throw new Error('Run the audit first');
+    const { sz_refresh, r1_refresh, ...rest } = lastAuditBody;
+    const data = await apiPost<{ lan_ports: MigrationAuditReport['lan_ports']; scorecard_row: AlignmentCategory | null }>(
+      `${API_URL}/sz-migration/audit/lan-ports`,
+      { ...rest, progress_id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` },
+    );
+    setReport(r => r && {
+      ...r,
+      lan_ports: data.lan_ports,
+      scorecard: data.scorecard_row
+        ? (r.scorecard ?? []).map(c => c.key === data.scorecard_row!.key ? data.scorecard_row! : c)
+        : r.scorecard,
+    });
   };
 
   // ── Fresh audit handler ──
@@ -386,6 +407,7 @@ export default function MigrationAudit() {
           onFilterChange={setStatusFilter}
           r1ControllerId={secondaryControllerId}
           tenantId={effectiveTenantId}
+          onCheckLanPorts={lastAuditBody ? checkLanPorts : undefined}
         />
       )}
     </div>
@@ -400,12 +422,14 @@ function AuditResults({
   onFilterChange,
   r1ControllerId,
   tenantId,
+  onCheckLanPorts,
 }: {
   report: MigrationAuditReport;
   statusFilter: AuditStatus | null;
   onFilterChange: (s: AuditStatus | null) => void;
   r1ControllerId: number | null;
   tenantId: string | null | undefined;
+  onCheckLanPorts?: () => Promise<void>;
 }) {
   const s = report.summary;
 
@@ -467,6 +491,9 @@ function AuditResults({
 
       {/* Zone ↔ Venue settings */}
       {report.venue_settings && <VenueSettingsSection audit={report.venue_settings} />}
+
+      {/* Per-AP LAN ports: SZ's effective ports vs the same AP in R1 */}
+      {report.lan_ports && <LanPortsSection audit={report.lan_ports} onCheck={onCheckLanPorts} />}
 
       {/* Pairings the rest of the report rests on */}
       {report.matching && <MatchingSection matching={report.matching} />}

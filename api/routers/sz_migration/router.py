@@ -90,6 +90,9 @@ from services.sz_migration.audit_redaction import (
 )
 from services.r1_inventory import capture_venue_inventory, locate_aps_in_tenant
 from services.sz_migration.audit_matching import sz_serials_missing_from_venue
+from services.sz_migration.audit_lan_ports import R1_LAN_KEYS, build_lan_ports_audit, lan_sz_aps
+from services.sz_migration.audit_scorecard import lan_ports_category as lan_ports_scorecard_row
+from services.ap_port_reads import read_r1_lan_state
 from schemas.sz_migration import SZMigrationSnapshot, ResolverResult
 from schemas.r1_inventory import R1VenueInventory
 
@@ -2509,7 +2512,9 @@ async def clear_audit_cache(
         keys.append(audit_cache.sz_key(sz_controller_id, zone_id))
     if side in ("r1", "both") and r1_controller_id and venue_id:
         r1c = validate_controller_access(r1_controller_id, current_user, db)
-        keys.append(audit_cache.r1_key(r1_controller_id, resolve_tenant_id(r1c, tenant_id), venue_id))
+        t = resolve_tenant_id(r1c, tenant_id)
+        keys.append(audit_cache.r1_key(r1_controller_id, t, venue_id))
+        keys.append(audit_cache.r1_lan_key(r1_controller_id, t, venue_id))
     return {"cleared": await audit_cache.clear(*keys)}
 
 
@@ -2563,6 +2568,65 @@ async def portal_key_check(
     fmt_ok = bool(re.fullmatch(r"[a-zA-Z0-9]{16}", key))
     return {"results": results,
             "format_note": "" if fmt_ok else "R1 integration keys are exactly 16 letters or digits — this one isn't"}
+
+
+@router.post("/audit/lan-ports")
+async def audit_lan_ports_endpoint(
+    request: AuditRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    The audit's per-AP LAN port check, run after the main audit: reads each
+    venue AP's own port settings from R1 (one GET per AP, plus one per port
+    for APs off venue settings), caches that read, and returns the section
+    and its scorecard row. The SZ side comes from the audit's SZ capture
+    (cache or migration snapshot) -- run the audit first; nothing is extracted here.
+    """
+    progress = _AuditProgress(request.progress_id, current_user.id)
+    snapshot: Optional[SZMigrationSnapshot] = None
+    if request.sz_snapshot_job_id and not request.sz_snapshot_job_id.startswith("cache:"):
+        await _require_owner("sz", request.sz_snapshot_job_id, current_user, db)
+        raw = await _get_snapshot_raw(request.sz_snapshot_job_id)
+        snapshot = SZMigrationSnapshot.model_validate_json(raw) if raw else None
+    elif request.sz_controller_id and request.zone_id:
+        validate_controller_access(request.sz_controller_id, current_user, db)
+        snapshot, _ = await audit_cache.load_sz(request.sz_controller_id, request.zone_id)
+    if snapshot is None:
+        raise HTTPException(status_code=409, detail="No SmartZone capture for this zone: run the audit first")
+    if snapshot.ap_lan is None:
+        return {"lan_ports": build_lan_ports_audit(snapshot, None).model_dump(mode="json"), "scorecard_row": None}
+
+    if not request.r1_controller_id or not request.venue_id:
+        raise HTTPException(status_code=400, detail="r1_controller_id and venue_id are required")
+    r1_controller = validate_controller_access(request.r1_controller_id, current_user, db)
+    if r1_controller.controller_type != "RuckusONE":
+        raise HTTPException(status_code=400, detail="Controller must be RuckusONE")
+    tenant_id = resolve_tenant_id(r1_controller, request.tenant_id)
+    if r1_controller.controller_subtype == "MSP" and not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id required for MSP controllers")
+
+    sz_aps = lan_sz_aps(snapshot)
+    progress.say(f"RuckusONE: reading LAN ports for up to {len(sz_aps)} AP(s)...")
+    r1_client = create_r1_client_from_controller(request.r1_controller_id, db)
+    try:
+        lan = await read_r1_lan_state(r1_client, tenant_id, request.venue_id, sz_aps)
+    except Exception as e:
+        logger.exception(f"Audit LAN port read failed: {e}")
+        raise HTTPException(status_code=502, detail=f"R1 LAN port read failed: {e}")
+    r1_lan = {k: lan[k] for k in R1_LAN_KEYS}
+    read_meta: Dict[str, Any] = {"cached": False, "captured_at": datetime.utcnow().isoformat() + "Z", "age_seconds": 0}
+    try:
+        read_meta = {"cached": False, **await audit_cache.save_r1_lan(
+            request.r1_controller_id, tenant_id, request.venue_id, r1_lan)}
+    except Exception as e:
+        logger.warning(f"Could not cache the LAN port read: {type(e).__name__}: {e}")
+
+    progress.say("Comparing LAN ports...")
+    await progress.settle()
+    audit = build_lan_ports_audit(snapshot, r1_lan, read_meta)
+    return {"lan_ports": audit.model_dump(mode="json"),
+            "scorecard_row": lan_ports_scorecard_row(audit).model_dump(mode="json")}
 
 
 @router.post("/audit")
@@ -2716,6 +2780,7 @@ async def run_audit_endpoint(
     r1_network_details: Dict[str, Dict] = {}
     auth_facts: Optional[Dict[str, Any]] = None
     r1_venue_settings: Optional[Dict[str, Any]] = None
+    r1_lan: Optional[Dict[str, Any]] = None
 
     if cached_r1 is not None:
         r1_network_details = cached_r1.get("network_details") or {}
@@ -2798,6 +2863,20 @@ async def run_audit_endpoint(
         except Exception as e:
             logger.warning(f"Could not read the saved portal key: {type(e).__name__}")
 
+    # Per-AP LAN ports are read on demand (POST /audit/lan-ports), not here:
+    # one+ R1 GET per AP pushed big sites past the proxy's 5-minute limit.
+    # Show the last such read unless the R1 side was just refreshed.
+    r1_lan_read = None
+    if request.r1_controller_id and request.venue_id and request.use_cache and not request.r1_refresh:
+        try:
+            r1_lan, r1_lan_read = await audit_cache.load_r1_lan(request.r1_controller_id, tenant_id, request.venue_id)
+        except Exception as e:
+            logger.warning(f"Could not read the cached LAN port read: {type(e).__name__}: {e}")
+        # R1 captures made 2026-11-17 while the LAN read rode along with the capture
+        if r1_lan is None and cached_r1 is not None and cached_r1.get("lan_ports"):
+            r1_lan = cached_r1["lan_ports"]
+            r1_lan_read = {k: (data_sources.get("r1") or {}).get(k) for k in ("captured_at", "age_seconds")}
+
     # ── Run audit ──
     progress.say("Comparing SmartZone and RuckusONE...")
     await progress.settle()
@@ -2810,6 +2889,8 @@ async def run_audit_endpoint(
         auth_facts=auth_facts,
         r1_venue_settings=r1_venue_settings,
         saved_portal_key_fp=saved_portal_key_fp,
+        r1_lan=r1_lan,
+        r1_lan_read=r1_lan_read and {**r1_lan_read, "cached": True},
     )
     report.data_sources = data_sources
     if auth_facts is None:

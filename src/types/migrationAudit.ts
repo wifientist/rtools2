@@ -106,6 +106,7 @@ export interface MigrationAuditReport {
   matching?: AuditMatching;
   venue_settings?: VenueSettingsAudit | null;
   broadcast?: BroadcastAudit | null;
+  lan_ports?: LanPortsAudit | null;
   portals?: PortalAudit[];
   unpaired_r1_portals?: Array<{ id: string; name: string | null; ssid: string | null; guest_type: string | null }>;
   data_sources?: Record<string, { cached: boolean; age_seconds?: number | null; captured_at?: string; source?: string }>;
@@ -253,6 +254,43 @@ export interface SettingComparison {
 export interface VenueSettingsAudit {
   rows: SettingComparison[];
   errors: string[];
+}
+
+// ── Per-AP LAN ports (SZ effective vs R1) ────────────────────────
+
+export type LanPortStatus = 'match' | 'differs' | 'pending' | 'not_in_r1' | 'unreadable';
+
+export interface LanPortAuditRow {
+  status: LanPortStatus;
+  sz_name: string | null;
+  sz_mac: string | null;
+  serial: string | null;
+  model: string | null;
+  sz_group: string | null;
+  source: string;
+  r1_name: string | null;
+  r1_status: string | null;
+  r1_use_venue: boolean | null;
+  sz_ports: string[];
+  r1_ports: string[];
+  changes: string[];
+  poe: Record<string, any>;
+  r1_poe: Record<string, any>;
+  uplink_ports: string[];
+  notes: string[];
+  blockers: string[];
+  extras: string[];
+}
+
+export interface LanPortsAudit {
+  available: boolean;
+  reason: string;
+  deferred?: boolean;
+  sz_sources?: Partial<Record<'ap' | 'group' | 'zone' | 'unknown', number>>;
+  r1_read?: { captured_at?: string; age_seconds?: number | null; cached?: boolean };
+  rows: LanPortAuditRow[];
+  counts: Partial<Record<LanPortStatus, number>>;
+  model_notes: string[];
 }
 
 // ── Checkpoint 2: per-AP SSID broadcast ──────────────────────────
