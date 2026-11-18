@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { apiFetch } from '@/utils/api';
+import { buildWorkbook, downloadBlob, type Cell } from '@/lib/xlsx';
 import { ChevronDown, ChevronRight, Loader2, AlertCircle, CheckCircle2, Server, Wifi, Router, HardDrive, Layers, Info, Download, Link2, X, Sparkles, Zap, History } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -961,14 +962,69 @@ function ZoneTreeDomain({ controllerId, node, depth, expanded, onToggle }: {
   );
 }
 
+// Deepest column a zone tree needs: controller is 0, top-level domains 1, a zone one past its domain
+const treeDepth = (nodes: BasicDomainNode[], depth = 1): number =>
+  nodes.reduce((max, n) => Math.max(
+    max,
+    n.zones.length > 0 ? depth + 1 : depth,
+    treeDepth(n.children, depth + 1),
+  ), depth);
+
+// Why a controller has no tree: unreachable, or the zone hierarchy / AP counts couldn't be read
+const zoneTreeError = (r: BasicAuditResult): string | null => {
+  if (r.error) return r.error;
+  if (r.zone_tree) return null;
+  const related = r.errors.filter(e => e.startsWith('Zone hierarchy') || e.startsWith('AP online count'));
+  return (related.length ? related : r.errors).join('; ') || 'Zone hierarchy could not be read';
+};
+
+// Responding, but nothing online: the controller still gets a row with 0
+const noOnlineNote = (r: BasicAuditResult) =>
+  r.total_aps === null ? 'No APs online' : `No APs online (all ${r.total_aps.toLocaleString()} APs offline)`;
+
+// One sheet, each level one column further right. Online, offline and clients are separate
+// number cells: "10 / 12" in one cell gets read as a date.
+function exportZoneTreeXlsx(results: BasicAuditResult[]) {
+  // Unreachable controllers stay out; a responding one with nothing online gets a 0 row
+  const withTree = results.filter(r => !r.error && r.zone_tree);
+  const nameColumns = 1 + Math.max(0, ...withTree.map(r => treeDepth(r.zone_tree!)));
+  const header: Cell[] = Array.from({ length: nameColumns }, (_, i) =>
+    i === 0 ? 'Controller' : i === 1 ? 'Domain' : `Level ${i + 1}`);
+  const rows: Cell[][] = [[...header, 'Type', 'APs Online', 'APs Offline', 'Clients', 'Note']];
+
+  const row = (depth: number, name: string, type: string, online: number, total: number, clients: number, note: string | null = null) => {
+    const cells: Cell[] = Array(nameColumns).fill(null);
+    cells[depth] = name;
+    rows.push([...cells, type, online, total - online, clients, note]);
+  };
+  const addDomain = (node: BasicDomainNode, depth: number) => {
+    row(depth, node.name, 'Domain', node.aps_online, node.aps_total, node.clients);
+    node.children.forEach(child => addDomain(child, depth + 1));
+    node.zones.forEach(z => row(depth + 1, z.name, 'Zone', z.aps_online, z.aps_total, z.clients));
+  };
+
+  for (const r of withTree) {
+    const tree = r.zone_tree!;
+    row(0, r.controller_name, 'Controller',
+      tree.reduce((s, d) => s + d.aps_online, 0),
+      tree.reduce((s, d) => s + d.aps_total, 0),
+      tree.reduce((s, d) => s + d.clients, 0),
+      tree.length === 0 ? noOnlineNote(r) : null);
+    tree.forEach(node => addDomain(node, 1));
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  downloadBlob(buildWorkbook([{ name: 'Zones With Online APs', rows }]), `sz_audit_online_zones_${timestamp}.xlsx`);
+}
+
 // Component: domain > zone hierarchy per controller, zones with APs online only
 function BasicZoneTree({ results }: { results: BasicAuditResult[] }) {
-  const withTree = results.filter(r => r.zone_tree && r.zone_tree.length > 0);
+  const withTree = results.filter(r => !zoneTreeError(r));
   // Controllers start open so the top-level domains show; deeper levels start closed
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(withTree.map(r => domainKey(r.controller_id, '')))
   );
-  if (withTree.length === 0) return null;
+  if (results.length === 0) return null;
 
   const toggle = (key: string) => setExpanded(prev => {
     const next = new Set(prev);
@@ -992,6 +1048,14 @@ function BasicZoneTree({ results }: { results: BasicAuditResult[] }) {
           </p>
         </div>
         <div className="flex gap-2 text-xs shrink-0">
+          <button
+            onClick={() => exportZoneTreeXlsx(withTree)}
+            disabled={withTree.length === 0}
+            title="Controllers that couldn't be read are left out"
+            className="inline-flex items-center gap-1 text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
+          >
+            <Download className="w-3.5 h-3.5" /> Export XLSX
+          </button>
           <button onClick={expandAll} className="text-blue-600 hover:underline">Expand all</button>
           <button onClick={collapseAll} className="text-blue-600 hover:underline">Collapse all</button>
         </div>
@@ -1005,10 +1069,41 @@ function BasicZoneTree({ results }: { results: BasicAuditResult[] }) {
           </tr>
         </thead>
         <tbody>
-          {withTree.map(r => {
+          {results.map(r => {
             const key = domainKey(r.controller_id, '');
-            const open = expanded.has(key);
+            const error = zoneTreeError(r);
+            if (error) {
+              return (
+                <tr key={key} className="border-t border-gray-200 bg-gray-50">
+                  <td className="px-3 py-2" colSpan={3}>
+                    <span className="inline-flex items-center gap-1 font-semibold text-gray-900 pl-5">
+                      <Server className="w-4 h-4 text-gray-500" />
+                      {r.controller_name}
+                    </span>
+                    <span className="ml-2 inline-flex items-center gap-1 text-xs text-red-600">
+                      <AlertCircle className="w-3.5 h-3.5" /> {error}
+                    </span>
+                  </td>
+                </tr>
+              );
+            }
             const tree = r.zone_tree!;
+            if (tree.length === 0) {
+              return (
+                <tr key={key} className="border-t border-gray-200 bg-gray-50">
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1 font-semibold text-gray-900 pl-5">
+                      <Server className="w-4 h-4 text-gray-500" />
+                      {r.controller_name}
+                    </span>
+                    <span className="ml-2 text-xs text-gray-500">{noOnlineNote(r)}</span>
+                  </td>
+                  <td className="px-3 py-2 font-semibold">0</td>
+                  <td className="px-3 py-2 font-semibold">0</td>
+                </tr>
+              );
+            }
+            const open = expanded.has(key);
             const zoneCount = tree.reduce((sum, d) => sum + countDomainZones(d), 0);
             return [
               <tr key={key} className="border-t border-gray-200 bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => toggle(key)}>
@@ -1190,7 +1285,7 @@ function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
             </table>
           </div>
 
-          <BasicZoneTree results={readable} />
+          <BasicZoneTree results={results} />
         </>
       )}
     </>
