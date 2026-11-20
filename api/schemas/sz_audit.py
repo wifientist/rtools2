@@ -277,6 +277,16 @@ class LicenseEntitlement(BaseModel):
     perpetual: bool = False
 
 
+class ClusterNode(BaseModel):
+    """One controller node in the SZ cluster (GET /controller)"""
+    name: str = ""
+    host_name: str = ""
+    role: str = Field(default="", description="Leader or Follower")
+    model: str = ""
+    serial_number: str = ""
+    version: str = ""
+
+
 class BasicZoneNode(BaseModel):
     """A zone with at least one AP online (inventory connectedAPs: Online + Flagged)"""
     zone_id: str
@@ -317,6 +327,9 @@ class BasicAuditResult(BaseModel):
     switch_license: Optional[LicenseUsage] = None
     licenses: List[LicenseUsage] = Field(default_factory=list)
     entitlements: List[LicenseEntitlement] = Field(default_factory=list)
+    cluster_nodes: Optional[List[ClusterNode]] = Field(
+        default=None, description="Cluster nodes, leader first; None if they couldn't be read"
+    )
     zone_tree: Optional[List[BasicDomainNode]] = Field(
         default=None, description="Domains and zones with APs online; None if it couldn't be read"
     )

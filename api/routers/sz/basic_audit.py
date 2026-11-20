@@ -17,6 +17,7 @@ from schemas.sz_audit import (
     BasicAuditResult,
     BasicDomainNode,
     BasicZoneNode,
+    ClusterNode,
     LicenseEntitlement,
     LicenseUsage,
 )
@@ -188,6 +189,22 @@ def build_zone_tree(
     return sorted(kept, key=lambda r: (r.domain_id == UNKNOWN_DOMAIN_ID, r.name.lower()))
 
 
+def build_cluster_nodes(raw: Dict[str, Any]) -> List[ClusterNode]:
+    """Each node has its own serial; the leader goes first"""
+    nodes = [
+        ClusterNode(
+            name=item.get("name") or "",
+            host_name=item.get("hostName") or "",
+            role=item.get("clusterRole") or "",
+            model=item.get("model") or "",
+            serial_number=item.get("serialNumber") or "",
+            version=item.get("version") or "",
+        )
+        for item in raw.get("list", [])
+    ]
+    return sorted(nodes, key=lambda n: (n.role.lower() != "leader", n.host_name.lower()))
+
+
 async def fetch_basic_audit(sz_client: SZClient, controller: Controller) -> BasicAuditResult:
     """Read one controller's licenses and counts. The client must be logged in."""
     result = BasicAuditResult(
@@ -196,15 +213,21 @@ async def fetch_basic_audit(sz_client: SZClient, controller: Controller) -> Basi
         host=controller.sz_host,
     )
 
-    summary, entitlements, devices, ap_online, switch_counts, zone_domains = await asyncio.gather(
+    summary, entitlements, devices, ap_online, switch_counts, zone_domains, nodes = await asyncio.gather(
         sz_client.system.get_licenses_summary(),
         sz_client.system.get_licenses(),
         sz_client.system.get_devices_summary(),
         sz_client.system.get_connected_ap_count(),
         sz_client.switches.get_switch_status_counts(),
         fetch_zone_domains(sz_client),
+        sz_client.system.get_controller_info(),
         return_exceptions=True,
     )
+
+    if isinstance(nodes, Exception):
+        result.errors.append(f"Cluster nodes: {nodes}")
+    else:
+        result.cluster_nodes = build_cluster_nodes(nodes)
 
     if isinstance(summary, Exception):
         result.errors.append(f"License usage: {summary}")
