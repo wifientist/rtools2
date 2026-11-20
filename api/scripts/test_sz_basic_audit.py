@@ -16,6 +16,7 @@ WHAT THIS GUARDS
   7. Zone tree: only zones with an AP online, under their deepest listing
      domain, with counts summed up; empty domains are dropped and a zone whose
      domain couldn't be listed lands under "Domain not found".
+  8. Cluster nodes: every node's serial, leader first.
 
 Usage:
     docker compose exec backend python scripts/test_sz_basic_audit.py
@@ -89,6 +90,10 @@ def rkszones(params):
 def client(**overrides):
     responses = {
         "/domains": DOMAINS,
+        "/controller": {"totalCount": 2, "hasMore": False, "list": [
+            {"hostName": "node-b", "clusterRole": "Follower", "model": "vSZ-H", "serialNumber": "98B", "version": "6.1.2"},
+            {"hostName": "node-a", "clusterRole": "Leader", "model": "vSZ-H", "serialNumber": "98A", "version": "6.1.2"},
+        ]},
         "/rkszones": rkszones,
         "/licensesSummary": SUMMARY,
         "/licenses": LICENSES,
@@ -186,6 +191,12 @@ def main():
     r = audit(**{"/system/inventory": ValueError("boom")})
     assert r.zone_tree is None
     print("ok  no inventory, no tree")
+
+    r = audit()
+    assert [(n.serial_number, n.role) for n in r.cluster_nodes] == [("98A", "Leader"), ("98B", "Follower")]
+    r = audit(**{"/controller": ValueError("SmartZone API error (500): down")})
+    assert r.cluster_nodes is None and any(e.startswith("Cluster nodes") for e in r.errors), r.errors
+    print("ok  cluster node serials, leader first; failure stays None")
 
     print("\nAll passed")
 

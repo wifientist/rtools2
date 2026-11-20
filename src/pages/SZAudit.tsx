@@ -856,6 +856,16 @@ interface LicenseEntitlement {
   perpetual: boolean;
 }
 
+// One SZ cluster node; each has its own serial. Leader comes first.
+interface ClusterNode {
+  name: string;
+  host_name: string;
+  role: string;
+  model: string;
+  serial_number: string;
+  version: string;
+}
+
 // Zone tree: only zones with an AP online (Online + Flagged); domain counts include children
 interface BasicZoneNode {
   zone_id: string;
@@ -891,6 +901,7 @@ interface BasicAuditResult {
   switch_license: LicenseUsage | null;
   licenses: LicenseUsage[];
   entitlements: LicenseEntitlement[];
+  cluster_nodes: ClusterNode[] | null;
   zone_tree: BasicDomainNode[] | null;
   error: string | null;
   errors: string[];
@@ -1155,6 +1166,23 @@ function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
     return <span>{entitlement.expires}</span>;
   };
 
+  // Leader serial up front; followers (other cluster nodes) listed under it
+  const serialCell = (nodes: ClusterNode[] | null) => {
+    if (!nodes || nodes.length === 0) return <span className="text-gray-400">-</span>;
+    const [first, ...rest] = nodes;
+    const label = (n: ClusterNode) => `${n.host_name || n.name}${n.role ? ` (${n.role})` : ''}`;
+    return (
+      <div>
+        <div className="font-mono text-xs text-gray-900" title={label(first)}>{first.serial_number || '-'}</div>
+        {rest.map(n => (
+          <div key={`${n.host_name}-${n.serial_number}`} className="font-mono text-[11px] text-gray-500" title={label(n)}>
+            {n.serial_number || '-'}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const usageCell = (usage: LicenseUsage | null) => {
     if (!usage) return <span className="text-gray-400">-</span>;
     return (
@@ -1205,6 +1233,7 @@ function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
               <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">
                 <tr>
                   <th className="px-3 py-2">Controller</th>
+                  <th className="px-3 py-2" title="Leader first, then the other cluster nodes">Serial Number</th>
                   <th className="px-3 py-2">APs</th>
                   <th className="px-3 py-2">APs Online</th>
                   <th className="px-3 py-2">Zones With Online APs</th>
@@ -1219,6 +1248,7 @@ function BasicAuditResults({ results }: { results: BasicAuditResult[] }) {
                 {readable.map(r => (
                   <tr key={r.controller_id} className="border-t border-gray-100">
                     <td className="px-3 py-2 font-medium text-gray-900">{r.controller_name}</td>
+                    <td className="px-3 py-2 align-top">{serialCell(r.cluster_nodes)}</td>
                     <td className="px-3 py-2">{formatCount(r.total_aps)}</td>
                     <td className="px-3 py-2">{formatCount(r.aps_online)}</td>
                     <td className="px-3 py-2">{ofTotal(r.zones_with_online_aps, r.total_zones)}</td>
@@ -1773,6 +1803,7 @@ export default function SZAudit() {
           switch_license: null,
           licenses: [],
           entitlements: [],
+          cluster_nodes: null,
           zone_tree: null,
           error: err instanceof Error ? err.message : 'Could not read controller',
           errors: []
@@ -1923,6 +1954,9 @@ export default function SZAudit() {
       if (r.error) {
         rows.push([r.controller_name, r.host, "Error", "", "", null, null, null, null, errors]);
         continue;
+      }
+      for (const n of r.cluster_nodes ?? []) {
+        rows.push([r.controller_name, r.host, "Cluster node", n.serial_number, `${n.host_name || n.name} (${n.role}) ${n.model} ${n.version}`.trim(), null, null, null, null, ""]);
       }
       rows.push([r.controller_name, r.host, "Devices", "APs", "", r.aps_online, r.total_aps, null, null, errors]);
       rows.push([r.controller_name, r.host, "Devices", "Zones with online APs", "", r.zones_with_online_aps, r.total_zones, null, null, errors]);
